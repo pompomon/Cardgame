@@ -95,7 +95,7 @@ class CardgameScene extends Phaser.Scene {
     this.setStatus(view.status)
 
     if (!view.game) {
-      this.renderLobby(view)
+      this.renderLobby()
       return
     }
 
@@ -123,7 +123,7 @@ class CardgameScene extends Phaser.Scene {
     return button
   }
 
-  private renderLobby(view: AppViewModel): void {
+  private renderLobby(): void {
     this.rootContainer?.add(this.add.text(24, 24, 'Basic Land Game (Phaser Renderer)', { color: '#e5ecf5', fontSize: '34px' }))
     this.rootContainer?.add(this.add.text(24, 70, 'Land-only 2-player game with local AI and optional P2P mode.', { color: '#9db0d9', fontSize: '18px' }))
 
@@ -152,6 +152,9 @@ class CardgameScene extends Phaser.Scene {
 
   private renderGame(view: AppViewModel): void {
     const game = view.game
+    if (!game) {
+      return
+    }
     this.rootContainer?.add(this.add.text(24, 16, `Turn ${game.turn} • Phase: ${game.phase}`, { color: '#e5ecf5', fontSize: '28px' }))
     this.rootContainer?.add(this.add.text(24, 52, game.winnerText, { color: '#f7d56b', fontSize: '18px' }))
 
