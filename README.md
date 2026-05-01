@@ -3,7 +3,7 @@
 ## GitHub Pages deployment
 
 - Publishing target: **project site** at `https://pompomon.github.io/Cardgame/`.
-- Deployment source: **GitHub Actions** via `/home/runner/work/Cardgame/Cardgame/.github/workflows/deploy-pages.yml`.
+- Deployment source: **GitHub Actions** via `.github/workflows/deploy-pages.yml`.
 - Triggers:
   - Push to `main` or `master`
   - Manual `workflow_dispatch`
@@ -40,7 +40,7 @@ The workflow runs:
 
 ## Cache refresh guidance
 
-- Cache versioning is handled in `/home/runner/work/Cardgame/Cardgame/public/sw.js` via `CACHE_VERSION`.
+- Cache versioning is handled in `public/sw.js` via `CACHE_VERSION`.
 - If stale assets are observed after deployment, increment `CACHE_VERSION`, redeploy, and hard-refresh.
 
 ## Rollback / redeploy guidance

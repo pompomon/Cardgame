@@ -15,7 +15,8 @@ const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
 const CORE = [BASE_PATH, INDEX_URL]
-const STATIC_PATHS = [`${BASE_PATH}assets/`, `${BASE_PATH}icons.svg`, `${BASE_PATH}favicon.svg`, `${BASE_PATH}sw.js`]
+const STATIC_DIR_PREFIXES = [`${BASE_PATH}assets/`]
+const STATIC_FILE_PATHS = new Set([`${BASE_PATH}icons.svg`, `${BASE_PATH}favicon.svg`, `${BASE_PATH}sw.js`])
 
 function isWithinBasePath(pathname) {
   if (BASE_PATH === '/') {
@@ -74,7 +75,8 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  const isStaticAsset = STATIC_PATHS.some((path) => url.pathname.startsWith(path))
+  const isStaticAsset =
+    STATIC_DIR_PREFIXES.some((path) => url.pathname.startsWith(path)) || STATIC_FILE_PATHS.has(url.pathname)
   if (!isStaticAsset) {
     return
   }
