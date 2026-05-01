@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyAction, createInitialGame } from '../game/engine'
+import type { BasicLand } from '../game/types'
 
 describe('engine', () => {
   it('allows one land play per turn', () => {
@@ -15,6 +16,7 @@ describe('engine', () => {
     }
 
     expect(state).toBeTruthy()
+    state!.players[1].hand = []
 
     const firstLand = state!.players[0].hand.find((card) => card.type === 'land')
     expect(firstLand).toBeTruthy()
@@ -62,6 +64,10 @@ describe('engine', () => {
 
   it('rejects invalid actors during response phase', () => {
     let state = createInitialGame(99)
+    state.players[1].hand = [
+      { id: 'p1-island', name: 'Island', type: 'land' },
+      { id: 'p1-other', name: 'Forest', type: 'land' },
+    ]
     const land = state.players[0].hand[0]
     state = applyAction(state, { type: 'play_land', actor: 0, cardId: land.id })
 
@@ -76,8 +82,9 @@ describe('engine', () => {
     let state = createInitialGame(13)
     state.players[1].hand = []
 
-    const order = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
+    const order: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
     for (const name of order) {
+      state.players[0].landsPlayedThisTurn = 0
       state.players[0].hand.push({ id: `forced-${name}`, name, type: 'land' })
       state = applyAction(state, { type: 'play_land', actor: 0, cardId: `forced-${name}` })
       if (state.phase === 'respond') {
