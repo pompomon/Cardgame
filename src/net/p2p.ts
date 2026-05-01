@@ -12,11 +12,22 @@ export class P2PLink {
 
   constructor(onMessage: MessageHandler) {
     this.onMessage = onMessage
-    this.peer = new RTCPeerConnection()
+    this.peer = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    })
     this.peer.ondatachannel = (event) => {
       this.channel = event.channel
       this.attachChannel()
     }
+  }
+
+  private static isPacket(value: unknown): value is Packet {
+    if (typeof value !== 'object' || value === null) {
+      return false
+    }
+
+    const packet = value as { type?: unknown; payload?: unknown }
+    return typeof packet.type === 'string' && 'payload' in packet
   }
 
   private attachChannel(): void {
@@ -24,7 +35,18 @@ export class P2PLink {
       return
     }
     this.channel.onmessage = (event) => {
-      const packet = JSON.parse(event.data) as Packet
+      if (typeof event.data !== 'string') {
+        return
+      }
+      let packet: unknown
+      try {
+        packet = JSON.parse(event.data)
+      } catch {
+        return
+      }
+      if (!P2PLink.isPacket(packet)) {
+        return
+      }
       this.onMessage(packet)
     }
   }

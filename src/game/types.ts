@@ -34,6 +34,7 @@ export interface GameState {
   players: [PlayerState, PlayerState]
   turn: number
   currentPlayer: number
+  nextInstanceId: number
   phase: GamePhase
   attackers: string[]
   winner: Winner

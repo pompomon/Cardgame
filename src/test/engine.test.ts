@@ -49,4 +49,31 @@ describe('engine', () => {
 
     expect(state.players[1].life).toBeLessThan(20)
   })
+
+  it('generates deterministic battlefield instance ids', () => {
+    let first = createInitialGame(2026)
+    let second = createInitialGame(2026)
+
+    const firstLand = first.players[0].hand.find((card) => card.type === 'land')
+    const secondLand = second.players[0].hand.find((card) => card.type === 'land')
+    expect(firstLand).toBeTruthy()
+    expect(secondLand).toBeTruthy()
+
+    first = applyAction(first, { type: 'play_land', actor: 0, cardId: firstLand!.id })
+    second = applyAction(second, { type: 'play_land', actor: 0, cardId: secondLand!.id })
+
+    expect(first.players[0].battlefield[0]?.instanceId).toBe(second.players[0].battlefield[0]?.instanceId)
+  })
+
+  it('rejects invalid actors during blocker declaration', () => {
+    let state = createInitialGame(99)
+    state = applyAction(state, { type: 'end_main', actor: 0 })
+    state = applyAction(state, { type: 'declare_attackers', actor: 0, attackerIds: [] })
+
+    const before = structuredClone(state)
+    state = applyAction(state, { type: 'declare_blockers', actor: 2, blocks: {} })
+
+    expect(state).toEqual(before)
+    expect(state.phase).toBe('declareBlockers')
+  })
 })

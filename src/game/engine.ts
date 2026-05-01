@@ -75,13 +75,14 @@ function removeFromHand(player: PlayerState, cardId: string): Card | null {
   return card
 }
 
-function addToBattlefield(player: PlayerState, card: Card): BattlefieldCard {
+function addToBattlefield(state: GameState, player: PlayerState, card: Card): BattlefieldCard {
   const instance: BattlefieldCard = {
-    instanceId: `${card.id}-${Math.random().toString(16).slice(2, 8)}`,
+    instanceId: `p${player.id}-${state.nextInstanceId}`,
     card,
     tapped: false,
     summoningSickness: card.type === 'creature',
   }
+  state.nextInstanceId += 1
   player.battlefield.push(instance)
   return instance
 }
@@ -105,6 +106,7 @@ export function createInitialGame(seed = Date.now()): GameState {
     players: [createPlayer(0, seed), createPlayer(1, seed + 1)],
     turn: 1,
     currentPlayer: 0,
+    nextInstanceId: 1,
     phase: 'main',
     attackers: [],
     winner: null,
@@ -121,11 +123,14 @@ export function createInitialGame(seed = Date.now()): GameState {
 }
 
 export function canAct(state: GameState, actor: number): boolean {
+  if (actor !== 0 && actor !== 1) {
+    return false
+  }
   if (state.phase === 'gameOver') {
     return false
   }
   if (state.phase === 'declareBlockers') {
-    return actor !== state.currentPlayer
+    return actor === (state.currentPlayer === 0 ? 1 : 0)
   }
   return actor === state.currentPlayer
 }
@@ -268,7 +273,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     }
 
     me.landsPlayedThisTurn += 1
-    addToBattlefield(me, card)
+    addToBattlefield(state, me, card)
     state.log.push(`Player ${action.actor + 1} plays a land.`)
     return state
   }
@@ -285,7 +290,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     }
 
     removeFromHand(me, action.cardId)
-    addToBattlefield(me, card)
+    addToBattlefield(state, me, card)
     state.log.push(`Player ${action.actor + 1} casts ${card.name}.`)
     return state
   }

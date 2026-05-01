@@ -446,7 +446,7 @@ function render(): void {
   root.innerHTML = `
     <main class="app-shell">
       ${renderLobby()}
-      ${state.mode ? renderP2P() : ''}
+      ${state.mode === 'p2p-host' || state.mode === 'p2p-join' ? renderP2P() : ''}
       ${state.game ? renderGame() : ''}
     </main>
   `
@@ -455,7 +455,7 @@ function render(): void {
 
 render()
 
-if ('serviceWorker' in navigator) {
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('/sw.js')
   })
