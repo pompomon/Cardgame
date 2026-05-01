@@ -49,7 +49,8 @@ jobs:
             VITE_BASE_PATH="/${GITHUB_REPOSITORY#*/}/"
           fi
           echo "Using VITE_BASE_PATH=$VITE_BASE_PATH"
-          VITE_BASE_PATH="$VITE_BASE_PATH" npm run build
+          export VITE_BASE_PATH
+          npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
