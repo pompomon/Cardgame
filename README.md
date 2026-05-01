@@ -1,0 +1,49 @@
+# Cardgame
+
+## GitHub Pages deployment
+
+- Publishing target: **project site** at `https://pompomon.github.io/Cardgame/`.
+- Deployment source: **GitHub Actions** via `/home/runner/work/Cardgame/Cardgame/.github/workflows/deploy-pages.yml`.
+- Triggers:
+  - Push to `main` or `master`
+  - Manual `workflow_dispatch`
+
+## Required repository settings
+
+1. Open **Settings → Pages**.
+2. Set **Source** to **GitHub Actions**.
+3. Save settings.
+
+## Build and deploy pipeline
+
+The workflow runs:
+
+1. `npm ci`
+2. `npm run lint`
+3. `npm run test`
+4. `npm run build`
+5. Upload `dist` artifact
+6. Deploy artifact to Pages
+
+## Base path + service worker behavior
+
+- Production build uses Vite base path `/Cardgame/`.
+- Service worker registration uses the app base URL and passes it to the worker.
+- The worker caches and falls back to the base-aware index path, which avoids root-path (`/`) mismatches on project Pages hosting.
+
+## Post-deploy verification checklist
+
+1. Open `https://pompomon.github.io/Cardgame/`.
+2. Confirm assets load without 404 errors.
+3. Confirm game modes render and can start.
+4. Confirm P2P mode initializes (HTTPS context requirement is satisfied on Pages).
+
+## Cache refresh guidance
+
+- Cache versioning is handled in `/home/runner/work/Cardgame/Cardgame/public/sw.js` via `CACHE_VERSION`.
+- If stale assets are observed after deployment, increment `CACHE_VERSION`, redeploy, and hard-refresh.
+
+## Rollback / redeploy guidance
+
+- Rollback by reverting the last bad commit and pushing to the deployment branch.
+- Redeploy by re-running the latest successful workflow from the Actions tab (or pushing a no-op commit).

@@ -468,6 +468,9 @@ render()
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js')
+    const baseUrl = import.meta.env.BASE_URL
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+    const serviceWorkerUrl = `${normalizedBaseUrl}sw.js?base=${encodeURIComponent(normalizedBaseUrl)}`
+    void navigator.serviceWorker.register(serviceWorkerUrl)
   })
 }
