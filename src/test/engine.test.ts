@@ -95,8 +95,8 @@ describe('engine', () => {
 
     state = applyAction(state, { type: 'pass_response', actor: 1 })
 
-    expect(state.pendingLandPlay).toBeUndefined()
-    expect(state.players[0].battlefield.some((card) => card.id === land!.id)).toBe(true)
+    expect(state.pendingLandPlay).toBeNull()
+    expect(state.players[0].battlefield.some((entry) => entry.card.id === land!.id)).toBe(true)
   })
   it('wins with domain board condition', () => {
     let state = createInitialGame(13)
