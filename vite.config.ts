@@ -8,9 +8,9 @@ function normalizeBasePath(value: string): string {
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`
 }
 
-export default defineConfig(({ command }) => {
+export default defineConfig(({ mode }) => {
   const pagesBasePath = normalizeBasePath(process.env.VITE_BASE_PATH ?? '/Cardgame/')
   return {
-    base: command === 'build' ? pagesBasePath : '/',
+    base: mode === 'production' ? pagesBasePath : '/',
   }
 })

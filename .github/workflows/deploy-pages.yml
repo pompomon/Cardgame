@@ -42,7 +42,14 @@ jobs:
         run: npm run test
 
       - name: Build
-        run: npm run build
+        env:
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
+        run: |
+          if [ -z "$VITE_BASE_PATH" ]; then
+            VITE_BASE_PATH="/${GITHUB_REPOSITORY#*/}/"
+          fi
+          echo "Using VITE_BASE_PATH=$VITE_BASE_PATH"
+          VITE_BASE_PATH="$VITE_BASE_PATH" npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

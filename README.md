@@ -28,7 +28,8 @@ The workflow runs:
 ## Base path + service worker behavior
 
 - Production build uses Vite base path `/Cardgame/`.
-- You can override the production base path with `VITE_BASE_PATH` (for forks/renamed repos).
+- The workflow derives `VITE_BASE_PATH` from the repository name by default (for example, `/Cardgame/`).
+- You can override the production base path with a repository variable named `VITE_BASE_PATH` (for forks/renamed repos).
 - Service worker registration uses the app base URL and passes it to the worker.
 - The worker caches and falls back to the base-aware index path, which avoids root-path (`/`) mismatches on project Pages hosting.
 
@@ -46,5 +47,5 @@ The workflow runs:
 
 ## Rollback / redeploy guidance
 
-- Rollback by reverting the last bad commit and pushing to the deployment branch.
-- Redeploy by re-running the latest successful workflow from the Actions tab (or pushing a no-op commit).
+- Roll back by reverting the last bad commit on `main` or `master` and pushing that revert so the workflow deploys the reverted state.
+- Redeploy by re-running the successful workflow run for the commit you want to restore from the Actions tab (or by pushing a no-op commit to `main` or `master`).
