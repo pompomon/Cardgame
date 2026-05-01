@@ -28,6 +28,7 @@ The workflow runs:
 ## Base path + service worker behavior
 
 - Production build uses Vite base path `/Cardgame/`.
+- You can override the production base path with `VITE_BASE_PATH` (for forks/renamed repos).
 - Service worker registration uses the app base URL and passes it to the worker.
 - The worker caches and falls back to the base-aware index path, which avoids root-path (`/`) mismatches on project Pages hosting.
 

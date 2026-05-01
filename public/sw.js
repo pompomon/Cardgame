@@ -15,14 +15,19 @@ const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
 const CORE = [BASE_PATH, INDEX_URL]
-const STATIC_DIR_PREFIXES = [`${BASE_PATH}assets/`]
-const STATIC_FILE_PATHS = new Set([`${BASE_PATH}icons.svg`, `${BASE_PATH}favicon.svg`, `${BASE_PATH}sw.js`])
+const STATIC_FILE_PATHS = new Set(['/icons.svg', '/favicon.svg', '/sw.js'])
 
-function isWithinBasePath(pathname) {
+function toBaseRelativePath(pathname) {
   if (BASE_PATH === '/') {
-    return true
+    return pathname
   }
-  return pathname === BASE_PATH_NO_TRAILING || pathname.startsWith(BASE_PATH)
+  if (pathname === BASE_PATH_NO_TRAILING) {
+    return '/'
+  }
+  if (pathname.startsWith(BASE_PATH)) {
+    return `/${pathname.slice(BASE_PATH.length)}`
+  }
+  return null
 }
 
 self.addEventListener('install', (event) => {
@@ -53,7 +58,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) {
     return
   }
-  if (!isWithinBasePath(url.pathname)) {
+  const relativePath = toBaseRelativePath(url.pathname)
+  if (relativePath === null) {
     return
   }
 
@@ -75,8 +81,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  const isStaticAsset =
-    STATIC_DIR_PREFIXES.some((path) => url.pathname.startsWith(path)) || STATIC_FILE_PATHS.has(url.pathname)
+  const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
   if (!isStaticAsset) {
     return
   }
