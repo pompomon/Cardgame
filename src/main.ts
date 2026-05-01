@@ -58,6 +58,7 @@ function isGameAction(payload: unknown): payload is GameAction {
     actor?: unknown
     cardId?: unknown
     effectTargetId?: unknown
+    discardCardId?: unknown
   }
   if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
     return false
@@ -68,7 +69,10 @@ function isGameAction(payload: unknown): payload is GameAction {
     }
     return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
   }
-  return action.type === 'end_turn' || action.type === 'counter_land' || action.type === 'pass_response'
+  if (action.type === 'counter_land') {
+    return action.discardCardId === undefined || typeof action.discardCardId === 'string'
+  }
+  return action.type === 'end_turn' || action.type === 'pass_response'
 }
 
 function startGame(mode: Mode): void {
@@ -226,8 +230,12 @@ function renderGame(): string {
   const actorControl = state.controllers[actor]
   const canInput = actorControl === 'human' && canAct(game, actor)
   const winnerText = game.winner === null ? '' : game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
-  const playLandActions = getLegalActions(game, actor).filter(
+  const legalActions = getLegalActions(game, actor)
+  const playLandActions = legalActions.filter(
     (action): action is Extract<GameAction, { type: 'play_land' }> => action.type === 'play_land',
+  )
+  const counterActions = legalActions.filter(
+    (action): action is Extract<GameAction, { type: 'counter_land' }> => action.type === 'counter_land',
   )
   const actorState = actor === 0 ? p1 : p2
   const enemyState = actor === 0 ? p2 : p1
@@ -259,6 +267,11 @@ function renderGame(): string {
                 if (target) {
                   label += ` (discard ${target.name})`
                 }
+              } else if (card.name === 'Plains') {
+                const target = actorState.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
+                if (target) {
+                  label += ` (reuse ${target.card.name})`
+                }
               }
             }
             return `<button data-action="play_land" data-card-id="${action.cardId}" ${action.effectTargetId ? `data-target-id="${action.effectTargetId}"` : ''}>${label}</button>`
@@ -275,7 +288,13 @@ function renderGame(): string {
         <h3>Response Window</h3>
         <p>Opponent played ${game.pendingLandPlay?.card.name}. Respond?</p>
         <div class="action-row">
-          <button data-action="counter_land">Counter with Island (discard Island + another land)</button>
+          ${counterActions.map((action) => {
+            const discard = action.discardCardId
+              ? actorState.hand.find((card) => card.id === action.discardCardId)
+              : undefined
+            const suffix = discard ? ` + ${discard.name}` : ' + another land'
+            return `<button data-action="counter_land" ${action.discardCardId ? `data-discard-card-id="${action.discardCardId}"` : ''}>Counter with Island (discard Island${suffix})</button>`
+          }).join('')}
           <button data-action="pass_response">Pass</button>
         </div>
       </div>
@@ -405,13 +424,14 @@ function bindEvents(): void {
       const dataAction = button.dataset.action
       const cardId = button.dataset.cardId
       const effectTargetId = button.dataset.targetId
+      const discardCardId = button.dataset.discardCardId
 
       if (dataAction === 'play_land' && cardId) {
         applyLocalAction({ type: 'play_land', actor, cardId, effectTargetId })
       } else if (dataAction === 'end_turn') {
         applyLocalAction({ type: 'end_turn', actor })
       } else if (dataAction === 'counter_land') {
-        applyLocalAction({ type: 'counter_land', actor })
+        applyLocalAction({ type: 'counter_land', actor, discardCardId })
       } else if (dataAction === 'pass_response') {
         applyLocalAction({ type: 'pass_response', actor })
       }

@@ -116,12 +116,14 @@ function opponentCanCounterWithIsland(player: PlayerState): boolean {
   return islandCount >= 1 && player.hand.length >= 2
 }
 
-function discardForIslandCounter(player: PlayerState): boolean {
+function discardForIslandCounter(player: PlayerState, discardCardId?: string): boolean {
   const island = player.hand.find((card) => card.name === 'Island')
   if (!island) {
     return false
   }
-  const other = player.hand.find((card) => card.id !== island.id)
+  const other = discardCardId
+    ? player.hand.find((card) => card.id === discardCardId && card.id !== island.id)
+    : player.hand.find((card) => card.id !== island.id)
   if (!other) {
     return false
   }
@@ -173,7 +175,9 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     return
   }
 
-  const target = me.battlefield.find((entry) => entry.card.name !== 'Plains')
+  const target = effectTargetId
+    ? me.battlefield.find((entry) => entry.instanceId === effectTargetId && entry.card.name !== 'Plains')
+    : me.battlefield.find((entry) => entry.card.name !== 'Plains')
   if (!target) {
     return
   }
@@ -270,6 +274,16 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
           continue
         }
 
+        if (card.name === 'Plains') {
+          const targets = me.battlefield.filter((entry) => entry.card.name !== 'Plains')
+          if (targets.length > 0) {
+            for (const target of targets) {
+              actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
+            }
+            continue
+          }
+        }
+
         actions.push({ type: 'play_land', actor, cardId: card.id })
       }
     }
@@ -279,7 +293,14 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
 
   if (state.phase === 'respond') {
     if (opponentCanCounterWithIsland(me)) {
-      actions.push({ type: 'counter_land', actor })
+      const island = me.hand.find((card) => card.name === 'Island')
+      if (island) {
+        for (const card of me.hand) {
+          if (card.id !== island.id) {
+            actions.push({ type: 'counter_land', actor, discardCardId: card.id })
+          }
+        }
+      }
     }
     actions.push({ type: 'pass_response', actor })
   }
@@ -321,7 +342,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
 
   if (action.type === 'counter_land' && state.phase === 'respond' && state.pendingLandPlay) {
     const responder = state.players[action.actor]
-    if (!discardForIslandCounter(responder)) {
+    if (!discardForIslandCounter(responder, action.discardCardId)) {
       return state
     }
 

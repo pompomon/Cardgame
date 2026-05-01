@@ -45,5 +45,5 @@ export interface GameState {
 export type GameAction =
   | { type: 'play_land'; actor: number; cardId: string; effectTargetId?: string }
   | { type: 'end_turn'; actor: number }
-  | { type: 'counter_land'; actor: number }
+  | { type: 'counter_land'; actor: number; discardCardId?: string }
   | { type: 'pass_response'; actor: number }
