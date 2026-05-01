@@ -11,8 +11,6 @@ interface AppState {
   mode: Mode | null
   game: GameState | null
   controllers: [Controller, Controller]
-  selectedAttackers: Set<string>
-  selectedBlocks: Map<string, string>
   seed: number
   offer: string
   answer: string
@@ -23,8 +21,6 @@ const state: AppState = {
   mode: null,
   game: null,
   controllers: ['human', 'human'],
-  selectedAttackers: new Set(),
-  selectedBlocks: new Map(),
   seed: Date.now(),
   offer: '',
   answer: '',
@@ -38,6 +34,13 @@ if (!app) {
 const root = app
 
 let p2p: P2PLink | null = null
+
+function activeActor(game: GameState): number {
+  if (game.phase === 'respond' && game.pendingLandPlay) {
+    return game.pendingLandPlay.actor === 0 ? 1 : 0
+  }
+  return game.currentPlayer
+}
 
 function isSeedPayload(payload: unknown): payload is { seed: number } {
   if (typeof payload !== 'object' || payload === null) {
@@ -54,36 +57,20 @@ function isGameAction(payload: unknown): payload is GameAction {
     type?: unknown
     actor?: unknown
     cardId?: unknown
-    attackerIds?: unknown
-    blocks?: unknown
   }
   if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
     return false
   }
-  if (action.type === 'play_land' || action.type === 'cast_creature') {
+  if (action.type === 'play_land') {
     return typeof action.cardId === 'string'
   }
-  if (action.type === 'end_main') {
-    return true
-  }
-  if (action.type === 'declare_attackers') {
-    return Array.isArray(action.attackerIds) && action.attackerIds.every((id) => typeof id === 'string')
-  }
-  if (action.type === 'declare_blockers') {
-    if (typeof action.blocks !== 'object' || action.blocks === null) {
-      return false
-    }
-    return Object.values(action.blocks).every((value) => value === null || typeof value === 'string')
-  }
-  return false
+  return action.type === 'end_turn' || action.type === 'counter_land' || action.type === 'pass_response'
 }
 
 function startGame(mode: Mode): void {
   state.mode = mode
   state.seed = Date.now()
   state.game = createInitialGame(state.seed)
-  state.selectedAttackers.clear()
-  state.selectedBlocks.clear()
 
   if (mode === 'local-hvh') {
     state.controllers = ['human', 'human']
@@ -115,11 +102,8 @@ function setupP2P(): void {
         render()
         return
       }
-      const payload = packet.payload
-      state.seed = payload.seed
-      state.game = createInitialGame(payload.seed)
-      state.selectedAttackers.clear()
-      state.selectedBlocks.clear()
+      state.seed = packet.payload.seed
+      state.game = createInitialGame(packet.payload.seed)
       state.status = 'Remote game started.'
       render()
       return
@@ -131,8 +115,7 @@ function setupP2P(): void {
         render()
         return
       }
-      const action = packet.payload
-      state.game = applyAction(state.game, action)
+      state.game = applyAction(state.game, packet.payload)
       render()
       scheduleAiIfNeeded()
       return
@@ -144,9 +127,8 @@ function setupP2P(): void {
         render()
         return
       }
-      const payload = packet.payload
-      state.seed = payload.seed
-      state.game = createInitialGame(payload.seed)
+      state.seed = packet.payload.seed
+      state.game = createInitialGame(packet.payload.seed)
       state.status = 'Rematch started.'
       render()
     }
@@ -170,7 +152,7 @@ function scheduleAiIfNeeded(): void {
     return
   }
 
-  const actor = state.game.phase === 'declareBlockers' ? (state.game.currentPlayer === 0 ? 1 : 0) : state.game.currentPlayer
+  const actor = activeActor(state.game)
   const control = state.controllers[actor]
   if (control !== 'ai' || !canAct(state.game, actor)) {
     return
@@ -188,26 +170,11 @@ function scheduleAiIfNeeded(): void {
   }, 350)
 }
 
-function cardLabel(instanceId: string): string {
-  if (!state.game) {
-    return instanceId
-  }
-
-  for (const player of state.game.players) {
-    const card = player.battlefield.find((entry) => entry.instanceId === instanceId)
-    if (card) {
-      return `${card.card.name} (${card.card.power}/${card.card.toughness})`
-    }
-  }
-
-  return instanceId
-}
-
 function renderLobby(): string {
   return `
     <section class="panel">
-      <h1>Cardgame (Simplified MTG)</h1>
-      <p class="subtitle">2-player web card game with AI, P2P, and offline SPA support.</p>
+      <h1>Basic Land Game</h1>
+      <p class="subtitle">Land-only 2-player game with local AI and optional P2P mode.</p>
       <div class="modes">
         <button data-mode="local-hvh">Local Human vs Human</button>
         <button data-mode="local-hvai">Local Human vs AI</button>
@@ -251,61 +218,35 @@ function renderGame(): string {
   }
 
   const [p1, p2] = game.players
-  const actor = game.phase === 'declareBlockers' ? (game.currentPlayer === 0 ? 1 : 0) : game.currentPlayer
+  const actor = activeActor(game)
   const actorControl = state.controllers[actor]
   const canInput = actorControl === 'human' && canAct(game, actor)
+  const winnerText = game.winner === null ? '' : game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
 
   const mainControls = canInput && game.phase === 'main'
     ? `
       <div class="controls">
-        <h3>Main Phase Actions</h3>
+        <h3>Main Phase</h3>
         <div class="action-row">
-          ${p1.id === actor
-            ? p1.hand.filter((card) => card.type === 'land').map((card) => `<button data-action="play_land" data-card-id="${card.id}">Play ${card.name}</button>`).join('')
-            : p2.hand.filter((card) => card.type === 'land').map((card) => `<button data-action="play_land" data-card-id="${card.id}">Play ${card.name}</button>`).join('')}
+          ${(actor === 0 ? p1 : p2).hand.map((card) => `<button data-action="play_land" data-card-id="${card.id}">Play ${card.name}</button>`).join('')}
         </div>
-        <div class="action-row">
-          ${(actor === 0 ? p1 : p2).hand.filter((card) => card.type === 'creature').map((card) => `<button data-action="cast_creature" data-card-id="${card.id}">Cast ${card.name} (${card.cost})</button>`).join('')}
-        </div>
-        <button data-action="end_main">End Main</button>
+        <button data-action="end_turn">End Turn</button>
       </div>
     `
     : ''
 
-  const attackerCandidates = (actor === 0 ? p1 : p2).battlefield.filter((entry) => entry.card.type === 'creature' && !entry.tapped && !entry.summoningSickness)
-  const attackControls = canInput && game.phase === 'declareAttackers'
+  const responseControls = canInput && game.phase === 'respond'
     ? `
       <div class="controls">
-        <h3>Declare Attackers</h3>
+        <h3>Response Window</h3>
+        <p>Opponent played ${game.pendingLandPlay?.card.name}. Respond?</p>
         <div class="action-row">
-          ${attackerCandidates.map((entry) => `<label><input type="checkbox" data-attacker-id="${entry.instanceId}" ${state.selectedAttackers.has(entry.instanceId) ? 'checked' : ''}/> ${entry.card.name} (${entry.card.power}/${entry.card.toughness})</label>`).join('')}
+          <button data-action="counter_land">Counter with Island (discard Island + another land)</button>
+          <button data-action="pass_response">Pass</button>
         </div>
-        <button id="confirm-attackers">Confirm Attackers</button>
       </div>
     `
     : ''
-
-  const defenders = (actor === 0 ? p1 : p2)
-  const blockingCreatures = defenders.battlefield.filter((entry) => entry.card.type === 'creature' && !entry.tapped)
-  const blockControls = canInput && game.phase === 'declareBlockers'
-    ? `
-      <div class="controls">
-        <h3>Declare Blockers</h3>
-        ${game.attackers.map((attackerId) => `
-          <div class="block-row">
-            <span>${cardLabel(attackerId)}</span>
-            <select data-block-for="${attackerId}">
-              <option value="">No block</option>
-              ${blockingCreatures.map((entry) => `<option value="${entry.instanceId}" ${state.selectedBlocks.get(attackerId) === entry.instanceId ? 'selected' : ''}>${entry.card.name}</option>`).join('')}
-            </select>
-          </div>
-        `).join('')}
-        <button id="confirm-blockers">Confirm Blockers</button>
-      </div>
-    `
-    : ''
-
-  const winnerText = game.winner === null ? '' : game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
 
   return `
     <section class="panel">
@@ -318,18 +259,19 @@ function renderGame(): string {
       <div class="board">
         <article class="player">
           <h3>Player 1 (${state.controllers[0]})</h3>
-          <p>Life: ${p1.life} • Hand: ${p1.hand.length} • Deck: ${p1.deck.length} • Graveyard: ${p1.graveyard.length}</p>
-          <p>Battlefield: ${p1.battlefield.map((entry) => `${entry.card.name}${entry.tapped ? ' [Tapped]' : ''}${entry.summoningSickness ? ' [Sick]' : ''}`).join(', ') || 'None'}</p>
+          <p>Hand: ${p1.hand.length} • Deck: ${p1.deck.length} • Graveyard: ${p1.graveyard.length}</p>
+          <p>Battlefield: ${p1.battlefield.map((entry) => entry.card.name).join(', ') || 'None'}</p>
+          <p>Hand cards: ${p1.hand.map((card) => card.name).join(', ') || 'None'}</p>
         </article>
         <article class="player">
           <h3>Player 2 (${state.controllers[1]})</h3>
-          <p>Life: ${p2.life} • Hand: ${p2.hand.length} • Deck: ${p2.deck.length} • Graveyard: ${p2.graveyard.length}</p>
-          <p>Battlefield: ${p2.battlefield.map((entry) => `${entry.card.name}${entry.tapped ? ' [Tapped]' : ''}${entry.summoningSickness ? ' [Sick]' : ''}`).join(', ') || 'None'}</p>
+          <p>Hand: ${p2.hand.length} • Deck: ${p2.deck.length} • Graveyard: ${p2.graveyard.length}</p>
+          <p>Battlefield: ${p2.battlefield.map((entry) => entry.card.name).join(', ') || 'None'}</p>
+          <p>Hand cards: ${p2.hand.map((card) => card.name).join(', ') || 'None'}</p>
         </article>
       </div>
       ${mainControls}
-      ${attackControls}
-      ${blockControls}
+      ${responseControls}
       <div class="log">
         <h3>Replay Log</h3>
         <ul>${game.log.slice(-14).map((line) => `<li>${line}</li>`).join('')}</ul>
@@ -360,8 +302,6 @@ function bindEvents(): void {
     state.status = ''
     state.offer = ''
     state.answer = ''
-    state.selectedAttackers.clear()
-    state.selectedBlocks.clear()
     render()
   })
 
@@ -427,71 +367,20 @@ function bindEvents(): void {
         return
       }
 
-      const actor = state.game.currentPlayer
+      const actor = activeActor(state.game)
       const dataAction = button.dataset.action
       const cardId = button.dataset.cardId
 
       if (dataAction === 'play_land' && cardId) {
         applyLocalAction({ type: 'play_land', actor, cardId })
-      } else if (dataAction === 'cast_creature' && cardId) {
-        applyLocalAction({ type: 'cast_creature', actor, cardId })
-      } else if (dataAction === 'end_main') {
-        applyLocalAction({ type: 'end_main', actor })
+      } else if (dataAction === 'end_turn') {
+        applyLocalAction({ type: 'end_turn', actor })
+      } else if (dataAction === 'counter_land') {
+        applyLocalAction({ type: 'counter_land', actor })
+      } else if (dataAction === 'pass_response') {
+        applyLocalAction({ type: 'pass_response', actor })
       }
     })
-  })
-
-  root.querySelectorAll<HTMLInputElement>('[data-attacker-id]').forEach((box) => {
-    box.addEventListener('change', () => {
-      const id = box.dataset.attackerId
-      if (!id) {
-        return
-      }
-      if (box.checked) {
-        state.selectedAttackers.add(id)
-      } else {
-        state.selectedAttackers.delete(id)
-      }
-    })
-  })
-
-  root.querySelector('#confirm-attackers')?.addEventListener('click', () => {
-    if (!state.game) {
-      return
-    }
-    applyLocalAction({
-      type: 'declare_attackers',
-      actor: state.game.currentPlayer,
-      attackerIds: [...state.selectedAttackers],
-    })
-    state.selectedAttackers.clear()
-  })
-
-  root.querySelectorAll<HTMLSelectElement>('[data-block-for]').forEach((select) => {
-    select.addEventListener('change', () => {
-      const attackerId = select.dataset.blockFor
-      if (!attackerId) {
-        return
-      }
-      if (!select.value) {
-        state.selectedBlocks.delete(attackerId)
-      } else {
-        state.selectedBlocks.set(attackerId, select.value)
-      }
-    })
-  })
-
-  root.querySelector('#confirm-blockers')?.addEventListener('click', () => {
-    if (!state.game) {
-      return
-    }
-    const actor = state.game.currentPlayer === 0 ? 1 : 0
-    const blocks: Record<string, string | null> = {}
-    for (const attackerId of state.game.attackers) {
-      blocks[attackerId] = state.selectedBlocks.get(attackerId) ?? null
-    }
-    applyLocalAction({ type: 'declare_blockers', actor, blocks })
-    state.selectedBlocks.clear()
   })
 
   root.querySelector('#rematch')?.addEventListener('click', () => {
@@ -500,8 +389,6 @@ function bindEvents(): void {
     }
     state.seed = Date.now()
     state.game = createInitialGame(state.seed)
-    state.selectedAttackers.clear()
-    state.selectedBlocks.clear()
     if (state.mode === 'p2p-host' || state.mode === 'p2p-join') {
       p2p?.send('rematch', { seed: state.seed })
     }

@@ -1,24 +1,19 @@
-export type CardType = 'land' | 'creature'
+export type BasicLand = 'Forest' | 'Island' | 'Mountain' | 'Plains' | 'Swamp'
+export type CardType = 'land'
 
 export interface Card {
   id: string
-  name: string
+  name: BasicLand
   type: CardType
-  cost: number
-  power: number
-  toughness: number
 }
 
 export interface BattlefieldCard {
   instanceId: string
   card: Card
-  tapped: boolean
-  summoningSickness: boolean
 }
 
 export interface PlayerState {
   id: number
-  life: number
   deck: Card[]
   hand: Card[]
   battlefield: BattlefieldCard[]
@@ -26,9 +21,14 @@ export interface PlayerState {
   landsPlayedThisTurn: number
 }
 
-export type GamePhase = 'main' | 'declareAttackers' | 'declareBlockers' | 'gameOver'
+export type GamePhase = 'main' | 'respond' | 'gameOver'
 
 export type Winner = number | 'draw' | null
+
+export interface PendingLandPlay {
+  actor: number
+  card: Card
+}
 
 export interface GameState {
   players: [PlayerState, PlayerState]
@@ -36,14 +36,13 @@ export interface GameState {
   currentPlayer: number
   nextInstanceId: number
   phase: GamePhase
-  attackers: string[]
+  pendingLandPlay: PendingLandPlay | null
   winner: Winner
   log: string[]
 }
 
 export type GameAction =
   | { type: 'play_land'; actor: number; cardId: string }
-  | { type: 'cast_creature'; actor: number; cardId: string }
-  | { type: 'end_main'; actor: number }
-  | { type: 'declare_attackers'; actor: number; attackerIds: string[] }
-  | { type: 'declare_blockers'; actor: number; blocks: Record<string, string | null> }
+  | { type: 'end_turn'; actor: number }
+  | { type: 'counter_land'; actor: number }
+  | { type: 'pass_response'; actor: number }
