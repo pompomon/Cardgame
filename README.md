@@ -1,5 +1,25 @@
 # Cardgame
 
+## Rendering options
+
+The app now supports two rendering backends:
+
+- **DOM renderer** (default): existing HTML/CSS UI.
+- **Phaser renderer**: graphic board with drag-and-drop card play.
+
+Choose renderer by query string:
+
+- `?renderer=dom`
+- `?renderer=phaser`
+
+The selected renderer is also stored in `localStorage` for later visits.
+
+### Phaser drag-and-drop controls
+
+- In main phase, when it is your human turn, drag a card from your hand to the battlefield drop zone.
+- If the card has multiple legal targets (for example Forest/Swamp/Mountain/Plains target variants), an in-scene picker appears before action commit.
+- In response phase, use explicit response buttons (counter/pass).
+
 ## GitHub Pages deployment
 
 - Publishing target: **project site** at `https://pompomon.github.io/Cardgame/`.
