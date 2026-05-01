@@ -15,7 +15,7 @@ const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
 const CORE = [BASE_PATH, INDEX_URL]
-const STATIC_FILE_PATHS = new Set(['/icons.svg', '/favicon.svg', '/sw.js'])
+const STATIC_FILE_PATHS = new Set(['/icons.svg', '/favicon.svg'])
 
 function toBaseRelativePath(pathname) {
   if (BASE_PATH === '/') {
