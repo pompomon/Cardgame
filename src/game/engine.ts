@@ -1,7 +1,6 @@
 import { createStarterDeck } from './cards'
 import type { BattlefieldCard, Card, GameAction, GameState, PlayerState, Winner } from './types'
 
-const STARTING_LIFE = 20
 const STARTING_HAND = 5
 
 function cloneState(state: GameState): GameState {
@@ -11,7 +10,6 @@ function cloneState(state: GameState): GameState {
 function createPlayer(id: number, seed: number): PlayerState {
   return {
     id,
-    life: STARTING_LIFE,
     deck: createStarterDeck(id, seed),
     hand: [],
     battlefield: [],
@@ -26,6 +24,7 @@ function drawCard(state: GameState, playerId: number): void {
   if (!next) {
     state.winner = playerId === 0 ? 1 : 0
     state.phase = 'gameOver'
+    state.pendingLandPlay = null
     state.log.push(`Player ${playerId + 1} loses by drawing from empty deck.`)
     return
   }
@@ -36,34 +35,11 @@ function drawCard(state: GameState, playerId: number): void {
 function beginTurn(state: GameState): void {
   const active = state.players[state.currentPlayer]
   active.landsPlayedThisTurn = 0
-  active.battlefield = active.battlefield.map((card) => ({
-    ...card,
-    tapped: false,
-    summoningSickness: false,
-  }))
   drawCard(state, state.currentPlayer)
   if (state.phase !== 'gameOver') {
     state.phase = 'main'
     state.log.push(`Turn ${state.turn}: Player ${state.currentPlayer + 1} main phase.`)
   }
-}
-
-function availableMana(player: PlayerState): number {
-  return player.battlefield.filter((entry) => entry.card.type === 'land' && !entry.tapped).length
-}
-
-function spendMana(player: PlayerState, amount: number): boolean {
-  let remaining = amount
-  for (const permanent of player.battlefield) {
-    if (remaining <= 0) {
-      break
-    }
-    if (permanent.card.type === 'land' && !permanent.tapped) {
-      permanent.tapped = true
-      remaining -= 1
-    }
-  }
-  return remaining === 0
 }
 
 function removeFromHand(player: PlayerState, cardId: string): Card | null {
@@ -79,26 +55,156 @@ function addToBattlefield(state: GameState, player: PlayerState, card: Card): Ba
   const instance: BattlefieldCard = {
     instanceId: `p${player.id}-${state.nextInstanceId}`,
     card,
-    tapped: false,
-    summoningSickness: card.type === 'creature',
   }
   state.nextInstanceId += 1
   player.battlefield.push(instance)
   return instance
 }
 
+function moveBattlefieldCardToGraveyard(player: PlayerState, instanceId: string): Card | null {
+  const index = player.battlefield.findIndex((entry) => entry.instanceId === instanceId)
+  if (index < 0) {
+    return null
+  }
+  const [entry] = player.battlefield.splice(index, 1)
+  player.graveyard.push(entry.card)
+  return entry.card
+}
+
+function playerHasWinningBoard(player: PlayerState): boolean {
+  const names = player.battlefield.map((entry) => entry.card.name)
+  const unique = new Set(names)
+  if (unique.size === 5) {
+    return true
+  }
+
+  const counts = new Map<string, number>()
+  for (const name of names) {
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return [...counts.values()].some((count) => count >= 5)
+}
+
 function checkWinner(state: GameState): Winner {
-  const [p1, p2] = state.players
-  if (p1.life <= 0 && p2.life <= 0) {
+  const p1Win = playerHasWinningBoard(state.players[0])
+  const p2Win = playerHasWinningBoard(state.players[1])
+  if (p1Win && p2Win) {
     return 'draw'
   }
-  if (p1.life <= 0) {
-    return 1
-  }
-  if (p2.life <= 0) {
+  if (p1Win) {
     return 0
   }
+  if (p2Win) {
+    return 1
+  }
   return null
+}
+
+function finalizeWinnerIfAny(state: GameState): void {
+  const winner = checkWinner(state)
+  if (winner === null) {
+    return
+  }
+  state.winner = winner
+  state.phase = 'gameOver'
+  state.pendingLandPlay = null
+  state.log.push(winner === 'draw' ? 'Game ends in a draw.' : `Player ${winner + 1} wins.`)
+}
+
+function opponentCanCounterWithIsland(player: PlayerState): boolean {
+  const islandCount = player.hand.filter((card) => card.name === 'Island').length
+  return islandCount >= 1 && player.hand.length >= 2
+}
+
+function discardForIslandCounter(player: PlayerState, discardCardId?: string): boolean {
+  const island = player.hand.find((card) => card.name === 'Island')
+  if (!island) {
+    return false
+  }
+  const other = discardCardId
+    ? player.hand.find((card) => card.id === discardCardId && card.id !== island.id)
+    : player.hand.find((card) => card.id !== island.id)
+  if (!other) {
+    return false
+  }
+  removeFromHand(player, island.id)
+  removeFromHand(player, other.id)
+  player.graveyard.push(island, other)
+  return true
+}
+
+function applyLandEffect(state: GameState, actor: number, playedCard: Card, effectTargetId?: string): void {
+  const me = state.players[actor]
+  const enemy = state.players[actor === 0 ? 1 : 0]
+
+  if (playedCard.name === 'Forest') {
+    const targetIndex = effectTargetId
+      ? me.graveyard.findIndex((card) => card.id === effectTargetId)
+      : me.graveyard.length - 1
+    const target = targetIndex >= 0 ? me.graveyard.splice(targetIndex, 1)[0] : undefined
+    if (target) {
+      me.hand.push(target)
+      state.log.push(`Forest returns ${target.name} from graveyard to hand.`)
+    }
+    return
+  }
+
+  if (playedCard.name === 'Swamp') {
+    const target = effectTargetId ? enemy.hand.find((card) => card.id === effectTargetId) : enemy.hand[0]
+    if (target) {
+      removeFromHand(enemy, target.id)
+      enemy.graveyard.push(target)
+      state.log.push(`Swamp makes Player ${enemy.id + 1} discard ${target.name}.`)
+    }
+    return
+  }
+
+  if (playedCard.name === 'Mountain') {
+    const target = effectTargetId
+      ? enemy.battlefield.find((entry) => entry.instanceId === effectTargetId)
+      : enemy.battlefield[0]
+    if (target) {
+      moveBattlefieldCardToGraveyard(enemy, target.instanceId)
+      state.log.push(`Mountain destroys Player ${enemy.id + 1}'s ${target.card.name}.`)
+    }
+    return
+  }
+
+  if (playedCard.name === 'Island') {
+    drawCard(state, actor)
+    return
+  }
+
+  const target = effectTargetId
+    ? me.battlefield.find((entry) => entry.instanceId === effectTargetId && entry.card.name !== 'Plains')
+    : me.battlefield.find((entry) => entry.card.name !== 'Plains')
+  if (!target) {
+    return
+  }
+  state.log.push(`Plains reuses ${target.card.name}.`)
+  applyLandEffect(state, actor, target.card)
+}
+
+function resolvePendingLandPlay(state: GameState): void {
+  const pending = state.pendingLandPlay
+  if (!pending) {
+    return
+  }
+  const me = state.players[pending.actor]
+  addToBattlefield(state, me, pending.card)
+  state.log.push(`Player ${pending.actor + 1} plays ${pending.card.name}.`)
+  applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
+  state.pendingLandPlay = null
+  if (state.phase !== 'gameOver') {
+    finalizeWinnerIfAny(state)
+  }
+}
+
+function responseActorFor(state: GameState): number | null {
+  if (state.phase !== 'respond' || !state.pendingLandPlay) {
+    return null
+  }
+  return state.pendingLandPlay.actor === 0 ? 1 : 0
 }
 
 export function createInitialGame(seed = Date.now()): GameState {
@@ -108,7 +214,7 @@ export function createInitialGame(seed = Date.now()): GameState {
     currentPlayer: 0,
     nextInstanceId: 1,
     phase: 'main',
-    attackers: [],
+    pendingLandPlay: null,
     winner: null,
     log: ['Game started.'],
   }
@@ -118,7 +224,7 @@ export function createInitialGame(seed = Date.now()): GameState {
     drawCard(state, 1)
   }
 
-  state.log.push('Player 1 starts.')
+  state.log.push('Player 1 starts and skips first draw step.')
   return state
 }
 
@@ -129,10 +235,10 @@ export function canAct(state: GameState, actor: number): boolean {
   if (state.phase === 'gameOver') {
     return false
   }
-  if (state.phase === 'declareBlockers') {
-    return actor === (state.currentPlayer === 0 ? 1 : 0)
+  if (state.phase === 'main') {
+    return actor === state.currentPlayer
   }
-  return actor === state.currentPlayer
+  return actor === responseActorFor(state)
 }
 
 export function getLegalActions(state: GameState, actor: number): GameAction[] {
@@ -145,113 +251,61 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
 
   if (state.phase === 'main') {
     if (me.landsPlayedThisTurn < 1) {
-      for (const card of me.hand.filter((entry) => entry.type === 'land')) {
+      const enemy = state.players[actor === 0 ? 1 : 0]
+      for (const card of me.hand) {
+        if (card.name === 'Forest' && me.graveyard.length > 0) {
+          for (const target of me.graveyard) {
+            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.id })
+          }
+          continue
+        }
+
+        if (card.name === 'Mountain' && enemy.battlefield.length > 0) {
+          for (const target of enemy.battlefield) {
+            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
+          }
+          continue
+        }
+
+        if (card.name === 'Swamp' && enemy.hand.length > 0) {
+          for (const target of enemy.hand) {
+            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.id })
+          }
+          continue
+        }
+
+        if (card.name === 'Plains') {
+          const targets = me.battlefield.filter((entry) => entry.card.name !== 'Plains')
+          if (targets.length > 0) {
+            for (const target of targets) {
+              actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
+            }
+            continue
+          }
+        }
+
         actions.push({ type: 'play_land', actor, cardId: card.id })
       }
     }
-
-    const mana = availableMana(me)
-    for (const card of me.hand.filter((entry) => entry.type === 'creature' && entry.cost <= mana)) {
-      actions.push({ type: 'cast_creature', actor, cardId: card.id })
-    }
-
-    actions.push({ type: 'end_main', actor })
+    actions.push({ type: 'end_turn', actor })
+    return actions
   }
 
-  if (state.phase === 'declareAttackers') {
-    const candidates = me.battlefield
-      .filter((entry) => entry.card.type === 'creature' && !entry.tapped && !entry.summoningSickness)
-      .map((entry) => entry.instanceId)
-    actions.push({ type: 'declare_attackers', actor, attackerIds: candidates })
-    actions.push({ type: 'declare_attackers', actor, attackerIds: [] })
-  }
-
-  if (state.phase === 'declareBlockers') {
-    const enemy = state.players[state.currentPlayer]
-    const blockers = me.battlefield
-      .filter((entry) => entry.card.type === 'creature' && !entry.tapped)
-      .map((entry) => entry.instanceId)
-
-    const blocks: Record<string, string | null> = {}
-    let cursor = 0
-    for (const attacker of state.attackers) {
-      blocks[attacker] = blockers[cursor] ?? null
-      cursor += 1
+  if (state.phase === 'respond') {
+    if (opponentCanCounterWithIsland(me)) {
+      const island = me.hand.find((card) => card.name === 'Island')
+      if (island) {
+        for (const card of me.hand) {
+          if (card.id !== island.id) {
+            actions.push({ type: 'counter_land', actor, discardCardId: card.id })
+          }
+        }
+      }
     }
-
-    actions.push({ type: 'declare_blockers', actor, blocks })
-    actions.push({ type: 'declare_blockers', actor, blocks: Object.fromEntries(state.attackers.map((id) => [id, null])) })
-    if (enemy.battlefield.length === 0) {
-      actions.push({ type: 'declare_blockers', actor, blocks: {} })
-    }
+    actions.push({ type: 'pass_response', actor })
   }
 
   return actions
-}
-
-function moveToGraveyard(player: PlayerState, instanceId: string): void {
-  const index = player.battlefield.findIndex((entry) => entry.instanceId === instanceId)
-  if (index >= 0) {
-    const [entry] = player.battlefield.splice(index, 1)
-    player.graveyard.push(entry.card)
-  }
-}
-
-function resolveCombat(state: GameState, blocks: Record<string, string | null>): void {
-  const attackerPlayer = state.players[state.currentPlayer]
-  const defenderId = state.currentPlayer === 0 ? 1 : 0
-  const defenderPlayer = state.players[defenderId]
-
-  for (const attackerId of state.attackers) {
-    const attacker = attackerPlayer.battlefield.find((entry) => entry.instanceId === attackerId)
-    if (!attacker) {
-      continue
-    }
-
-    attacker.tapped = true
-
-    const blockerId = blocks[attackerId]
-    if (!blockerId) {
-      defenderPlayer.life -= attacker.card.power
-      state.log.push(`${attacker.card.name} hits Player ${defenderId + 1} for ${attacker.card.power}.`)
-      continue
-    }
-
-    const blocker = defenderPlayer.battlefield.find((entry) => entry.instanceId === blockerId)
-    if (!blocker) {
-      defenderPlayer.life -= attacker.card.power
-      state.log.push(`${attacker.card.name} bypasses and hits for ${attacker.card.power}.`)
-      continue
-    }
-
-    const attackerDies = blocker.card.power >= attacker.card.toughness
-    const blockerDies = attacker.card.power >= blocker.card.toughness
-
-    state.log.push(`${attacker.card.name} battles ${blocker.card.name}.`)
-
-    if (attackerDies) {
-      moveToGraveyard(attackerPlayer, attacker.instanceId)
-      state.log.push(`${attacker.card.name} dies.`)
-    }
-    if (blockerDies) {
-      moveToGraveyard(defenderPlayer, blocker.instanceId)
-      state.log.push(`${blocker.card.name} dies.`)
-    }
-  }
-
-  state.attackers = []
-
-  const winner = checkWinner(state)
-  if (winner !== null) {
-    state.winner = winner
-    state.phase = 'gameOver'
-    state.log.push(winner === 'draw' ? 'Game ends in a draw.' : `Player ${winner + 1} wins.`)
-    return
-  }
-
-  state.currentPlayer = defenderId
-  state.turn += 1
-  beginTurn(state)
 }
 
 export function applyAction(inputState: GameState, action: GameAction): GameState {
@@ -268,56 +322,49 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     }
 
     const card = removeFromHand(me, action.cardId)
-    if (!card || card.type !== 'land') {
+    if (!card) {
       return state
     }
 
     me.landsPlayedThisTurn += 1
-    addToBattlefield(state, me, card)
-    state.log.push(`Player ${action.actor + 1} plays a land.`)
-    return state
-  }
+    state.pendingLandPlay = { actor: action.actor, card, effectTargetId: action.effectTargetId }
 
-  if (action.type === 'cast_creature' && state.phase === 'main') {
-    const me = state.players[action.actor]
-    const card = me.hand.find((entry) => entry.id === action.cardId)
-    if (!card || card.type !== 'creature') {
+    const responder = state.players[action.actor === 0 ? 1 : 0]
+    if (opponentCanCounterWithIsland(responder)) {
+      state.phase = 'respond'
+      state.log.push(`Player ${responder.id + 1} may counter ${card.name} with Island.`)
       return state
     }
 
-    if (availableMana(me) < card.cost || !spendMana(me, card.cost)) {
+    resolvePendingLandPlay(state)
+    return state
+  }
+
+  if (action.type === 'counter_land' && state.phase === 'respond' && state.pendingLandPlay) {
+    const responder = state.players[action.actor]
+    if (!discardForIslandCounter(responder, action.discardCardId)) {
       return state
     }
 
-    removeFromHand(me, action.cardId)
-    addToBattlefield(state, me, card)
-    state.log.push(`Player ${action.actor + 1} casts ${card.name}.`)
+    const pending = state.pendingLandPlay
+    const caster = state.players[pending.actor]
+    caster.graveyard.push(pending.card)
+    state.log.push(`Player ${action.actor + 1} counters ${pending.card.name}.`)
+    state.pendingLandPlay = null
+    state.phase = 'main'
     return state
   }
 
-  if (action.type === 'end_main' && state.phase === 'main') {
-    state.phase = 'declareAttackers'
-    state.log.push(`Player ${action.actor + 1} moves to combat.`)
+  if (action.type === 'pass_response' && state.phase === 'respond') {
+    state.phase = 'main'
+    resolvePendingLandPlay(state)
     return state
   }
 
-  if (action.type === 'declare_attackers' && state.phase === 'declareAttackers') {
-    const me = state.players[action.actor]
-    const legal = new Set(
-      me.battlefield
-        .filter((entry) => entry.card.type === 'creature' && !entry.tapped && !entry.summoningSickness)
-        .map((entry) => entry.instanceId),
-    )
-
-    const chosen = action.attackerIds.filter((id, index, arr) => legal.has(id) && arr.indexOf(id) === index)
-    state.attackers = chosen
-    state.phase = 'declareBlockers'
-    state.log.push(`Player ${action.actor + 1} attacks with ${chosen.length} creature(s).`)
-    return state
-  }
-
-  if (action.type === 'declare_blockers' && state.phase === 'declareBlockers') {
-    resolveCombat(state, action.blocks)
+  if (action.type === 'end_turn' && state.phase === 'main') {
+    state.currentPlayer = state.currentPlayer === 0 ? 1 : 0
+    state.turn += 1
+    beginTurn(state)
     return state
   }
 

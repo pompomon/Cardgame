@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyAction, createInitialGame } from '../game/engine'
+import type { BasicLand } from '../game/types'
 
 describe('engine', () => {
   it('allows one land play per turn', () => {
@@ -15,6 +16,7 @@ describe('engine', () => {
     }
 
     expect(state).toBeTruthy()
+    state!.players[1].hand = []
 
     const firstLand = state!.players[0].hand.find((card) => card.type === 'land')
     expect(firstLand).toBeTruthy()
@@ -24,42 +26,25 @@ describe('engine', () => {
     expect(secondLand).toBeTruthy()
 
     const next = applyAction(state, { type: 'play_land', actor: 0, cardId: secondLand!.id })
-    expect(next.players[0].battlefield.filter((entry) => entry.card.type === 'land')).toHaveLength(1)
+    expect(next.players[0].battlefield).toHaveLength(1)
   })
 
-  it('resolves unblocked combat damage', () => {
-    let state = createInitialGame(123)
+  it('uses 50-card starter deck with 10 of each basic', () => {
+    const state = createInitialGame(123)
+    const p1 = state.players[0]
+    const all = [...p1.deck, ...p1.hand]
+    expect(all).toHaveLength(50)
 
-    for (let index = 0; index < 3; index += 1) {
-      const land = state.players[0].hand.find((card) => card.type === 'land')
-      if (land) {
-        state = applyAction(state, { type: 'play_land', actor: 0, cardId: land.id })
-      }
-      const creature = state.players[0].hand.find((card) => card.type === 'creature' && card.cost <= state.players[0].battlefield.filter((entry) => entry.card.type === 'land' && !entry.tapped).length)
-      if (creature) {
-        state = applyAction(state, { type: 'cast_creature', actor: 0, cardId: creature.id })
-      }
-      state = applyAction(state, { type: 'end_main', actor: 0 })
-      state = applyAction(state, { type: 'declare_attackers', actor: 0, attackerIds: [] })
-      state = applyAction(state, { type: 'declare_blockers', actor: 1, blocks: {} })
-      const otherLand = state.players[1].hand.find((card) => card.type === 'land')
-      if (otherLand) {
-        state = applyAction(state, { type: 'play_land', actor: 1, cardId: otherLand.id })
-      }
-      state = applyAction(state, { type: 'end_main', actor: 1 })
-      state = applyAction(state, { type: 'declare_attackers', actor: 1, attackerIds: [] })
-      state = applyAction(state, { type: 'declare_blockers', actor: 0, blocks: {} })
+    const counts = new Map<string, number>()
+    for (const card of all) {
+      counts.set(card.name, (counts.get(card.name) ?? 0) + 1)
     }
 
-    const attackers = state.players[0].battlefield
-      .filter((entry) => entry.card.type === 'creature' && !entry.summoningSickness)
-      .map((entry) => entry.instanceId)
-
-    state = applyAction(state, { type: 'end_main', actor: 0 })
-    state = applyAction(state, { type: 'declare_attackers', actor: 0, attackerIds: attackers })
-    state = applyAction(state, { type: 'declare_blockers', actor: 1, blocks: {} })
-
-    expect(state.players[1].life).toBeLessThan(20)
+    expect(counts.get('Forest')).toBe(10)
+    expect(counts.get('Island')).toBe(10)
+    expect(counts.get('Mountain')).toBe(10)
+    expect(counts.get('Plains')).toBe(10)
+    expect(counts.get('Swamp')).toBe(10)
   })
 
   it('generates deterministic battlefield instance ids', () => {
@@ -77,15 +62,157 @@ describe('engine', () => {
     expect(first.players[0].battlefield[0]?.instanceId).toBe(second.players[0].battlefield[0]?.instanceId)
   })
 
-  it('rejects invalid actors during blocker declaration', () => {
+  it('rejects invalid actors during response phase', () => {
     let state = createInitialGame(99)
-    state = applyAction(state, { type: 'end_main', actor: 0 })
-    state = applyAction(state, { type: 'declare_attackers', actor: 0, attackerIds: [] })
+    state.players[1].hand = [
+      { id: 'p1-island', name: 'Island', type: 'land' },
+      { id: 'p1-other', name: 'Forest', type: 'land' },
+    ]
+    const land = state.players[0].hand[0]
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: land.id })
 
     const before = structuredClone(state)
-    state = applyAction(state, { type: 'declare_blockers', actor: 2, blocks: {} })
+    state = applyAction(state, { type: 'pass_response', actor: 2 })
 
     expect(state).toEqual(before)
-    expect(state.phase).toBe('declareBlockers')
+    expect(state.phase).toBe('respond')
+  })
+
+  it('resolves pending land play when opponent passes response', () => {
+    let state = createInitialGame(100)
+    state.players[1].hand = [
+      { id: 'p1-island', name: 'Island', type: 'land' },
+      { id: 'p1-other', name: 'Forest', type: 'land' },
+    ]
+
+    const land = state.players[0].hand.find((card) => card.type === 'land')
+    expect(land).toBeTruthy()
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: land!.id })
+
+    expect(state.phase).toBe('respond')
+    expect(state.pendingLandPlay).toBeTruthy()
+
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+
+    expect(state.pendingLandPlay).toBeUndefined()
+    expect(state.players[0].battlefield.some((card) => card.id === land!.id)).toBe(true)
+  })
+  it('wins with domain board condition', () => {
+    let state = createInitialGame(13)
+    state.players[1].hand = []
+
+    const order: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
+    for (const name of order) {
+      state.players[0].landsPlayedThisTurn = 0
+      state.players[0].hand.push({ id: `forced-${name}`, name, type: 'land' })
+      state = applyAction(state, { type: 'play_land', actor: 0, cardId: `forced-${name}` })
+      if (state.phase === 'respond') {
+        state = applyAction(state, { type: 'pass_response', actor: 1 })
+      }
+    }
+
+    expect(state.phase).toBe('gameOver')
+    expect(state.winner).toBe(0)
+  })
+
+  it('forest returns the selected graveyard card', () => {
+    let state = createInitialGame(21)
+    state.players[1].hand = []
+    state.players[0].graveyard = [
+      { id: 'g-1', name: 'Swamp', type: 'land' },
+      { id: 'g-2', name: 'Mountain', type: 'land' },
+    ]
+    state.players[0].hand = [{ id: 'forest-play', name: 'Forest', type: 'land' }]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'forest-play',
+      effectTargetId: 'g-1',
+    })
+
+    expect(state.players[0].hand.some((card) => card.id === 'g-1')).toBe(true)
+    expect(state.players[0].graveyard.some((card) => card.id === 'g-1')).toBe(false)
+  })
+
+  it('mountain destroys the selected enemy land', () => {
+    let state = createInitialGame(22)
+    state.players[1].hand = []
+    state.players[0].hand = [{ id: 'mountain-play', name: 'Mountain', type: 'land' }]
+    state.players[1].battlefield = [
+      { instanceId: 'enemy-a', card: { id: 'e-a', name: 'Forest', type: 'land' } },
+      { instanceId: 'enemy-b', card: { id: 'e-b', name: 'Island', type: 'land' } },
+    ]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'mountain-play',
+      effectTargetId: 'enemy-b',
+    })
+
+    expect(state.players[1].battlefield.map((entry) => entry.instanceId)).toEqual(['enemy-a'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'e-b')).toBe(true)
+  })
+
+  it('swamp discards the selected opponent hand card', () => {
+    let state = createInitialGame(23)
+    state.players[1].hand = [
+      { id: 'opp-1', name: 'Forest', type: 'land' },
+      { id: 'opp-2', name: 'Mountain', type: 'land' },
+    ]
+    state.players[0].hand = [{ id: 'swamp-play', name: 'Swamp', type: 'land' }]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'swamp-play',
+      effectTargetId: 'opp-2',
+    })
+
+    expect(state.players[1].hand.map((card) => card.id)).toEqual(['opp-1'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-2')).toBe(true)
+  })
+
+  it('plains reuses the selected own battlefield land effect', () => {
+    let state = createInitialGame(24)
+    state.players[1].hand = [{ id: 'opp-card', name: 'Forest', type: 'land' }]
+    state.players[0].graveyard = [{ id: 'grave-target', name: 'Mountain', type: 'land' }]
+    state.players[0].battlefield = [
+      { instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } },
+      { instanceId: 'self-forest', card: { id: 'self-forest-card', name: 'Forest', type: 'land' } },
+    ]
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'plains-play',
+      effectTargetId: 'self-forest',
+    })
+
+    expect(state.players[0].hand.some((card) => card.id === 'grave-target')).toBe(true)
+    expect(state.players[1].hand.some((card) => card.id === 'opp-card')).toBe(true)
+  })
+
+  it('island counter discards the selected additional hand card', () => {
+    let state = createInitialGame(25)
+    state.players[0].hand = [{ id: 'p0-play', name: 'Forest', type: 'land' }]
+    state.players[1].hand = [
+      { id: 'p1-island', name: 'Island', type: 'land' },
+      { id: 'p1-keep', name: 'Forest', type: 'land' },
+      { id: 'p1-discard', name: 'Mountain', type: 'land' },
+    ]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'p0-play' })
+    expect(state.phase).toBe('respond')
+
+    state = applyAction(state, { type: 'counter_land', actor: 1, discardCardId: 'p1-discard' })
+
+    expect(state.players[1].graveyard.some((card) => card.id === 'p1-island')).toBe(true)
+    expect(state.players[1].graveyard.some((card) => card.id === 'p1-discard')).toBe(true)
+    expect(state.players[1].hand.some((card) => card.id === 'p1-keep')).toBe(true)
+    expect(state.players[0].graveyard.some((card) => card.id === 'p0-play')).toBe(true)
   })
 })

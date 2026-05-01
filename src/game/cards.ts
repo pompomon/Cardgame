@@ -1,12 +1,6 @@
-import type { Card } from './types'
+import type { BasicLand, Card } from './types'
 
-const CREATURE_POOL: Array<Omit<Card, 'id'>> = [
-  { name: 'River Scout', type: 'creature', cost: 1, power: 1, toughness: 1 },
-  { name: 'Forest Wolf', type: 'creature', cost: 2, power: 2, toughness: 2 },
-  { name: 'Stone Golem', type: 'creature', cost: 3, power: 3, toughness: 3 },
-  { name: 'Sky Drake', type: 'creature', cost: 2, power: 2, toughness: 1 },
-  { name: 'Iron Guard', type: 'creature', cost: 3, power: 2, toughness: 4 },
-]
+const BASIC_LANDS: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
 
 function lcg(seed: number): () => number {
   let value = seed >>> 0
@@ -27,22 +21,13 @@ function shuffle<T>(items: T[], seed: number): T[] {
 }
 
 export function createStarterDeck(playerId: number, seed: number): Card[] {
-  const lands: Card[] = Array.from({ length: 10 }, (_, index) => ({
-    id: `p${playerId}-l${index}`,
-    name: 'Basic Land',
-    type: 'land',
-    cost: 0,
-    power: 0,
-    toughness: 0,
-  }))
+  const lands: Card[] = BASIC_LANDS.flatMap((land) =>
+    Array.from({ length: 10 }, (_, index) => ({
+      id: `p${playerId}-${land.toLowerCase()}-${index}`,
+      name: land,
+      type: 'land',
+    })),
+  )
 
-  const creatures: Card[] = Array.from({ length: 20 }, (_, index) => {
-    const base = CREATURE_POOL[index % CREATURE_POOL.length]
-    return {
-      ...base,
-      id: `p${playerId}-c${index}`,
-    }
-  })
-
-  return shuffle([...lands, ...creatures], seed + playerId * 97)
+  return shuffle(lands, seed + playerId * 97)
 }
