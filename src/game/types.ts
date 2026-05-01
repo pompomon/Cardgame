@@ -28,6 +28,7 @@ export type Winner = number | 'draw' | null
 export interface PendingLandPlay {
   actor: number
   card: Card
+  effectTargetId?: string
 }
 
 export interface GameState {
@@ -42,7 +43,7 @@ export interface GameState {
 }
 
 export type GameAction =
-  | { type: 'play_land'; actor: number; cardId: string }
+  | { type: 'play_land'; actor: number; cardId: string; effectTargetId?: string }
   | { type: 'end_turn'; actor: number }
   | { type: 'counter_land'; actor: number }
   | { type: 'pass_response'; actor: number }

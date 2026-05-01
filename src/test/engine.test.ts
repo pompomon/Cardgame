@@ -95,4 +95,63 @@ describe('engine', () => {
     expect(state.phase).toBe('gameOver')
     expect(state.winner).toBe(0)
   })
+
+  it('forest returns the selected graveyard card', () => {
+    let state = createInitialGame(21)
+    state.players[1].hand = []
+    state.players[0].graveyard = [
+      { id: 'g-1', name: 'Swamp', type: 'land' },
+      { id: 'g-2', name: 'Mountain', type: 'land' },
+    ]
+    state.players[0].hand = [{ id: 'forest-play', name: 'Forest', type: 'land' }]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'forest-play',
+      effectTargetId: 'g-1',
+    })
+
+    expect(state.players[0].hand.some((card) => card.id === 'g-1')).toBe(true)
+    expect(state.players[0].graveyard.some((card) => card.id === 'g-1')).toBe(false)
+  })
+
+  it('mountain destroys the selected enemy land', () => {
+    let state = createInitialGame(22)
+    state.players[1].hand = []
+    state.players[0].hand = [{ id: 'mountain-play', name: 'Mountain', type: 'land' }]
+    state.players[1].battlefield = [
+      { instanceId: 'enemy-a', card: { id: 'e-a', name: 'Forest', type: 'land' } },
+      { instanceId: 'enemy-b', card: { id: 'e-b', name: 'Island', type: 'land' } },
+    ]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'mountain-play',
+      effectTargetId: 'enemy-b',
+    })
+
+    expect(state.players[1].battlefield.map((entry) => entry.instanceId)).toEqual(['enemy-a'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'e-b')).toBe(true)
+  })
+
+  it('swamp discards the selected opponent hand card', () => {
+    let state = createInitialGame(23)
+    state.players[1].hand = [
+      { id: 'opp-1', name: 'Forest', type: 'land' },
+      { id: 'opp-2', name: 'Mountain', type: 'land' },
+    ]
+    state.players[0].hand = [{ id: 'swamp-play', name: 'Swamp', type: 'land' }]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'swamp-play',
+      effectTargetId: 'opp-2',
+    })
+
+    expect(state.players[1].hand.map((card) => card.id)).toEqual(['opp-1'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-2')).toBe(true)
+  })
 })

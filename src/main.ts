@@ -1,6 +1,6 @@
 import './style.css'
 import { chooseAiAction } from './game/ai'
-import { applyAction, canAct, createInitialGame } from './game/engine'
+import { applyAction, canAct, createInitialGame, getLegalActions } from './game/engine'
 import type { GameAction, GameState } from './game/types'
 import { P2PLink } from './net/p2p'
 
@@ -57,12 +57,16 @@ function isGameAction(payload: unknown): payload is GameAction {
     type?: unknown
     actor?: unknown
     cardId?: unknown
+    effectTargetId?: unknown
   }
   if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
     return false
   }
   if (action.type === 'play_land') {
-    return typeof action.cardId === 'string'
+    if (typeof action.cardId !== 'string') {
+      return false
+    }
+    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
   }
   return action.type === 'end_turn' || action.type === 'counter_land' || action.type === 'pass_response'
 }
@@ -222,13 +226,43 @@ function renderGame(): string {
   const actorControl = state.controllers[actor]
   const canInput = actorControl === 'human' && canAct(game, actor)
   const winnerText = game.winner === null ? '' : game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
+  const playLandActions = getLegalActions(game, actor).filter(
+    (action): action is Extract<GameAction, { type: 'play_land' }> => action.type === 'play_land',
+  )
+  const actorState = actor === 0 ? p1 : p2
+  const enemyState = actor === 0 ? p2 : p1
 
   const mainControls = canInput && game.phase === 'main'
     ? `
       <div class="controls">
         <h3>Main Phase</h3>
         <div class="action-row">
-          ${(actor === 0 ? p1 : p2).hand.map((card) => `<button data-action="play_land" data-card-id="${card.id}">Play ${card.name}</button>`).join('')}
+          ${playLandActions.map((action) => {
+            const card = actorState.hand.find((candidate) => candidate.id === action.cardId)
+            if (!card) {
+              return ''
+            }
+            let label = `Play ${card.name}`
+            if (action.effectTargetId) {
+              if (card.name === 'Forest') {
+                const target = actorState.graveyard.find((entry) => entry.id === action.effectTargetId)
+                if (target) {
+                  label += ` (return ${target.name})`
+                }
+              } else if (card.name === 'Mountain') {
+                const target = enemyState.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
+                if (target) {
+                  label += ` (destroy ${target.card.name})`
+                }
+              } else if (card.name === 'Swamp') {
+                const target = enemyState.hand.find((entry) => entry.id === action.effectTargetId)
+                if (target) {
+                  label += ` (discard ${target.name})`
+                }
+              }
+            }
+            return `<button data-action="play_land" data-card-id="${action.cardId}" ${action.effectTargetId ? `data-target-id="${action.effectTargetId}"` : ''}>${label}</button>`
+          }).join('')}
         </div>
         <button data-action="end_turn">End Turn</button>
       </div>
@@ -370,9 +404,10 @@ function bindEvents(): void {
       const actor = activeActor(state.game)
       const dataAction = button.dataset.action
       const cardId = button.dataset.cardId
+      const effectTargetId = button.dataset.targetId
 
       if (dataAction === 'play_land' && cardId) {
-        applyLocalAction({ type: 'play_land', actor, cardId })
+        applyLocalAction({ type: 'play_land', actor, cardId, effectTargetId })
       } else if (dataAction === 'end_turn') {
         applyLocalAction({ type: 'end_turn', actor })
       } else if (dataAction === 'counter_land') {

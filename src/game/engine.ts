@@ -131,12 +131,15 @@ function discardForIslandCounter(player: PlayerState): boolean {
   return true
 }
 
-function applyLandEffect(state: GameState, actor: number, playedCard: Card): void {
+function applyLandEffect(state: GameState, actor: number, playedCard: Card, effectTargetId?: string): void {
   const me = state.players[actor]
   const enemy = state.players[actor === 0 ? 1 : 0]
 
   if (playedCard.name === 'Forest') {
-    const target = me.graveyard.pop()
+    const targetIndex = effectTargetId
+      ? me.graveyard.findIndex((card) => card.id === effectTargetId)
+      : me.graveyard.length - 1
+    const target = targetIndex >= 0 ? me.graveyard.splice(targetIndex, 1)[0] : undefined
     if (target) {
       me.hand.push(target)
       state.log.push(`Forest returns ${target.name} from graveyard to hand.`)
@@ -145,7 +148,7 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card): voi
   }
 
   if (playedCard.name === 'Swamp') {
-    const target = enemy.hand[0]
+    const target = effectTargetId ? enemy.hand.find((card) => card.id === effectTargetId) : enemy.hand[0]
     if (target) {
       removeFromHand(enemy, target.id)
       enemy.graveyard.push(target)
@@ -155,7 +158,9 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card): voi
   }
 
   if (playedCard.name === 'Mountain') {
-    const target = enemy.battlefield[0]
+    const target = effectTargetId
+      ? enemy.battlefield.find((entry) => entry.instanceId === effectTargetId)
+      : enemy.battlefield[0]
     if (target) {
       moveBattlefieldCardToGraveyard(enemy, target.instanceId)
       state.log.push(`Mountain destroys Player ${enemy.id + 1}'s ${target.card.name}.`)
@@ -184,7 +189,7 @@ function resolvePendingLandPlay(state: GameState): void {
   const me = state.players[pending.actor]
   addToBattlefield(state, me, pending.card)
   state.log.push(`Player ${pending.actor + 1} plays ${pending.card.name}.`)
-  applyLandEffect(state, pending.actor, pending.card)
+  applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
   state.pendingLandPlay = null
   if (state.phase !== 'gameOver') {
     finalizeWinnerIfAny(state)
@@ -242,7 +247,29 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
 
   if (state.phase === 'main') {
     if (me.landsPlayedThisTurn < 1) {
+      const enemy = state.players[actor === 0 ? 1 : 0]
       for (const card of me.hand) {
+        if (card.name === 'Forest' && me.graveyard.length > 0) {
+          for (const target of me.graveyard) {
+            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.id })
+          }
+          continue
+        }
+
+        if (card.name === 'Mountain' && enemy.battlefield.length > 0) {
+          for (const target of enemy.battlefield) {
+            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
+          }
+          continue
+        }
+
+        if (card.name === 'Swamp' && enemy.hand.length > 0) {
+          for (const target of enemy.hand) {
+            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.id })
+          }
+          continue
+        }
+
         actions.push({ type: 'play_land', actor, cardId: card.id })
       }
     }
@@ -279,7 +306,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     }
 
     me.landsPlayedThisTurn += 1
-    state.pendingLandPlay = { actor: action.actor, card }
+    state.pendingLandPlay = { actor: action.actor, card, effectTargetId: action.effectTargetId }
 
     const responder = state.players[action.actor === 0 ? 1 : 0]
     if (opponentCanCounterWithIsland(responder)) {
