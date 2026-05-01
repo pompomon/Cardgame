@@ -72,7 +72,11 @@ export class P2PLink {
   }
 
   static decodeSession(value: string): RTCSessionDescriptionInit {
-    return JSON.parse(atob(value)) as RTCSessionDescriptionInit
+    try {
+      return JSON.parse(atob(value)) as RTCSessionDescriptionInit
+    } catch {
+      throw new Error('Invalid session description payload.')
+    }
   }
 
   async createOffer(): Promise<string> {
@@ -114,5 +118,13 @@ export class P2PLink {
 
   isConnected(): boolean {
     return this.channel?.readyState === 'open'
+  }
+
+  close(): void {
+    if (this.channel) {
+      this.channel.close()
+      this.channel = null
+    }
+    this.peer.close()
   }
 }

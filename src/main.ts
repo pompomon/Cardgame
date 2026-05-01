@@ -39,6 +39,45 @@ const root = app
 
 let p2p: P2PLink | null = null
 
+function isSeedPayload(payload: unknown): payload is { seed: number } {
+  if (typeof payload !== 'object' || payload === null) {
+    return false
+  }
+  return typeof (payload as { seed?: unknown }).seed === 'number'
+}
+
+function isGameAction(payload: unknown): payload is GameAction {
+  if (typeof payload !== 'object' || payload === null) {
+    return false
+  }
+  const action = payload as {
+    type?: unknown
+    actor?: unknown
+    cardId?: unknown
+    attackerIds?: unknown
+    blocks?: unknown
+  }
+  if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
+    return false
+  }
+  if (action.type === 'play_land' || action.type === 'cast_creature') {
+    return typeof action.cardId === 'string'
+  }
+  if (action.type === 'end_main') {
+    return true
+  }
+  if (action.type === 'declare_attackers') {
+    return Array.isArray(action.attackerIds) && action.attackerIds.every((id) => typeof id === 'string')
+  }
+  if (action.type === 'declare_blockers') {
+    if (typeof action.blocks !== 'object' || action.blocks === null) {
+      return false
+    }
+    return Object.values(action.blocks).every((value) => value === null || typeof value === 'string')
+  }
+  return false
+}
+
 function startGame(mode: Mode): void {
   state.mode = mode
   state.seed = Date.now()
@@ -68,9 +107,15 @@ function startGame(mode: Mode): void {
 }
 
 function setupP2P(): void {
+  p2p?.close()
   p2p = new P2PLink((packet) => {
     if (packet.type === 'start') {
-      const payload = packet.payload as { seed: number }
+      if (!isSeedPayload(packet.payload)) {
+        state.status = 'Ignored invalid start payload from peer.'
+        render()
+        return
+      }
+      const payload = packet.payload
       state.seed = payload.seed
       state.game = createInitialGame(payload.seed)
       state.selectedAttackers.clear()
@@ -81,7 +126,12 @@ function setupP2P(): void {
     }
 
     if (packet.type === 'action' && state.game) {
-      const action = packet.payload as GameAction
+      if (!isGameAction(packet.payload)) {
+        state.status = 'Ignored invalid action payload from peer.'
+        render()
+        return
+      }
+      const action = packet.payload
       state.game = applyAction(state.game, action)
       render()
       scheduleAiIfNeeded()
@@ -89,7 +139,12 @@ function setupP2P(): void {
     }
 
     if (packet.type === 'rematch') {
-      const payload = packet.payload as { seed: number }
+      if (!isSeedPayload(packet.payload)) {
+        state.status = 'Ignored invalid rematch payload from peer.'
+        render()
+        return
+      }
+      const payload = packet.payload
       state.seed = payload.seed
       state.game = createInitialGame(payload.seed)
       state.status = 'Rematch started.'
@@ -298,6 +353,8 @@ function bindEvents(): void {
   })
 
   root.querySelector('#back-to-lobby')?.addEventListener('click', () => {
+    p2p?.close()
+    p2p = null
     state.mode = null
     state.game = null
     state.status = ''
@@ -312,8 +369,12 @@ function bindEvents(): void {
     if (!p2p) {
       return
     }
-    state.offer = await p2p.createOffer()
-    state.status = 'Offer ready. Share with joiner.'
+    try {
+      state.offer = await p2p.createOffer()
+      state.status = 'Offer ready. Share with joiner.'
+    } catch {
+      state.status = 'Failed to create offer. Check connection and try again.'
+    }
     render()
   })
 
@@ -325,8 +386,12 @@ function bindEvents(): void {
     if (!field?.value.trim()) {
       return
     }
-    await p2p.acceptAnswer(field.value.trim())
-    state.status = 'Answer accepted. Data channel should connect shortly.'
+    try {
+      await p2p.acceptAnswer(field.value.trim())
+      state.status = 'Answer accepted. Data channel should connect shortly.'
+    } catch {
+      state.status = 'Failed to accept answer. Verify the pasted answer and retry.'
+    }
     render()
   })
 
@@ -338,8 +403,12 @@ function bindEvents(): void {
     if (!field?.value.trim()) {
       return
     }
-    state.answer = await p2p.acceptOffer(field.value.trim())
-    state.status = 'Answer created. Send it to host.'
+    try {
+      state.answer = await p2p.acceptOffer(field.value.trim())
+      state.status = 'Answer created. Send it to host.'
+    } catch {
+      state.status = 'Failed to create answer. Verify the pasted offer and retry.'
+    }
     render()
   })
 
