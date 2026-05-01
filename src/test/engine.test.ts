@@ -78,6 +78,26 @@ describe('engine', () => {
     expect(state.phase).toBe('respond')
   })
 
+  it('resolves pending land play when opponent passes response', () => {
+    let state = createInitialGame(100)
+    state.players[1].hand = [
+      { id: 'p1-island', name: 'Island', type: 'land' },
+      { id: 'p1-other', name: 'Forest', type: 'land' },
+    ]
+
+    const land = state.players[0].hand.find((card) => card.type === 'land')
+    expect(land).toBeTruthy()
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: land!.id })
+
+    expect(state.phase).toBe('respond')
+    expect(state.pendingLandPlay).toBeTruthy()
+
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+
+    expect(state.pendingLandPlay).toBeUndefined()
+    expect(state.players[0].battlefield.some((card) => card.id === land!.id)).toBe(true)
+  })
   it('wins with domain board condition', () => {
     let state = createInitialGame(13)
     state.players[1].hand = []
