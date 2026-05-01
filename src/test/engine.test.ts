@@ -3,16 +3,28 @@ import { applyAction, createInitialGame } from '../game/engine'
 
 describe('engine', () => {
   it('allows one land play per turn', () => {
-    let state = createInitialGame(11)
-    const land = state.players[0].hand.find((card) => card.type === 'land')
-    expect(land).toBeTruthy()
+    let state: ReturnType<typeof createInitialGame> | undefined
 
-    state = applyAction(state, { type: 'play_land', actor: 0, cardId: land!.id })
-    const secondLand = state.players[0].hand.find((card) => card.type === 'land')
-    if (secondLand) {
-      const next = applyAction(state, { type: 'play_land', actor: 0, cardId: secondLand.id })
-      expect(next.players[0].battlefield.filter((entry) => entry.card.type === 'land')).toHaveLength(1)
+    for (let seed = 0; seed < 1000; seed += 1) {
+      const candidate = createInitialGame(seed)
+      const landsInHand = candidate.players[0].hand.filter((card) => card.type === 'land')
+      if (landsInHand.length >= 2) {
+        state = candidate
+        break
+      }
     }
+
+    expect(state).toBeTruthy()
+
+    const firstLand = state!.players[0].hand.find((card) => card.type === 'land')
+    expect(firstLand).toBeTruthy()
+
+    state = applyAction(state!, { type: 'play_land', actor: 0, cardId: firstLand!.id })
+    const secondLand = state.players[0].hand.find((card) => card.type === 'land')
+    expect(secondLand).toBeTruthy()
+
+    const next = applyAction(state, { type: 'play_land', actor: 0, cardId: secondLand!.id })
+    expect(next.players[0].battlefield.filter((entry) => entry.card.type === 'land')).toHaveLength(1)
   })
 
   it('resolves unblocked combat damage', () => {
