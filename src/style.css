@@ -1,0 +1,110 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  color: #e5ecf5;
+  background: #0b1020;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #111b3a 0%, #070c1a 70%);
+}
+
+.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid #2a355f;
+  border-radius: 12px;
+  background: rgba(10, 18, 38, 0.9);
+  padding: 16px;
+}
+
+.subtitle,
+.status {
+  color: #9db0d9;
+}
+
+.modes,
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+button,
+select,
+textarea {
+  border: 1px solid #365092;
+  border-radius: 8px;
+  background: #182a55;
+  color: #e5ecf5;
+  padding: 8px 10px;
+}
+
+button:hover {
+  filter: brightness(1.1);
+  cursor: pointer;
+}
+
+.signal-grid {
+  display: grid;
+  gap: 8px;
+}
+
+textarea {
+  min-height: 88px;
+  width: 100%;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.player {
+  border: 1px solid #2a355f;
+  border-radius: 8px;
+  padding: 10px;
+  background: #111c3d;
+}
+
+.controls {
+  margin-top: 12px;
+  border: 1px solid #2a355f;
+  border-radius: 8px;
+  padding: 10px;
+  background: #111c3d;
+}
+
+.block-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(160px, 240px);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.log ul {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
