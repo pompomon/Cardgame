@@ -105,7 +105,8 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const safeHeight = height > 0 ? height : 1
   const minDimension = Math.min(safeWidth, safeHeight)
   const isCompact = minDimension < COMPACT_DIMENSION_THRESHOLD
-  const margin = clamp(minDimension * 0.02, 10, 28)
+  const margin = Math.min(clamp(minDimension * 0.02, 10, 28), safeWidth / 2, safeHeight / 2)
+  const contentWidth = Math.max(0, safeWidth - margin * 2)
   const bodyFontPx = clamp(minDimension * 0.018, 12, 18)
   const smallFontPx = clamp(bodyFontPx * 0.86, 10, 16)
   const subtitleFontPx = clamp(bodyFontPx * 1.08, 13, 22)
@@ -115,10 +116,13 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const bodyFontSize = `${Math.round(bodyFontPx)}px`
   const smallFontSize = `${Math.round(smallFontPx)}px`
   const actionButtonHeight = clamp(minDimension * 0.05, 32, 48)
-  const actionButtonWidth = clamp(
-    safeWidth * (orientation === 'vertical' ? 0.36 : 0.24),
-    150,
-    orientation === 'vertical' ? 320 : 260,
+  const actionButtonWidth = Math.min(
+    contentWidth,
+    clamp(
+      safeWidth * (orientation === 'vertical' ? 0.36 : 0.24),
+      150,
+      orientation === 'vertical' ? 320 : 260,
+    ),
   )
   const actionButtonGap = clamp(actionButtonHeight * 0.2, 6, 12)
   const cardWidth = clamp(safeWidth * (orientation === 'vertical' ? 0.15 : 0.11), 70, 132)
@@ -395,7 +399,7 @@ class CardgameScene extends Phaser.Scene {
     this.rootContainer?.add(this.add.text(left, top + this.currentLayout.actionButtonHeight + 6, 'Land-only 2-player game with local AI and optional P2P mode.', {
       color: '#9db0d9',
       fontSize: this.currentLayout.subtitleFontSize,
-      wordWrap: { width: this.currentLayout.width - left * 2 },
+      wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
     }))
     this.rootContainer?.add(this.createButton(this.orientationButtonLabel(), headerRight, top + this.currentLayout.actionButtonHeight / 2, () => {
       this.rendererRef.toggleOrientationMode()
@@ -621,7 +625,8 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private renderLog(lines: string[]): void {
-    const headerWidth = clamp(this.currentLayout.actionButtonWidth, 170, 240)
+    const panelAvailableWidth = Math.max(0, this.currentLayout.width - this.currentLayout.margin * 2)
+    const headerWidth = Math.min(panelAvailableWidth, clamp(this.currentLayout.actionButtonWidth, 170, 240))
     const headerX = this.currentLayout.margin + headerWidth / 2
     const headerY = this.currentLayout.logTopY + this.currentLayout.logHeaderHeight / 2
     const title = this.logCollapsed ? 'Replay Log ▸' : 'Replay Log ▾'
@@ -638,7 +643,7 @@ class CardgameScene extends Phaser.Scene {
 
     const panelTop = this.currentLayout.logTopY + this.currentLayout.logHeaderHeight + 6
     const panelHeight = Math.max(44, this.currentLayout.logHeight - this.currentLayout.logHeaderHeight - 6)
-    const panelWidth = this.currentLayout.width - this.currentLayout.margin * 2
+    const panelWidth = panelAvailableWidth
     const panelX = this.currentLayout.width / 2
     const panelY = panelTop + panelHeight / 2
 
@@ -648,7 +653,7 @@ class CardgameScene extends Phaser.Scene {
     const logText = this.add.text(this.currentLayout.margin + 10, panelTop + 8, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
       color: '#9db0d9',
       fontSize: this.currentLayout.smallFontSize,
-      wordWrap: { width: panelWidth - 18 },
+      wordWrap: { width: Math.max(40, panelWidth - 18) },
     })
     this.rootContainer?.add(logText)
 

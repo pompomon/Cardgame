@@ -14,7 +14,10 @@ body {
 }
 
 html,
-body,
+body {
+  height: 100%;
+}
+
 #app {
   width: 100%;
   min-height: 100%;
