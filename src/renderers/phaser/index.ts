@@ -79,9 +79,11 @@ function buildLayout(width: number, height: number, compactWidth = width): Scene
   const responseInfoY = controlsStartY
   const logTopY = handCardsY + cardHeight / 2 + (isCompact ? 16 : 22)
   const logHeaderHeight = isCompact ? 34 : 40
-  const logBottomPadding = margin + 28
-  const logHeight = Math.max(80, height - logTopY - logBottomPadding)
   const statusBottomOffset = isCompact ? 18 : 22
+  const statusLineReservedHeight = smallFontSize + (isCompact ? 10 : 12)
+  const logBottomPadding = margin + 28 + statusBottomOffset + statusLineReservedHeight
+  const logAvailableHeight = height - logTopY - logBottomPadding
+  const logHeight = Math.max(0, logAvailableHeight)
   const popupMaxWidth = Math.min(width - margin * 2, isCompact ? 460 : 700)
   const popupButtonHeight = isCompact ? 38 : 44
 
