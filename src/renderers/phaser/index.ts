@@ -564,7 +564,7 @@ class CardgameScene extends Phaser.Scene {
   ): void {
     this.pendingTargetPicker?.destroy(true)
 
-    const optionCount = Math.max(1, Math.min(MAX_TARGET_OPTIONS, options.length))
+    const optionCount = Math.min(MAX_TARGET_OPTIONS, options.length)
     const popupPadding = this.currentLayout.isCompact ? 16 : 20
     const popupWidth = this.currentLayout.popupMaxWidth
     const buttonWidth = popupWidth - popupPadding * 2
@@ -591,7 +591,7 @@ class CardgameScene extends Phaser.Scene {
 
     const optionsStartY = -popupHeight / 2 + popupPadding + titleHeight
     const cancelY = popupHeight / 2 - popupPadding - cancelHeight / 2
-    const availableHeight = Math.max(0, cancelY - optionsStartY - this.currentLayout.popupButtonHeight / 2)
+    const availableHeight = Math.max(0, cancelY - optionsStartY - this.currentLayout.popupButtonHeight)
     const optionGap = calculateOptionGap(optionCount, optionGapPreferred, availableHeight)
 
     options.slice(0, MAX_TARGET_OPTIONS).forEach((option, index) => {
