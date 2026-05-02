@@ -19,6 +19,9 @@ The selected renderer is also stored in `localStorage` for later visits.
 - In main phase, when it is your human turn, drag a card from your hand to the battlefield drop zone.
 - If the card has multiple legal targets (for example Forest/Swamp/Mountain/Plains target variants), an in-scene picker appears before action commit.
 - In response phase, use explicit response buttons (counter/pass).
+- Phaser renderer fills the full available viewport and continuously reflows on resize.
+- Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
+- Use the in-scene orientation button to manually switch between vertical and horizontal layout modes (saved in localStorage).
 
 ## GitHub Pages deployment
 
