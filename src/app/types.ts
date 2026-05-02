@@ -1,4 +1,5 @@
 import type { GameAction, GamePhase, GameState } from '../game/types'
+import type { GameRecordFile } from './game-recording'
 
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'p2p-host' | 'p2p-join'
 export type ControllerKind = 'human' | 'ai' | 'remote'
@@ -13,6 +14,15 @@ export interface AppState {
   answer: string
   status: string
   renderer: RendererKind
+  recording: GameRecordFile | null
+  replay: ReplaySessionState | null
+  hasSavedRecording: boolean
+}
+
+export interface ReplaySessionState {
+  record: GameRecordFile
+  step: number
+  isPlaying: boolean
 }
 
 export interface UiCard {
@@ -60,6 +70,7 @@ export interface GameUiState {
     canPassResponse: boolean
   }
   log: string[]
+  isReplay: boolean
 }
 
 export interface AppViewModel {
@@ -72,4 +83,21 @@ export interface AppViewModel {
   controllers: [ControllerKind, ControllerKind]
   p2pConnected: boolean
   game: GameUiState | null
+  recording: {
+    canSave: boolean
+    canLoadLocal: boolean
+    hasLocalSave: boolean
+    metadata: {
+      seed: number
+      mode: Mode
+      controllers: [ControllerKind, ControllerKind]
+      completed: boolean
+    } | null
+  }
+  replay: {
+    active: boolean
+    step: number
+    totalSteps: number
+    isPlaying: boolean
+  }
 }

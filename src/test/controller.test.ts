@@ -1,0 +1,133 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AppController } from '../app/controller'
+import { parseGameRecordJson } from '../app/game-recording'
+
+interface StorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+  clear(): void
+}
+
+function installMemoryStorage(): void {
+  const map = new Map<string, string>()
+  const storage: StorageLike = {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => {
+      map.set(key, value)
+    },
+    removeItem: (key) => {
+      map.delete(key)
+    },
+    clear: () => {
+      map.clear()
+    },
+  }
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+}
+
+function firstPlayableAction(controller: AppController) {
+  const game = controller.getViewModel().game
+  if (!game) {
+    return null
+  }
+  for (const options of Object.values(game.legal.playLandByCard)) {
+    if (options.length > 0) {
+      return options[0].action
+    }
+  }
+  return null
+}
+
+function parseExported(controller: AppController) {
+  const payload = controller.exportRecordingJson()
+  expect(payload).toBeTruthy()
+  const parsed = parseGameRecordJson(payload ?? '')
+  expect(parsed.ok).toBe(true)
+  if (!parsed.ok) {
+    throw new Error('Expected valid recording parse.')
+  }
+  return parsed.record
+}
+
+describe('controller recording and replay', () => {
+  beforeEach(() => {
+    installMemoryStorage()
+    vi.useRealTimers()
+  })
+
+  it('records local and AI actions in timeline', () => {
+    vi.useFakeTimers()
+    const controller = new AppController('dom')
+    controller.startGame('local-aivai')
+    vi.advanceTimersByTime(500)
+
+    const record = parseExported(controller)
+    expect(record.timeline.length).toBeGreaterThanOrEqual(1)
+    expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(true)
+  })
+
+  it('supports replay step controls and freezes live actions during replay', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    controller.submitAction(action!)
+
+    const beforeReplay = parseExported(controller)
+    expect(beforeReplay.timeline).toHaveLength(1)
+
+    controller.startReplay()
+    expect(controller.getViewModel().replay.active).toBe(true)
+
+    controller.submitAction({ type: 'end_turn', actor: 0 })
+    const duringReplay = parseExported(controller)
+    expect(duringReplay.timeline).toHaveLength(1)
+
+    controller.stepReplay(1)
+    expect(controller.getViewModel().replay.step).toBe(1)
+    controller.jumpReplayToEnd()
+    expect(controller.getViewModel().replay.step).toBe(controller.getViewModel().replay.totalSteps)
+
+    controller.exitReplay()
+    expect(controller.getViewModel().replay.active).toBe(false)
+  })
+
+  it('records remote-source actions through controller remote path', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+
+    ;(controller as unknown as { applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void })
+      .applyRecordedAction(action, 'remote', false)
+
+    const record = parseExported(controller)
+    expect(record.timeline[0]?.source).toBe('remote')
+  })
+
+  it('saves and loads recordings from local storage', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    controller.submitAction(action!)
+
+    controller.saveRecordingToLocalStorage()
+
+    const other = new AppController('dom')
+    other.loadRecordingFromLocalStorage()
+    const view = other.getViewModel()
+    expect(view.replay.active).toBe(true)
+    expect(view.recording.metadata).toBeTruthy()
+  })
+
+  it('reports invalid JSON on import', () => {
+    const controller = new AppController('dom')
+    controller.importRecordingJson('not-json')
+    expect(controller.getViewModel().status).toContain('Failed to load recording')
+  })
+})

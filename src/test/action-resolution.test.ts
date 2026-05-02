@@ -14,6 +14,9 @@ function createState(seed: number): AppState {
     answer: '',
     status: '',
     renderer: 'dom',
+    recording: null,
+    replay: null,
+    hasSavedRecording: false,
   }
 }
 

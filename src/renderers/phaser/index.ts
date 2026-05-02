@@ -860,6 +860,7 @@ export class PhaserRenderer implements AppRenderer {
   private scene: CardgameScene | null = null
   currentView: AppViewModel | null = null
   private p2pOverlay: HTMLDivElement | null = null
+  private recorderOverlay: HTMLDivElement | null = null
   private p2pOverlayMode: 'host' | 'join' | null = null
   private p2pSettingsOpen = false
   private _orientationMode: OrientationMode = 'horizontal'
@@ -891,6 +892,11 @@ export class PhaserRenderer implements AppRenderer {
     container.appendChild(overlay)
     this.p2pOverlay = overlay
 
+    const recorderOverlay = document.createElement('div')
+    recorderOverlay.className = 'phaser-recorder-overlay'
+    container.appendChild(recorderOverlay)
+    this.recorderOverlay = recorderOverlay
+
     this.scene = new CardgameScene(this)
     this.game = new Phaser.Game({
       type: Phaser.AUTO,
@@ -913,11 +919,14 @@ export class PhaserRenderer implements AppRenderer {
     this.currentView = view
     this.scene?.renderView(view)
     this.renderP2POverlay(view)
+    this.renderRecorderOverlay(view)
   }
 
   unmount(): void {
     this.p2pOverlay?.remove()
     this.p2pOverlay = null
+    this.recorderOverlay?.remove()
+    this.recorderOverlay = null
     this.p2pOverlayMode = null
     this.p2pSettingsOpen = false
 
@@ -974,7 +983,7 @@ export class PhaserRenderer implements AppRenderer {
       return
     }
 
-    if (view.mode !== 'p2p-host' && view.mode !== 'p2p-join') {
+    if (view.replay.active || (view.mode !== 'p2p-host' && view.mode !== 'p2p-join')) {
       if (this.p2pOverlayMode !== null) {
         this.p2pOverlay.innerHTML = ''
       }
@@ -1061,6 +1070,141 @@ export class PhaserRenderer implements AppRenderer {
     const answerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-join-answer')
     if (answerField) {
       answerField.value = view.answer
+    }
+  }
+
+  private renderRecorderOverlay(view: AppViewModel): void {
+    if (!this.recorderOverlay) {
+      return
+    }
+
+    const metadata = view.recording.metadata
+    const metadataText = metadata
+      ? `Seed ${metadata.seed} • ${metadata.mode} • ${metadata.controllers[0]}/${metadata.controllers[1]} • Completed ${metadata.completed ? 'Yes' : 'No'}`
+      : 'No recording loaded.'
+
+    this.recorderOverlay.innerHTML = `
+      <div class="panel phaser-recorder-panel">
+        <h3>Recorder</h3>
+        <p>${metadataText}</p>
+        <div class="phaser-recorder-buttons">
+          <button id="phaser-save-download" type="button">Download</button>
+          <button id="phaser-save-local" type="button">Save Browser</button>
+          <button id="phaser-load-local" type="button">Load Browser</button>
+          <button id="phaser-load-file-btn" type="button">Load File</button>
+          ${view.replay.active ? '' : '<button id="phaser-replay-start" type="button">Start Replay</button>'}
+        </div>
+        ${view.replay.active
+          ? `<div class="phaser-recorder-buttons">
+            <button id="phaser-replay-playpause" type="button">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
+            <button id="phaser-replay-prev" type="button">Prev</button>
+            <button id="phaser-replay-next" type="button">Next</button>
+            <button id="phaser-replay-end" type="button">End</button>
+            <button id="phaser-replay-exit" type="button">Exit Replay</button>
+          </div>
+          <p>Step ${view.replay.step}/${view.replay.totalSteps}</p>`
+          : ''}
+        <p>Local save available: ${view.recording.hasLocalSave ? 'Yes' : 'No'}</p>
+        <input id="phaser-load-file-input" type="file" accept="application/json,.json" hidden />
+      </div>
+    `
+
+    const saveDownload = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-save-download')
+    if (saveDownload) {
+      saveDownload.onclick = () => {
+        const payload = this.controller?.exportRecordingJson()
+        if (!payload) {
+          return
+        }
+        const blob = new Blob([payload], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `cardgame-recording-${Date.now()}.json`
+        link.click()
+        URL.revokeObjectURL(url)
+      }
+    }
+
+    const saveLocal = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-save-local')
+    if (saveLocal) {
+      saveLocal.onclick = () => {
+        this.controller?.saveRecordingToLocalStorage()
+      }
+    }
+
+    const loadLocal = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-load-local')
+    if (loadLocal) {
+      loadLocal.onclick = () => {
+        this.controller?.loadRecordingFromLocalStorage()
+      }
+    }
+
+    const loadFileButton = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-load-file-btn')
+    if (loadFileButton) {
+      loadFileButton.onclick = () => {
+        const input = this.recorderOverlay?.querySelector<HTMLInputElement>('#phaser-load-file-input')
+        input?.click()
+      }
+    }
+
+    const fileInput = this.recorderOverlay.querySelector<HTMLInputElement>('#phaser-load-file-input')
+    if (fileInput) {
+      fileInput.onchange = async () => {
+        const file = fileInput.files?.[0]
+        if (!file) {
+          return
+        }
+        const text = await file.text()
+        this.controller?.importRecordingJson(text)
+        fileInput.value = ''
+      }
+    }
+
+    const replayStart = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-start')
+    if (replayStart) {
+      replayStart.onclick = () => {
+        this.controller?.startReplay()
+      }
+    }
+
+    const replayPlayPause = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-playpause')
+    if (replayPlayPause) {
+      replayPlayPause.onclick = () => {
+        if (view.replay.isPlaying) {
+          this.controller?.pauseReplay()
+          return
+        }
+        this.controller?.startReplay()
+      }
+    }
+
+    const replayPrev = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-prev')
+    if (replayPrev) {
+      replayPrev.onclick = () => {
+        this.controller?.stepReplay(-1)
+      }
+    }
+
+    const replayNext = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-next')
+    if (replayNext) {
+      replayNext.onclick = () => {
+        this.controller?.stepReplay(1)
+      }
+    }
+
+    const replayEnd = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-end')
+    if (replayEnd) {
+      replayEnd.onclick = () => {
+        this.controller?.jumpReplayToEnd()
+      }
+    }
+
+    const replayExit = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-exit')
+    if (replayExit) {
+      replayExit.onclick = () => {
+        this.controller?.exitReplay()
+      }
     }
   }
 }

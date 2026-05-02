@@ -1,10 +1,20 @@
 import { chooseAiAction } from '../game/ai'
 import { applyAction, canAct, createInitialGame } from '../game/engine'
-import type { GameAction } from '../game/types'
+import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
+import {
+  appendGameRecordStep,
+  createGameRecord,
+  parseGameRecordJson,
+  serializeGameRecord,
+  snapshotFromRecord,
+} from './game-recording'
 import { buildViewModel } from './view-model'
 import type { AppState, AppViewModel, Mode, RendererKind } from './types'
+
+const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
+const REPLAY_TICK_MS = 700
 
 function isSeedPayload(payload: unknown): payload is { seed: number } {
   if (typeof payload !== 'object' || payload === null) {
@@ -39,6 +49,10 @@ function isGameAction(payload: unknown): payload is GameAction {
   return action.type === 'end_turn' || action.type === 'pass_response'
 }
 
+function statesEqual(left: GameState, right: GameState): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 export interface ControllerApi {
   subscribe(listener: (view: AppViewModel) => void): () => void
   getViewModel(): AppViewModel
@@ -50,12 +64,22 @@ export interface ControllerApi {
   startP2PGame(): void
   submitAction(action: GameAction): void
   rematch(): void
+  exportRecordingJson(): string | null
+  importRecordingJson(json: string): void
+  saveRecordingToLocalStorage(): void
+  loadRecordingFromLocalStorage(): void
+  startReplay(): void
+  pauseReplay(): void
+  stepReplay(delta: number): void
+  jumpReplayToEnd(): void
+  exitReplay(): void
 }
 
 export class AppController implements ControllerApi {
   private state: AppState
   private listeners = new Set<(view: AppViewModel) => void>()
   private p2p: P2PLink | null = null
+  private replayInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(renderer: RendererKind) {
     this.state = {
@@ -67,6 +91,9 @@ export class AppController implements ControllerApi {
       answer: '',
       status: '',
       renderer,
+      recording: null,
+      replay: null,
+      hasSavedRecording: this.hasSavedRecording(),
     }
   }
 
@@ -89,6 +116,94 @@ export class AppController implements ControllerApi {
     }
   }
 
+  private hasSavedRecording(): boolean {
+    try {
+      const value = localStorage.getItem(RECORDING_STORAGE_KEY)
+      return typeof value === 'string' && value.length > 0
+    } catch {
+      return false
+    }
+  }
+
+  private refreshSavedRecordingFlag(): void {
+    this.state.hasSavedRecording = this.hasSavedRecording()
+  }
+
+  private stopReplayInterval(): void {
+    if (!this.replayInterval) {
+      return
+    }
+    clearInterval(this.replayInterval)
+    this.replayInterval = null
+  }
+
+  private isReplayActive(): boolean {
+    return this.state.replay !== null
+  }
+
+  private clearReplay(): void {
+    this.stopReplayInterval()
+    this.state.replay = null
+  }
+
+  private initializeRecording(mode: Mode): void {
+    if (!this.state.game) {
+      this.state.recording = null
+      return
+    }
+    this.state.recording = createGameRecord(
+      this.state.seed,
+      mode,
+      this.state.controllers,
+      this.state.game,
+    )
+  }
+
+  private appendRecordingStep(action: GameAction, nextState: GameState, source: 'human' | 'ai' | 'remote'): void {
+    if (!this.state.recording) {
+      return
+    }
+    this.state.recording = appendGameRecordStep(
+      this.state.recording,
+      action,
+      nextState,
+      source,
+    )
+  }
+
+  private applyReplayStep(nextStep: number): void {
+    if (!this.state.replay) {
+      return
+    }
+
+    const boundedStep = Math.max(0, Math.min(nextStep, this.state.replay.record.timeline.length))
+    this.state.replay = {
+      ...this.state.replay,
+      step: boundedStep,
+      isPlaying: boundedStep < this.state.replay.record.timeline.length && this.state.replay.isPlaying,
+    }
+    this.state.game = snapshotFromRecord(this.state.replay.record, boundedStep)
+
+    if (boundedStep >= this.state.replay.record.timeline.length) {
+      this.stopReplayInterval()
+      this.state.replay = { ...this.state.replay, isPlaying: false }
+      this.state.status = 'Replay reached final state.'
+    } else {
+      this.state.status = `Replay step ${boundedStep}/${this.state.replay.record.timeline.length}.`
+    }
+  }
+
+  private setupReplayInterval(): void {
+    this.stopReplayInterval()
+    this.replayInterval = setInterval(() => {
+      if (!this.state.replay || !this.state.replay.isPlaying) {
+        return
+      }
+      this.applyReplayStep(this.state.replay.step + 1)
+      this.notify()
+    }, REPLAY_TICK_MS)
+  }
+
   private setupP2P(): void {
     this.p2p?.close()
     this.p2p = new P2PLink((packet) => {
@@ -100,6 +215,9 @@ export class AppController implements ControllerApi {
         }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
+        if (this.state.mode) {
+          this.initializeRecording(this.state.mode)
+        }
         this.state.status = 'Remote game started.'
         this.notify()
         return
@@ -111,9 +229,7 @@ export class AppController implements ControllerApi {
           this.notify()
           return
         }
-        this.state.game = applyAction(this.state.game, packet.payload)
-        this.notify()
-        this.scheduleAiIfNeeded()
+        this.applyRecordedAction(packet.payload, 'remote', false)
         return
       }
 
@@ -125,6 +241,9 @@ export class AppController implements ControllerApi {
         }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
+        if (this.state.mode) {
+          this.initializeRecording(this.state.mode)
+        }
         this.state.status = 'Rematch started.'
         this.notify()
       }
@@ -132,7 +251,7 @@ export class AppController implements ControllerApi {
   }
 
   private scheduleAiIfNeeded(): void {
-    if (!this.state.game || this.state.game.phase === 'gameOver') {
+    if (!this.state.game || this.state.game.phase === 'gameOver' || this.isReplayActive()) {
       return
     }
 
@@ -143,18 +262,39 @@ export class AppController implements ControllerApi {
     }
 
     setTimeout(() => {
-      if (!this.state.game) {
+      if (!this.state.game || this.isReplayActive()) {
         return
       }
       const action = chooseAiAction(this.state.game, actor)
       if (!action) {
         return
       }
-      this.submitAction(action)
+      this.applyRecordedAction(action, 'ai', true)
     }, 350)
   }
 
+  private applyRecordedAction(action: GameAction, source: 'human' | 'ai' | 'remote', broadcastToPeer: boolean): void {
+    if (!this.state.game || this.isReplayActive()) {
+      return
+    }
+    const previous = this.state.game
+    const next = applyAction(this.state.game, action)
+    this.state.game = next
+
+    if (broadcastToPeer && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+      this.p2p?.send('action', action)
+    }
+
+    if (!statesEqual(previous, next)) {
+      this.appendRecordingStep(action, next, source)
+    }
+    this.notify()
+    this.scheduleAiIfNeeded()
+  }
+
   startGame(mode: Mode): void {
+    this.stopReplayInterval()
+    this.state.replay = null
     this.state.mode = mode
     this.state.seed = Date.now()
     this.state.game = createInitialGame(this.state.seed)
@@ -182,15 +322,18 @@ export class AppController implements ControllerApi {
       this.state.answer = ''
     }
 
+    this.initializeRecording(mode)
     this.notify()
     this.scheduleAiIfNeeded()
   }
 
   backToLobby(): void {
+    this.stopReplayInterval()
     this.p2p?.close()
     this.p2p = null
     this.state.mode = null
     this.state.game = null
+    this.state.replay = null
     this.state.status = ''
     this.state.offer = ''
     this.state.answer = ''
@@ -198,7 +341,7 @@ export class AppController implements ControllerApi {
   }
 
   async createOffer(): Promise<void> {
-    if (!this.p2p) {
+    if (!this.p2p || this.isReplayActive()) {
       return
     }
     try {
@@ -211,7 +354,7 @@ export class AppController implements ControllerApi {
   }
 
   async acceptAnswer(answer: string): Promise<void> {
-    if (!this.p2p || !answer.trim()) {
+    if (!this.p2p || !answer.trim() || this.isReplayActive()) {
       return
     }
     try {
@@ -224,7 +367,7 @@ export class AppController implements ControllerApi {
   }
 
   async createAnswer(offer: string): Promise<void> {
-    if (!this.p2p || !offer.trim()) {
+    if (!this.p2p || !offer.trim() || this.isReplayActive()) {
       return
     }
     try {
@@ -237,7 +380,7 @@ export class AppController implements ControllerApi {
   }
 
   startP2PGame(): void {
-    if (!this.state.game) {
+    if (!this.state.game || this.isReplayActive()) {
       return
     }
     this.p2p?.send('start', { seed: this.state.seed })
@@ -246,28 +389,165 @@ export class AppController implements ControllerApi {
   }
 
   submitAction(action: GameAction): void {
-    if (!this.state.game) {
-      return
-    }
-    this.state.game = applyAction(this.state.game, action)
-    if (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') {
-      this.p2p?.send('action', action)
-    }
-    this.notify()
-    this.scheduleAiIfNeeded()
+    this.applyRecordedAction(action, 'human', true)
   }
 
   rematch(): void {
-    if (!this.state.mode) {
+    if (!this.state.mode || this.isReplayActive()) {
       return
     }
     this.state.seed = Date.now()
     this.state.game = createInitialGame(this.state.seed)
+    this.initializeRecording(this.state.mode)
     if (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') {
       this.p2p?.send('rematch', { seed: this.state.seed })
     }
     this.state.status = 'Rematch started.'
     this.notify()
     this.scheduleAiIfNeeded()
+  }
+
+  exportRecordingJson(): string | null {
+    if (!this.state.recording) {
+      this.state.status = 'No game recording available to export.'
+      this.notify()
+      return null
+    }
+    this.state.status = 'Game recording prepared for export.'
+    this.notify()
+    return serializeGameRecord(this.state.recording)
+  }
+
+  importRecordingJson(json: string): void {
+    this.stopReplayInterval()
+    const parsed = parseGameRecordJson(json)
+    if (!parsed.ok) {
+      this.state.status = `Failed to load recording: ${parsed.error}`
+      this.notify()
+      return
+    }
+
+    this.p2p?.close()
+    this.p2p = null
+    this.state.recording = parsed.record
+    this.state.replay = {
+      record: parsed.record,
+      step: 0,
+      isPlaying: false,
+    }
+    this.state.mode = parsed.record.metadata.mode
+    this.state.seed = parsed.record.metadata.seed
+    this.state.controllers = [...parsed.record.metadata.controllers]
+    this.state.offer = ''
+    this.state.answer = ''
+    this.state.game = snapshotFromRecord(parsed.record, 0)
+    this.state.status = 'Recording loaded. Use replay controls to play or jump to final state.'
+    this.notify()
+  }
+
+  saveRecordingToLocalStorage(): void {
+    if (!this.state.recording) {
+      this.state.status = 'No game recording available to save.'
+      this.notify()
+      return
+    }
+    const payload = serializeGameRecord(this.state.recording)
+    try {
+      localStorage.setItem(RECORDING_STORAGE_KEY, payload)
+      this.state.status = 'Recording saved to local storage.'
+    } catch {
+      this.state.status = 'Failed to save recording to local storage.'
+    }
+    this.refreshSavedRecordingFlag()
+    this.notify()
+  }
+
+  loadRecordingFromLocalStorage(): void {
+    let payload = ''
+    try {
+      payload = localStorage.getItem(RECORDING_STORAGE_KEY) ?? ''
+    } catch {
+      this.state.status = 'Failed to read local storage recording.'
+      this.refreshSavedRecordingFlag()
+      this.notify()
+      return
+    }
+    if (!payload) {
+      this.state.status = 'No saved recording found in local storage.'
+      this.refreshSavedRecordingFlag()
+      this.notify()
+      return
+    }
+    this.refreshSavedRecordingFlag()
+    this.importRecordingJson(payload)
+  }
+
+  startReplay(): void {
+    const record = this.state.replay?.record ?? this.state.recording
+    if (!record) {
+      this.state.status = 'No recording available for replay.'
+      this.notify()
+      return
+    }
+    const step = this.state.replay?.step ?? 0
+    this.state.replay = {
+      record,
+      step,
+      isPlaying: true,
+    }
+    this.state.game = snapshotFromRecord(record, step)
+    this.state.status = `Replay playing from step ${step}/${record.timeline.length}.`
+    this.setupReplayInterval()
+    this.notify()
+  }
+
+  pauseReplay(): void {
+    if (!this.state.replay) {
+      return
+    }
+    this.state.replay = {
+      ...this.state.replay,
+      isPlaying: false,
+    }
+    this.stopReplayInterval()
+    this.state.status = `Replay paused at step ${this.state.replay.step}/${this.state.replay.record.timeline.length}.`
+    this.notify()
+  }
+
+  stepReplay(delta: number): void {
+    if (!this.state.replay) {
+      return
+    }
+    this.state.replay = {
+      ...this.state.replay,
+      isPlaying: false,
+    }
+    this.stopReplayInterval()
+    this.applyReplayStep(this.state.replay.step + delta)
+    this.notify()
+  }
+
+  jumpReplayToEnd(): void {
+    if (!this.state.replay) {
+      return
+    }
+    this.state.replay = {
+      ...this.state.replay,
+      isPlaying: false,
+    }
+    this.stopReplayInterval()
+    this.applyReplayStep(this.state.replay.record.timeline.length)
+    this.notify()
+  }
+
+  exitReplay(): void {
+    if (!this.state.replay) {
+      return
+    }
+    const finalState = snapshotFromRecord(this.state.replay.record, this.state.replay.record.timeline.length)
+    this.clearReplay()
+    this.state.game = finalState
+    this.state.status = 'Exited replay at final recorded game state.'
+    this.notify()
   }
 }
