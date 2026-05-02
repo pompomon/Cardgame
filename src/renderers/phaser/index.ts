@@ -9,7 +9,6 @@ const BASE_HEIGHT = 820
 const MOBILE_BREAKPOINT = 960
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
-const MIN_BUTTON_TEXT_WIDTH = 40
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
@@ -220,8 +219,8 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private updateLayout(): void {
-    const width = this.scale.width || BASE_WIDTH
-    const height = this.scale.height || BASE_HEIGHT
+    const width = this.scale.width ?? BASE_WIDTH
+    const height = this.scale.height ?? BASE_HEIGHT
     this.currentLayout = buildLayout(width, height)
   }
 
@@ -288,7 +287,7 @@ class CardgameScene extends Phaser.Scene {
       color: '#e5ecf5',
       fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
-      wordWrap: { width: Math.max(MIN_BUTTON_TEXT_WIDTH, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
+      wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
     button.setSize(width, height)
@@ -638,7 +637,7 @@ class CardgameScene extends Phaser.Scene {
     }
 
     if (maxScroll > 0) {
-      const onWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
+      const handleWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
         const localX = pointer.worldX - overlay.x
         const localY = pointer.worldY - overlay.y
         const withinX = localX >= -buttonWidth / 2 && localX <= buttonWidth / 2
@@ -648,12 +647,12 @@ class CardgameScene extends Phaser.Scene {
         }
       }
 
-      this.input.on('wheel', onWheel)
+      this.input.on('wheel', handleWheel)
       overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
-        this.input.off('wheel', onWheel)
+        this.input.off('wheel', handleWheel)
       })
 
-      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, '⇵', {
+      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
       }).setOrigin(1, 0.5))
