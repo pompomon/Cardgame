@@ -85,6 +85,7 @@ class CardgameScene extends Phaser.Scene {
   private clearRoot(): void {
     this.pendingTargetPicker?.destroy(true)
     this.pendingTargetPicker = null
+    this.battlefieldDropZone?.destroy()
     this.battlefieldDropZone = null
     this.rootContainer?.removeAll(true)
   }
