@@ -589,9 +589,13 @@ class CardgameScene extends Phaser.Scene {
         this.pendingTargetPicker = null
       }
     })
-    const swallowPointerEvent = (...args: unknown[]): void => {
-      const event = args.at(-1) as Phaser.Types.Input.EventData | undefined
-      event?.stopPropagation()
+    const swallowPointerEvent = (
+      _pointer: Phaser.Input.Pointer,
+      _localX: number,
+      _localY: number,
+      event: Phaser.Types.Input.EventData,
+    ): void => {
+      event.stopPropagation()
     }
 
     const backdrop = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x000000, 0.82).setStrokeStyle(2, 0x4f6caa)
