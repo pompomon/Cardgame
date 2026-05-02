@@ -7,6 +7,7 @@ import type { AppRenderer } from '../types'
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const MOBILE_BREAKPOINT = 960
+const MAX_TARGET_OPTIONS = 5
 
 interface CardStyle {
   fill: number
@@ -248,7 +249,8 @@ class CardgameScene extends Phaser.Scene {
     const maxGap = (maxX - minX) / (count - 1)
     const gap = Math.min(this.currentLayout.cardGap, maxGap)
     const usedWidth = gap * (count - 1)
-    const startX = (this.currentLayout.width - usedWidth) / 2
+    const availableWidth = maxX - minX
+    const startX = minX + (availableWidth - usedWidth) / 2
     return startX + index * gap
   }
 
@@ -555,7 +557,7 @@ class CardgameScene extends Phaser.Scene {
   ): void {
     this.pendingTargetPicker?.destroy(true)
 
-    const optionCount = Math.max(1, Math.min(5, options.length))
+    const optionCount = Math.max(1, Math.min(MAX_TARGET_OPTIONS, options.length))
     const popupPadding = this.currentLayout.isCompact ? 16 : 20
     const popupWidth = this.currentLayout.popupMaxWidth
     const buttonWidth = popupWidth - popupPadding * 2
@@ -585,7 +587,7 @@ class CardgameScene extends Phaser.Scene {
     const availableHeight = Math.max(0, cancelY - optionsStartY - this.currentLayout.popupButtonHeight / 2)
     const optionGap = optionCount > 1 ? Math.min(optionGapPreferred, availableHeight / (optionCount - 1)) : 0
 
-    options.slice(0, 5).forEach((option, index) => {
+    options.slice(0, MAX_TARGET_OPTIONS).forEach((option, index) => {
       const button = this.createButton(option.label, 0, optionsStartY + index * optionGap, () => {
         const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
         if (action) {
