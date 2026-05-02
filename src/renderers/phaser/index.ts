@@ -502,8 +502,10 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.bodyFontSize,
       }))
 
-      const controlsX = this.currentLayout.width - this.currentLayout.margin - (this.currentLayout.isCompact ? 210 : 230)
-      const buttonWidth = this.currentLayout.isCompact ? 400 : 440
+      const availableWidth = Math.max(0, this.currentLayout.width - this.currentLayout.margin * 2)
+      const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
+      const buttonWidth = Math.min(preferredButtonWidth, availableWidth)
+      const controlsX = this.currentLayout.margin + buttonWidth / 2 + (availableWidth - buttonWidth) / 2
       const buttonHeight = this.currentLayout.isCompact ? 38 : 42
       const startY = this.currentLayout.responseInfoY + 44
 
