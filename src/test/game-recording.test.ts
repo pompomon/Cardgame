@@ -69,4 +69,60 @@ describe('game-recording', () => {
     const parsed = parseGameRecordJson(payload)
     expect(parsed.ok).toBe(false)
   })
+
+  it('falls back to initial state when snapshot step is beyond an empty timeline', () => {
+    const initial = createInitialGame(77)
+    const record = createGameRecord(77, 'local-hvh', ['human', 'human'], initial, 100)
+    const snapshot = snapshotFromRecord(record, 4)
+    expect(snapshot.turn).toBe(initial.turn)
+    expect(snapshot.currentPlayer).toBe(initial.currentPlayer)
+  })
+
+  it('rejects out-of-range action actors in timeline entries', () => {
+    const initial = createInitialGame(66)
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 66,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        startedAt: 1,
+        updatedAt: 1,
+        completed: false,
+      },
+      initialState: initial,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'end_turn', actor: 3 },
+          state: initial,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(false)
+  })
+
+  it('rejects out-of-range currentPlayer in initial state', () => {
+    const initial = createInitialGame(88)
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 88,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        startedAt: 1,
+        updatedAt: 1,
+        completed: false,
+      },
+      initialState: { ...initial, currentPlayer: 2 },
+      timeline: [],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(false)
+  })
 })

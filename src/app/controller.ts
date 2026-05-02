@@ -1,5 +1,5 @@
 import { chooseAiAction } from '../game/ai'
-import { applyAction, canAct, createInitialGame } from '../game/engine'
+import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
@@ -49,8 +49,24 @@ function isGameAction(payload: unknown): payload is GameAction {
   return action.type === 'end_turn' || action.type === 'pass_response'
 }
 
-function statesEqual(left: GameState, right: GameState): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
+function isSameAction(left: GameAction, right: GameAction): boolean {
+  if (left.type !== right.type || left.actor !== right.actor) {
+    return false
+  }
+  if (left.type === 'play_land' && right.type === 'play_land') {
+    return left.cardId === right.cardId && left.effectTargetId === right.effectTargetId
+  }
+  if (left.type === 'counter_land' && right.type === 'counter_land') {
+    return left.discardCardId === right.discardCardId
+  }
+  return true
+}
+
+function isLegalActionForState(state: GameState, action: GameAction): boolean {
+  if (!canAct(state, action.actor)) {
+    return false
+  }
+  return getLegalActions(state, action.actor).some((candidate) => isSameAction(candidate, action))
 }
 
 export interface ControllerApi {
@@ -277,7 +293,9 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
-    const previous = this.state.game
+    if (!isLegalActionForState(this.state.game, action)) {
+      return
+    }
     const next = applyAction(this.state.game, action)
     this.state.game = next
 
@@ -285,9 +303,7 @@ export class AppController implements ControllerApi {
       this.p2p?.send('action', action)
     }
 
-    if (!statesEqual(previous, next)) {
-      this.appendRecordingStep(action, next, source)
-    }
+    this.appendRecordingStep(action, next, source)
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -437,7 +453,7 @@ export class AppController implements ControllerApi {
     }
     this.state.mode = parsed.record.metadata.mode
     this.state.seed = parsed.record.metadata.seed
-    this.state.controllers = [...parsed.record.metadata.controllers]
+    this.state.controllers = [parsed.record.metadata.controllers[0], parsed.record.metadata.controllers[1]]
     this.state.offer = ''
     this.state.answer = ''
     this.state.game = snapshotFromRecord(parsed.record, 0)

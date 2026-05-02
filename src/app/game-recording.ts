@@ -72,7 +72,7 @@ function isPlayerLike(value: unknown): boolean {
     return false
   }
 
-  return typeof value.id === 'number'
+  return (value.id === 0 || value.id === 1)
     && Array.isArray(value.deck)
     && value.deck.every((entry) => isCardLike(entry))
     && Array.isArray(value.hand)
@@ -125,7 +125,7 @@ function isGameStateLike(value: unknown): value is GameState {
   }
 
   return typeof value.turn === 'number'
-    && typeof value.currentPlayer === 'number'
+    && (value.currentPlayer === 0 || value.currentPlayer === 1)
     && typeof value.nextInstanceId === 'number'
     && Array.isArray(value.log)
     && value.log.every((entry) => typeof entry === 'string')
@@ -142,7 +142,7 @@ function isGameActionLike(payload: unknown): payload is GameAction {
     effectTargetId?: unknown
     discardCardId?: unknown
   }
-  if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
+  if (typeof action.type !== 'string' || (action.actor !== 0 && action.actor !== 1)) {
     return false
   }
   if (action.type === 'play_land') {
@@ -229,6 +229,9 @@ export function snapshotFromRecord(record: GameRecordFile, step: number): GameSt
     return structuredClone(record.initialState)
   }
   const safeStep = Math.min(step, record.timeline.length)
+  if (safeStep <= 0) {
+    return structuredClone(record.initialState)
+  }
   return structuredClone(record.timeline[safeStep - 1].state)
 }
 
