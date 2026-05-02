@@ -14,6 +14,15 @@ class CardgameScene extends Phaser.Scene {
   private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
 
+  private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
+    const ox = card.getData('originX')
+    const oy = card.getData('originY')
+    if (typeof ox === 'number' && typeof oy === 'number') {
+      card.x = ox
+      card.y = oy
+    }
+  }
+
   constructor(rendererRef: PhaserRenderer) {
     super('cardgame-main')
     this.rendererRef = rendererRef
@@ -31,11 +40,8 @@ class CardgameScene extends Phaser.Scene {
 
     this.input.on('dragend', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean) => {
       const card = object as Phaser.GameObjects.Container
-      const ox = card.getData('originX')
-      const oy = card.getData('originY')
-      if (!dropped && typeof ox === 'number' && typeof oy === 'number') {
-        card.x = ox
-        card.y = oy
+      if (!dropped) {
+        this.snapCardToOrigin(card)
       }
     })
 
@@ -54,12 +60,7 @@ class CardgameScene extends Phaser.Scene {
       const resolution = resolvePlayLandDrop(game, cardId)
       if (resolution.kind === 'invalid') {
         this.setStatus('Invalid drop. Choose a playable card.')
-        const ox = card.getData('originX')
-        const oy = card.getData('originY')
-        if (typeof ox === 'number' && typeof oy === 'number') {
-          card.x = ox
-          card.y = oy
-        }
+        this.snapCardToOrigin(card)
         return
       }
 
@@ -68,6 +69,7 @@ class CardgameScene extends Phaser.Scene {
         return
       }
 
+      this.snapCardToOrigin(card)
       this.showTargetPicker(game, cardId, resolution.options)
     })
 
@@ -83,6 +85,7 @@ class CardgameScene extends Phaser.Scene {
   private clearRoot(): void {
     this.pendingTargetPicker?.destroy(true)
     this.pendingTargetPicker = null
+    this.battlefieldDropZone = null
     this.rootContainer?.removeAll(true)
   }
 
