@@ -113,8 +113,6 @@ textarea {
 }
 
 .phaser-host canvas {
-  width: 100% !important;
-  height: auto !important;
   max-width: 1280px;
   touch-action: none;
 }

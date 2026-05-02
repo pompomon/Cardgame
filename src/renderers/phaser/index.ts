@@ -10,6 +10,7 @@ const MOBILE_BREAKPOINT = 960
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
+const SCROLL_DRAG_MULTIPLIER = 1
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -54,8 +55,8 @@ interface SceneLayout {
   popupButtonHeight: number
 }
 
-function buildLayout(width: number, height: number): SceneLayout {
-  const isCompact = width < MOBILE_BREAKPOINT
+function buildLayout(width: number, height: number, compactWidth = width): SceneLayout {
+  const isCompact = compactWidth < MOBILE_BREAKPOINT
   const margin = isCompact ? 14 : 24
   const titleFontSize = isCompact ? '22px' : '30px'
   const subtitleFontSize = isCompact ? '15px' : '18px'
@@ -145,6 +146,7 @@ class CardgameScene extends Phaser.Scene {
   private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT)
+  private lastLayoutSignature = ''
   private logCollapsed = false
   private logPreferenceSet = false
 
@@ -212,16 +214,23 @@ class CardgameScene extends Phaser.Scene {
     })
 
     this.scale.on('resize', () => {
-      this.renderView(this.rendererRef.currentView)
+      if (this.updateLayout()) {
+        this.renderView(this.rendererRef.currentView)
+      }
     })
 
     this.renderView(this.rendererRef.currentView)
   }
 
-  private updateLayout(): void {
-    const width = this.scale.width ?? BASE_WIDTH
-    const height = this.scale.height ?? BASE_HEIGHT
-    this.currentLayout = buildLayout(width, height)
+  private updateLayout(): boolean {
+    const width = this.scale.gameSize.width ?? this.scale.width ?? BASE_WIDTH
+    const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
+    const compactWidth = this.scale.displaySize.width ?? this.scale.parentSize.width ?? width
+    this.currentLayout = buildLayout(width, height, compactWidth)
+    const signature = `${width}x${height}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
+    const changed = signature !== this.lastLayoutSignature
+    this.lastLayoutSignature = signature
+    return changed
   }
 
   private setStatus(message: string): void {
@@ -637,22 +646,57 @@ class CardgameScene extends Phaser.Scene {
     }
 
     if (maxScroll > 0) {
-      const handleWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
+      const isPointerWithinOptions = (pointer: Phaser.Input.Pointer): boolean => {
         const localX = pointer.worldX - overlay.x
         const localY = pointer.worldY - overlay.y
         const withinX = localX >= -buttonWidth / 2 && localX <= buttonWidth / 2
         const withinY = localY >= optionsTopY && localY <= optionsTopY + optionsAreaHeight
-        if (withinX && withinY) {
+        return withinX && withinY
+      }
+
+      const handleWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
+        if (isPointerWithinOptions(pointer)) {
           applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
         }
       }
 
+      let dragPointerId: number | null = null
+      let lastDragY = 0
+      const handlePointerDown = (pointer: Phaser.Input.Pointer) => {
+        if (!isPointerWithinOptions(pointer)) {
+          return
+        }
+        dragPointerId = pointer.id
+        lastDragY = pointer.worldY
+      }
+      const handlePointerMove = (pointer: Phaser.Input.Pointer) => {
+        if (dragPointerId !== pointer.id) {
+          return
+        }
+        const deltaY = (lastDragY - pointer.worldY) * SCROLL_DRAG_MULTIPLIER
+        applyScroll(deltaY)
+        lastDragY = pointer.worldY
+      }
+      const handlePointerUp = (pointer: Phaser.Input.Pointer) => {
+        if (dragPointerId === pointer.id) {
+          dragPointerId = null
+        }
+      }
+
       this.input.on('wheel', handleWheel)
+      this.input.on('pointerdown', handlePointerDown)
+      this.input.on('pointermove', handlePointerMove)
+      this.input.on('pointerup', handlePointerUp)
+      this.input.on('pointerupoutside', handlePointerUp)
       overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
         this.input.off('wheel', handleWheel)
+        this.input.off('pointerdown', handlePointerDown)
+        this.input.off('pointermove', handlePointerMove)
+        this.input.off('pointerup', handlePointerUp)
+        this.input.off('pointerupoutside', handlePointerUp)
       })
 
-      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll', {
+      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll/drag', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
       }).setOrigin(1, 0.5))
