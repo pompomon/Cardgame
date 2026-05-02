@@ -956,8 +956,10 @@ export class PhaserRenderer implements AppRenderer {
     }
     const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
     if (settingsBackdrop) {
-      settingsBackdrop.onclick = () => {
-        this.setP2POverlayOpen(false)
+      settingsBackdrop.onclick = (event: MouseEvent) => {
+        if (event.target === settingsBackdrop) {
+          this.setP2POverlayOpen(false)
+        }
       }
     }
     const settingsPanel = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-panel')
