@@ -561,13 +561,14 @@ class CardgameScene extends Phaser.Scene {
     })
     this.rootContainer?.add(logText)
 
+    const logMaskInset = 1
     const logMaskShape = this.add.graphics()
     logMaskShape.fillStyle(0xffffff)
     logMaskShape.fillRect(
-      panelX - panelWidth / 2 + 1,
-      panelTop + 1,
-      Math.max(0, panelWidth - 2),
-      Math.max(0, panelHeight - 2),
+      panelX - panelWidth / 2 + logMaskInset,
+      panelTop + logMaskInset,
+      Math.max(0, panelWidth - logMaskInset * 2),
+      Math.max(0, panelHeight - logMaskInset * 2),
     )
     logMaskShape.setVisible(false)
     this.rootContainer?.add(logMaskShape)
