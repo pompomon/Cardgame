@@ -13,6 +13,10 @@ const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
+const COMPACT_DIMENSION_THRESHOLD = 700
+const PORTRAIT_LOG_COLLAPSE_HEIGHT_THRESHOLD = 920
+const PORTRAIT_LOG_COLLAPSE_DIMENSION_THRESHOLD = 760
+const LANDSCAPE_LOG_COLLAPSE_HEIGHT_THRESHOLD = 660
 
 type OrientationMode = 'vertical' | 'horizontal'
 
@@ -88,9 +92,18 @@ function orientationFromViewport(width: number, height: number): OrientationMode
   return width >= height ? 'horizontal' : 'vertical'
 }
 
+function isLogCollapsePreferred(orientation: OrientationMode, height: number, minDimension: number): boolean {
+  if (orientation === 'vertical') {
+    return height < PORTRAIT_LOG_COLLAPSE_HEIGHT_THRESHOLD || minDimension < PORTRAIT_LOG_COLLAPSE_DIMENSION_THRESHOLD
+  }
+  return height < LANDSCAPE_LOG_COLLAPSE_HEIGHT_THRESHOLD
+}
+
 function buildLayout(width: number, height: number, orientation: OrientationMode): SceneLayout {
-  const minDimension = Math.max(1, Math.min(width, height))
-  const isCompact = minDimension < 700
+  const safeWidth = width > 0 ? width : 1
+  const safeHeight = height > 0 ? height : 1
+  const minDimension = Math.min(safeWidth, safeHeight)
+  const isCompact = minDimension < COMPACT_DIMENSION_THRESHOLD
   const margin = clamp(minDimension * 0.02, 10, 28)
   const bodyFontPx = clamp(minDimension * 0.018, 12, 18)
   const smallFontPx = clamp(bodyFontPx * 0.86, 10, 16)
@@ -102,12 +115,12 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const smallFontSize = `${Math.round(smallFontPx)}px`
   const actionButtonHeight = clamp(minDimension * 0.05, 32, 48)
   const actionButtonWidth = clamp(
-    width * (orientation === 'vertical' ? 0.36 : 0.24),
+    safeWidth * (orientation === 'vertical' ? 0.36 : 0.24),
     150,
     orientation === 'vertical' ? 320 : 260,
   )
   const actionButtonGap = clamp(actionButtonHeight * 0.2, 6, 12)
-  const cardWidth = clamp(width * (orientation === 'vertical' ? 0.15 : 0.11), 70, 132)
+  const cardWidth = clamp(safeWidth * (orientation === 'vertical' ? 0.15 : 0.11), 70, 132)
   const cardHeight = clamp(cardWidth * 1.35, 98, 182)
   const cardGap = clamp(cardWidth * 1.08, 76, 170)
 
@@ -118,7 +131,7 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const summaryTopY = headerTop + headerHeight + clamp(minDimension * 0.01, 8, 16)
   const summaryBlockGap = clamp(bodyFontPx * 4.4, 58, 92)
   const battlefieldTopY = summaryTopY + summaryBlockGap * 2 + clamp(minDimension * 0.012, 8, 18)
-  const battlefieldHeight = clamp(height * (orientation === 'vertical' ? 0.22 : 0.28), cardHeight * 1.9, height * 0.36)
+  const battlefieldHeight = clamp(safeHeight * (orientation === 'vertical' ? 0.22 : 0.28), cardHeight * 1.9, safeHeight * 0.36)
   const battlefieldTopRowY = battlefieldTopY + battlefieldHeight * 0.34
   const battlefieldBottomRowY = battlefieldTopY + battlefieldHeight * 0.74
   const handActorY = battlefieldTopY + battlefieldHeight + clamp(minDimension * 0.017, 12, 26)
@@ -130,17 +143,15 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const statusBottomOffset = clamp(minDimension * 0.018, 14, 24)
   const statusLineReservedHeight = smallFontPx + 12
   const logBottomPadding = margin + 24 + statusBottomOffset + statusLineReservedHeight
-  const logAvailableHeight = height - logTopY - logBottomPadding
+  const logAvailableHeight = safeHeight - logTopY - logBottomPadding
   const logHeight = Math.max(0, logAvailableHeight)
-  const popupMaxWidth = Math.min(width - margin * 2, orientation === 'vertical' ? 520 : 760)
+  const popupMaxWidth = Math.min(safeWidth - margin * 2, orientation === 'vertical' ? 520 : 760)
   const popupButtonHeight = clamp(actionButtonHeight * 1.05, 36, 48)
-  const preferCollapsedLog = orientation === 'vertical'
-    ? height < 920 || minDimension < 760
-    : height < 660
+  const preferCollapsedLog = isLogCollapsePreferred(orientation, safeHeight, minDimension)
 
   return {
-    width,
-    height,
+    width: safeWidth,
+    height: safeHeight,
     orientation,
     isCompact,
     preferCollapsedLog,
@@ -228,8 +239,8 @@ class CardgameScene extends Phaser.Scene {
 
   private orientationButtonLabel(): string {
     return this.rendererRef.orientationMode === 'vertical'
-      ? 'Switch to horizontal'
-      : 'Switch to vertical'
+      ? 'Switch to landscape'
+      : 'Switch to portrait'
   }
 
   create(): void {
@@ -878,8 +889,8 @@ export class PhaserRenderer implements AppRenderer {
     this.scene = new CardgameScene(this)
     this.game = new Phaser.Game({
       type: Phaser.AUTO,
-      width: Math.max(1, canvasHost.clientWidth || BASE_WIDTH),
-      height: Math.max(1, canvasHost.clientHeight || BASE_HEIGHT),
+      width: canvasHost.clientWidth > 0 ? canvasHost.clientWidth : BASE_WIDTH,
+      height: canvasHost.clientHeight > 0 ? canvasHost.clientHeight : BASE_HEIGHT,
       parent: canvasHost,
       backgroundColor: '#0b1020',
       scene: [this.scene],
