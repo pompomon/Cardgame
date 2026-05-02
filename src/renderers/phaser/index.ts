@@ -148,9 +148,7 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const logHeight = Math.max(0, logAvailableHeight)
   const popupAvailableWidth = Math.max(0, safeWidth - margin * 2)
   const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
-  const popupMaxWidth = popupAvailableWidth < POPUP_MIN_WIDTH
-    ? popupTargetWidth
-    : Math.max(POPUP_MIN_WIDTH, popupTargetWidth)
+  const popupMaxWidth = Math.min(popupAvailableWidth, Math.max(POPUP_MIN_WIDTH, popupTargetWidth))
   const popupButtonHeight = clamp(actionButtonHeight * 1.05, 36, 48)
   const preferCollapsedLog = isLogCollapsePreferred(orientation, safeHeight, minDimension)
 
