@@ -133,6 +133,13 @@ function cardStyleForLand(name: string): CardStyle {
   }
 }
 
+function calculateOptionGap(optionCount: number, preferredGap: number, availableHeight: number): number {
+  if (optionCount <= 1) {
+    return 0
+  }
+  return Math.min(preferredGap, availableHeight / (optionCount - 1))
+}
+
 class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRenderer
   private rootContainer: Phaser.GameObjects.Container | null = null
@@ -250,7 +257,7 @@ class CardgameScene extends Phaser.Scene {
     const gap = Math.min(this.currentLayout.cardGap, maxGap)
     const usedWidth = gap * (count - 1)
     const availableWidth = maxX - minX
-    const startX = minX + (availableWidth - usedWidth) / 2
+    const startX = minX + (availableWidth - usedWidth) / 2 // Center the card spread inside the available board width.
     return startX + index * gap
   }
 
@@ -585,7 +592,7 @@ class CardgameScene extends Phaser.Scene {
     const optionsStartY = -popupHeight / 2 + popupPadding + titleHeight
     const cancelY = popupHeight / 2 - popupPadding - cancelHeight / 2
     const availableHeight = Math.max(0, cancelY - optionsStartY - this.currentLayout.popupButtonHeight / 2)
-    const optionGap = optionCount > 1 ? Math.min(optionGapPreferred, availableHeight / (optionCount - 1)) : 0
+    const optionGap = calculateOptionGap(optionCount, optionGapPreferred, availableHeight)
 
     options.slice(0, MAX_TARGET_OPTIONS).forEach((option, index) => {
       const button = this.createButton(option.label, 0, optionsStartY + index * optionGap, () => {
