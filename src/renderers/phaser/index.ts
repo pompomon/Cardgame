@@ -8,6 +8,7 @@ const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const MOBILE_BREAKPOINT = 960
 // Current UI design intentionally supports up to 5 clearly tappable options in the target picker.
+// If more exist, only the first 5 are shown with an in-popup notice.
 const MAX_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 
@@ -225,15 +226,9 @@ class CardgameScene extends Phaser.Scene {
     })
 
     this.scale.on('resize', () => {
-      const wasCompact = this.currentLayout.isCompact
-      this.updateLayout()
-      if (!this.logPreferenceSet && wasCompact !== this.currentLayout.isCompact) {
-        this.logCollapsed = this.currentLayout.isCompact
-      }
       this.renderView(this.rendererRef.currentView)
     })
 
-    this.logCollapsed = this.currentLayout.isCompact
     this.renderView(this.rendererRef.currentView)
   }
 
@@ -306,7 +301,7 @@ class CardgameScene extends Phaser.Scene {
       color: '#e5ecf5',
       fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
-      wordWrap: { width: width - BUTTON_TEXT_HORIZONTAL_PADDING },
+      wordWrap: { width: Math.max(40, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
     button.setSize(width, height)
