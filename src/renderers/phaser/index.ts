@@ -970,27 +970,45 @@ export class PhaserRenderer implements AppRenderer {
             </div>
           </div>
         `
-        this.p2pOverlay.querySelector('#phaser-settings-toggle')?.addEventListener('click', () => {
-          this.setP2POverlayOpen(true)
-        })
-        this.p2pOverlay.querySelector('#phaser-settings-close')?.addEventListener('click', () => {
-          this.setP2POverlayOpen(false)
-        })
-        this.p2pOverlay.querySelector('.phaser-settings-backdrop')?.addEventListener('click', (event) => {
-          if (event.target === event.currentTarget) {
+        const settingsToggle = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-toggle')
+        if (settingsToggle) {
+          settingsToggle.onclick = () => {
+            this.setP2POverlayOpen(true)
+          }
+        }
+        const settingsClose = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-close')
+        if (settingsClose) {
+          settingsClose.onclick = () => {
             this.setP2POverlayOpen(false)
           }
-        })
-        this.p2pOverlay.querySelector('#phaser-create-offer')?.addEventListener('click', () => {
-          void this.controller?.createOffer()
-        })
-        this.p2pOverlay.querySelector('#phaser-accept-answer')?.addEventListener('click', () => {
-          const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-answer')?.value ?? ''
-          void this.controller?.acceptAnswer(value)
-        })
-        this.p2pOverlay.querySelector('#phaser-start')?.addEventListener('click', () => {
-          this.controller?.startP2PGame()
-        })
+        }
+        const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
+        if (settingsBackdrop) {
+          settingsBackdrop.onclick = (event: MouseEvent) => {
+            if (event.target === event.currentTarget) {
+              this.setP2POverlayOpen(false)
+            }
+          }
+        }
+        const createOfferButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-create-offer')
+        if (createOfferButton) {
+          createOfferButton.onclick = () => {
+            void this.controller?.createOffer()
+          }
+        }
+        const acceptAnswerButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-accept-answer')
+        if (acceptAnswerButton) {
+          acceptAnswerButton.onclick = () => {
+            const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-answer')?.value ?? ''
+            void this.controller?.acceptAnswer(value)
+          }
+        }
+        const startButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-start')
+        if (startButton) {
+          startButton.onclick = () => {
+            this.controller?.startP2PGame()
+          }
+        }
         this.p2pOverlayMode = 'host'
         this.setP2POverlayOpen(false)
       }
@@ -1015,21 +1033,33 @@ export class PhaserRenderer implements AppRenderer {
           </div>
         </div>
       `
-      this.p2pOverlay.querySelector('#phaser-settings-toggle')?.addEventListener('click', () => {
-        this.setP2POverlayOpen(true)
-      })
-      this.p2pOverlay.querySelector('#phaser-settings-close')?.addEventListener('click', () => {
-        this.setP2POverlayOpen(false)
-      })
-      this.p2pOverlay.querySelector('.phaser-settings-backdrop')?.addEventListener('click', (event) => {
-        if (event.target === event.currentTarget) {
+      const settingsToggle = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-toggle')
+      if (settingsToggle) {
+        settingsToggle.onclick = () => {
+          this.setP2POverlayOpen(true)
+        }
+      }
+      const settingsClose = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-close')
+      if (settingsClose) {
+        settingsClose.onclick = () => {
           this.setP2POverlayOpen(false)
         }
-      })
-      this.p2pOverlay.querySelector('#phaser-create-answer')?.addEventListener('click', () => {
-        const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
-        void this.controller?.createAnswer(value)
-      })
+      }
+      const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
+      if (settingsBackdrop) {
+        settingsBackdrop.onclick = (event: MouseEvent) => {
+          if (event.target === event.currentTarget) {
+            this.setP2POverlayOpen(false)
+          }
+        }
+      }
+      const createAnswerButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-create-answer')
+      if (createAnswerButton) {
+        createAnswerButton.onclick = () => {
+          const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
+          void this.controller?.createAnswer(value)
+        }
+      }
       this.p2pOverlayMode = 'join'
       this.setP2POverlayOpen(false)
     }
