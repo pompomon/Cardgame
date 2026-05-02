@@ -2,15 +2,9 @@ import { chooseAiAction } from '../game/ai'
 import { applyAction, canAct, createInitialGame } from '../game/engine'
 import type { GameAction } from '../game/types'
 import { P2PLink } from '../net/p2p'
+import { activeActor } from './active-actor'
 import { buildViewModel } from './view-model'
 import type { AppState, AppViewModel, Mode, RendererKind } from './types'
-
-function activeActor(game: NonNullable<AppState['game']>): number {
-  if (game.phase === 'respond' && game.pendingLandPlay) {
-    return game.pendingLandPlay.actor === 0 ? 1 : 0
-  }
-  return game.currentPlayer
-}
 
 function isSeedPayload(payload: unknown): payload is { seed: number } {
   if (typeof payload !== 'object' || payload === null) {

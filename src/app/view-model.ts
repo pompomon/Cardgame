@@ -1,13 +1,7 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
+import { activeActor } from './active-actor'
 import type { AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
-
-function activeActor(game: GameState): number {
-  if (game.phase === 'respond' && game.pendingLandPlay) {
-    return game.pendingLandPlay.actor === 0 ? 1 : 0
-  }
-  return game.currentPlayer
-}
 
 function winnerTextFor(game: GameState): string {
   if (game.winner === null) {

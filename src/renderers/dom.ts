@@ -35,11 +35,13 @@ function renderLobby(view: AppViewModel): string {
   `
 }
 
-function renderP2P(view: AppViewModel): string {
+function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: string): string {
   const host = view.mode === 'p2p-host'
   const safeStatus = escapeHtml(view.status)
   const safeOffer = escapeHtml(view.offer)
   const safeAnswer = escapeHtml(view.answer)
+  const safeHostAnswerDraft = escapeHtml(hostAnswerDraft)
+  const safeJoinOfferDraft = escapeHtml(joinOfferDraft)
 
   return `
     <section class="panel">
@@ -49,13 +51,13 @@ function renderP2P(view: AppViewModel): string {
         ${
            host
              ? `<button id="create-offer">Create Offer</button>
-               <textarea id="offer-text" placeholder="Offer" readonly>${safeOffer}</textarea>
-               <textarea id="answer-text" placeholder="Paste remote answer"></textarea>
-               <button id="accept-answer">Accept Answer</button>
-               <button id="start-p2p-game">Start Game</button>`
-             : `<textarea id="join-offer-text" placeholder="Paste host offer"></textarea>
-               <button id="create-answer">Create Answer</button>
-               <textarea id="join-answer-text" placeholder="Answer" readonly>${safeAnswer}</textarea>`
+                <textarea id="offer-text" placeholder="Offer" readonly>${safeOffer}</textarea>
+                <textarea id="answer-text" placeholder="Paste remote answer">${safeHostAnswerDraft}</textarea>
+                <button id="accept-answer">Accept Answer</button>
+                <button id="start-p2p-game">Start Game</button>`
+              : `<textarea id="join-offer-text" placeholder="Paste host offer">${safeJoinOfferDraft}</textarea>
+                <button id="create-answer">Create Answer</button>
+                <textarea id="join-answer-text" placeholder="Answer" readonly>${safeAnswer}</textarea>`
          }
        </div>
       <p class="status">${safeStatus}</p>
@@ -158,6 +160,8 @@ export class DomRenderer implements AppRenderer {
   private container: HTMLElement | null = null
   private controller: ControllerApi | null = null
   private view: AppViewModel | null = null
+  private hostAnswerDraft = ''
+  private joinOfferDraft = ''
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -170,10 +174,25 @@ export class DomRenderer implements AppRenderer {
       return
     }
 
+    const existingHostAnswer = this.container.querySelector<HTMLTextAreaElement>('#answer-text')?.value
+    if (existingHostAnswer !== undefined) {
+      this.hostAnswerDraft = existingHostAnswer
+    }
+    const existingJoinOffer = this.container.querySelector<HTMLTextAreaElement>('#join-offer-text')?.value
+    if (existingJoinOffer !== undefined) {
+      this.joinOfferDraft = existingJoinOffer
+    }
+    if (view.mode !== 'p2p-host') {
+      this.hostAnswerDraft = ''
+    }
+    if (view.mode !== 'p2p-join') {
+      this.joinOfferDraft = ''
+    }
+
     this.container.innerHTML = `
       <main class="app-shell">
         ${renderLobby(view)}
-        ${view.mode === 'p2p-host' || view.mode === 'p2p-join' ? renderP2P(view) : ''}
+        ${view.mode === 'p2p-host' || view.mode === 'p2p-join' ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
         ${view.game ? renderGame(view) : ''}
       </main>
     `
@@ -188,6 +207,8 @@ export class DomRenderer implements AppRenderer {
     this.container = null
     this.controller = null
     this.view = null
+    this.hostAnswerDraft = ''
+    this.joinOfferDraft = ''
   }
 
   private bindEvents(): void {

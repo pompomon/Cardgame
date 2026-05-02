@@ -319,6 +319,7 @@ export class PhaserRenderer implements AppRenderer {
   private scene: CardgameScene | null = null
   currentView: AppViewModel | null = null
   private p2pOverlay: HTMLDivElement | null = null
+  private p2pOverlayMode: 'host' | 'join' | null = null
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -361,6 +362,7 @@ export class PhaserRenderer implements AppRenderer {
   unmount(): void {
     this.p2pOverlay?.remove()
     this.p2pOverlay = null
+    this.p2pOverlayMode = null
 
     this.game?.destroy(true)
     this.game = null
@@ -380,58 +382,67 @@ export class PhaserRenderer implements AppRenderer {
     }
 
     if (view.mode !== 'p2p-host' && view.mode !== 'p2p-join') {
-      this.p2pOverlay.innerHTML = ''
+      if (this.p2pOverlayMode !== null) {
+        this.p2pOverlay.innerHTML = ''
+      }
       this.p2pOverlay.style.display = 'none'
+      this.p2pOverlayMode = null
       return
     }
 
     this.p2pOverlay.style.display = 'block'
 
     if (view.mode === 'p2p-host') {
-      this.p2pOverlay.innerHTML = `
-        <div class="panel">
-          <h3>P2P Host Signaling</h3>
-          <button id="phaser-create-offer">Create Offer</button>
-          <textarea id="phaser-offer" readonly></textarea>
-          <textarea id="phaser-answer" placeholder="Paste remote answer"></textarea>
-          <button id="phaser-accept-answer">Accept Answer</button>
-          <button id="phaser-start">Start Game</button>
-        </div>
-      `
+      if (this.p2pOverlayMode !== 'host') {
+        this.p2pOverlay.innerHTML = `
+          <div class="panel">
+            <h3>P2P Host Signaling</h3>
+            <button id="phaser-create-offer">Create Offer</button>
+            <textarea id="phaser-offer" readonly></textarea>
+            <textarea id="phaser-answer" placeholder="Paste remote answer"></textarea>
+            <button id="phaser-accept-answer">Accept Answer</button>
+            <button id="phaser-start">Start Game</button>
+          </div>
+        `
+        this.p2pOverlay.querySelector('#phaser-create-offer')?.addEventListener('click', () => {
+          void this.controller?.createOffer()
+        })
+        this.p2pOverlay.querySelector('#phaser-accept-answer')?.addEventListener('click', () => {
+          const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-answer')?.value ?? ''
+          void this.controller?.acceptAnswer(value)
+        })
+        this.p2pOverlay.querySelector('#phaser-start')?.addEventListener('click', () => {
+          this.controller?.startP2PGame()
+        })
+        this.p2pOverlayMode = 'host'
+      }
+
       const offerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-offer')
       if (offerField) {
         offerField.value = view.offer
       }
-
-      this.p2pOverlay.querySelector('#phaser-create-offer')?.addEventListener('click', () => {
-        void this.controller?.createOffer()
-      })
-      this.p2pOverlay.querySelector('#phaser-accept-answer')?.addEventListener('click', () => {
-        const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-answer')?.value ?? ''
-        void this.controller?.acceptAnswer(value)
-      })
-      this.p2pOverlay.querySelector('#phaser-start')?.addEventListener('click', () => {
-        this.controller?.startP2PGame()
-      })
       return
     }
 
-    this.p2pOverlay.innerHTML = `
-      <div class="panel">
-        <h3>P2P Join Signaling</h3>
-        <textarea id="phaser-join-offer" placeholder="Paste host offer"></textarea>
-        <button id="phaser-create-answer">Create Answer</button>
-        <textarea id="phaser-join-answer" readonly></textarea>
-      </div>
-    `
+    if (this.p2pOverlayMode !== 'join') {
+      this.p2pOverlay.innerHTML = `
+        <div class="panel">
+          <h3>P2P Join Signaling</h3>
+          <textarea id="phaser-join-offer" placeholder="Paste host offer"></textarea>
+          <button id="phaser-create-answer">Create Answer</button>
+          <textarea id="phaser-join-answer" readonly></textarea>
+        </div>
+      `
+      this.p2pOverlay.querySelector('#phaser-create-answer')?.addEventListener('click', () => {
+        const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
+        void this.controller?.createAnswer(value)
+      })
+      this.p2pOverlayMode = 'join'
+    }
+
     const answerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-join-answer')
     if (answerField) {
       answerField.value = view.answer
     }
-
-    this.p2pOverlay.querySelector('#phaser-create-answer')?.addEventListener('click', () => {
-      const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
-      void this.controller?.createAnswer(value)
-    })
   }
 }
