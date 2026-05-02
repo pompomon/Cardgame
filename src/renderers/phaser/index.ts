@@ -701,8 +701,8 @@ class CardgameScene extends Phaser.Scene {
         localY: number,
         event: Phaser.Types.Input.EventData,
       ): void => {
-        const isPointerInViewportBounds = Math.abs(localX) <= buttonWidth / 2 && Math.abs(localY) <= optionsAreaHeight / 2
-        if (!isPointerInViewportBounds || !isPointerWithinOptions(pointer)) {
+        const isPointerWithinViewport = Math.abs(localX) <= buttonWidth / 2 && Math.abs(localY) <= optionsAreaHeight / 2
+        if (!isPointerWithinViewport || !isPointerWithinOptions(pointer)) {
           return
         }
         event.stopPropagation()
