@@ -73,6 +73,15 @@ function renderGame(view: AppViewModel): string {
   const actorState = game.actor === 0 ? p1 : p2
   const safeStatus = escapeHtml(view.status)
   const safeWinnerText = escapeHtml(game.winnerText)
+  const renderPlayLandButton = (option: {
+    action: { cardId: string; effectTargetId?: string }
+    label: string
+  }): string => {
+    const targetAttr = option.action.effectTargetId
+      ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
+      : ''
+    return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${escapeHtml(option.label)}</button>`
+  }
 
   const mainControls = game.canInput && game.phase === 'main'
     ? `
@@ -84,7 +93,7 @@ function renderGame(view: AppViewModel): string {
             if (!options || options.length === 0) {
               return ''
             }
-            return options.map((option) => `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}" ${option.action.effectTargetId ? `data-target-id="${escapeHtml(option.action.effectTargetId)}"` : ''}>${escapeHtml(option.label)}</button>`).join('')
+            return options.map((option) => renderPlayLandButton(option)).join('')
           }).join('')}
         </div>
         ${game.legal.canEndTurn ? '<button data-action="end_turn">End Turn</button>' : ''}
