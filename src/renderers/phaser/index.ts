@@ -10,7 +10,6 @@ const MOBILE_BREAKPOINT = 960
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
-const SCROLL_DRAG_MULTIPLIER = 1
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -673,7 +672,7 @@ class CardgameScene extends Phaser.Scene {
         if (dragPointerId !== pointer.id) {
           return
         }
-        const deltaY = (lastDragY - pointer.worldY) * SCROLL_DRAG_MULTIPLIER
+        const deltaY = lastDragY - pointer.worldY
         applyScroll(deltaY)
         lastDragY = pointer.worldY
       }
