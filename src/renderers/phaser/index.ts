@@ -7,7 +7,9 @@ import type { AppRenderer } from '../types'
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const MOBILE_BREAKPOINT = 960
+// Current UI design intentionally supports up to 5 clearly tappable options in the target picker.
 const MAX_TARGET_OPTIONS = 5
+const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 
 interface CardStyle {
   fill: number
@@ -133,11 +135,20 @@ function cardStyleForLand(name: string): CardStyle {
   }
 }
 
-function calculateOptionGap(optionCount: number, preferredGap: number, availableHeight: number): number {
+function calculateOptionGap(
+  optionCount: number,
+  preferredGap: number,
+  availableHeight: number,
+  buttonHeight: number,
+): number {
   if (optionCount <= 1) {
     return 0
   }
-  return Math.min(preferredGap, availableHeight / (optionCount - 1))
+  const remainingSpace = availableHeight - buttonHeight * optionCount
+  if (remainingSpace <= 0) {
+    return 0
+  }
+  return Math.min(preferredGap, remainingSpace / (optionCount - 1))
 }
 
 class CardgameScene extends Phaser.Scene {
@@ -295,7 +306,7 @@ class CardgameScene extends Phaser.Scene {
       color: '#e5ecf5',
       fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
-      wordWrap: { width: width - 24 },
+      wordWrap: { width: width - BUTTON_TEXT_HORIZONTAL_PADDING },
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
     button.setSize(width, height)
@@ -591,11 +602,13 @@ class CardgameScene extends Phaser.Scene {
 
     const optionsStartY = -popupHeight / 2 + popupPadding + titleHeight
     const cancelY = popupHeight / 2 - popupPadding - cancelHeight / 2
-    const availableHeight = Math.max(0, cancelY - optionsStartY - this.currentLayout.popupButtonHeight)
-    const optionGap = calculateOptionGap(optionCount, optionGapPreferred, availableHeight)
+    const optionsBottomY = cancelY - cancelHeight / 2 - 8
+    const availableHeight = Math.max(0, optionsBottomY - optionsStartY)
+    const optionGap = calculateOptionGap(optionCount, optionGapPreferred, availableHeight, this.currentLayout.popupButtonHeight)
+    const firstOptionCenterY = optionsStartY + this.currentLayout.popupButtonHeight / 2
 
     options.slice(0, MAX_TARGET_OPTIONS).forEach((option, index) => {
-      const button = this.createButton(option.label, 0, optionsStartY + index * optionGap, () => {
+      const button = this.createButton(option.label, 0, firstOptionCenterY + index * (this.currentLayout.popupButtonHeight + optionGap), () => {
         const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
         if (action) {
           this.rendererRef.controller?.submitAction(action)
@@ -604,6 +617,13 @@ class CardgameScene extends Phaser.Scene {
       }, buttonWidth, this.currentLayout.popupButtonHeight)
       overlay.add(button)
     })
+
+    if (options.length > MAX_TARGET_OPTIONS) {
+      overlay.add(this.add.text(0, cancelY - cancelHeight / 2 - 14, `Showing first ${MAX_TARGET_OPTIONS} targets.`, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+      }).setOrigin(0.5))
+    }
 
     const cancelButton = this.createButton('Cancel', 0, cancelY, () => {
       overlay.destroy(true)
