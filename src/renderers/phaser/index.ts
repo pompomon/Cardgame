@@ -148,7 +148,9 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const logHeight = Math.max(0, logAvailableHeight)
   const popupAvailableWidth = Math.max(0, safeWidth - margin * 2)
   const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
-  const popupMaxWidth = Math.max(POPUP_MIN_WIDTH, popupTargetWidth)
+  const popupMaxWidth = popupAvailableWidth < POPUP_MIN_WIDTH
+    ? popupTargetWidth
+    : Math.max(POPUP_MIN_WIDTH, popupTargetWidth)
   const popupButtonHeight = clamp(actionButtonHeight * 1.05, 36, 48)
   const preferCollapsedLog = isLogCollapsePreferred(orientation, safeHeight, minDimension)
 
@@ -233,10 +235,6 @@ class CardgameScene extends Phaser.Scene {
   }
 
   handleOrientationChange(): void {
-    const changed = this.updateLayout()
-    if (!this.logPreferenceSet && changed) {
-      this.logCollapsed = this.currentLayout.preferCollapsedLog
-    }
     this.renderView(this.rendererRef.currentView)
   }
 
@@ -681,8 +679,8 @@ class CardgameScene extends Phaser.Scene {
     const optionCount = showAllTargets ? options.length : Math.min(DEFAULT_TARGET_OPTIONS, options.length)
     const hasHiddenOptions = options.length > DEFAULT_TARGET_OPTIONS
     const popupPadding = this.currentLayout.isCompact ? 16 : 20
-    const popupWidth = this.currentLayout.popupMaxWidth
-    const buttonWidth = popupWidth - popupPadding * 2
+    const popupWidth = Math.max(0, this.currentLayout.popupMaxWidth)
+    const buttonWidth = Math.max(0, popupWidth - popupPadding * 2)
     const titleHeight = this.currentLayout.isCompact ? 44 : 56
     const optionGap = this.currentLayout.isCompact ? 8 : 10
     const cancelHeight = this.currentLayout.popupButtonHeight
