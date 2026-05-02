@@ -11,6 +11,9 @@ const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const MIN_BUTTON_TEXT_WIDTH = 40
 const SCROLL_WHEEL_MULTIPLIER = 0.8
+const POPUP_SECTION_GAP = 10
+const POPUP_BUTTON_GAP = 8
+const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 
 interface CardStyle {
   fill: number
@@ -564,12 +567,12 @@ class CardgameScene extends Phaser.Scene {
     const optionGap = this.currentLayout.isCompact ? 8 : 10
     const cancelHeight = this.currentLayout.popupButtonHeight
     const showAllButtonHeight = hasHiddenOptions ? cancelHeight : 0
-    const footerGap = hasHiddenOptions ? 8 : 0
+    const footerGap = hasHiddenOptions ? POPUP_BUTTON_GAP : 0
     const footerHeight = cancelHeight + footerGap + showAllButtonHeight
     const optionsHeightWanted = optionCount > 0
       ? optionCount * this.currentLayout.popupButtonHeight + Math.max(0, optionCount - 1) * optionGap
       : this.currentLayout.popupButtonHeight
-    const desiredHeight = titleHeight + optionsHeightWanted + footerHeight + popupPadding * 2 + 20
+    const desiredHeight = titleHeight + optionsHeightWanted + footerHeight + popupPadding * 2 + POPUP_SECTION_GAP * 2
     const maxHeight = this.currentLayout.height - this.currentLayout.margin * 2
     const popupHeight = Math.min(desiredHeight, maxHeight)
 
@@ -589,7 +592,7 @@ class CardgameScene extends Phaser.Scene {
 
     const optionsTopY = -popupHeight / 2 + popupPadding + titleHeight
     const footerTopY = popupHeight / 2 - popupPadding - footerHeight
-    const optionsAreaHeight = Math.max(48, footerTopY - optionsTopY - 10)
+    const optionsAreaHeight = Math.max(48, footerTopY - optionsTopY - POPUP_SECTION_GAP)
     const optionsViewportY = optionsTopY + optionsAreaHeight / 2
 
     const optionsViewportBackground = this.add.rectangle(0, optionsViewportY, buttonWidth, optionsAreaHeight, 0x0f1a3b, 0.4)
@@ -650,7 +653,7 @@ class CardgameScene extends Phaser.Scene {
         this.input.off('wheel', onWheel)
       })
 
-      overlay.add(this.add.text(buttonWidth / 2 - 10, optionsTopY + optionsAreaHeight / 2, '⇵', {
+      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, '⇵', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
       }).setOrigin(1, 0.5))
@@ -663,7 +666,7 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(cancelButton)
 
     if (hasHiddenOptions) {
-      const showAllY = cancelY + cancelHeight / 2 + 8 + showAllButtonHeight / 2
+      const showAllY = cancelY + cancelHeight / 2 + POPUP_BUTTON_GAP + showAllButtonHeight / 2
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
       const showAllButton = this.createButton(showAllLabel, 0, showAllY, () => {
         overlay.destroy(true)
