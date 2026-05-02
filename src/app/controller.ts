@@ -453,7 +453,7 @@ export class AppController implements ControllerApi {
     }
     this.state.mode = parsed.record.metadata.mode
     this.state.seed = parsed.record.metadata.seed
-    this.state.controllers = [parsed.record.metadata.controllers[0], parsed.record.metadata.controllers[1]]
+    this.state.controllers = parsed.record.metadata.controllers
     this.state.offer = ''
     this.state.answer = ''
     this.state.game = snapshotFromRecord(parsed.record, 0)
