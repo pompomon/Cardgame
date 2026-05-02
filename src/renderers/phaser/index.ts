@@ -695,17 +695,10 @@ class CardgameScene extends Phaser.Scene {
 
       let dragPointerId: number | null = null
       let lastDragY = 0
-      const handleViewportPointerDown = (
-        pointer: Phaser.Input.Pointer,
-        localX: number,
-        localY: number,
-        event: Phaser.Types.Input.EventData,
-      ): void => {
-        const isPointerWithinViewport = Math.abs(localX) <= buttonWidth / 2 && Math.abs(localY) <= optionsAreaHeight / 2
-        if (!isPointerWithinViewport || !isPointerWithinOptions(pointer)) {
+      const handleViewportPointerDown = (pointer: Phaser.Input.Pointer): void => {
+        if (!isPointerWithinOptions(pointer)) {
           return
         }
-        event.stopPropagation()
         dragPointerId = pointer.id
         lastDragY = pointer.worldY
       }
