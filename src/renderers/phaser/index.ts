@@ -937,6 +937,33 @@ export class PhaserRenderer implements AppRenderer {
     this.p2pOverlay?.classList.toggle('open', open)
   }
 
+  private bindP2PSettingsModalControls(): void {
+    if (!this.p2pOverlay) {
+      return
+    }
+
+    const settingsToggle = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-toggle')
+    if (settingsToggle) {
+      settingsToggle.onclick = () => {
+        this.setP2POverlayOpen(true)
+      }
+    }
+    const settingsClose = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-close')
+    if (settingsClose) {
+      settingsClose.onclick = () => {
+        this.setP2POverlayOpen(false)
+      }
+    }
+    const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
+    if (settingsBackdrop) {
+      settingsBackdrop.onclick = (event: MouseEvent) => {
+        if (event.target === event.currentTarget) {
+          this.setP2POverlayOpen(false)
+        }
+      }
+    }
+  }
+
   private renderP2POverlay(view: AppViewModel): void {
     if (!this.p2pOverlay) {
       return
@@ -970,26 +997,7 @@ export class PhaserRenderer implements AppRenderer {
             </div>
           </div>
         `
-        const settingsToggle = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-toggle')
-        if (settingsToggle) {
-          settingsToggle.onclick = () => {
-            this.setP2POverlayOpen(true)
-          }
-        }
-        const settingsClose = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-close')
-        if (settingsClose) {
-          settingsClose.onclick = () => {
-            this.setP2POverlayOpen(false)
-          }
-        }
-        const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
-        if (settingsBackdrop) {
-          settingsBackdrop.onclick = (event: MouseEvent) => {
-            if (event.target === event.currentTarget) {
-              this.setP2POverlayOpen(false)
-            }
-          }
-        }
+        this.bindP2PSettingsModalControls()
         const createOfferButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-create-offer')
         if (createOfferButton) {
           createOfferButton.onclick = () => {
@@ -1033,26 +1041,7 @@ export class PhaserRenderer implements AppRenderer {
           </div>
         </div>
       `
-      const settingsToggle = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-toggle')
-      if (settingsToggle) {
-        settingsToggle.onclick = () => {
-          this.setP2POverlayOpen(true)
-        }
-      }
-      const settingsClose = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-close')
-      if (settingsClose) {
-        settingsClose.onclick = () => {
-          this.setP2POverlayOpen(false)
-        }
-      }
-      const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
-      if (settingsBackdrop) {
-        settingsBackdrop.onclick = (event: MouseEvent) => {
-          if (event.target === event.currentTarget) {
-            this.setP2POverlayOpen(false)
-          }
-        }
-      }
+      this.bindP2PSettingsModalControls()
       const createAnswerButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-create-answer')
       if (createAnswerButton) {
         createAnswerButton.onclick = () => {
