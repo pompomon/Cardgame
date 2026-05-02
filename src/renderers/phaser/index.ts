@@ -4,8 +4,133 @@ import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import type { AppRenderer } from '../types'
 
-const WIDTH = 1280
-const HEIGHT = 820
+const BASE_WIDTH = 1280
+const BASE_HEIGHT = 820
+const MOBILE_BREAKPOINT = 960
+
+interface CardStyle {
+  fill: number
+  stroke: number
+  text: string
+}
+
+interface SceneLayout {
+  width: number
+  height: number
+  isCompact: boolean
+  margin: number
+  titleFontSize: string
+  subtitleFontSize: string
+  bodyFontSize: string
+  smallFontSize: string
+  headerTop: number
+  actionButtonWidth: number
+  actionButtonHeight: number
+  actionButtonGap: number
+  cardWidth: number
+  cardHeight: number
+  cardGap: number
+  summaryTopY: number
+  summaryBlockGap: number
+  battlefieldTopY: number
+  battlefieldHeight: number
+  battlefieldTopRowY: number
+  battlefieldBottomRowY: number
+  handActorY: number
+  handCardsY: number
+  controlsStartY: number
+  responseInfoY: number
+  logTopY: number
+  logHeight: number
+  logHeaderHeight: number
+  statusBottomOffset: number
+  popupMaxWidth: number
+  popupButtonHeight: number
+}
+
+function buildLayout(width: number, height: number): SceneLayout {
+  const isCompact = width < MOBILE_BREAKPOINT
+  const margin = isCompact ? 14 : 24
+  const titleFontSize = isCompact ? '22px' : '30px'
+  const subtitleFontSize = isCompact ? '15px' : '18px'
+  const bodyFontSize = isCompact ? '14px' : '16px'
+  const smallFontSize = isCompact ? '12px' : '14px'
+  const actionButtonWidth = isCompact ? 172 : 220
+  const actionButtonHeight = isCompact ? 34 : 38
+  const actionButtonGap = isCompact ? 8 : 10
+  const cardWidth = isCompact ? 88 : 110
+  const cardHeight = isCompact ? 120 : 145
+  const cardGap = isCompact ? 102 : 130
+  const summaryTopY = margin + (isCompact ? 66 : 94)
+  const summaryBlockGap = isCompact ? 70 : 82
+  const battlefieldTopY = summaryTopY + summaryBlockGap * 2 + (isCompact ? 24 : 16)
+  const battlefieldHeight = isCompact ? 190 : 230
+  const battlefieldTopRowY = battlefieldTopY + (isCompact ? 56 : 70)
+  const battlefieldBottomRowY = battlefieldTopY + (isCompact ? 128 : 160)
+  const handActorY = battlefieldTopY + battlefieldHeight + (isCompact ? 22 : 26)
+  const handCardsY = handActorY + (isCompact ? 68 : 82)
+  const controlsStartY = handActorY + (isCompact ? 24 : 32)
+  const responseInfoY = controlsStartY
+  const logTopY = handCardsY + cardHeight / 2 + (isCompact ? 16 : 22)
+  const logHeaderHeight = isCompact ? 34 : 40
+  const logBottomPadding = margin + 28
+  const logHeight = Math.max(80, height - logTopY - logBottomPadding)
+  const statusBottomOffset = isCompact ? 18 : 22
+  const popupMaxWidth = Math.min(width - margin * 2, isCompact ? 460 : 700)
+  const popupButtonHeight = isCompact ? 38 : 44
+
+  return {
+    width,
+    height,
+    isCompact,
+    margin,
+    titleFontSize,
+    subtitleFontSize,
+    bodyFontSize,
+    smallFontSize,
+    headerTop: margin,
+    actionButtonWidth,
+    actionButtonHeight,
+    actionButtonGap,
+    cardWidth,
+    cardHeight,
+    cardGap,
+    summaryTopY,
+    summaryBlockGap,
+    battlefieldTopY,
+    battlefieldHeight,
+    battlefieldTopRowY,
+    battlefieldBottomRowY,
+    handActorY,
+    handCardsY,
+    controlsStartY,
+    responseInfoY,
+    logTopY,
+    logHeight,
+    logHeaderHeight,
+    statusBottomOffset,
+    popupMaxWidth,
+    popupButtonHeight,
+  }
+}
+
+function cardStyleForLand(name: string): CardStyle {
+  const fallback: CardStyle = { fill: 0x132652, stroke: 0x4f6caa, text: '#e5ecf5' }
+  switch (name) {
+    case 'Forest':
+      return { fill: 0x19482c, stroke: 0x53a772, text: '#d6f9df' }
+    case 'Island':
+      return { fill: 0x173a66, stroke: 0x5f94d0, text: '#deebff' }
+    case 'Mountain':
+      return { fill: 0x5c2b1a, stroke: 0xbf6f4c, text: '#ffdfd1' }
+    case 'Plains':
+      return { fill: 0x695d31, stroke: 0xc8b872, text: '#fff8dd' }
+    case 'Swamp':
+      return { fill: 0x362148, stroke: 0x8a62af, text: '#f3e4ff' }
+    default:
+      return fallback
+  }
+}
 
 class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRenderer
@@ -13,6 +138,9 @@ class CardgameScene extends Phaser.Scene {
   private statusText: Phaser.GameObjects.Text | null = null
   private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
+  private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT)
+  private logCollapsed = false
+  private logPreferenceSet = false
 
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
@@ -30,7 +158,11 @@ class CardgameScene extends Phaser.Scene {
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
-    this.statusText = this.add.text(24, HEIGHT - 34, '', { color: '#9db0d9', fontSize: '16px' })
+    this.updateLayout()
+    this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.bodyFontSize,
+    })
 
     this.input.on('drag', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
       const draggable = object as Phaser.GameObjects.Container
@@ -73,12 +205,30 @@ class CardgameScene extends Phaser.Scene {
       this.showTargetPicker(game, cardId, resolution.options)
     })
 
+    this.scale.on('resize', () => {
+      const wasCompact = this.currentLayout.isCompact
+      this.updateLayout()
+      if (!this.logPreferenceSet && wasCompact !== this.currentLayout.isCompact) {
+        this.logCollapsed = this.currentLayout.isCompact
+      }
+      this.renderView(this.rendererRef.currentView)
+    })
+
+    this.logCollapsed = this.currentLayout.isCompact
     this.renderView(this.rendererRef.currentView)
+  }
+
+  private updateLayout(): void {
+    const width = this.scale.width || BASE_WIDTH
+    const height = this.scale.height || BASE_HEIGHT
+    this.currentLayout = buildLayout(width, height)
   }
 
   private setStatus(message: string): void {
     if (this.statusText) {
       this.statusText.setText(message)
+      this.statusText.setPosition(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset)
+      this.statusText.setFontSize(this.currentLayout.bodyFontSize)
     }
   }
 
@@ -88,10 +238,29 @@ class CardgameScene extends Phaser.Scene {
     this.battlefieldDropZone = null
   }
 
+  private xForCard(index: number, count: number): number {
+    if (count <= 1) {
+      return this.currentLayout.width / 2
+    }
+
+    const minX = this.currentLayout.margin + this.currentLayout.cardWidth / 2
+    const maxX = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.cardWidth / 2
+    const maxGap = (maxX - minX) / (count - 1)
+    const gap = Math.min(this.currentLayout.cardGap, maxGap)
+    const usedWidth = gap * (count - 1)
+    const startX = (this.currentLayout.width - usedWidth) / 2
+    return startX + index * gap
+  }
+
   renderView(view: AppViewModel | null): void {
+    this.updateLayout()
     this.clearRoot()
     if (!view || !this.rootContainer) {
       return
+    }
+
+    if (!this.logPreferenceSet) {
+      this.logCollapsed = this.currentLayout.isCompact
     }
 
     this.setStatus(view.status)
@@ -115,8 +284,9 @@ class CardgameScene extends Phaser.Scene {
     const background = this.add.rectangle(0, 0, width, height, 0x1c2f63).setStrokeStyle(1, 0x365092)
     const text = this.add.text(0, 0, label, {
       color: '#e5ecf5',
-      fontSize: '16px',
+      fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
+      wordWrap: { width: width - 24 },
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
     button.setSize(width, height)
@@ -126,8 +296,18 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private renderLobby(): void {
-    this.rootContainer?.add(this.add.text(24, 24, 'Basic Land Game (Phaser Renderer)', { color: '#e5ecf5', fontSize: '34px' }))
-    this.rootContainer?.add(this.add.text(24, 70, 'Land-only 2-player game with local AI and optional P2P mode.', { color: '#9db0d9', fontSize: '18px' }))
+    const left = this.currentLayout.margin
+    const top = this.currentLayout.margin
+
+    this.rootContainer?.add(this.add.text(left, top, 'Basic Land Game (Phaser Renderer)', {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.titleFontSize,
+    }))
+    this.rootContainer?.add(this.add.text(left, top + 44, 'Land-only 2-player game with local AI and optional P2P mode.', {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.subtitleFontSize,
+      wordWrap: { width: this.currentLayout.width - left * 2 },
+    }))
 
     const modes: Array<{ mode: Mode; label: string }> = [
       { mode: 'local-hvh', label: 'Local Human vs Human' },
@@ -137,18 +317,22 @@ class CardgameScene extends Phaser.Scene {
       { mode: 'p2p-join', label: 'P2P Join' },
     ]
 
+    const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
+    const modeStartY = top + 120
+    const modeGap = this.currentLayout.isCompact ? 46 : 58
+
     modes.forEach((entry, index) => {
       this.rootContainer?.add(
-        this.createButton(entry.label, 170, 150 + index * 58, () => {
+        this.createButton(entry.label, left + buttonWidth / 2, modeStartY + index * modeGap, () => {
           this.rendererRef.controller?.startGame(entry.mode)
-        }),
+        }, buttonWidth, this.currentLayout.isCompact ? 38 : 44),
       )
     })
 
     this.rootContainer?.add(
-      this.createButton('Switch to DOM renderer', 190, 500, () => {
+      this.createButton('Switch to DOM renderer', left + buttonWidth / 2, modeStartY + modes.length * modeGap + 24, () => {
         window.location.search = '?renderer=dom'
-      }, 280),
+      }, buttonWidth, this.currentLayout.isCompact ? 38 : 42),
     )
   }
 
@@ -157,52 +341,91 @@ class CardgameScene extends Phaser.Scene {
     if (!game) {
       return
     }
-    this.rootContainer?.add(this.add.text(24, 16, `Turn ${game.turn} • Phase: ${game.phase}`, { color: '#e5ecf5', fontSize: '28px' }))
-    this.rootContainer?.add(this.add.text(24, 52, game.winnerText, { color: '#f7d56b', fontSize: '18px' }))
 
-    this.rootContainer?.add(this.createButton('Back to Lobby', WIDTH - 160, 30, () => this.rendererRef.controller?.backToLobby(), 220, 38))
-    this.rootContainer?.add(this.createButton('Rematch', WIDTH - 160, 76, () => this.rendererRef.controller?.rematch(), 220, 38))
+    const left = this.currentLayout.margin
+    const headerRight = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2
+
+    this.rootContainer?.add(this.add.text(left, this.currentLayout.headerTop, `Turn ${game.turn} • Phase: ${game.phase}`, {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.titleFontSize,
+    }))
+    this.rootContainer?.add(this.add.text(left, this.currentLayout.headerTop + (this.currentLayout.isCompact ? 30 : 40), game.winnerText, {
+      color: '#f7d56b',
+      fontSize: this.currentLayout.subtitleFontSize,
+    }))
+
+    this.rootContainer?.add(this.createButton('Back to Lobby', headerRight, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, () => {
+      this.rendererRef.controller?.backToLobby()
+    }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight))
+    this.rootContainer?.add(this.createButton('Rematch', headerRight, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight + this.currentLayout.actionButtonGap + this.currentLayout.actionButtonHeight / 2, () => {
+      this.rendererRef.controller?.rematch()
+    }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight))
 
     this.renderPlayerSummaries(view)
     this.renderBattlefield(game)
     this.renderHandAndControls(game)
+    this.renderLog(game.log)
   }
 
   private renderPlayerSummaries(view: AppViewModel): void {
-    const p1 = view.game?.players[0]
-    const p2 = view.game?.players[1]
-    if (!p1 || !p2) {
+    const game = view.game
+    if (!game) {
       return
     }
 
-    const p1Text = this.add.text(24, 110, [
-      `Player 1 (${view.controllers[0]})`,
-      `Hand: ${p1.handCount} • Deck: ${p1.deckCount} • Graveyard: ${p1.graveyardCount}`,
-      `Battlefield: ${p1.battlefield.map((entry) => entry.name).join(', ') || 'None'}`,
-    ], { color: '#c6d4ef', fontSize: '16px' })
-    this.rootContainer?.add(p1Text)
+    const active = game.actor
+    const topPlayerIndex = active === 0 ? 1 : 0
+    const bottomPlayerIndex = active
+    const topPlayer = game.players[topPlayerIndex]
+    const bottomPlayer = game.players[bottomPlayerIndex]
 
-    const p2Text = this.add.text(24, 190, [
-      `Player 2 (${view.controllers[1]})`,
-      `Hand: ${p2.handCount} • Deck: ${p2.deckCount} • Graveyard: ${p2.graveyardCount}`,
-      `Battlefield: ${p2.battlefield.map((entry) => entry.name).join(', ') || 'None'}`,
-    ], { color: '#c6d4ef', fontSize: '16px' })
-    this.rootContainer?.add(p2Text)
+    const topSummary = this.add.text(this.currentLayout.margin, this.currentLayout.summaryTopY, [
+      `Top Board • Player ${topPlayerIndex + 1} (${view.controllers[topPlayerIndex]})`,
+      `Hand: ${topPlayer.handCount} • Deck: ${topPlayer.deckCount} • Graveyard: ${topPlayer.graveyardCount}`,
+      `Battlefield: ${topPlayer.battlefield.map((entry) => entry.name).join(', ') || 'None'}`,
+    ], { color: '#c6d4ef', fontSize: this.currentLayout.bodyFontSize })
+    this.rootContainer?.add(topSummary)
 
-    const log = view.game?.log ?? []
-    const logText = this.add.text(24, 605, ['Replay Log:', ...log], { color: '#9db0d9', fontSize: '14px' })
-    this.rootContainer?.add(logText)
+    const bottomSummary = this.add.text(this.currentLayout.margin, this.currentLayout.summaryTopY + this.currentLayout.summaryBlockGap, [
+      `Bottom Board • Player ${bottomPlayerIndex + 1} (${view.controllers[bottomPlayerIndex]})`,
+      `Hand: ${bottomPlayer.handCount} • Deck: ${bottomPlayer.deckCount} • Graveyard: ${bottomPlayer.graveyardCount}`,
+      `Battlefield: ${bottomPlayer.battlefield.map((entry) => entry.name).join(', ') || 'None'}`,
+    ], { color: '#c6d4ef', fontSize: this.currentLayout.bodyFontSize })
+    this.rootContainer?.add(bottomSummary)
   }
 
   private renderBattlefield(game: GameUiState): void {
-    const zoneBackground = this.add.rectangle(WIDTH / 2, 360, WIDTH - 60, 220, 0x0f1a3b).setStrokeStyle(2, 0x365092)
+    const zoneX = this.currentLayout.width / 2
+    const zoneY = this.currentLayout.battlefieldTopY + this.currentLayout.battlefieldHeight / 2
+    const zoneWidth = this.currentLayout.width - this.currentLayout.margin * 2
+
+    const zoneBackground = this.add.rectangle(zoneX, zoneY, zoneWidth, this.currentLayout.battlefieldHeight, 0x0f1a3b).setStrokeStyle(2, 0x365092)
     this.rootContainer?.add(zoneBackground)
 
-    const zoneTitle = this.add.text(40, 255, 'Battlefield (drop hand card here)', { color: '#e5ecf5', fontSize: '18px' })
-    this.rootContainer?.add(zoneTitle)
+    const title = this.currentLayout.isCompact
+      ? 'Battlefield (drop card here)'
+      : 'Battlefield (drop hand card here)'
 
-    const dropZone = this.add.zone(WIDTH / 2, 360, WIDTH - 60, 220)
-    dropZone.setRectangleDropZone(WIDTH - 60, 220)
+    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.battlefieldTopY - 28, title, {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.subtitleFontSize,
+    }))
+
+    const active = game.actor
+    const topPlayerIndex = active === 0 ? 1 : 0
+    const bottomPlayerIndex = active
+
+    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.battlefieldTopRowY - this.currentLayout.cardHeight / 2 - 18, `Top: Player ${topPlayerIndex + 1}`, {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.smallFontSize,
+    }))
+    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.battlefieldBottomRowY - this.currentLayout.cardHeight / 2 - 18, `Bottom (active): Player ${bottomPlayerIndex + 1}`, {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.smallFontSize,
+    }))
+
+    const dropZone = this.add.zone(zoneX, zoneY, zoneWidth, this.currentLayout.battlefieldHeight)
+    dropZone.setRectangleDropZone(zoneWidth, this.currentLayout.battlefieldHeight)
     dropZone.once(Phaser.GameObjects.Events.DESTROY, () => {
       if (this.battlefieldDropZone === dropZone) {
         this.battlefieldDropZone = null
@@ -211,22 +434,28 @@ class CardgameScene extends Phaser.Scene {
     this.battlefieldDropZone = dropZone
     this.rootContainer?.add(dropZone)
 
-    let x = 90
-    for (const card of game.players[0].battlefield) {
-      this.rootContainer?.add(this.renderStaticCard(x, 330, card.name, '#9dd7ff'))
-      x += 130
+    const topBattlefield = game.players[topPlayerIndex].battlefield
+    for (let index = 0; index < topBattlefield.length; index += 1) {
+      const card = topBattlefield[index]
+      this.rootContainer?.add(this.renderStaticCard(this.xForCard(index, topBattlefield.length), this.currentLayout.battlefieldTopRowY, card.name))
     }
 
-    x = 90
-    for (const card of game.players[1].battlefield) {
-      this.rootContainer?.add(this.renderStaticCard(x, 420, card.name, '#ffc99d'))
-      x += 130
+    const bottomBattlefield = game.players[bottomPlayerIndex].battlefield
+    for (let index = 0; index < bottomBattlefield.length; index += 1) {
+      const card = bottomBattlefield[index]
+      this.rootContainer?.add(this.renderStaticCard(this.xForCard(index, bottomBattlefield.length), this.currentLayout.battlefieldBottomRowY, card.name))
     }
   }
 
-  private renderStaticCard(x: number, y: number, label: string, textColor: string): Phaser.GameObjects.Container {
-    const rect = this.add.rectangle(0, 0, 110, 145, 0x132652).setStrokeStyle(1, 0x4f6caa)
-    const text = this.add.text(0, 0, label, { color: textColor, fontSize: '16px', align: 'center', wordWrap: { width: 100 } }).setOrigin(0.5)
+  private renderStaticCard(x: number, y: number, label: string): Phaser.GameObjects.Container {
+    const style = cardStyleForLand(label)
+    const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(1, style.stroke)
+    const text = this.add.text(0, 0, label, {
+      color: style.text,
+      fontSize: this.currentLayout.bodyFontSize,
+      align: 'center',
+      wordWrap: { width: this.currentLayout.cardWidth - 12 },
+    }).setOrigin(0.5)
     return this.add.container(x, y, [rect, text])
   }
 
@@ -235,17 +464,20 @@ class CardgameScene extends Phaser.Scene {
     const actorCards = game.players[actor].handCards
     const canDrag = game.canInput && game.phase === 'main'
 
-    this.rootContainer?.add(this.add.text(40, 470, `Actor: Player ${actor + 1} (${game.actorControl})`, { color: '#f0f4ff', fontSize: '18px' }))
+    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.handActorY, `Actor: Player ${actor + 1} (${game.actorControl})`, {
+      color: '#f0f4ff',
+      fontSize: this.currentLayout.subtitleFontSize,
+    }))
 
     actorCards.forEach((card, index) => {
-      const x = 90 + index * 130
-      const y = 550
-      const cardObject = this.renderStaticCard(x, y, card.name, '#ffffff')
+      const x = this.xForCard(index, actorCards.length)
+      const y = this.currentLayout.handCardsY
+      const cardObject = this.renderStaticCard(x, y, card.name)
       cardObject.setData('cardId', card.id)
       cardObject.setData('originX', x)
       cardObject.setData('originY', y)
       if (canDrag && game.legal.playLandByCard[card.id]) {
-        cardObject.setSize(110, 145)
+        cardObject.setSize(this.currentLayout.cardWidth, this.currentLayout.cardHeight)
         cardObject.setInteractive({ draggable: true, useHandCursor: true })
         this.input.setDraggable(cardObject)
       }
@@ -253,25 +485,67 @@ class CardgameScene extends Phaser.Scene {
     })
 
     if (game.canInput && game.phase === 'respond') {
-      this.rootContainer?.add(this.add.text(560, 480, `Opponent played ${game.pendingLandName ?? 'a land'}.`, { color: '#f0f4ff', fontSize: '16px' }))
+      this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.responseInfoY, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
+        color: '#f0f4ff',
+        fontSize: this.currentLayout.bodyFontSize,
+      }))
+
+      const controlsX = this.currentLayout.width - this.currentLayout.margin - (this.currentLayout.isCompact ? 210 : 230)
+      const buttonWidth = this.currentLayout.isCompact ? 400 : 440
+      const buttonHeight = this.currentLayout.isCompact ? 38 : 42
+      const startY = this.currentLayout.responseInfoY + 44
+
       game.legal.counterOptions.forEach((option, index) => {
-        this.rootContainer?.add(this.createButton(option.label, 820, 530 + index * 48, () => {
+        this.rootContainer?.add(this.createButton(option.label, controlsX, startY + index * (buttonHeight + 8), () => {
           this.rendererRef.controller?.submitAction(option.action)
-        }, 420, 42))
+        }, buttonWidth, buttonHeight))
       })
       if (game.legal.canPassResponse) {
-        this.rootContainer?.add(this.createButton('Pass', 820, 530 + game.legal.counterOptions.length * 48, () => {
+        this.rootContainer?.add(this.createButton('Pass', controlsX, startY + game.legal.counterOptions.length * (buttonHeight + 8), () => {
           this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor })
-        }, 420, 42))
+        }, buttonWidth, buttonHeight))
       }
       return
     }
 
     if (game.canInput && game.legal.canEndTurn && game.phase === 'main') {
-      this.rootContainer?.add(this.createButton('End Turn', 1110, 550, () => {
+      this.rootContainer?.add(this.createButton('End Turn', this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2, this.currentLayout.controlsStartY, () => {
         this.rendererRef.controller?.submitAction({ type: 'end_turn', actor: game.actor })
-      }, 220, 44))
+      }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight + 4))
     }
+  }
+
+  private renderLog(lines: string[]): void {
+    const headerWidth = this.currentLayout.isCompact ? 180 : 210
+    const headerX = this.currentLayout.margin + headerWidth / 2
+    const headerY = this.currentLayout.logTopY + this.currentLayout.logHeaderHeight / 2
+    const title = this.logCollapsed ? 'Replay Log ▸' : 'Replay Log ▾'
+
+    this.rootContainer?.add(this.createButton(title, headerX, headerY, () => {
+      this.logCollapsed = !this.logCollapsed
+      this.logPreferenceSet = true
+      this.renderView(this.rendererRef.currentView)
+    }, headerWidth, this.currentLayout.logHeaderHeight))
+
+    if (this.logCollapsed) {
+      return
+    }
+
+    const panelTop = this.currentLayout.logTopY + this.currentLayout.logHeaderHeight + 6
+    const panelHeight = Math.max(44, this.currentLayout.logHeight - this.currentLayout.logHeaderHeight - 6)
+    const panelWidth = this.currentLayout.width - this.currentLayout.margin * 2
+    const panelX = this.currentLayout.width / 2
+    const panelY = panelTop + panelHeight / 2
+
+    const background = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x0f1a3b).setStrokeStyle(1, 0x365092)
+    this.rootContainer?.add(background)
+
+    const logText = this.add.text(this.currentLayout.margin + 10, panelTop + 8, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.smallFontSize,
+      wordWrap: { width: panelWidth - 18 },
+    })
+    this.rootContainer?.add(logText)
   }
 
   private showTargetPicker(
@@ -281,30 +555,50 @@ class CardgameScene extends Phaser.Scene {
   ): void {
     this.pendingTargetPicker?.destroy(true)
 
-    const overlay = this.add.container(WIDTH / 2, HEIGHT / 2)
+    const optionCount = Math.max(1, Math.min(5, options.length))
+    const popupPadding = this.currentLayout.isCompact ? 16 : 20
+    const popupWidth = this.currentLayout.popupMaxWidth
+    const buttonWidth = popupWidth - popupPadding * 2
+    const titleHeight = this.currentLayout.isCompact ? 44 : 56
+    const optionGapPreferred = this.currentLayout.isCompact ? 48 : 56
+    const cancelHeight = this.currentLayout.popupButtonHeight
+    const desiredHeight = titleHeight + optionCount * optionGapPreferred + cancelHeight + popupPadding * 2
+    const maxHeight = this.currentLayout.height - this.currentLayout.margin * 2
+    const popupHeight = Math.min(desiredHeight, maxHeight)
+
+    const overlay = this.add.container(this.currentLayout.width / 2, this.currentLayout.height / 2)
     overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
       if (this.pendingTargetPicker === overlay) {
         this.pendingTargetPicker = null
       }
     })
-    const backdrop = this.add.rectangle(0, 0, 660, 360, 0x000000, 0.82).setStrokeStyle(2, 0x4f6caa)
-    overlay.add(backdrop)
-    overlay.add(this.add.text(0, -148, 'Choose target', { color: '#e5ecf5', fontSize: '24px' }).setOrigin(0.5))
 
-    options.forEach((option, index) => {
-      const button = this.createButton(option.label, 0, -84 + index * 56, () => {
+    const backdrop = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x000000, 0.82).setStrokeStyle(2, 0x4f6caa)
+    overlay.add(backdrop)
+    overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + titleHeight / 2, 'Choose target', {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.subtitleFontSize,
+    }).setOrigin(0.5))
+
+    const optionsStartY = -popupHeight / 2 + popupPadding + titleHeight
+    const cancelY = popupHeight / 2 - popupPadding - cancelHeight / 2
+    const availableHeight = Math.max(0, cancelY - optionsStartY - this.currentLayout.popupButtonHeight / 2)
+    const optionGap = optionCount > 1 ? Math.min(optionGapPreferred, availableHeight / (optionCount - 1)) : 0
+
+    options.slice(0, 5).forEach((option, index) => {
+      const button = this.createButton(option.label, 0, optionsStartY + index * optionGap, () => {
         const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
         if (action) {
           this.rendererRef.controller?.submitAction(action)
         }
         overlay.destroy(true)
-      }, 600, 44)
+      }, buttonWidth, this.currentLayout.popupButtonHeight)
       overlay.add(button)
     })
 
-    const cancelButton = this.createButton('Cancel', 0, 130, () => {
+    const cancelButton = this.createButton('Cancel', 0, cancelY, () => {
       overlay.destroy(true)
-    }, 220, 42)
+    }, Math.min(buttonWidth, 260), cancelHeight)
     overlay.add(cancelButton)
 
     this.pendingTargetPicker = overlay
@@ -338,8 +632,8 @@ export class PhaserRenderer implements AppRenderer {
     this.scene = new CardgameScene(this)
     this.game = new Phaser.Game({
       type: Phaser.AUTO,
-      width: WIDTH,
-      height: HEIGHT,
+      width: BASE_WIDTH,
+      height: BASE_HEIGHT,
       parent: canvasHost,
       backgroundColor: '#0b1020',
       scene: [this.scene],

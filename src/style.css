@@ -106,9 +106,17 @@ textarea {
 }
 
 .phaser-host {
-  width: 100%;
-  max-width: 1280px;
+  width: min(100%, 1280px);
   margin: 16px auto;
+  display: flex;
+  justify-content: center;
+}
+
+.phaser-host canvas {
+  width: 100% !important;
+  height: auto !important;
+  max-width: 1280px;
+  touch-action: none;
 }
 
 .phaser-p2p-overlay {
@@ -125,10 +133,24 @@ textarea {
   gap: 8px;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1200px) {
   .phaser-p2p-overlay {
     position: static;
     width: auto;
     margin: 8px;
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .phaser-host {
+    margin: 8px auto;
   }
 }
