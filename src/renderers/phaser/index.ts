@@ -962,12 +962,6 @@ export class PhaserRenderer implements AppRenderer {
         }
       }
     }
-    const settingsPanel = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-panel')
-    if (settingsPanel) {
-      settingsPanel.onclick = (event: MouseEvent) => {
-        event.stopPropagation()
-      }
-    }
   }
 
   private renderP2POverlay(view: AppViewModel): void {
