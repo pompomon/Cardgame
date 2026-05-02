@@ -9,6 +9,8 @@ const BASE_HEIGHT = 820
 const MOBILE_BREAKPOINT = 960
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
+const MIN_BUTTON_TEXT_WIDTH = 40
+const SCROLL_WHEEL_MULTIPLIER = 0.8
 
 interface CardStyle {
   fill: number
@@ -245,7 +247,7 @@ class CardgameScene extends Phaser.Scene {
     const gap = Math.min(this.currentLayout.cardGap, maxGap)
     const usedWidth = gap * (count - 1)
     const availableWidth = maxX - minX
-    const startX = minX + (availableWidth - usedWidth) / 2 // Center the card spread inside the available board width.
+    const startX = minX + (availableWidth - usedWidth) / 2 // Center the card spread inside the available battlefield width.
     return startX + index * gap
   }
 
@@ -283,7 +285,7 @@ class CardgameScene extends Phaser.Scene {
       color: '#e5ecf5',
       fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
-      wordWrap: { width: Math.max(40, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
+      wordWrap: { width: Math.max(MIN_BUTTON_TEXT_WIDTH, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
     button.setSize(width, height)
@@ -639,7 +641,7 @@ class CardgameScene extends Phaser.Scene {
         const withinX = localX >= -buttonWidth / 2 && localX <= buttonWidth / 2
         const withinY = localY >= optionsTopY && localY <= optionsTopY + optionsAreaHeight
         if (withinX && withinY) {
-          applyScroll(deltaY * 0.8)
+          applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
         }
       }
 
