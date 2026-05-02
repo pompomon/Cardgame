@@ -3,6 +3,15 @@ import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function rendererSwitchLink(kind: RendererKind): string {
   return kind === 'dom'
     ? '<a href="?renderer=phaser" class="renderer-link">Switch to Phaser renderer</a>'
@@ -28,6 +37,9 @@ function renderLobby(view: AppViewModel): string {
 
 function renderP2P(view: AppViewModel): string {
   const host = view.mode === 'p2p-host'
+  const safeStatus = escapeHtml(view.status)
+  const safeOffer = escapeHtml(view.offer)
+  const safeAnswer = escapeHtml(view.answer)
 
   return `
     <section class="panel">
@@ -35,18 +47,18 @@ function renderP2P(view: AppViewModel): string {
       <p>${host ? 'Host: create offer, share it, then paste answer.' : 'Join: paste host offer, create answer, and share answer.'}</p>
       <div class="signal-grid">
         ${
-          host
-            ? `<button id="create-offer">Create Offer</button>
-               <textarea id="offer-text" placeholder="Offer" readonly>${view.offer}</textarea>
+           host
+             ? `<button id="create-offer">Create Offer</button>
+               <textarea id="offer-text" placeholder="Offer" readonly>${safeOffer}</textarea>
                <textarea id="answer-text" placeholder="Paste remote answer"></textarea>
                <button id="accept-answer">Accept Answer</button>
                <button id="start-p2p-game">Start Game</button>`
-            : `<textarea id="join-offer-text" placeholder="Paste host offer"></textarea>
+             : `<textarea id="join-offer-text" placeholder="Paste host offer"></textarea>
                <button id="create-answer">Create Answer</button>
-               <textarea id="join-answer-text" placeholder="Answer" readonly>${view.answer}</textarea>`
-        }
-      </div>
-      <p class="status">${view.status}</p>
+               <textarea id="join-answer-text" placeholder="Answer" readonly>${safeAnswer}</textarea>`
+         }
+       </div>
+      <p class="status">${safeStatus}</p>
     </section>
   `
 }
@@ -59,6 +71,8 @@ function renderGame(view: AppViewModel): string {
 
   const [p1, p2] = game.players
   const actorState = game.actor === 0 ? p1 : p2
+  const safeStatus = escapeHtml(view.status)
+  const safeWinnerText = escapeHtml(game.winnerText)
 
   const mainControls = game.canInput && game.phase === 'main'
     ? `
@@ -70,7 +84,7 @@ function renderGame(view: AppViewModel): string {
             if (!options || options.length === 0) {
               return ''
             }
-            return options.map((option) => `<button data-action="play_land" data-card-id="${option.action.cardId}" ${option.action.effectTargetId ? `data-target-id="${option.action.effectTargetId}"` : ''}>${option.label}</button>`).join('')
+            return options.map((option) => `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}" ${option.action.effectTargetId ? `data-target-id="${escapeHtml(option.action.effectTargetId)}"` : ''}>${escapeHtml(option.label)}</button>`).join('')
           }).join('')}
         </div>
         ${game.legal.canEndTurn ? '<button data-action="end_turn">End Turn</button>' : ''}
@@ -82,9 +96,9 @@ function renderGame(view: AppViewModel): string {
     ? `
       <div class="controls">
         <h3>Response Window</h3>
-        <p>Opponent played ${game.pendingLandName ?? 'a land'}. Respond?</p>
+        <p>Opponent played ${escapeHtml(game.pendingLandName ?? 'a land')}. Respond?</p>
         <div class="action-row">
-          ${game.legal.counterOptions.map((option) => `<button data-action="counter_land" ${option.action.discardCardId ? `data-discard-card-id="${option.action.discardCardId}"` : ''}>${option.label}</button>`).join('')}
+          ${game.legal.counterOptions.map((option) => `<button data-action="counter_land" ${option.action.discardCardId ? `data-discard-card-id="${escapeHtml(option.action.discardCardId)}"` : ''}>${escapeHtml(option.label)}</button>`).join('')}
           ${game.legal.canPassResponse ? '<button data-action="pass_response">Pass</button>' : ''}
         </div>
       </div>
@@ -97,27 +111,27 @@ function renderGame(view: AppViewModel): string {
         <h2>Turn ${game.turn} • Phase: ${game.phase}</h2>
         <button id="back-to-lobby">Back to Lobby</button>
       </div>
-      <p class="status">${view.status}</p>
-      <p>${game.winnerText}</p>
+      <p class="status">${safeStatus}</p>
+      <p>${safeWinnerText}</p>
       <div class="board">
         <article class="player">
-          <h3>Player 1 (${view.controllers[0]})</h3>
+          <h3>Player 1 (${escapeHtml(view.controllers[0])})</h3>
           <p>Hand: ${p1.handCount} • Deck: ${p1.deckCount} • Graveyard: ${p1.graveyardCount}</p>
-          <p>Battlefield: ${p1.battlefield.map((entry) => entry.name).join(', ') || 'None'}</p>
-          <p>Hand cards: ${p1.handCards.map((card) => card.name).join(', ') || 'None'}</p>
+          <p>Battlefield: ${escapeHtml(p1.battlefield.map((entry) => entry.name).join(', ') || 'None')}</p>
+          <p>Hand cards: ${escapeHtml(p1.handCards.map((card) => card.name).join(', ') || 'None')}</p>
         </article>
         <article class="player">
-          <h3>Player 2 (${view.controllers[1]})</h3>
+          <h3>Player 2 (${escapeHtml(view.controllers[1])})</h3>
           <p>Hand: ${p2.handCount} • Deck: ${p2.deckCount} • Graveyard: ${p2.graveyardCount}</p>
-          <p>Battlefield: ${p2.battlefield.map((entry) => entry.name).join(', ') || 'None'}</p>
-          <p>Hand cards: ${p2.handCards.map((card) => card.name).join(', ') || 'None'}</p>
+          <p>Battlefield: ${escapeHtml(p2.battlefield.map((entry) => entry.name).join(', ') || 'None')}</p>
+          <p>Hand cards: ${escapeHtml(p2.handCards.map((card) => card.name).join(', ') || 'None')}</p>
         </article>
       </div>
       ${mainControls}
       ${responseControls}
       <div class="log">
         <h3>Replay Log</h3>
-        <ul>${game.log.map((line) => `<li>${line}</li>`).join('')}</ul>
+        <ul>${game.log.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
       </div>
       <div class="action-row">
         <button id="rematch">Rematch</button>

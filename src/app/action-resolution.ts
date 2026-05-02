@@ -6,8 +6,6 @@ export type DragDropResolution =
   | { kind: 'single'; action: Extract<GameAction, { type: 'play_land' }> }
   | {
       kind: 'needs_target'
-      actor: number
-      cardId: string
       options: Array<{ effectTargetId?: string; label: string }>
     }
 
@@ -23,8 +21,6 @@ export function resolvePlayLandDrop(game: GameUiState, cardId: string): DragDrop
 
   return {
     kind: 'needs_target',
-    actor: game.actor,
-    cardId,
     options: options.map((option) => ({
       effectTargetId: option.action.effectTargetId,
       label: option.label,

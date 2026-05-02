@@ -83,9 +83,7 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private clearRoot(): void {
-    this.pendingTargetPicker?.destroy(true)
     this.pendingTargetPicker = null
-    this.battlefieldDropZone?.destroy()
     this.battlefieldDropZone = null
     this.rootContainer?.removeAll(true)
   }
@@ -203,9 +201,15 @@ class CardgameScene extends Phaser.Scene {
     const zoneTitle = this.add.text(40, 255, 'Battlefield (drop hand card here)', { color: '#e5ecf5', fontSize: '18px' })
     this.rootContainer?.add(zoneTitle)
 
-    this.battlefieldDropZone = this.add.zone(WIDTH / 2, 360, WIDTH - 60, 220)
-    this.battlefieldDropZone.setRectangleDropZone(WIDTH - 60, 220)
-    this.rootContainer?.add(this.battlefieldDropZone)
+    const dropZone = this.add.zone(WIDTH / 2, 360, WIDTH - 60, 220)
+    dropZone.setRectangleDropZone(WIDTH - 60, 220)
+    dropZone.once(Phaser.GameObjects.Events.DESTROY, () => {
+      if (this.battlefieldDropZone === dropZone) {
+        this.battlefieldDropZone = null
+      }
+    })
+    this.battlefieldDropZone = dropZone
+    this.rootContainer?.add(dropZone)
 
     let x = 90
     for (const card of game.players[0].battlefield) {
@@ -278,6 +282,11 @@ class CardgameScene extends Phaser.Scene {
     this.pendingTargetPicker?.destroy(true)
 
     const overlay = this.add.container(WIDTH / 2, HEIGHT / 2)
+    overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+      if (this.pendingTargetPicker === overlay) {
+        this.pendingTargetPicker = null
+      }
+    })
     const backdrop = this.add.rectangle(0, 0, 660, 360, 0x000000, 0.82).setStrokeStyle(2, 0x4f6caa)
     overlay.add(backdrop)
     overlay.add(this.add.text(0, -148, 'Choose target', { color: '#e5ecf5', fontSize: '24px' }).setOrigin(0.5))
@@ -383,12 +392,16 @@ export class PhaserRenderer implements AppRenderer {
         <div class="panel">
           <h3>P2P Host Signaling</h3>
           <button id="phaser-create-offer">Create Offer</button>
-          <textarea id="phaser-offer" readonly>${view.offer}</textarea>
+          <textarea id="phaser-offer" readonly></textarea>
           <textarea id="phaser-answer" placeholder="Paste remote answer"></textarea>
           <button id="phaser-accept-answer">Accept Answer</button>
           <button id="phaser-start">Start Game</button>
         </div>
       `
+      const offerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-offer')
+      if (offerField) {
+        offerField.value = view.offer
+      }
 
       this.p2pOverlay.querySelector('#phaser-create-offer')?.addEventListener('click', () => {
         void this.controller?.createOffer()
@@ -408,9 +421,13 @@ export class PhaserRenderer implements AppRenderer {
         <h3>P2P Join Signaling</h3>
         <textarea id="phaser-join-offer" placeholder="Paste host offer"></textarea>
         <button id="phaser-create-answer">Create Answer</button>
-        <textarea readonly>${view.answer}</textarea>
+        <textarea id="phaser-join-answer" readonly></textarea>
       </div>
     `
+    const answerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-join-answer')
+    if (answerField) {
+      answerField.value = view.answer
+    }
 
     this.p2pOverlay.querySelector('#phaser-create-answer')?.addEventListener('click', () => {
       const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
