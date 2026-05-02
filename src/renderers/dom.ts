@@ -98,7 +98,12 @@ function renderGame(view: AppViewModel): string {
         <h3>Response Window</h3>
         <p>Opponent played ${escapeHtml(game.pendingLandName ?? 'a land')}. Respond?</p>
         <div class="action-row">
-          ${game.legal.counterOptions.map((option) => `<button data-action="counter_land" ${option.action.discardCardId ? `data-discard-card-id="${escapeHtml(option.action.discardCardId)}"` : ''}>${escapeHtml(option.label)}</button>`).join('')}
+          ${game.legal.counterOptions.map((option) => {
+            const discardAttr = option.action.discardCardId
+              ? ` data-discard-card-id="${escapeHtml(option.action.discardCardId)}"`
+              : ''
+            return `<button data-action="counter_land"${discardAttr}>${escapeHtml(option.label)}</button>`
+          }).join('')}
           ${game.legal.canPassResponse ? '<button data-action="pass_response">Pass</button>' : ''}
         </div>
       </div>
