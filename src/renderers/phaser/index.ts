@@ -226,7 +226,7 @@ class CardgameScene extends Phaser.Scene {
     const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
     const compactWidth = this.scale.displaySize.width ?? this.scale.parentSize.width ?? width
     this.currentLayout = buildLayout(width, height, compactWidth)
-    const signature = `${width}x${height}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
+    const signature = `${width}x${height}:${compactWidth}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
     const changed = signature !== this.lastLayoutSignature
     this.lastLayoutSignature = signature
     return changed
@@ -688,6 +688,7 @@ class CardgameScene extends Phaser.Scene {
       this.input.on('pointerup', handlePointerUp)
       this.input.on('pointerupoutside', handlePointerUp)
       overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+        dragPointerId = null
         this.input.off('wheel', handleWheel)
         this.input.off('pointerdown', handlePointerDown)
         this.input.off('pointermove', handlePointerMove)
@@ -695,7 +696,7 @@ class CardgameScene extends Phaser.Scene {
         this.input.off('pointerupoutside', handlePointerUp)
       })
 
-      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll/drag', {
+      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll or drag', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
       }).setOrigin(1, 0.5))
