@@ -856,6 +856,7 @@ export class PhaserRenderer implements AppRenderer {
   currentView: AppViewModel | null = null
   private p2pOverlay: HTMLDivElement | null = null
   private p2pOverlayMode: 'host' | 'join' | null = null
+  private p2pSettingsOpen = false
   private _orientationMode: OrientationMode = 'horizontal'
 
   get orientationMode(): OrientationMode {
@@ -913,6 +914,7 @@ export class PhaserRenderer implements AppRenderer {
     this.p2pOverlay?.remove()
     this.p2pOverlay = null
     this.p2pOverlayMode = null
+    this.p2pSettingsOpen = false
 
     this.game?.destroy(true)
     this.game = null
@@ -927,6 +929,14 @@ export class PhaserRenderer implements AppRenderer {
     this.currentView = null
   }
 
+  private setP2POverlayOpen(open: boolean): void {
+    if (this.p2pSettingsOpen === open) {
+      return
+    }
+    this.p2pSettingsOpen = open
+    this.p2pOverlay?.classList.toggle('open', open)
+  }
+
   private renderP2POverlay(view: AppViewModel): void {
     if (!this.p2pOverlay) {
       return
@@ -938,6 +948,7 @@ export class PhaserRenderer implements AppRenderer {
       }
       this.p2pOverlay.style.display = 'none'
       this.p2pOverlayMode = null
+      this.setP2POverlayOpen(false)
       return
     }
 
@@ -946,15 +957,30 @@ export class PhaserRenderer implements AppRenderer {
     if (view.mode === 'p2p-host') {
       if (this.p2pOverlayMode !== 'host') {
         this.p2pOverlay.innerHTML = `
-          <div class="panel">
-            <h3>P2P Host Signaling</h3>
-            <button id="phaser-create-offer">Create Offer</button>
-            <textarea id="phaser-offer" readonly></textarea>
-            <textarea id="phaser-answer" placeholder="Paste remote answer"></textarea>
-            <button id="phaser-accept-answer">Accept Answer</button>
-            <button id="phaser-start">Start Game</button>
+          <button id="phaser-settings-toggle" type="button">P2P Settings</button>
+          <div class="phaser-settings-backdrop">
+            <div class="panel phaser-settings-panel">
+              <h3>P2P Host Signaling</h3>
+              <button id="phaser-create-offer" type="button">Create Offer</button>
+              <textarea id="phaser-offer" readonly></textarea>
+              <textarea id="phaser-answer" placeholder="Paste remote answer"></textarea>
+              <button id="phaser-accept-answer" type="button">Accept Answer</button>
+              <button id="phaser-start" type="button">Start Game</button>
+              <button id="phaser-settings-close" type="button">Close</button>
+            </div>
           </div>
         `
+        this.p2pOverlay.querySelector('#phaser-settings-toggle')?.addEventListener('click', () => {
+          this.setP2POverlayOpen(true)
+        })
+        this.p2pOverlay.querySelector('#phaser-settings-close')?.addEventListener('click', () => {
+          this.setP2POverlayOpen(false)
+        })
+        this.p2pOverlay.querySelector('.phaser-settings-backdrop')?.addEventListener('click', (event) => {
+          if (event.target === event.currentTarget) {
+            this.setP2POverlayOpen(false)
+          }
+        })
         this.p2pOverlay.querySelector('#phaser-create-offer')?.addEventListener('click', () => {
           void this.controller?.createOffer()
         })
@@ -966,6 +992,7 @@ export class PhaserRenderer implements AppRenderer {
           this.controller?.startP2PGame()
         })
         this.p2pOverlayMode = 'host'
+        this.setP2POverlayOpen(false)
       }
 
       const offerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-offer')
@@ -977,18 +1004,34 @@ export class PhaserRenderer implements AppRenderer {
 
     if (this.p2pOverlayMode !== 'join') {
       this.p2pOverlay.innerHTML = `
-        <div class="panel">
-          <h3>P2P Join Signaling</h3>
-          <textarea id="phaser-join-offer" placeholder="Paste host offer"></textarea>
-          <button id="phaser-create-answer">Create Answer</button>
-          <textarea id="phaser-join-answer" readonly></textarea>
+        <button id="phaser-settings-toggle" type="button">P2P Settings</button>
+        <div class="phaser-settings-backdrop">
+          <div class="panel phaser-settings-panel">
+            <h3>P2P Join Signaling</h3>
+            <textarea id="phaser-join-offer" placeholder="Paste host offer"></textarea>
+            <button id="phaser-create-answer" type="button">Create Answer</button>
+            <textarea id="phaser-join-answer" readonly></textarea>
+            <button id="phaser-settings-close" type="button">Close</button>
+          </div>
         </div>
       `
+      this.p2pOverlay.querySelector('#phaser-settings-toggle')?.addEventListener('click', () => {
+        this.setP2POverlayOpen(true)
+      })
+      this.p2pOverlay.querySelector('#phaser-settings-close')?.addEventListener('click', () => {
+        this.setP2POverlayOpen(false)
+      })
+      this.p2pOverlay.querySelector('.phaser-settings-backdrop')?.addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) {
+          this.setP2POverlayOpen(false)
+        }
+      })
       this.p2pOverlay.querySelector('#phaser-create-answer')?.addEventListener('click', () => {
         const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
         void this.controller?.createAnswer(value)
       })
       this.p2pOverlayMode = 'join'
+      this.setP2POverlayOpen(false)
     }
 
     const answerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-join-answer')
