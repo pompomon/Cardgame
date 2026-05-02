@@ -160,6 +160,10 @@ textarea {
   z-index: 20;
 }
 
+#app.phaser-root .phaser-p2p-overlay {
+  position: fixed;
+}
+
 .phaser-p2p-overlay button {
   pointer-events: auto;
 }
@@ -180,11 +184,17 @@ textarea {
 
 .phaser-settings-panel {
   width: min(420px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   background: rgba(10, 18, 38, 0.95);
   display: grid;
   gap: 8px;
+}
+
+@supports not (height: 100dvh) {
+  .phaser-settings-panel {
+    max-height: calc(100vh - 32px);
+  }
 }
 
 @media (max-width: 1200px) {
