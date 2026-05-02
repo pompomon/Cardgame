@@ -231,7 +231,9 @@ export class DomRenderer implements AppRenderer {
     this.container.innerHTML = `
       <main class="app-shell">
         ${view.game ? '' : renderLobby(view)}
-        ${view.mode === 'p2p-host' || view.mode === 'p2p-join' ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
+        ${(view.mode === 'p2p-host' || view.mode === 'p2p-join') && !view.replay.active
+    ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft)
+    : ''}
         ${view.game ? renderGame(view) : ''}
       </main>
     `
@@ -295,7 +297,7 @@ export class DomRenderer implements AppRenderer {
       link.href = url
       link.download = `cardgame-recording-${Date.now()}.json`
       link.click()
-      URL.revokeObjectURL(url)
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     })
 
     this.container.querySelector('#save-recording-local')?.addEventListener('click', () => {

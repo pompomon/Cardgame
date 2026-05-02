@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInitialGame } from '../game/engine'
+import { applyAction, createInitialGame } from '../game/engine'
 import {
   appendGameRecordStep,
   createGameRecord,
@@ -12,7 +12,7 @@ describe('game-recording', () => {
   it('round-trips a recording through JSON parse/serialize', () => {
     const initial = createInitialGame(123)
     const record = createGameRecord(123, 'local-hvh', ['human', 'human'], initial, 1000)
-    const next = createInitialGame(124)
+    const next = applyAction(initial, { type: 'end_turn', actor: 0 })
     const updated = appendGameRecordStep(
       record,
       { type: 'end_turn', actor: 0 },
@@ -28,8 +28,10 @@ describe('game-recording', () => {
     if (parsed.ok) {
       expect(parsed.record.metadata.seed).toBe(123)
       expect(parsed.record.timeline).toHaveLength(1)
-      expect(snapshotFromRecord(parsed.record, 0).turn).toBe(initial.turn)
-      expect(snapshotFromRecord(parsed.record, 1).turn).toBe(next.turn)
+      expect(snapshotFromRecord(parsed.record, 0).turn).toBe(1)
+      expect(snapshotFromRecord(parsed.record, 0).currentPlayer).toBe(0)
+      expect(snapshotFromRecord(parsed.record, 1).turn).toBe(2)
+      expect(snapshotFromRecord(parsed.record, 1).currentPlayer).toBe(1)
     }
   })
 

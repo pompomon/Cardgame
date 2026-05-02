@@ -1122,7 +1122,7 @@ export class PhaserRenderer implements AppRenderer {
         link.href = url
         link.download = `cardgame-recording-${Date.now()}.json`
         link.click()
-        URL.revokeObjectURL(url)
+        setTimeout(() => URL.revokeObjectURL(url), 0)
       }
     }
 

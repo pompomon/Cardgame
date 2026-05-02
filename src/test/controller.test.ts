@@ -109,6 +109,20 @@ describe('controller recording and replay', () => {
     expect(record.timeline[0]?.source).toBe('remote')
   })
 
+  it('reports illegal remote actions instead of dropping them silently', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const before = parseExported(controller)
+    expect(before.timeline).toHaveLength(0)
+
+    ;(controller as unknown as { applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void })
+      .applyRecordedAction({ type: 'end_turn', actor: 1 }, 'remote', false)
+
+    expect(controller.getViewModel().status).toContain('Ignored illegal action from peer.')
+    const after = parseExported(controller)
+    expect(after.timeline).toHaveLength(0)
+  })
+
   it('saves and loads recordings from local storage', () => {
     const controller = new AppController('dom')
     controller.startGame('local-hvh')

@@ -294,6 +294,10 @@ export class AppController implements ControllerApi {
       return
     }
     if (!isLegalActionForState(this.state.game, action)) {
+      if (source === 'remote') {
+        this.state.status = 'Ignored illegal action from peer.'
+        this.notify()
+      }
       return
     }
     const next = applyAction(this.state.game, action)
