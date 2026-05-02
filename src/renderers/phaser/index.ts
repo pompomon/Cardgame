@@ -7,9 +7,7 @@ import type { AppRenderer } from '../types'
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const MOBILE_BREAKPOINT = 960
-// Current UI design intentionally supports up to 5 clearly tappable options in the target picker.
-// If more exist, only the first 5 are shown with an in-popup notice.
-const MAX_TARGET_OPTIONS = 5
+const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 
 interface CardStyle {
@@ -134,22 +132,6 @@ function cardStyleForLand(name: string): CardStyle {
     default:
       return fallback
   }
-}
-
-function calculateOptionGap(
-  optionCount: number,
-  preferredGap: number,
-  availableHeight: number,
-  buttonHeight: number,
-): number {
-  if (optionCount <= 1) {
-    return 0
-  }
-  const remainingSpace = availableHeight - buttonHeight * optionCount
-  if (remainingSpace <= 0) {
-    return 0
-  }
-  return Math.min(preferredGap, remainingSpace / (optionCount - 1))
 }
 
 class CardgameScene extends Phaser.Scene {
@@ -567,17 +549,25 @@ class CardgameScene extends Phaser.Scene {
     game: GameUiState,
     cardId: string,
     options: Array<{ effectTargetId?: string; label: string }>,
+    showAllTargets = false,
   ): void {
     this.pendingTargetPicker?.destroy(true)
 
-    const optionCount = Math.min(MAX_TARGET_OPTIONS, options.length)
+    const optionCount = showAllTargets ? options.length : Math.min(DEFAULT_TARGET_OPTIONS, options.length)
+    const hasHiddenOptions = options.length > DEFAULT_TARGET_OPTIONS
     const popupPadding = this.currentLayout.isCompact ? 16 : 20
     const popupWidth = this.currentLayout.popupMaxWidth
     const buttonWidth = popupWidth - popupPadding * 2
     const titleHeight = this.currentLayout.isCompact ? 44 : 56
-    const optionGapPreferred = this.currentLayout.isCompact ? 48 : 56
+    const optionGap = this.currentLayout.isCompact ? 8 : 10
     const cancelHeight = this.currentLayout.popupButtonHeight
-    const desiredHeight = titleHeight + optionCount * optionGapPreferred + cancelHeight + popupPadding * 2
+    const showAllButtonHeight = hasHiddenOptions ? cancelHeight : 0
+    const footerGap = hasHiddenOptions ? 8 : 0
+    const footerHeight = cancelHeight + footerGap + showAllButtonHeight
+    const optionsHeightWanted = optionCount > 0
+      ? optionCount * this.currentLayout.popupButtonHeight + Math.max(0, optionCount - 1) * optionGap
+      : this.currentLayout.popupButtonHeight
+    const desiredHeight = titleHeight + optionsHeightWanted + footerHeight + popupPadding * 2 + 20
     const maxHeight = this.currentLayout.height - this.currentLayout.margin * 2
     const popupHeight = Math.min(desiredHeight, maxHeight)
 
@@ -595,35 +585,90 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.subtitleFontSize,
     }).setOrigin(0.5))
 
-    const optionsStartY = -popupHeight / 2 + popupPadding + titleHeight
-    const cancelY = popupHeight / 2 - popupPadding - cancelHeight / 2
-    const optionsBottomY = cancelY - cancelHeight / 2 - 8
-    const availableHeight = Math.max(0, optionsBottomY - optionsStartY)
-    const optionGap = calculateOptionGap(optionCount, optionGapPreferred, availableHeight, this.currentLayout.popupButtonHeight)
-    const firstOptionCenterY = optionsStartY + this.currentLayout.popupButtonHeight / 2
+    const optionsTopY = -popupHeight / 2 + popupPadding + titleHeight
+    const footerTopY = popupHeight / 2 - popupPadding - footerHeight
+    const optionsAreaHeight = Math.max(48, footerTopY - optionsTopY - 10)
+    const optionsViewportY = optionsTopY + optionsAreaHeight / 2
 
-    options.slice(0, MAX_TARGET_OPTIONS).forEach((option, index) => {
-      const button = this.createButton(option.label, 0, firstOptionCenterY + index * (this.currentLayout.popupButtonHeight + optionGap), () => {
+    const optionsViewportBackground = this.add.rectangle(0, optionsViewportY, buttonWidth, optionsAreaHeight, 0x0f1a3b, 0.4)
+      .setStrokeStyle(1, 0x365092)
+    overlay.add(optionsViewportBackground)
+
+    const optionsViewport = this.add.container(0, optionsTopY)
+    const optionsList = this.add.container(0, 0)
+    optionsViewport.add(optionsList)
+    overlay.add(optionsViewport)
+
+    const maskShape = this.add.graphics()
+    maskShape.fillStyle(0xffffff)
+    maskShape.fillRect(-buttonWidth / 2, optionsTopY, buttonWidth, optionsAreaHeight)
+    maskShape.setVisible(false)
+    overlay.add(maskShape)
+    optionsViewport.setMask(maskShape.createGeometryMask())
+
+    options.slice(0, optionCount).forEach((option, index) => {
+      const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
+      const button = this.createButton(option.label, 0, buttonY, () => {
         const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
         if (action) {
           this.rendererRef.controller?.submitAction(action)
         }
         overlay.destroy(true)
       }, buttonWidth, this.currentLayout.popupButtonHeight)
-      overlay.add(button)
+      optionsList.add(button)
     })
 
-    if (options.length > MAX_TARGET_OPTIONS) {
-      overlay.add(this.add.text(0, cancelY - cancelHeight / 2 - 14, `Showing first ${MAX_TARGET_OPTIONS} targets.`, {
-        color: '#9db0d9',
-        fontSize: this.currentLayout.smallFontSize,
-      }).setOrigin(0.5))
+    const optionsContentHeight = optionCount > 0
+      ? optionCount * this.currentLayout.popupButtonHeight + Math.max(0, optionCount - 1) * optionGap
+      : 0
+    const maxScroll = Math.max(0, optionsContentHeight - optionsAreaHeight)
+    let scrollOffset = 0
+
+    const applyScroll = (deltaY: number): void => {
+      if (maxScroll <= 0) {
+        return
+      }
+      scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
+      optionsList.y = -scrollOffset
     }
 
+    if (maxScroll > 0) {
+      const onWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
+        const localX = pointer.worldX - overlay.x
+        const localY = pointer.worldY - overlay.y
+        const withinX = localX >= -buttonWidth / 2 && localX <= buttonWidth / 2
+        const withinY = localY >= optionsTopY && localY <= optionsTopY + optionsAreaHeight
+        if (withinX && withinY) {
+          applyScroll(deltaY * 0.8)
+        }
+      }
+
+      this.input.on('wheel', onWheel)
+      overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+        this.input.off('wheel', onWheel)
+      })
+
+      overlay.add(this.add.text(buttonWidth / 2 - 10, optionsTopY + optionsAreaHeight / 2, '⇵', {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+      }).setOrigin(1, 0.5))
+    }
+
+    const cancelY = footerTopY + cancelHeight / 2
     const cancelButton = this.createButton('Cancel', 0, cancelY, () => {
       overlay.destroy(true)
     }, Math.min(buttonWidth, 260), cancelHeight)
     overlay.add(cancelButton)
+
+    if (hasHiddenOptions) {
+      const showAllY = cancelY + cancelHeight / 2 + 8 + showAllButtonHeight / 2
+      const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
+      const showAllButton = this.createButton(showAllLabel, 0, showAllY, () => {
+        overlay.destroy(true)
+        this.showTargetPicker(game, cardId, options, !showAllTargets)
+      }, Math.min(buttonWidth, 300), showAllButtonHeight)
+      overlay.add(showAllButton)
+    }
 
     this.pendingTargetPicker = overlay
     this.rootContainer?.add(overlay)
