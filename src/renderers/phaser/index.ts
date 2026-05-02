@@ -560,6 +560,18 @@ class CardgameScene extends Phaser.Scene {
       wordWrap: { width: panelWidth - 18 },
     })
     this.rootContainer?.add(logText)
+
+    const logMaskShape = this.add.graphics()
+    logMaskShape.fillStyle(0xffffff)
+    logMaskShape.fillRect(
+      panelX - panelWidth / 2 + 1,
+      panelTop + 1,
+      Math.max(0, panelWidth - 2),
+      Math.max(0, panelHeight - 2),
+    )
+    logMaskShape.setVisible(false)
+    this.rootContainer?.add(logMaskShape)
+    logText.setMask(logMaskShape.createGeometryMask())
   }
 
   private showTargetPicker(
@@ -682,10 +694,16 @@ class CardgameScene extends Phaser.Scene {
 
       let dragPointerId: number | null = null
       let lastDragY = 0
-      const handlePointerDown = (pointer: Phaser.Input.Pointer) => {
+      const handleViewportPointerDown = (
+        pointer: Phaser.Input.Pointer,
+        _localX: number,
+        _localY: number,
+        event: Phaser.Types.Input.EventData,
+      ): void => {
         if (!isPointerWithinOptions(pointer)) {
           return
         }
+        event.stopPropagation()
         dragPointerId = pointer.id
         lastDragY = pointer.worldY
       }
@@ -704,14 +722,14 @@ class CardgameScene extends Phaser.Scene {
       }
 
       this.input.on('wheel', handleWheel)
-      this.input.on('pointerdown', handlePointerDown)
+      optionsViewportBackground.on('pointerdown', handleViewportPointerDown)
       this.input.on('pointermove', handlePointerMove)
       this.input.on('pointerup', handlePointerUp)
       this.input.on('pointerupoutside', handlePointerUp)
       overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
         dragPointerId = null
         this.input.off('wheel', handleWheel)
-        this.input.off('pointerdown', handlePointerDown)
+        optionsViewportBackground.off('pointerdown', handleViewportPointerDown)
         this.input.off('pointermove', handlePointerMove)
         this.input.off('pointerup', handlePointerUp)
         this.input.off('pointerupoutside', handlePointerUp)
