@@ -13,6 +13,7 @@ const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
+const POPUP_MIN_WIDTH = 180
 const COMPACT_DIMENSION_THRESHOLD = 700
 const PORTRAIT_LOG_COLLAPSE_HEIGHT_THRESHOLD = 920
 const PORTRAIT_LOG_COLLAPSE_DIMENSION_THRESHOLD = 760
@@ -70,7 +71,7 @@ function clamp(value: number, minValue: number, maxValue: number): number {
 
 function readStoredOrientationMode(): OrientationMode | null {
   try {
-    const stored = window.localStorage.getItem(ORIENTATION_STORAGE_KEY)
+    const stored = localStorage.getItem(ORIENTATION_STORAGE_KEY)
     if (stored === 'vertical' || stored === 'horizontal') {
       return stored
     }
@@ -82,7 +83,7 @@ function readStoredOrientationMode(): OrientationMode | null {
 
 function persistOrientationMode(mode: OrientationMode): void {
   try {
-    window.localStorage.setItem(ORIENTATION_STORAGE_KEY, mode)
+    localStorage.setItem(ORIENTATION_STORAGE_KEY, mode)
   } catch {
     // Ignore storage access errors.
   }
@@ -145,7 +146,9 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const logBottomPadding = margin + 24 + statusBottomOffset + statusLineReservedHeight
   const logAvailableHeight = safeHeight - logTopY - logBottomPadding
   const logHeight = Math.max(0, logAvailableHeight)
-  const popupMaxWidth = Math.min(safeWidth - margin * 2, orientation === 'vertical' ? 520 : 760)
+  const popupAvailableWidth = Math.max(0, safeWidth - margin * 2)
+  const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
+  const popupMaxWidth = Math.max(POPUP_MIN_WIDTH, popupTargetWidth)
   const popupButtonHeight = clamp(actionButtonHeight * 1.05, 36, 48)
   const preferCollapsedLog = isLogCollapsePreferred(orientation, safeHeight, minDimension)
 
