@@ -589,8 +589,16 @@ class CardgameScene extends Phaser.Scene {
         this.pendingTargetPicker = null
       }
     })
+    const swallowPointerEvent = (...args: unknown[]): void => {
+      const event = args.at(-1) as Phaser.Types.Input.EventData | undefined
+      event?.stopPropagation()
+    }
 
     const backdrop = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x000000, 0.82).setStrokeStyle(2, 0x4f6caa)
+    backdrop.setInteractive()
+    backdrop.on('pointerdown', swallowPointerEvent)
+    backdrop.on('pointerup', swallowPointerEvent)
+    backdrop.on('pointermove', swallowPointerEvent)
     overlay.add(backdrop)
     overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + titleHeight / 2, 'Choose target', {
       color: '#e5ecf5',
@@ -604,6 +612,10 @@ class CardgameScene extends Phaser.Scene {
 
     const optionsViewportBackground = this.add.rectangle(0, optionsViewportY, buttonWidth, optionsAreaHeight, 0x0f1a3b, 0.4)
       .setStrokeStyle(1, 0x365092)
+    optionsViewportBackground.setInteractive()
+    optionsViewportBackground.on('pointerdown', swallowPointerEvent)
+    optionsViewportBackground.on('pointerup', swallowPointerEvent)
+    optionsViewportBackground.on('pointermove', swallowPointerEvent)
     overlay.add(optionsViewportBackground)
 
     const optionsViewport = this.add.container(0, optionsTopY)
