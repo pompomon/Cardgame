@@ -174,13 +174,13 @@ export class DomRenderer implements AppRenderer {
       return
     }
 
-    const existingHostAnswer = this.container.querySelector<HTMLTextAreaElement>('#answer-text')?.value
-    if (existingHostAnswer !== undefined) {
-      this.hostAnswerDraft = existingHostAnswer
+    const hostAnswerField = this.container.querySelector<HTMLTextAreaElement>('#answer-text')
+    if (hostAnswerField) {
+      this.hostAnswerDraft = hostAnswerField.value
     }
-    const existingJoinOffer = this.container.querySelector<HTMLTextAreaElement>('#join-offer-text')?.value
-    if (existingJoinOffer !== undefined) {
-      this.joinOfferDraft = existingJoinOffer
+    const joinOfferField = this.container.querySelector<HTMLTextAreaElement>('#join-offer-text')
+    if (joinOfferField) {
+      this.joinOfferDraft = joinOfferField.value
     }
     if (view.mode !== 'p2p-host') {
       this.hostAnswerDraft = ''
