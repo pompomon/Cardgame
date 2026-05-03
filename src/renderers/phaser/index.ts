@@ -9,7 +9,6 @@ const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
-const MIN_LOG_VIEWPORT_HEIGHT = 48
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -348,11 +347,20 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private clearRoot(): void {
+    const preservedMenuOverlay = this.menuOverlay
+    if (preservedMenuOverlay?.parentContainer === this.rootContainer) {
+      this.rootContainer.remove(preservedMenuOverlay)
+    }
     this.rootContainer?.removeAll(true)
     this.pendingTargetPicker = null
-    this.menuOverlay = null
-    this.menuOpen = false
     this.battlefieldDropZone = null
+    if (preservedMenuOverlay?.active) {
+      this.menuOverlay = preservedMenuOverlay
+      this.menuOpen = true
+    } else {
+      this.menuOverlay = null
+      this.menuOpen = false
+    }
   }
 
   private xForCard(index: number, count: number): number {
@@ -380,11 +388,16 @@ class CardgameScene extends Phaser.Scene {
     this.setStatus(view.status)
 
     if (!view.game) {
+      this.closeMenuOverlay()
       this.renderLobby()
       return
     }
 
     this.renderGame(view)
+    const activeMenuOverlay = this.menuOverlay
+    if (activeMenuOverlay && activeMenuOverlay.parentContainer !== this.rootContainer) {
+      this.rootContainer.add(activeMenuOverlay)
+    }
   }
 
   private createButton(
@@ -789,13 +802,13 @@ class CardgameScene extends Phaser.Scene {
     const logViewportTop = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
     const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
-    if (maxViewportHeight >= MIN_LOG_VIEWPORT_HEIGHT) {
+    if (maxViewportHeight > 0) {
       overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
         color: '#e5ecf5',
         fontSize: this.currentLayout.bodyFontSize,
       }).setOrigin(0, 0.5))
 
-      const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
+      const logViewportHeight = Math.max(1, Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight))
       const logViewportY = logViewportTop + logViewportHeight / 2
       const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, 0x091227, 0.75)
         .setStrokeStyle(1, 0x365092)
@@ -850,10 +863,16 @@ class CardgameScene extends Phaser.Scene {
         }).setOrigin(1, 0.5))
       }
     } else {
-      overlay.add(this.add.text(0, buttonStackBottomY + sectionGap + 10, 'Replay Log hidden on very small screens.', {
+      const fallbackTopY = buttonStackBottomY + sectionGap + 6
+      const fallbackText = lines.length > 0
+        ? `Replay Log (latest)\n${lines.slice(-3).join('\n')}`
+        : 'Replay Log\nNo log entries yet.'
+      overlay.add(this.add.text(0, fallbackTopY, fallbackText, {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
-      }).setOrigin(0.5))
+        align: 'center',
+        wordWrap: { width: Math.max(20, buttonWidth) },
+      }).setOrigin(0.5, 0))
     }
 
     this.menuOverlay = overlay
