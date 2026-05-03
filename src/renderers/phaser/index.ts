@@ -9,6 +9,7 @@ const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
+const FALLBACK_LOG_ENTRY_COUNT = 3
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -808,7 +809,7 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.bodyFontSize,
       }).setOrigin(0, 0.5))
 
-      const logViewportHeight = Math.max(1, Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight))
+      const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
       const logViewportY = logViewportTop + logViewportHeight / 2
       const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, 0x091227, 0.75)
         .setStrokeStyle(1, 0x365092)
@@ -865,7 +866,7 @@ class CardgameScene extends Phaser.Scene {
     } else {
       const fallbackTopY = buttonStackBottomY + sectionGap + 6
       const fallbackText = lines.length > 0
-        ? `Replay Log (latest)\n${lines.slice(-3).join('\n')}`
+        ? `Replay Log (latest)\n${lines.slice(-FALLBACK_LOG_ENTRY_COUNT).join('\n')}`
         : 'Replay Log\nNo log entries yet.'
       overlay.add(this.add.text(0, fallbackTopY, fallbackText, {
         color: '#9db0d9',
