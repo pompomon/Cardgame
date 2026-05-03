@@ -671,8 +671,13 @@ class CardgameScene extends Phaser.Scene {
     const scrim = this.add.rectangle(0, 0, this.currentLayout.width, this.currentLayout.height, 0x000000, 0.62)
     scrim.setInteractive()
     scrim.on('pointerdown', swallowPointerEvent)
-    scrim.on('pointerup', (_pointer, localX, localY, event) => {
-      swallowPointerEvent(_pointer, localX, localY, event)
+    scrim.on('pointerup', (
+      pointer: Phaser.Input.Pointer,
+      localX: number,
+      localY: number,
+      event: Phaser.Types.Input.EventData,
+    ) => {
+      swallowPointerEvent(pointer, localX, localY, event)
       this.closeMenuOverlay()
     })
     scrim.on('pointermove', swallowPointerEvent)
