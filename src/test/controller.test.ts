@@ -124,6 +124,28 @@ describe('controller recording and replay', () => {
     expect(after.timeline).toHaveLength(0)
   })
 
+  it('rejects remote actions that target the local actor in p2p mode', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    const internals = controller as unknown as {
+      state: {
+        mode: string | null
+        controllers: ['human' | 'ai' | 'remote', 'human' | 'ai' | 'remote']
+      }
+    }
+    internals.state.mode = 'p2p-host'
+    internals.state.controllers = ['human', 'remote']
+
+    ;(controller as unknown as { applyRecordedAction: (nextAction: unknown, source: 'remote', broadcast: boolean) => void })
+      .applyRecordedAction(action, 'remote', false)
+
+    expect(controller.getViewModel().status).toContain('Ignored out-of-role action from peer.')
+    const after = parseExported(controller)
+    expect(after.timeline).toHaveLength(0)
+  })
+
   it('saves and loads recordings from local storage', () => {
     const controller = new AppController('dom')
     controller.startGame('local-hvh')
@@ -173,6 +195,22 @@ describe('controller recording and replay', () => {
     expect(replayView.isPlaying).toBe(false)
     expect(replayView.step).toBe(replayView.totalSteps)
     expect(controller.getViewModel().status).toContain('Replay reached final state.')
+  })
+
+  it('clears active recording state when returning to lobby', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    controller.submitAction(action!)
+    expect(controller.getViewModel().recording.canSave).toBe(true)
+
+    controller.backToLobby()
+
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.recording.canSave).toBe(false)
+    expect(view.recording.metadata).toBeNull()
   })
 
   it('pauses active replay when recording import JSON is invalid', () => {

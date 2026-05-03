@@ -321,6 +321,18 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
+    if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+      const remoteActor = this.state.controllers[0] === 'remote'
+        ? 0
+        : this.state.controllers[1] === 'remote'
+          ? 1
+          : null
+      if (remoteActor !== null && action.actor !== remoteActor) {
+        this.state.status = 'Ignored out-of-role action from peer.'
+        this.notify()
+        return
+      }
+    }
     if (!isLegalActionForState(this.state.game, action)) {
       if (source === 'remote') {
         this.state.status = 'Ignored illegal action from peer.'
@@ -384,6 +396,7 @@ export class AppController implements ControllerApi {
     this.state.mode = null
     this.state.game = null
     this.state.replay = null
+    this.state.recording = null
     this.state.status = ''
     this.state.offer = ''
     this.state.answer = ''
