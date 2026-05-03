@@ -59,6 +59,13 @@ type RemoteActionApplier = {
   applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void
 }
 
+type ControllerInternals = {
+  state: {
+    mode: string | null
+    controllers: [ControllerKind, ControllerKind]
+  }
+}
+
 describe('controller recording and replay', () => {
   beforeEach(() => {
     installMemoryStorage()
@@ -134,12 +141,7 @@ describe('controller recording and replay', () => {
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
-    const internals = controller as unknown as {
-      state: {
-        mode: string | null
-        controllers: [ControllerKind, ControllerKind]
-      }
-    }
+    const internals = controller as unknown as ControllerInternals
     internals.state.mode = 'p2p-host'
     internals.state.controllers = ['human', 'remote']
 
