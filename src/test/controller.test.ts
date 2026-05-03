@@ -58,10 +58,28 @@ type RemoteActionApplier = {
   applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void
 }
 
-type ControllerModeControllersState = {
-  state: {
-    mode: string | null
-    controllers: ['human' | 'ai' | 'remote', 'human' | 'ai' | 'remote']
+function installFakeRtcPeerConnection(): () => void {
+  const original = (globalThis as Record<string, unknown>).RTCPeerConnection
+  class FakeRTCPeerConnection {
+    ondatachannel: ((event: { channel: unknown }) => void) | null = null
+
+    constructor(_configuration: unknown) {}
+
+    close(): void {}
+  }
+  Object.defineProperty(globalThis, 'RTCPeerConnection', {
+    configurable: true,
+    value: FakeRTCPeerConnection,
+  })
+  return () => {
+    if (original === undefined) {
+      delete (globalThis as Record<string, unknown>).RTCPeerConnection
+      return
+    }
+    Object.defineProperty(globalThis, 'RTCPeerConnection', {
+      configurable: true,
+      value: original,
+    })
   }
 }
 
@@ -136,20 +154,22 @@ describe('controller recording and replay', () => {
   })
 
   it('rejects remote actions that target the local actor in p2p mode', () => {
-    const controller = new AppController('dom')
-    controller.startGame('local-hvh')
-    const action = firstPlayableAction(controller)
-    expect(action).toBeTruthy()
-    const state = controller as unknown as ControllerModeControllersState
-    state.state.mode = 'p2p-host'
-    state.state.controllers = ['human', 'remote']
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const action = firstPlayableAction(controller)
+      expect(action).toBeTruthy()
 
-    ;(controller as unknown as RemoteActionApplier)
-      .applyRecordedAction(action, 'remote', false)
+      ;(controller as unknown as RemoteActionApplier)
+        .applyRecordedAction(action, 'remote', false)
 
-    expect(controller.getViewModel().status).toContain('Ignored out-of-role action from peer.')
-    const after = parseExported(controller)
-    expect(after.timeline).toHaveLength(0)
+      expect(controller.getViewModel().status).toContain('Ignored out-of-role action from peer.')
+      const after = parseExported(controller)
+      expect(after.timeline).toHaveLength(0)
+    } finally {
+      restoreRtc()
+    }
   })
 
   it('saves and loads recordings from local storage', () => {
