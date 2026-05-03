@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
+import type { GameRecordFile } from '../app/game-recording'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -150,9 +151,7 @@ describe('controller recording and replay', () => {
     controller.startGame('local-hvh')
     const payload = controller.exportRecordingJson()
     expect(payload).toBeTruthy()
-    const parsedPayload = JSON.parse(payload ?? '{}') as {
-      metadata: { mode: string, controllers: [string, string] }
-    }
+    const parsedPayload = JSON.parse(payload ?? '{}') as GameRecordFile
     parsedPayload.metadata.mode = 'p2p-host'
     parsedPayload.metadata.controllers = ['human', 'remote']
 

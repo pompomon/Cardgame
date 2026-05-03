@@ -73,6 +73,10 @@ function isP2PMode(mode: Mode): boolean {
   return mode === 'p2p-host' || mode === 'p2p-join'
 }
 
+function normalizeImportedMode(mode: Mode): Mode {
+  return isP2PMode(mode) ? 'local-hvh' : mode
+}
+
 export interface ControllerApi {
   subscribe(listener: (view: AppViewModel) => void): () => void
   getViewModel(): AppViewModel
@@ -459,9 +463,7 @@ export class AppController implements ControllerApi {
       step: 0,
       isPlaying: false,
     }
-    this.state.mode = isP2PMode(parsed.record.metadata.mode)
-      ? 'local-hvh'
-      : parsed.record.metadata.mode
+    this.state.mode = normalizeImportedMode(parsed.record.metadata.mode)
     this.state.seed = parsed.record.metadata.seed
     const [controller0, controller1] = parsed.record.metadata.controllers
     this.state.controllers = [
