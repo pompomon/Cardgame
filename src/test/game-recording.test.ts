@@ -128,6 +128,29 @@ describe('game-recording', () => {
     expect(parsed.ok).toBe(false)
   })
 
+  it('rejects swapped player ids in game state tuple positions', () => {
+    const initial = createInitialGame(89)
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 89,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        startedAt: 1,
+        updatedAt: 1,
+        completed: false,
+      },
+      initialState: {
+        ...initial,
+        players: [initial.players[1], initial.players[0]],
+      },
+      timeline: [],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(false)
+  })
+
   it('drops unknown root metadata and timeline properties during parse', () => {
     const initial = createInitialGame(99)
     const payload = JSON.stringify({

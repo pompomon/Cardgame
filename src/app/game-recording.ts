@@ -103,6 +103,9 @@ function isGameStateLike(value: unknown): value is GameState {
   if (!Array.isArray(value.players) || value.players.length !== 2 || !value.players.every((entry) => isPlayerLike(entry))) {
     return false
   }
+  if (value.players[0].id !== 0 || value.players[1].id !== 1) {
+    return false
+  }
 
   if (!isPhase(value.phase) || !isWinner(value.winner)) {
     return false
