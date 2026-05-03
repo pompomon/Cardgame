@@ -127,7 +127,7 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
 
   const headerTop = margin
   const leftHeaderTextHeight = titleFontPx + subtitleFontPx + margin
-  const rightButtonsHeight = actionButtonHeight * 3 + actionButtonGap * 2
+  const rightButtonsHeight = actionButtonHeight * 2 + actionButtonGap
   const headerHeight = Math.max(leftHeaderTextHeight, rightButtonsHeight)
   const summaryTopY = headerTop + headerHeight + clamp(minDimension * 0.01, 8, 16)
   const summaryBlockGap = clamp(bodyFontPx * 4.4, 58, 92)
@@ -747,8 +747,7 @@ class CardgameScene extends Phaser.Scene {
 
     const scrim = this.add.rectangle(0, 0, this.currentLayout.width, this.currentLayout.height, 0x000000, 0.62)
     scrim.setInteractive()
-    scrim.on('pointerdown', swallowPointerEvent)
-    scrim.on('pointerup', (
+    scrim.on('pointerdown', (
       pointer: Phaser.Input.Pointer,
       localX: number,
       localY: number,
@@ -757,6 +756,7 @@ class CardgameScene extends Phaser.Scene {
       swallowPointerEvent(pointer, localX, localY, event)
       this.closeMenuOverlay()
     })
+    scrim.on('pointerup', swallowPointerEvent)
     scrim.on('pointermove', swallowPointerEvent)
     overlay.add(scrim)
 
@@ -832,7 +832,8 @@ class CardgameScene extends Phaser.Scene {
       logContent.setMask(logMask.createGeometryMask())
 
       const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
-      let scrollOffset = 0
+      let scrollOffset = maxScroll
+      logContent.y = logViewportTop + 8 - scrollOffset
       const applyScroll = (deltaY: number): void => {
         if (maxScroll <= 0) {
           return
