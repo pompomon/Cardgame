@@ -163,6 +163,26 @@ textarea {
   z-index: 20;
 }
 
+.phaser-recorder-overlay {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 20;
+  max-width: min(720px, calc(100vw - 36px));
+}
+
+.phaser-recorder-panel {
+  display: grid;
+  gap: 8px;
+  background: rgba(10, 18, 38, 0.92);
+}
+
+.phaser-recorder-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 #app.phaser-root .phaser-p2p-overlay {
   position: fixed;
 }
