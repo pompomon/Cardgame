@@ -350,14 +350,15 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private clearRoot(): void {
-    const preservedMenuOverlay = this.menuOverlay
+    const wasMenuOpen = this.menuOpen && this.menuOverlay !== null
+    const preservedMenuOverlay = wasMenuOpen ? this.menuOverlay : null
     if (preservedMenuOverlay?.parentContainer === this.rootContainer) {
       this.rootContainer.remove(preservedMenuOverlay)
     }
     this.rootContainer?.removeAll(true)
     this.pendingTargetPicker = null
     this.battlefieldDropZone = null
-    if (preservedMenuOverlay?.active) {
+    if (wasMenuOpen && preservedMenuOverlay) {
       this.menuOverlay = preservedMenuOverlay
       this.menuOpen = true
     } else {
