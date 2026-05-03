@@ -383,7 +383,6 @@ class CardgameScene extends Phaser.Scene {
     this.setStatus(view.status)
 
     if (!view.game) {
-      this.menuOpen = false
       this.closeMenuOverlay()
       this.renderLobby()
       return
@@ -714,7 +713,11 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private closeMenuOverlay(): void {
-    this.menuOverlay?.destroy(true)
+    if (!this.menuOverlay) {
+      this.menuOpen = false
+      return
+    }
+    this.menuOverlay.destroy(true)
   }
 
   private openMenuOverlay(lines: string[]): void {
