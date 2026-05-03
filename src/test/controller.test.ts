@@ -144,4 +144,35 @@ describe('controller recording and replay', () => {
     controller.importRecordingJson('not-json')
     expect(controller.getViewModel().status).toContain('Failed to load recording')
   })
+
+  it('imports p2p recordings into functional local mode after replay exits', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const payload = controller.exportRecordingJson()
+    expect(payload).toBeTruthy()
+    const parsedPayload = JSON.parse(payload ?? '{}') as {
+      metadata: { mode: string, controllers: [string, string] }
+    }
+    parsedPayload.metadata.mode = 'p2p-host'
+    parsedPayload.metadata.controllers = ['human', 'remote']
+
+    controller.importRecordingJson(JSON.stringify(parsedPayload))
+    controller.exitReplay()
+
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('local-hvh')
+    expect(view.controllers).toEqual(['human', 'human'])
+  })
+
+  it('does not start replay playback when already at final step', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    controller.startReplay()
+
+    const replayView = controller.getViewModel().replay
+    expect(replayView.active).toBe(true)
+    expect(replayView.isPlaying).toBe(false)
+    expect(replayView.step).toBe(replayView.totalSteps)
+    expect(controller.getViewModel().status).toContain('Replay reached final state.')
+  })
 })

@@ -455,10 +455,15 @@ export class AppController implements ControllerApi {
       step: 0,
       isPlaying: false,
     }
-    this.state.mode = parsed.record.metadata.mode
+    this.state.mode = parsed.record.metadata.mode === 'p2p-host' || parsed.record.metadata.mode === 'p2p-join'
+      ? 'local-hvh'
+      : parsed.record.metadata.mode
     this.state.seed = parsed.record.metadata.seed
     const [controller0, controller1] = parsed.record.metadata.controllers
-    this.state.controllers = [controller0, controller1]
+    this.state.controllers = [
+      controller0 === 'remote' ? 'human' : controller0,
+      controller1 === 'remote' ? 'human' : controller1,
+    ]
     this.state.offer = ''
     this.state.answer = ''
     this.state.game = snapshotFromRecord(parsed.record, 0)
@@ -511,6 +516,18 @@ export class AppController implements ControllerApi {
       return
     }
     const step = this.state.replay?.step ?? 0
+    if (step >= record.timeline.length) {
+      this.stopReplayInterval()
+      this.state.replay = {
+        record,
+        step: record.timeline.length,
+        isPlaying: false,
+      }
+      this.state.game = snapshotFromRecord(record, record.timeline.length)
+      this.state.status = 'Replay reached final state.'
+      this.notify()
+      return
+    }
     this.state.replay = {
       record,
       step,
