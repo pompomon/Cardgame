@@ -145,13 +145,13 @@ function buildLayout(width: number, height: number, orientation: OrientationMode
   const menuPopupPadding = isCompact ? 12 : 16
   const menuSectionGap = isCompact ? 8 : 10
   const menuTitleHeight = clamp(actionButtonHeight * 0.95, 30, 46)
-  const menuPopupMaxWidth = Math.max(120, popupAvailableWidth)
+  const menuPopupMaxWidth = Math.max(1, popupAvailableWidth)
   const menuPopupWidth = clamp(
     orientation === 'vertical' ? 560 : 760,
     Math.min(POPUP_MIN_WIDTH, menuPopupMaxWidth),
     menuPopupMaxWidth,
   )
-  const menuPopupMaxHeight = Math.max(180, safeHeight - margin * 2)
+  const menuPopupMaxHeight = Math.max(1, safeHeight - margin * 2)
   const menuPopupHeight = clamp(
     safeHeight * (orientation === 'vertical' ? 0.78 : 0.72),
     Math.min(260, menuPopupMaxHeight),
@@ -409,6 +409,69 @@ class CardgameScene extends Phaser.Scene {
     return button
   }
 
+  private bindScrollableViewport(
+    overlay: Phaser.GameObjects.Container,
+    viewportBackground: Phaser.GameObjects.Rectangle,
+    viewportBounds: { left: number; right: number; top: number; bottom: number },
+    applyScroll: (deltaY: number) => void,
+  ): void {
+    const isPointerWithinViewport = (pointer: Phaser.Input.Pointer): boolean => {
+      const localX = pointer.worldX - overlay.x
+      const localY = pointer.worldY - overlay.y
+      const withinX = localX >= viewportBounds.left && localX <= viewportBounds.right
+      const withinY = localY >= viewportBounds.top && localY <= viewportBounds.bottom
+      return withinX && withinY
+    }
+
+    const handleWheel = (
+      pointer: Phaser.Input.Pointer,
+      _gameObjects: Phaser.GameObjects.GameObject[],
+      _deltaX: number,
+      deltaY: number,
+    ): void => {
+      if (isPointerWithinViewport(pointer)) {
+        applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
+      }
+    }
+
+    let dragPointerId: number | null = null
+    let lastDragY = 0
+    const handleViewportPointerDown = (pointer: Phaser.Input.Pointer): void => {
+      if (!isPointerWithinViewport(pointer)) {
+        return
+      }
+      dragPointerId = pointer.id
+      lastDragY = pointer.worldY
+    }
+    const handlePointerMove = (pointer: Phaser.Input.Pointer): void => {
+      if (dragPointerId !== pointer.id) {
+        return
+      }
+      const deltaY = lastDragY - pointer.worldY
+      applyScroll(deltaY)
+      lastDragY = pointer.worldY
+    }
+    const handlePointerUp = (pointer: Phaser.Input.Pointer): void => {
+      if (dragPointerId === pointer.id) {
+        dragPointerId = null
+      }
+    }
+
+    this.input.on('wheel', handleWheel)
+    viewportBackground.on('pointerdown', handleViewportPointerDown)
+    this.input.on('pointermove', handlePointerMove)
+    this.input.on('pointerup', handlePointerUp)
+    this.input.on('pointerupoutside', handlePointerUp)
+    overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+      dragPointerId = null
+      this.input.off('wheel', handleWheel)
+      viewportBackground.off('pointerdown', handleViewportPointerDown)
+      this.input.off('pointermove', handlePointerMove)
+      this.input.off('pointerup', handlePointerUp)
+      this.input.off('pointerupoutside', handlePointerUp)
+    })
+  }
+
   private renderLobby(): void {
     const left = this.currentLayout.margin
     const top = this.currentLayout.headerTop
@@ -653,9 +716,11 @@ class CardgameScene extends Phaser.Scene {
 
     this.pendingTargetPicker?.destroy(true)
     this.menuOpen = true
+    this.statusText?.setVisible(false)
 
     const overlay = this.add.container(this.currentLayout.width / 2, this.currentLayout.height / 2)
     overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.statusText?.setVisible(true)
       if (this.menuOverlay === overlay) {
         this.menuOverlay = null
         this.menuOpen = false
@@ -685,7 +750,7 @@ class CardgameScene extends Phaser.Scene {
     scrim.on('pointermove', swallowPointerEvent)
     overlay.add(scrim)
 
-    const popupWidth = Math.max(120, this.currentLayout.menuPopupWidth)
+    const popupWidth = this.currentLayout.menuPopupWidth
     const popupHeight = this.currentLayout.menuPopupHeight
     const popupPadding = this.currentLayout.menuPopupPadding
     const sectionGap = this.currentLayout.menuSectionGap
@@ -701,7 +766,7 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.subtitleFontSize,
     }).setOrigin(0.5))
 
-    const buttonWidth = Math.max(120, popupWidth - popupPadding * 2)
+    const buttonWidth = Math.max(1, popupWidth - popupPadding * 2)
     const firstButtonY = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap + this.currentLayout.popupButtonHeight / 2
 
     overlay.add(this.createButton('Back to Lobby', 0, firstButtonY, () => {
@@ -721,110 +786,74 @@ class CardgameScene extends Phaser.Scene {
 
     const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
     const logTitleY = buttonStackBottomY + sectionGap + 14
-    overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
-      color: '#e5ecf5',
-      fontSize: this.currentLayout.bodyFontSize,
-    }).setOrigin(0, 0.5))
-
     const logViewportTop = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
     const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
-    const minViewportHeight = Math.min(MIN_LOG_VIEWPORT_HEIGHT, maxViewportHeight)
-    const logViewportHeight = Math.max(
-      minViewportHeight,
-      Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight),
-    )
-    const logViewportY = logViewportTop + logViewportHeight / 2
-    const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, 0x091227, 0.75)
-      .setStrokeStyle(1, 0x365092)
-    logViewportBackground.setInteractive()
-    logViewportBackground.on('pointerdown', swallowPointerEvent)
-    logViewportBackground.on('pointerup', swallowPointerEvent)
-    logViewportBackground.on('pointermove', swallowPointerEvent)
-    overlay.add(logViewportBackground)
+    if (maxViewportHeight >= MIN_LOG_VIEWPORT_HEIGHT) {
+      overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
+        color: '#e5ecf5',
+        fontSize: this.currentLayout.bodyFontSize,
+      }).setOrigin(0, 0.5))
 
-    const logContent = this.add.container(-logViewportWidth / 2 + 10, logViewportTop + 8)
-    overlay.add(logContent)
-    const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.smallFontSize,
-      wordWrap: { width: Math.max(40, logViewportWidth - 20) },
-    }).setOrigin(0, 0)
-    logContent.add(logText)
+      const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
+      const logViewportY = logViewportTop + logViewportHeight / 2
+      const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, 0x091227, 0.75)
+        .setStrokeStyle(1, 0x365092)
+      logViewportBackground.setInteractive()
+      logViewportBackground.on('pointerdown', swallowPointerEvent)
+      logViewportBackground.on('pointerup', swallowPointerEvent)
+      logViewportBackground.on('pointermove', swallowPointerEvent)
+      overlay.add(logViewportBackground)
 
-    const logMask = this.add.graphics()
-    logMask.fillStyle(0xffffff)
-    logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
-    logMask.setVisible(false)
-    overlay.add(logMask)
-    logContent.setMask(logMask.createGeometryMask())
-
-    const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
-    let scrollOffset = 0
-    const applyScroll = (deltaY: number): void => {
-      if (maxScroll <= 0) {
-        return
-      }
-      scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
-      logContent.y = logViewportTop + 8 - scrollOffset
-    }
-
-    if (maxScroll > 0) {
-      const isPointerWithinLog = (pointer: Phaser.Input.Pointer): boolean => {
-        const localX = pointer.worldX - overlay.x
-        const localY = pointer.worldY - overlay.y
-        const withinX = localX >= -logViewportWidth / 2 && localX <= logViewportWidth / 2
-        const withinY = localY >= logViewportTop && localY <= logViewportTop + logViewportHeight
-        return withinX && withinY
-      }
-
-      const handleWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
-        if (isPointerWithinLog(pointer)) {
-          applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
-        }
-      }
-
-      let dragPointerId: number | null = null
-      let lastDragY = 0
-      const handleLogPointerDown = (pointer: Phaser.Input.Pointer): void => {
-        if (!isPointerWithinLog(pointer)) {
-          return
-        }
-        dragPointerId = pointer.id
-        lastDragY = pointer.worldY
-      }
-      const handlePointerMove = (pointer: Phaser.Input.Pointer) => {
-        if (dragPointerId !== pointer.id) {
-          return
-        }
-        const deltaY = lastDragY - pointer.worldY
-        applyScroll(deltaY)
-        lastDragY = pointer.worldY
-      }
-      const handlePointerUp = (pointer: Phaser.Input.Pointer) => {
-        if (dragPointerId === pointer.id) {
-          dragPointerId = null
-        }
-      }
-
-      this.input.on('wheel', handleWheel)
-      logViewportBackground.on('pointerdown', handleLogPointerDown)
-      this.input.on('pointermove', handlePointerMove)
-      this.input.on('pointerup', handlePointerUp)
-      this.input.on('pointerupoutside', handlePointerUp)
-      overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
-        dragPointerId = null
-        this.input.off('wheel', handleWheel)
-        logViewportBackground.off('pointerdown', handleLogPointerDown)
-        this.input.off('pointermove', handlePointerMove)
-        this.input.off('pointerup', handlePointerUp)
-        this.input.off('pointerupoutside', handlePointerUp)
-      })
-
-      overlay.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
+      const logContent = this.add.container(-logViewportWidth / 2 + 10, logViewportTop + 8)
+      overlay.add(logContent)
+      const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
-      }).setOrigin(1, 0.5))
+        wordWrap: { width: Math.max(40, logViewportWidth - 20) },
+      }).setOrigin(0, 0)
+      logContent.add(logText)
+
+      const logMask = this.add.graphics()
+      logMask.fillStyle(0xffffff)
+      logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
+      logMask.setVisible(false)
+      overlay.add(logMask)
+      logContent.setMask(logMask.createGeometryMask())
+
+      const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
+      let scrollOffset = 0
+      const applyScroll = (deltaY: number): void => {
+        if (maxScroll <= 0) {
+          return
+        }
+        scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
+        logContent.y = logViewportTop + 8 - scrollOffset
+      }
+
+      if (maxScroll > 0) {
+        this.bindScrollableViewport(
+          overlay,
+          logViewportBackground,
+          {
+            left: -logViewportWidth / 2,
+            right: logViewportWidth / 2,
+            top: logViewportTop,
+            bottom: logViewportTop + logViewportHeight,
+          },
+          applyScroll,
+        )
+
+        overlay.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+        }).setOrigin(1, 0.5))
+      }
+    } else {
+      overlay.add(this.add.text(0, buttonStackBottomY + sectionGap + 10, 'Replay Log hidden on very small screens.', {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+      }).setOrigin(0.5))
     }
 
     this.menuOverlay = overlay
@@ -938,56 +967,17 @@ class CardgameScene extends Phaser.Scene {
     }
 
     if (maxScroll > 0) {
-      const isPointerWithinOptions = (pointer: Phaser.Input.Pointer): boolean => {
-        const localX = pointer.worldX - overlay.x
-        const localY = pointer.worldY - overlay.y
-        const withinX = localX >= -buttonWidth / 2 && localX <= buttonWidth / 2
-        const withinY = localY >= optionsTopY && localY <= optionsTopY + optionsAreaHeight
-        return withinX && withinY
-      }
-
-      const handleWheel = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
-        if (isPointerWithinOptions(pointer)) {
-          applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
-        }
-      }
-
-      let dragPointerId: number | null = null
-      let lastDragY = 0
-      const handleViewportPointerDown = (pointer: Phaser.Input.Pointer): void => {
-        if (!isPointerWithinOptions(pointer)) {
-          return
-        }
-        dragPointerId = pointer.id
-        lastDragY = pointer.worldY
-      }
-      const handlePointerMove = (pointer: Phaser.Input.Pointer) => {
-        if (dragPointerId !== pointer.id) {
-          return
-        }
-        const deltaY = lastDragY - pointer.worldY
-        applyScroll(deltaY)
-        lastDragY = pointer.worldY
-      }
-      const handlePointerUp = (pointer: Phaser.Input.Pointer) => {
-        if (dragPointerId === pointer.id) {
-          dragPointerId = null
-        }
-      }
-
-      this.input.on('wheel', handleWheel)
-      optionsViewportBackground.on('pointerdown', handleViewportPointerDown)
-      this.input.on('pointermove', handlePointerMove)
-      this.input.on('pointerup', handlePointerUp)
-      this.input.on('pointerupoutside', handlePointerUp)
-      overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
-        dragPointerId = null
-        this.input.off('wheel', handleWheel)
-        optionsViewportBackground.off('pointerdown', handleViewportPointerDown)
-        this.input.off('pointermove', handlePointerMove)
-        this.input.off('pointerup', handlePointerUp)
-        this.input.off('pointerupoutside', handlePointerUp)
-      })
+      this.bindScrollableViewport(
+        overlay,
+        optionsViewportBackground,
+        {
+          left: -buttonWidth / 2,
+          right: buttonWidth / 2,
+          top: optionsTopY,
+          bottom: optionsTopY + optionsAreaHeight,
+        },
+        applyScroll,
+      )
 
       overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll or drag', {
         color: '#9db0d9',
