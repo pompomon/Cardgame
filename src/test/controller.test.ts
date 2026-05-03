@@ -201,6 +201,7 @@ describe('controller recording and replay', () => {
 
     const record = parseExported(controller)
     expect(record.timeline).toHaveLength(0)
+    vi.useRealTimers()
   })
 
   it('blocks replay while connected to a peer game', () => {

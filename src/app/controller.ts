@@ -298,18 +298,19 @@ export class AppController implements ControllerApi {
 
     this.aiTimeout = setTimeout(() => {
       this.aiTimeout = null
-      if (!this.state.game || this.isReplayActive()) {
+      const game = this.state.game
+      if (!game || this.isReplayActive()) {
         return
       }
-      const actor = activeActor(this.state.game)
+      const actor = activeActor(game)
       if (this.state.controllers[actor] !== 'ai') {
         return
       }
-      const action = chooseAiAction(this.state.game, actor)
+      const action = chooseAiAction(game, actor)
       if (!action) {
         return
       }
-      if (!isLegalActionForState(this.state.game, action)) {
+      if (!isLegalActionForState(game, action)) {
         return
       }
       this.applyRecordedAction(action, 'ai', true)
