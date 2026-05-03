@@ -3,6 +3,8 @@ import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
+const BLOB_URL_REVOCATION_DELAY_MS = 1000
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -297,7 +299,7 @@ export class DomRenderer implements AppRenderer {
       link.href = url
       link.download = `cardgame-recording-${Date.now()}.json`
       link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOCATION_DELAY_MS)
     })
 
     this.container.querySelector('#save-recording-local')?.addEventListener('click', () => {

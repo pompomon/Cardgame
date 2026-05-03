@@ -18,6 +18,7 @@ const COMPACT_DIMENSION_THRESHOLD = 700
 const PORTRAIT_LOG_COLLAPSE_HEIGHT_THRESHOLD = 920
 const PORTRAIT_LOG_COLLAPSE_DIMENSION_THRESHOLD = 760
 const LANDSCAPE_LOG_COLLAPSE_HEIGHT_THRESHOLD = 660
+const BLOB_URL_REVOCATION_DELAY_MS = 1000
 
 type OrientationMode = 'vertical' | 'horizontal'
 
@@ -1122,7 +1123,7 @@ export class PhaserRenderer implements AppRenderer {
         link.href = url
         link.download = `cardgame-recording-${Date.now()}.json`
         link.click()
-        setTimeout(() => URL.revokeObjectURL(url), 1000)
+        setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOCATION_DELAY_MS)
       }
     }
 
