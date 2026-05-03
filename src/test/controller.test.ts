@@ -191,4 +191,32 @@ describe('controller recording and replay', () => {
     expect(replayView.isPlaying).toBe(false)
     expect(controller.getViewModel().status).toContain('Failed to load recording')
   })
+
+  it('cancels stale AI timeout when starting a new game', () => {
+    vi.useFakeTimers()
+    const controller = new AppController('dom')
+    controller.startGame('local-aivai')
+    controller.startGame('local-hvh')
+    vi.advanceTimersByTime(500)
+
+    const record = parseExported(controller)
+    expect(record.timeline).toHaveLength(0)
+    expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(false)
+  })
+
+  it('blocks replay while connected to a peer game', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const internals = controller as unknown as {
+      state: { mode: string | null }
+      p2p: { isConnected: () => boolean } | null
+    }
+    internals.state.mode = 'p2p-host'
+    internals.p2p = { isConnected: () => true }
+
+    controller.startReplay()
+
+    expect(controller.getViewModel().replay.active).toBe(false)
+    expect(controller.getViewModel().status).toContain('Replay is unavailable while connected to a peer game.')
+  })
 })

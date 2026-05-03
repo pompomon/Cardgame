@@ -105,6 +105,7 @@ export class AppController implements ControllerApi {
   private listeners = new Set<(view: AppViewModel) => void>()
   private p2p: P2PLink | null = null
   private replayInterval: ReturnType<typeof setInterval> | null = null
+  private aiTimeout: ReturnType<typeof setTimeout> | null = null
 
   constructor(renderer: RendererKind) {
     this.state = {
@@ -160,6 +161,14 @@ export class AppController implements ControllerApi {
     }
     clearInterval(this.replayInterval)
     this.replayInterval = null
+  }
+
+  private clearAiTimeout(): void {
+    if (!this.aiTimeout) {
+      return
+    }
+    clearTimeout(this.aiTimeout)
+    this.aiTimeout = null
   }
 
   private isReplayActive(): boolean {
@@ -276,22 +285,31 @@ export class AppController implements ControllerApi {
   }
 
   private scheduleAiIfNeeded(): void {
+    this.clearAiTimeout()
     if (!this.state.game || this.state.game.phase === 'gameOver' || this.isReplayActive()) {
       return
     }
 
-    const actor = activeActor(this.state.game)
-    const control = this.state.controllers[actor]
-    if (control !== 'ai' || !canAct(this.state.game, actor)) {
+    const currentActor = activeActor(this.state.game)
+    const control = this.state.controllers[currentActor]
+    if (control !== 'ai' || !canAct(this.state.game, currentActor)) {
       return
     }
 
-    setTimeout(() => {
+    this.aiTimeout = setTimeout(() => {
+      this.aiTimeout = null
       if (!this.state.game || this.isReplayActive()) {
+        return
+      }
+      const actor = activeActor(this.state.game)
+      if (this.state.controllers[actor] !== 'ai' || !canAct(this.state.game, actor)) {
         return
       }
       const action = chooseAiAction(this.state.game, actor)
       if (!action) {
+        return
+      }
+      if (!isLegalActionForState(this.state.game, action)) {
         return
       }
       this.applyRecordedAction(action, 'ai', true)
@@ -323,6 +341,7 @@ export class AppController implements ControllerApi {
 
   startGame(mode: Mode): void {
     this.stopReplayInterval()
+    this.clearAiTimeout()
     this.state.replay = null
     this.state.mode = mode
     this.state.seed = Date.now()
@@ -358,6 +377,7 @@ export class AppController implements ControllerApi {
 
   backToLobby(): void {
     this.stopReplayInterval()
+    this.clearAiTimeout()
     this.p2p?.close()
     this.p2p = null
     this.state.mode = null
@@ -425,6 +445,7 @@ export class AppController implements ControllerApi {
     if (!this.state.mode || this.isReplayActive()) {
       return
     }
+    this.clearAiTimeout()
     this.state.seed = Date.now()
     this.state.game = createInitialGame(this.state.seed)
     this.initializeRecording(this.state.mode)
@@ -449,6 +470,7 @@ export class AppController implements ControllerApi {
 
   importRecordingJson(json: string): void {
     this.stopReplayInterval()
+    this.clearAiTimeout()
     const parsed = parseGameRecordJson(json)
     if (!parsed.ok) {
       if (this.state.replay) {
@@ -527,6 +549,11 @@ export class AppController implements ControllerApi {
   }
 
   startReplay(): void {
+    if (this.state.mode !== null && isP2PMode(this.state.mode) && (this.p2p?.isConnected() ?? false)) {
+      this.state.status = 'Replay is unavailable while connected to a peer game.'
+      this.notify()
+      return
+    }
     const record = this.state.replay?.record ?? this.state.recording
     if (!record) {
       this.state.status = 'No recording available for replay.'
