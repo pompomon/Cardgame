@@ -9,6 +9,7 @@ const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
+const MIN_LOG_VIEWPORT_HEIGHT = 48
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -685,7 +686,7 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(scrim)
 
     const popupWidth = Math.max(120, this.currentLayout.menuPopupWidth)
-    const popupHeight = Math.max(220, this.currentLayout.menuPopupHeight)
+    const popupHeight = this.currentLayout.menuPopupHeight
     const popupPadding = this.currentLayout.menuPopupPadding
     const sectionGap = this.currentLayout.menuSectionGap
     const panel = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x0f1a3b, 0.96).setStrokeStyle(2, 0x365092)
@@ -713,11 +714,13 @@ class CardgameScene extends Phaser.Scene {
       this.rendererRef.toggleOrientationMode()
     }, buttonWidth, this.currentLayout.popupButtonHeight))
 
-    overlay.add(this.createButton('Close', 0, firstButtonY + (this.currentLayout.popupButtonHeight + POPUP_BUTTON_GAP) * 2, () => {
+    const closeButtonY = firstButtonY + (this.currentLayout.popupButtonHeight + POPUP_BUTTON_GAP) * 2
+    overlay.add(this.createButton('Close', 0, closeButtonY, () => {
       this.closeMenuOverlay()
     }, Math.min(buttonWidth, 220), this.currentLayout.popupButtonHeight))
 
-    const logTitleY = firstButtonY + this.currentLayout.popupButtonHeight * 1.5 + POPUP_BUTTON_GAP * 2 + sectionGap + 14
+    const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
+    const logTitleY = buttonStackBottomY + sectionGap + 14
     overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
       color: '#e5ecf5',
       fontSize: this.currentLayout.bodyFontSize,
@@ -725,8 +728,12 @@ class CardgameScene extends Phaser.Scene {
 
     const logViewportTop = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
-    const maxViewportHeight = popupHeight / 2 - logViewportTop + popupPadding
-    const logViewportHeight = Math.max(48, Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight))
+    const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
+    const minViewportHeight = Math.min(MIN_LOG_VIEWPORT_HEIGHT, maxViewportHeight)
+    const logViewportHeight = Math.max(
+      minViewportHeight,
+      Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight),
+    )
     const logViewportY = logViewportTop + logViewportHeight / 2
     const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, 0x091227, 0.75)
       .setStrokeStyle(1, 0x365092)
