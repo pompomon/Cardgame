@@ -69,6 +69,10 @@ function isLegalActionForState(state: GameState, action: GameAction): boolean {
   return getLegalActions(state, action.actor).some((candidate) => isSameAction(candidate, action))
 }
 
+function isP2PMode(mode: Mode): boolean {
+  return mode === 'p2p-host' || mode === 'p2p-join'
+}
+
 export interface ControllerApi {
   subscribe(listener: (view: AppViewModel) => void): () => void
   getViewModel(): AppViewModel
@@ -455,7 +459,7 @@ export class AppController implements ControllerApi {
       step: 0,
       isPlaying: false,
     }
-    this.state.mode = parsed.record.metadata.mode === 'p2p-host' || parsed.record.metadata.mode === 'p2p-join'
+    this.state.mode = isP2PMode(parsed.record.metadata.mode)
       ? 'local-hvh'
       : parsed.record.metadata.mode
     this.state.seed = parsed.record.metadata.seed
@@ -516,7 +520,8 @@ export class AppController implements ControllerApi {
       return
     }
     const step = this.state.replay?.step ?? 0
-    if (step >= record.timeline.length) {
+    const boundedStep = Math.max(0, Math.min(step, record.timeline.length))
+    if (boundedStep === record.timeline.length) {
       this.stopReplayInterval()
       this.state.replay = {
         record,
@@ -530,11 +535,11 @@ export class AppController implements ControllerApi {
     }
     this.state.replay = {
       record,
-      step,
+      step: boundedStep,
       isPlaying: true,
     }
-    this.state.game = snapshotFromRecord(record, step)
-    this.state.status = `Replay playing from step ${step}/${record.timeline.length}.`
+    this.state.game = snapshotFromRecord(record, boundedStep)
+    this.state.status = `Replay playing from step ${boundedStep}/${record.timeline.length}.`
     this.setupReplayInterval()
     this.notify()
   }
