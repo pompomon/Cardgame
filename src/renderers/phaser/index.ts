@@ -713,11 +713,10 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private closeMenuOverlay(): void {
-    if (!this.menuOverlay) {
-      this.menuOpen = false
-      return
-    }
-    this.menuOverlay.destroy(true)
+    const overlay = this.menuOverlay
+    this.menuOverlay = null
+    this.menuOpen = false
+    overlay?.destroy(true)
   }
 
   private openMenuOverlay(lines: string[]): void {
