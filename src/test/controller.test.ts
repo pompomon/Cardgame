@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
-import type { ControllerKind } from '../app/types'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -59,10 +58,10 @@ type RemoteActionApplier = {
   applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void
 }
 
-type ControllerInternals = {
+type ControllerModeControllersState = {
   state: {
     mode: string | null
-    controllers: [ControllerKind, ControllerKind]
+    controllers: ['human' | 'ai' | 'remote', 'human' | 'ai' | 'remote']
   }
 }
 
@@ -141,9 +140,9 @@ describe('controller recording and replay', () => {
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
-    const internals = controller as unknown as ControllerInternals
-    internals.state.mode = 'p2p-host'
-    internals.state.controllers = ['human', 'remote']
+    const state = controller as unknown as ControllerModeControllersState
+    state.state.mode = 'p2p-host'
+    state.state.controllers = ['human', 'remote']
 
     ;(controller as unknown as RemoteActionApplier)
       .applyRecordedAction(action, 'remote', false)
