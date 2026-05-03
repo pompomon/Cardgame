@@ -290,9 +290,9 @@ export class AppController implements ControllerApi {
       return
     }
 
-    const currentActor = activeActor(this.state.game)
-    const control = this.state.controllers[currentActor]
-    if (control !== 'ai' || !canAct(this.state.game, currentActor)) {
+    const actor = activeActor(this.state.game)
+    const control = this.state.controllers[actor]
+    if (control !== 'ai' || !canAct(this.state.game, actor)) {
       return
     }
 
@@ -302,7 +302,7 @@ export class AppController implements ControllerApi {
         return
       }
       const actor = activeActor(this.state.game)
-      if (this.state.controllers[actor] !== 'ai' || !canAct(this.state.game, actor)) {
+      if (this.state.controllers[actor] !== 'ai') {
         return
       }
       const action = chooseAiAction(this.state.game, actor)

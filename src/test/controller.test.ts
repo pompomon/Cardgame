@@ -201,7 +201,6 @@ describe('controller recording and replay', () => {
 
     const record = parseExported(controller)
     expect(record.timeline).toHaveLength(0)
-    expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(false)
   })
 
   it('blocks replay while connected to a peer game', () => {
