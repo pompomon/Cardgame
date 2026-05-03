@@ -174,4 +174,21 @@ describe('controller recording and replay', () => {
     expect(replayView.step).toBe(replayView.totalSteps)
     expect(controller.getViewModel().status).toContain('Replay reached final state.')
   })
+
+  it('pauses active replay when recording import JSON is invalid', () => {
+    const controller = new AppController('dom')
+    controller.startGame('local-hvh')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    controller.submitAction(action!)
+    controller.startReplay()
+    expect(controller.getViewModel().replay.isPlaying).toBe(true)
+
+    controller.importRecordingJson('not-json')
+
+    const replayView = controller.getViewModel().replay
+    expect(replayView.active).toBe(true)
+    expect(replayView.isPlaying).toBe(false)
+    expect(controller.getViewModel().status).toContain('Failed to load recording')
+  })
 })

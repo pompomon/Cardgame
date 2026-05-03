@@ -92,6 +92,7 @@ export interface ControllerApi {
   importRecordingJson(json: string): void
   saveRecordingToLocalStorage(): void
   loadRecordingFromLocalStorage(): void
+  reportStatus(message: string): void
   startReplay(): void
   pauseReplay(): void
   stepReplay(delta: number): void
@@ -450,6 +451,12 @@ export class AppController implements ControllerApi {
     this.stopReplayInterval()
     const parsed = parseGameRecordJson(json)
     if (!parsed.ok) {
+      if (this.state.replay) {
+        this.state.replay = {
+          ...this.state.replay,
+          isPlaying: false,
+        }
+      }
       this.state.status = `Failed to load recording: ${parsed.error}`
       this.notify()
       return
@@ -512,6 +519,11 @@ export class AppController implements ControllerApi {
     }
     this.refreshSavedRecordingFlag()
     this.importRecordingJson(payload)
+  }
+
+  reportStatus(message: string): void {
+    this.state.status = message
+    this.notify()
   }
 
   startReplay(): void {

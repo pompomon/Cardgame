@@ -127,4 +127,41 @@ describe('game-recording', () => {
     const parsed = parseGameRecordJson(payload)
     expect(parsed.ok).toBe(false)
   })
+
+  it('drops unknown root metadata and timeline properties during parse', () => {
+    const initial = createInitialGame(99)
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 99,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+        extra: 'metadata-noise',
+      },
+      initialState: initial,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'end_turn', actor: 0 },
+          state: initial,
+          timestamp: 3,
+          noisy: true,
+        },
+      ],
+      topLevelNoise: { huge: 'payload' },
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(Object.hasOwn(parsed.record as unknown as Record<string, unknown>, 'topLevelNoise')).toBe(false)
+    expect(Object.hasOwn(parsed.record.metadata as unknown as Record<string, unknown>, 'extra')).toBe(false)
+    expect(Object.hasOwn(parsed.record.timeline[0] as unknown as Record<string, unknown>, 'noisy')).toBe(false)
+  })
 })

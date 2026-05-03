@@ -308,8 +308,32 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     }
   }
 
+  const sanitizedRecord: GameRecordFile = {
+    kind: GAME_RECORD_KIND,
+    version: GAME_RECORD_VERSION,
+    metadata: {
+      seed: metadata.seed,
+      mode: metadata.mode,
+      controllers: [controllers[0], controllers[1]],
+      startedAt: metadata.startedAt,
+      updatedAt: metadata.updatedAt,
+      completed: metadata.completed,
+    },
+    initialState: payload.initialState as GameState,
+    timeline: payload.timeline.map((step) => {
+      const entry = step as Record<string, unknown>
+      return {
+        index: entry.index as number,
+        source: entry.source as GameActionSource,
+        action: entry.action as GameAction,
+        state: entry.state as GameState,
+        timestamp: entry.timestamp as number,
+      }
+    }),
+  }
+
   return {
     ok: true,
-    record: structuredClone(payload as unknown as GameRecordFile),
+    record: structuredClone(sanitizedRecord),
   }
 }

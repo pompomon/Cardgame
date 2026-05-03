@@ -323,8 +323,12 @@ export class DomRenderer implements AppRenderer {
       if (!file) {
         return
       }
-      const text = await file.text()
-      this.controller?.importRecordingJson(text)
+      try {
+        const text = await file.text()
+        this.controller?.importRecordingJson(text)
+      } catch {
+        this.controller?.reportStatus('Failed to read recording file.')
+      }
       input.value = ''
     })
 
