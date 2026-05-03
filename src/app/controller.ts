@@ -643,5 +643,6 @@ export class AppController implements ControllerApi {
     this.state.game = finalState
     this.state.status = 'Exited replay at final recorded game state.'
     this.notify()
+    this.scheduleAiIfNeeded()
   }
 }

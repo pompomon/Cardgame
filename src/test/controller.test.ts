@@ -223,6 +223,24 @@ describe('controller recording and replay', () => {
     expect(controller.getViewModel().status).toContain('Replay reached final state.')
   })
 
+  it('resumes AI scheduling after exiting replay at final state', () => {
+    vi.useFakeTimers()
+    const controller = new AppController('dom')
+    controller.startGame('local-hvai')
+    expect(controller.getViewModel().game?.legal.canEndTurn).toBe(true)
+    controller.submitAction({ type: 'end_turn', actor: 0 })
+    expect(parseExported(controller).timeline).toHaveLength(1)
+
+    controller.startReplay()
+    controller.exitReplay()
+    vi.advanceTimersByTime(500)
+
+    const record = parseExported(controller)
+    expect(record.timeline.length).toBeGreaterThan(1)
+    expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(true)
+    vi.useRealTimers()
+  })
+
   it('clears active recording state when returning to lobby', () => {
     const controller = new AppController('dom')
     controller.startGame('local-hvh')
