@@ -140,7 +140,7 @@ describe('game-recording', () => {
         startedAt: 1,
         updatedAt: 2,
         completed: false,
-        extra: 'metadata-noise',
+        unknownProperty: 'metadata-noise',
       },
       initialState: initial,
       timeline: [
@@ -150,18 +150,18 @@ describe('game-recording', () => {
           action: { type: 'end_turn', actor: 0 },
           state: initial,
           timestamp: 3,
-          noisy: true,
+          unknownProperty: true,
         },
       ],
-      topLevelNoise: { huge: 'payload' },
+      unknownTopLevelProperty: 'unknownData',
     })
     const parsed = parseGameRecordJson(payload)
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) {
       return
     }
-    expect(Object.hasOwn(parsed.record as unknown as Record<string, unknown>, 'topLevelNoise')).toBe(false)
-    expect(Object.hasOwn(parsed.record.metadata as unknown as Record<string, unknown>, 'extra')).toBe(false)
-    expect(Object.hasOwn(parsed.record.timeline[0] as unknown as Record<string, unknown>, 'noisy')).toBe(false)
+    expect(Object.hasOwn(parsed.record as unknown as Record<string, unknown>, 'unknownTopLevelProperty')).toBe(false)
+    expect(Object.hasOwn(parsed.record.metadata as unknown as Record<string, unknown>, 'unknownProperty')).toBe(false)
+    expect(Object.hasOwn(parsed.record.timeline[0] as unknown as Record<string, unknown>, 'unknownProperty')).toBe(false)
   })
 })
