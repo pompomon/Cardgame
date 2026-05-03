@@ -350,21 +350,12 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private clearRoot(): void {
-    const wasMenuOpen = this.menuOpen && this.menuOverlay !== null
-    const preservedMenuOverlay = wasMenuOpen ? this.menuOverlay : null
-    if (preservedMenuOverlay?.parentContainer === this.rootContainer) {
-      this.rootContainer.remove(preservedMenuOverlay)
-    }
+    const wasMenuOpen = this.menuOpen
+    this.menuOverlay = null
     this.rootContainer?.removeAll(true)
     this.pendingTargetPicker = null
     this.battlefieldDropZone = null
-    if (wasMenuOpen && preservedMenuOverlay) {
-      this.menuOverlay = preservedMenuOverlay
-      this.menuOpen = true
-    } else {
-      this.menuOverlay = null
-      this.menuOpen = false
-    }
+    this.menuOpen = wasMenuOpen
   }
 
   private xForCard(index: number, count: number): number {
@@ -392,15 +383,15 @@ class CardgameScene extends Phaser.Scene {
     this.setStatus(view.status)
 
     if (!view.game) {
+      this.menuOpen = false
       this.closeMenuOverlay()
       this.renderLobby()
       return
     }
 
     this.renderGame(view)
-    const activeMenuOverlay = this.menuOverlay
-    if (activeMenuOverlay && activeMenuOverlay.parentContainer !== this.rootContainer) {
-      this.rootContainer.add(activeMenuOverlay)
+    if (this.menuOpen) {
+      this.openMenuOverlay(view.game.log)
     }
   }
 
