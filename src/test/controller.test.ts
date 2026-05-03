@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
+import type { ControllerKind } from '../app/types'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -54,6 +55,10 @@ function parseExported(controller: AppController) {
   return parsed.record
 }
 
+type RemoteActionApplier = {
+  applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void
+}
+
 describe('controller recording and replay', () => {
   beforeEach(() => {
     installMemoryStorage()
@@ -103,7 +108,7 @@ describe('controller recording and replay', () => {
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
 
-    ;(controller as unknown as { applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void })
+    ;(controller as unknown as RemoteActionApplier)
       .applyRecordedAction(action, 'remote', false)
 
     const record = parseExported(controller)
@@ -116,7 +121,7 @@ describe('controller recording and replay', () => {
     const before = parseExported(controller)
     expect(before.timeline).toHaveLength(0)
 
-    ;(controller as unknown as { applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void })
+    ;(controller as unknown as RemoteActionApplier)
       .applyRecordedAction({ type: 'end_turn', actor: 1 }, 'remote', false)
 
     expect(controller.getViewModel().status).toContain('Ignored illegal action from peer.')
@@ -132,13 +137,13 @@ describe('controller recording and replay', () => {
     const internals = controller as unknown as {
       state: {
         mode: string | null
-        controllers: ['human' | 'ai' | 'remote', 'human' | 'ai' | 'remote']
+        controllers: [ControllerKind, ControllerKind]
       }
     }
     internals.state.mode = 'p2p-host'
     internals.state.controllers = ['human', 'remote']
 
-    ;(controller as unknown as { applyRecordedAction: (nextAction: unknown, source: 'remote', broadcast: boolean) => void })
+    ;(controller as unknown as RemoteActionApplier)
       .applyRecordedAction(action, 'remote', false)
 
     expect(controller.getViewModel().status).toContain('Ignored out-of-role action from peer.')

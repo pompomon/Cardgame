@@ -322,11 +322,8 @@ export class AppController implements ControllerApi {
       return
     }
     if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
-      const remoteActor = this.state.controllers[0] === 'remote'
-        ? 0
-        : this.state.controllers[1] === 'remote'
-          ? 1
-          : null
+      const remoteActorIndex = this.state.controllers.findIndex((controller) => controller === 'remote')
+      const remoteActor = remoteActorIndex === -1 ? null : remoteActorIndex
       if (remoteActor !== null && action.actor !== remoteActor) {
         this.state.status = 'Ignored out-of-role action from peer.'
         this.notify()
