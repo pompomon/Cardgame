@@ -3,6 +3,8 @@ import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
+const BLOB_URL_REVOCATION_DELAY_MS = 1000
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -30,6 +32,16 @@ function renderLobby(view: AppViewModel): string {
         <button data-mode="local-aivai">Local AI vs AI</button>
         <button data-mode="p2p-host">P2P Host</button>
         <button data-mode="p2p-join">P2P Join</button>
+      </div>
+      <div class="controls">
+        <h3>Recording</h3>
+        <p>Load a saved game recording from browser storage or a file.</p>
+        <div class="action-row">
+          <button id="load-recording-local">Load from Browser</button>
+          <button id="load-recording-file-btn">Load from File</button>
+        </div>
+        <input id="load-recording-file" type="file" accept="application/json,.json" hidden />
+        <p>Local save available: ${view.recording.hasLocalSave ? 'Yes' : 'No'}</p>
       </div>
     </section>
   `
@@ -75,6 +87,10 @@ function renderGame(view: AppViewModel): string {
   const actorState = game.actor === 0 ? p1 : p2
   const safeStatus = escapeHtml(view.status)
   const safeWinnerText = escapeHtml(game.winnerText)
+  const recordingMeta = view.recording.metadata
+  const recordingMetaText = recordingMeta
+    ? `Seed ${recordingMeta.seed} • Mode ${recordingMeta.mode} • Controllers ${recordingMeta.controllers[0]}/${recordingMeta.controllers[1]} • Completed ${recordingMeta.completed ? 'Yes' : 'No'}`
+    : 'No recording data.'
   const renderPlayLandButton = (option: {
     action: { cardId: string; effectTargetId?: string }
     label: string
@@ -129,6 +145,31 @@ function renderGame(view: AppViewModel): string {
       </div>
       <p class="status">${safeStatus}</p>
       <p>${safeWinnerText}</p>
+      <div class="controls">
+        <h3>Recorder</h3>
+        <p>${escapeHtml(recordingMetaText)}</p>
+        <div class="action-row">
+          <button id="save-recording-download">Download Save File</button>
+          <button id="save-recording-local">Save to Browser</button>
+          <button id="load-recording-local">Load from Browser</button>
+          <button id="load-recording-file-btn">Load from File</button>
+          ${view.replay.active ? '' : '<button id="replay-start">Start Replay</button>'}
+        </div>
+        <input id="load-recording-file" type="file" accept="application/json,.json" hidden />
+      </div>
+      ${view.replay.active
+        ? `<div class="controls">
+          <h3>Replay Controls</h3>
+          <p>Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}</p>
+          <div class="action-row">
+            <button id="replay-playpause">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
+            <button id="replay-prev">Previous</button>
+            <button id="replay-next">Next</button>
+            <button id="replay-end">Jump to End</button>
+            <button id="replay-exit">Exit Replay</button>
+          </div>
+        </div>`
+        : ''}
       <div class="board">
         <article class="player">
           <h3>Player 1 (${escapeHtml(view.controllers[0])})</h3>
@@ -191,8 +232,10 @@ export class DomRenderer implements AppRenderer {
 
     this.container.innerHTML = `
       <main class="app-shell">
-        ${renderLobby(view)}
-        ${view.mode === 'p2p-host' || view.mode === 'p2p-join' ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
+        ${view.game ? '' : renderLobby(view)}
+        ${(view.mode === 'p2p-host' || view.mode === 'p2p-join') && !view.replay.active
+    ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft)
+    : ''}
         ${view.game ? renderGame(view) : ''}
       </main>
     `
@@ -243,6 +286,83 @@ export class DomRenderer implements AppRenderer {
 
     this.container.querySelector('#start-p2p-game')?.addEventListener('click', () => {
       this.controller?.startP2PGame()
+    })
+
+    this.container.querySelector('#save-recording-download')?.addEventListener('click', () => {
+      const payload = this.controller?.exportRecordingJson()
+      if (!payload) {
+        return
+      }
+      const blob = new Blob([payload], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `cardgame-recording-${Date.now()}.json`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOCATION_DELAY_MS)
+    })
+
+    this.container.querySelector('#save-recording-local')?.addEventListener('click', () => {
+      this.controller?.saveRecordingToLocalStorage()
+    })
+
+    this.container.querySelectorAll('#load-recording-local').forEach((element) => {
+      element.addEventListener('click', () => {
+        this.controller?.loadRecordingFromLocalStorage()
+      })
+    })
+
+    this.container.querySelectorAll('#load-recording-file-btn').forEach((element) => {
+      element.addEventListener('click', () => {
+        const input = this.container?.querySelector<HTMLInputElement>('#load-recording-file')
+        input?.click()
+      })
+    })
+
+    this.container.querySelector('#load-recording-file')?.addEventListener('change', async (event) => {
+      const input = event.target as HTMLInputElement
+      const file = input.files?.[0]
+      if (!file) {
+        return
+      }
+      try {
+        const text = await file.text()
+        this.controller?.importRecordingJson(text)
+      } catch {
+        this.controller?.reportStatus('Failed to read recording file.')
+      }
+      input.value = ''
+    })
+
+    this.container.querySelector('#replay-start')?.addEventListener('click', () => {
+      this.controller?.startReplay()
+    })
+
+    this.container.querySelector('#replay-playpause')?.addEventListener('click', () => {
+      if (!this.view?.replay.active) {
+        return
+      }
+      if (this.view.replay.isPlaying) {
+        this.controller?.pauseReplay()
+        return
+      }
+      this.controller?.startReplay()
+    })
+
+    this.container.querySelector('#replay-prev')?.addEventListener('click', () => {
+      this.controller?.stepReplay(-1)
+    })
+
+    this.container.querySelector('#replay-next')?.addEventListener('click', () => {
+      this.controller?.stepReplay(1)
+    })
+
+    this.container.querySelector('#replay-end')?.addEventListener('click', () => {
+      this.controller?.jumpReplayToEnd()
+    })
+
+    this.container.querySelector('#replay-exit')?.addEventListener('click', () => {
+      this.controller?.exitReplay()
     })
 
     this.container.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((button) => {

@@ -71,6 +71,19 @@ function counterLabelFor(
 }
 
 export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewModel {
+  const replayActive = state.replay !== null
+  const replayStep = state.replay?.step ?? 0
+  const replayTotalSteps = state.replay?.record.timeline.length ?? 0
+  const replayIsPlaying = state.replay?.isPlaying ?? false
+  const recordingMetadata = state.recording
+    ? {
+      seed: state.recording.metadata.seed,
+      mode: state.recording.metadata.mode,
+      controllers: state.recording.metadata.controllers,
+      completed: state.recording.metadata.completed,
+    }
+    : null
+
   if (!state.game) {
     return {
       mode: state.mode,
@@ -82,13 +95,25 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       controllers: state.controllers,
       p2pConnected,
       game: null,
+      recording: {
+        canSave: state.recording !== null,
+        canLoadLocal: true,
+        hasLocalSave: state.hasSavedRecording,
+        metadata: recordingMetadata,
+      },
+      replay: {
+        active: replayActive,
+        step: replayStep,
+        totalSteps: replayTotalSteps,
+        isPlaying: replayIsPlaying,
+      },
     }
   }
 
   const game = state.game
   const actor = activeActor(game)
   const actorControl = state.controllers[actor]
-  const canInput = actorControl === 'human' && canAct(game, actor)
+  const canInput = !replayActive && actorControl === 'human' && canAct(game, actor)
   const legalActions = getLegalActions(game, actor)
 
   const playLandByCard: Record<string, PlayLandOption[]> = {}
@@ -152,6 +177,19 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),
       },
       log: game.log.slice(-14),
+      isReplay: replayActive,
+    },
+    recording: {
+      canSave: state.recording !== null,
+      canLoadLocal: true,
+      hasLocalSave: state.hasSavedRecording,
+      metadata: recordingMetadata,
+    },
+    replay: {
+      active: replayActive,
+      step: replayStep,
+      totalSteps: replayTotalSteps,
+      isPlaying: replayIsPlaying,
     },
   }
 }

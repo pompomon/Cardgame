@@ -23,6 +23,24 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
 - Use the in-scene orientation button to manually switch between vertical and horizontal layout modes (saved in localStorage).
 
+## Game recording and replay
+
+- You can save a game recording at any point, including after the game has ended.
+- Save options:
+  - **Download save file** (`.json`)
+  - **Save to browser local storage**
+- Load options:
+  - **Load from browser local storage**
+  - **Upload a saved `.json` file**
+- Recording files are versioned and include:
+  - Match metadata (seed, mode, controller types, timestamps, completion status)
+  - Full timeline (initial game state + ordered action snapshots)
+- Replay modes:
+  - Step play-by-play (previous/next)
+  - Auto-play (play/pause)
+  - Jump directly to final recorded state
+  - Exit replay to keep the final recorded game state visible
+
 ## GitHub Pages deployment
 
 - Publishing target: **project site** at `https://pompomon.github.io/Cardgame/`.
