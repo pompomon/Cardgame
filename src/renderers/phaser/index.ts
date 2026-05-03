@@ -10,6 +10,8 @@ const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const FALLBACK_LOG_ENTRY_COUNT = 3
+const MIN_SCROLLABLE_LOG_HEIGHT = 48
+const MIN_WORD_WRAP_WIDTH = 20
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -803,7 +805,7 @@ class CardgameScene extends Phaser.Scene {
     const logViewportTop = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
     const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
-    if (maxViewportHeight > 0) {
+    if (maxViewportHeight >= MIN_SCROLLABLE_LOG_HEIGHT) {
       overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
         color: '#e5ecf5',
         fontSize: this.currentLayout.bodyFontSize,
@@ -872,7 +874,7 @@ class CardgameScene extends Phaser.Scene {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
         align: 'center',
-        wordWrap: { width: Math.max(20, buttonWidth) },
+        wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, buttonWidth) },
       }).setOrigin(0.5, 0))
     }
 
