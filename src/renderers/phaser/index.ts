@@ -235,6 +235,7 @@ class CardgameScene extends Phaser.Scene {
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
+  private menuLogScrollOffset: number | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
 
@@ -716,6 +717,7 @@ class CardgameScene extends Phaser.Scene {
     const overlay = this.menuOverlay
     this.menuOverlay = null
     this.menuOpen = false
+    this.menuLogScrollOffset = null
     overlay?.destroy(true)
   }
 
@@ -745,25 +747,35 @@ class CardgameScene extends Phaser.Scene {
       event.stopPropagation()
     }
 
+    const popupWidth = this.currentLayout.menuPopupWidth
+    const popupHeight = this.currentLayout.menuPopupHeight
+    const popupPadding = this.currentLayout.menuPopupPadding
+    const sectionGap = this.currentLayout.menuSectionGap
+    const panelLeft = (this.currentLayout.width - popupWidth) / 2
+    const panelRight = panelLeft + popupWidth
+    const panelTop = (this.currentLayout.height - popupHeight) / 2
+    const panelBottom = panelTop + popupHeight
     const scrim = this.add.rectangle(0, 0, this.currentLayout.width, this.currentLayout.height, 0x000000, 0.62)
     scrim.setInteractive()
-    scrim.on('pointerdown', (
+    scrim.on('pointerdown', swallowPointerEvent)
+    scrim.on('pointerup', (
       pointer: Phaser.Input.Pointer,
       localX: number,
       localY: number,
       event: Phaser.Types.Input.EventData,
     ) => {
       swallowPointerEvent(pointer, localX, localY, event)
-      this.closeMenuOverlay()
+      const startedInsidePanel = pointer.downX >= panelLeft
+        && pointer.downX <= panelRight
+        && pointer.downY >= panelTop
+        && pointer.downY <= panelBottom
+      if (!startedInsidePanel) {
+        this.closeMenuOverlay()
+      }
     })
-    scrim.on('pointerup', swallowPointerEvent)
     scrim.on('pointermove', swallowPointerEvent)
     overlay.add(scrim)
 
-    const popupWidth = this.currentLayout.menuPopupWidth
-    const popupHeight = this.currentLayout.menuPopupHeight
-    const popupPadding = this.currentLayout.menuPopupPadding
-    const sectionGap = this.currentLayout.menuSectionGap
     const panel = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x0f1a3b, 0.96).setStrokeStyle(2, 0x365092)
     panel.setInteractive()
     panel.on('pointerdown', swallowPointerEvent)
@@ -832,13 +844,17 @@ class CardgameScene extends Phaser.Scene {
       logContent.setMask(logMask.createGeometryMask())
 
       const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
-      let scrollOffset = maxScroll
+      let scrollOffset = this.menuLogScrollOffset === null
+        ? maxScroll
+        : Phaser.Math.Clamp(this.menuLogScrollOffset, 0, maxScroll)
+      this.menuLogScrollOffset = scrollOffset
       logContent.y = logViewportTop + 8 - scrollOffset
       const applyScroll = (deltaY: number): void => {
         if (maxScroll <= 0) {
           return
         }
         scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
+        this.menuLogScrollOffset = scrollOffset
         logContent.y = logViewportTop + 8 - scrollOffset
       }
 
