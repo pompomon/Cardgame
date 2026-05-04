@@ -129,7 +129,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     boardColumnLeft = margin
     boardColumnWidth = Math.max(160, contentWidth)
     boardColumnTop = logColumnTop + logColumnHeight + 8
-    boardColumnHeight = Math.max(120, bodyBottom - boardColumnTop)
+    boardColumnHeight = Math.max(0, bodyBottom - boardColumnTop)
   } else {
     logColumnLeft = margin
     logColumnTop = bodyTop
