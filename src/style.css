@@ -125,16 +125,6 @@ textarea {
   align-items: start;
 }
 
-@media (max-width: 720px) {
-  .battlefield-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .log {
-    max-width: 100%;
-  }
-}
-
 .controls {
   margin-top: 12px;
   border: 1px solid #2a355f;
@@ -151,6 +141,16 @@ textarea {
   max-width: 25vw;
   max-height: 60vh;
   overflow: auto;
+}
+
+@media (max-width: 720px) {
+  .battlefield-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .log {
+    max-width: 100%;
+  }
 }
 
 .log h3 {
