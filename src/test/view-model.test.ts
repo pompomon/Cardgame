@@ -16,6 +16,7 @@ function createState(seed: number): AppState {
     recording: null,
     replay: null,
     hasSavedRecording: false,
+    p2pStarted: false,
   }
 }
 

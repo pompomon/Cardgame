@@ -17,6 +17,11 @@ export interface AppState {
   recording: GameRecordFile | null
   replay: ReplaySessionState | null
   hasSavedRecording: boolean
+  // True once a P2P game's `start` packet has been sent by the host or
+  // received by the joiner. Used by renderers to decide when to leave the
+  // lobby for an in-match scene: P2P sessions stay in the lobby until both
+  // peers are reseeded with a synchronized seed via this flag.
+  p2pStarted: boolean
 }
 
 export interface ReplaySessionState {
@@ -82,6 +87,7 @@ export interface AppViewModel {
   seed: number
   controllers: [ControllerKind, ControllerKind]
   p2pConnected: boolean
+  p2pStarted: boolean
   game: GameUiState | null
   recording: {
     canSave: boolean

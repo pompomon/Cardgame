@@ -211,18 +211,36 @@ class LobbyScene extends Phaser.Scene {
     ]
 
     const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
-    const modeStartY = top + this.currentLayout.actionButtonHeight * 2 + 40
-    const modeGap = this.currentLayout.isCompact ? 46 : 58
+    // Lobby buttons (5 modes + 1 renderer-switch) need to fit between the
+    // header/subtitle area and the status footer on every viewport. Derive Y
+    // positions from the available body region (compressing button height and
+    // gap if necessary) so options like P2P Join and the renderer switch stay
+    // on-screen even in short landscape phone layouts.
+    const subtitleBottom = top + this.currentLayout.actionButtonHeight + 6
+      + Math.max(this.currentLayout.actionButtonHeight, 28)
+    const lobbyBodyTop = subtitleBottom + 16
+    const lobbyBodyBottom = this.currentLayout.height
+      - this.currentLayout.statusBottomOffset - this.currentLayout.margin
+    const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
+    const totalRows = modes.length + 1 // mode buttons + renderer-switch button
+    const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
+    const desiredGap = this.currentLayout.isCompact ? 8 : 14
+    const desiredRowHeight = desiredButtonHeight + desiredGap
+    // Scale rows to fit into the available body height.
+    const rowScale = Math.min(1, lobbyBodyHeight / Math.max(1, totalRows * desiredRowHeight))
+    const rowHeight = desiredRowHeight * rowScale
+    const buttonHeight = Math.max(24, desiredButtonHeight * rowScale)
+    const modeStartY = lobbyBodyTop + buttonHeight / 2
 
     modes.forEach((entry, index) => {
       this.rootContainer?.add(buildButton(
         this,
         entry.label,
         left + buttonWidth / 2,
-        modeStartY + index * modeGap,
+        modeStartY + index * rowHeight,
         this.currentLayout.bodyFontSize,
         buttonWidth,
-        this.currentLayout.isCompact ? 38 : 44,
+        buttonHeight,
         () => {
           this.rendererRef.controller?.startGame(entry.mode)
         },
@@ -233,10 +251,10 @@ class LobbyScene extends Phaser.Scene {
       this,
       'Switch to DOM renderer',
       left + buttonWidth / 2,
-      modeStartY + modes.length * modeGap + 24,
+      modeStartY + modes.length * rowHeight,
       this.currentLayout.bodyFontSize,
       buttonWidth,
-      this.currentLayout.isCompact ? 38 : 42,
+      buttonHeight,
       () => {
         window.location.search = '?renderer=dom'
       },
@@ -890,22 +908,38 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.bodyFontSize,
       }))
 
+      // Response controls (counter options + Pass) must fit between the
+      // prompt line and the hand cards inside the active-info row. On short
+      // viewports the row may only be ~120px tall, so derive button height
+      // and spacing from the available vertical band rather than using fixed
+      // 36px buttons that would overlap the hand strip.
+      const promptBottom = this.currentLayout.responseInfoY + Math.max(16, this.currentLayout.actionButtonHeight * 0.7)
+      const handTop = this.currentLayout.handCardsY - this.currentLayout.cardHeight / 2 - 4
+      const respondBandHeight = Math.max(0, handTop - promptBottom)
+      const totalButtons = game.legal.counterOptions.length + (game.legal.canPassResponse ? 1 : 0)
+      const desiredButtonHeight = this.currentLayout.popupButtonHeight
+      const desiredGap = 8
+      const desiredTotal = totalButtons * desiredButtonHeight + Math.max(0, totalButtons - 1) * desiredGap
+      const respondScale = totalButtons > 0 && desiredTotal > 0
+        ? Math.min(1, respondBandHeight / desiredTotal)
+        : 1
+      const respondButtonHeight = Math.max(20, desiredButtonHeight * respondScale)
+      const respondGap = Math.max(2, desiredGap * respondScale)
       const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - 16)
       const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
       const buttonWidth = Math.min(preferredButtonWidth, availableWidth)
       const controlsX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
-      const buttonHeight = this.currentLayout.popupButtonHeight
-      const startY = this.currentLayout.responseInfoY + this.currentLayout.actionButtonHeight + this.currentLayout.actionButtonGap
+      const startY = promptBottom + respondButtonHeight / 2
 
       game.legal.counterOptions.forEach((option, index) => {
-        this.rootContainer?.add(this.createButton(option.label, controlsX, startY + index * (buttonHeight + 8), () => {
+        this.rootContainer?.add(this.createButton(option.label, controlsX, startY + index * (respondButtonHeight + respondGap), () => {
           this.rendererRef.controller?.submitAction(option.action)
-        }, buttonWidth, buttonHeight))
+        }, buttonWidth, respondButtonHeight))
       })
       if (game.legal.canPassResponse) {
-        this.rootContainer?.add(this.createButton('Pass', controlsX, startY + game.legal.counterOptions.length * (buttonHeight + 8), () => {
+        this.rootContainer?.add(this.createButton('Pass', controlsX, startY + game.legal.counterOptions.length * (respondButtonHeight + respondGap), () => {
           this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor })
-        }, buttonWidth, buttonHeight))
+        }, buttonWidth, respondButtonHeight))
       }
       return
     }
@@ -1461,13 +1495,15 @@ export class PhaserRenderer implements AppRenderer {
 
   render(view: AppViewModel): void {
     this.currentView = view
-    // Treat P2P host/join modes as "still in lobby" until the explicit
-    // synchronized P2P start flow completes. controller.startGame() creates
-    // state.game immediately for every mode, so switching scenes as soon as
-    // p2pConnected becomes true hides the host's Start Game control before
-    // the start packet is sent and both peers are reseeded consistently.
+    // For P2P modes, controller.startGame() creates state.game immediately so
+    // both peers can prepare their boards, but the seed is only synchronized
+    // once the host clicks Start Game (which sends the `start` packet) or the
+    // joiner receives it. Until that handshake completes, stay in the lobby
+    // so the user can run the offer/answer signaling flow; afterwards switch
+    // to the match scene like a local game would.
     const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
-    const targetSceneKey = view.game && !isP2PMode
+    const p2pReady = !isP2PMode || view.p2pStarted
+    const targetSceneKey = view.game && p2pReady
       ? CARDGAME_SCENE_KEY
       : LOBBY_SCENE_KEY
 

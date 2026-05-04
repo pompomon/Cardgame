@@ -120,6 +120,7 @@ export class AppController implements ControllerApi {
       recording: null,
       replay: null,
       hasSavedRecording: this.hasSavedRecording(),
+      p2pStarted: false,
     }
   }
 
@@ -249,6 +250,7 @@ export class AppController implements ControllerApi {
         }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
+        this.state.p2pStarted = true
         if (this.state.mode) {
           this.initializeRecording(this.state.mode)
         }
@@ -355,6 +357,7 @@ export class AppController implements ControllerApi {
     this.state.mode = mode
     this.state.seed = Date.now()
     this.state.game = createInitialGame(this.state.seed)
+    this.state.p2pStarted = false
 
     if (mode === 'local-hvh') {
       this.state.controllers = ['human', 'human']
@@ -396,6 +399,7 @@ export class AppController implements ControllerApi {
     this.state.status = ''
     this.state.offer = ''
     this.state.answer = ''
+    this.state.p2pStarted = false
     this.notify()
   }
 
@@ -443,6 +447,7 @@ export class AppController implements ControllerApi {
       return
     }
     this.p2p?.send('start', { seed: this.state.seed })
+    this.state.p2pStarted = true
     this.state.status = 'P2P game started.'
     this.notify()
   }
