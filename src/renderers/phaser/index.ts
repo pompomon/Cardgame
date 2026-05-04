@@ -234,6 +234,7 @@ class CardgameScene extends Phaser.Scene {
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
   private menuLogScrollOffset: number | null = null
+  private menuLogPinnedToBottom = true
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
@@ -745,6 +746,7 @@ class CardgameScene extends Phaser.Scene {
     this.menuOverlay = null
     this.menuOpen = false
     this.menuLogScrollOffset = null
+    this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
     overlay?.destroy(true)
   }
@@ -837,14 +839,25 @@ class CardgameScene extends Phaser.Scene {
 
     const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
     const logTitleY = buttonStackBottomY + sectionGap + 14
-    const logViewportTop = logTitleY + 14 + sectionGap
+    const logViewportTopWithHeading = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
-    const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
-    if (maxViewportHeight >= MIN_READABLE_LOG_VIEWPORT_HEIGHT) {
-      overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
-        color: '#e5ecf5',
-        fontSize: this.currentLayout.bodyFontSize,
-      }).setOrigin(0, 0.5))
+    const popupBottomEdge = popupHeight / 2 - popupPadding
+    const maxViewportHeightWithHeading = Math.max(0, popupBottomEdge - logViewportTopWithHeading)
+    // If the heading + viewport doesn't fit readably, drop the heading so the log section
+    // still has somewhere to render. This preserves access to the replay log on short
+    // viewports rather than removing it entirely.
+    const showHeading = maxViewportHeightWithHeading >= MIN_READABLE_LOG_VIEWPORT_HEIGHT
+    const logViewportTop = showHeading
+      ? logViewportTopWithHeading
+      : Math.max(buttonStackBottomY + sectionGap, popupBottomEdge - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
+    const maxViewportHeight = Math.max(0, popupBottomEdge - logViewportTop)
+    if (maxViewportHeight > 0) {
+      if (showHeading) {
+        overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
+          color: '#e5ecf5',
+          fontSize: this.currentLayout.bodyFontSize,
+        }).setOrigin(0, 0.5))
+      }
 
       const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
       const logViewportY = logViewportTop + logViewportHeight / 2
@@ -873,10 +886,17 @@ class CardgameScene extends Phaser.Scene {
       logContent.setMask(logMask.createGeometryMask())
 
       const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
-      let scrollOffset = this.menuLogScrollOffset === null
-        ? maxScroll
-        : Phaser.Math.Clamp(this.menuLogScrollOffset, 0, maxScroll)
+      // Preserve "stick to bottom" intent across rebuilds: if the user was previously
+      // pinned to the newest entry, snap to the new max so fresh log lines remain visible
+      // when AI/replay ticks rebuild the menu while it stays open.
+      let scrollOffset: number
+      if (this.menuLogScrollOffset === null || this.menuLogPinnedToBottom) {
+        scrollOffset = maxScroll
+      } else {
+        scrollOffset = Phaser.Math.Clamp(this.menuLogScrollOffset, 0, maxScroll)
+      }
       this.menuLogScrollOffset = scrollOffset
+      this.menuLogPinnedToBottom = scrollOffset >= maxScroll
       logContent.y = logViewportTop + 8 - scrollOffset
       const applyScroll = (deltaY: number): void => {
         if (maxScroll <= 0) {
@@ -884,6 +904,7 @@ class CardgameScene extends Phaser.Scene {
         }
         scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
         this.menuLogScrollOffset = scrollOffset
+        this.menuLogPinnedToBottom = scrollOffset >= maxScroll
         logContent.y = logViewportTop + 8 - scrollOffset
       }
 
