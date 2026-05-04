@@ -909,6 +909,7 @@ class CardgameScene extends Phaser.Scene {
 
     this.menuOverlay = overlay
     this.rootContainer.add(overlay)
+    this.lastMenuSignature = this.computeMenuSignature(lines)
   }
 
   private showTargetPicker(
