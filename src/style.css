@@ -129,6 +129,10 @@ textarea {
   .battlefield-layout {
     grid-template-columns: 1fr;
   }
+
+  .log {
+    max-width: 100%;
+  }
 }
 
 .controls {
