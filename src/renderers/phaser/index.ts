@@ -535,9 +535,11 @@ class CardgameScene extends Phaser.Scene {
     }, menuButtonWidth, this.currentLayout.actionButtonHeight))
 
     const headerTextX = left + menuButtonWidth + 16
+    const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
     this.rootContainer?.add(this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, `Turn ${game.turn} • Phase: ${game.phase}`, {
       color: '#e5ecf5',
       fontSize: this.currentLayout.titleFontSize,
+      wordWrap: { width: headerTextWidth },
     }).setOrigin(0, 0.5))
 
     if (game.winnerText) {
