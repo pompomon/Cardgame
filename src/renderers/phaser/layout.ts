@@ -156,11 +156,18 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const totalGapHeight = innerGap * 3
   const remainingHeight = Math.max(0, boardColumnHeight - totalGapHeight)
   // Allocate ~ 22% info / 28% battlefield / 28% battlefield / 22% info but
-  // honor minimums so cards always fit.
+  // honor minimums so cards always fit. The active info row also reserves a
+  // controls band (End Turn / response counters / Pass) above its hand strip;
+  // include it in the raw size so the proportional scale below preserves
+  // enough room for those buttons even on short viewports.
+  const activeControlsBandReserve = 36
   const infoShare = 0.22
   const battlefieldShare = 0.28
   const nonActiveInfoHeightRaw = Math.max(minInfoHeight, remainingHeight * infoShare)
-  const activeInfoHeightRaw = Math.max(minInfoHeight + cardHeight + 8, remainingHeight * infoShare + cardHeight + 8)
+  const activeInfoHeightRaw = Math.max(
+    minInfoHeight + cardHeight + 8 + activeControlsBandReserve,
+    remainingHeight * infoShare + cardHeight + 8 + activeControlsBandReserve,
+  )
   const battlefieldHeightRaw = Math.max(minBattlefieldHeight, remainingHeight * battlefieldShare)
   const totalRaw = nonActiveInfoHeightRaw + battlefieldHeightRaw + battlefieldHeightRaw + activeInfoHeightRaw
   const scale = totalRaw > 0 ? Math.min(1, remainingHeight / totalRaw) : 1
@@ -209,11 +216,41 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   // activeInfoY + 6, so reserve that vertical band before placing the End Turn
   // button or the response prompt. Without this offset, the controls would
   // render directly on top of the active-player summary text.
+  //
+  // On short viewports (e.g. 1024x480) the active-info row gets shrunk by the
+  // proportional `scale` above and the desired 2-line text band can consume
+  // every pixel between activeInfoY and the hand strip, leaving the controls
+  // band collapsed to 0. To keep End Turn / response controls usable, reserve
+  // a minimum controls band and shrink the text band when necessary; the
+  // text may render with only one fully-visible line in that case, but the
+  // controls always have somewhere to land.
   const lineHeight = bodyFontPx * 1.25
-  const activeInfoTextBottom = activeInfoY + 6 + Math.ceil(lineHeight * 2)
   const handStripTop = handCardsY - effectiveCardHeight / 2 - 4
-  const activeInfoControlsTop = activeInfoTextBottom + 4
-  const activeInfoControlsHeight = Math.max(0, handStripTop - activeInfoControlsTop)
+  const desiredTextBand = Math.ceil(lineHeight * 2)
+  const minControlsBand = Math.min(desiredTextBand, 32)
+  const interBandGap = 4
+  const availableAboveHand = Math.max(0, handStripTop - activeInfoY - 6)
+  let textBand: number
+  let controlsBand: number
+  if (availableAboveHand >= desiredTextBand + minControlsBand + interBandGap) {
+    textBand = desiredTextBand
+    controlsBand = availableAboveHand - desiredTextBand - interBandGap
+  } else if (availableAboveHand >= minControlsBand + interBandGap + Math.ceil(lineHeight)) {
+    // Reserve at least one line for player info text, give the rest to controls.
+    controlsBand = minControlsBand
+    textBand = availableAboveHand - controlsBand - interBandGap
+  } else if (availableAboveHand >= interBandGap) {
+    // Tiny row: split the remaining space equally between text and controls.
+    const half = Math.max(0, (availableAboveHand - interBandGap) / 2)
+    textBand = half
+    controlsBand = half
+  } else {
+    textBand = 0
+    controlsBand = 0
+  }
+  const activeInfoTextBottom = activeInfoY + 6 + textBand
+  const activeInfoControlsTop = activeInfoTextBottom + interBandGap
+  const activeInfoControlsHeight = controlsBand
   const controlsStartY = activeInfoControlsTop + Math.min(actionButtonHeight, activeInfoControlsHeight) / 2
   const responseInfoY = activeInfoControlsTop
 

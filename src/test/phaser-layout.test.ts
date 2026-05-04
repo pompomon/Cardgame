@@ -103,5 +103,9 @@ describe('phaser buildLayout', () => {
     // top edge at handCardsY - cardHeight / 2).
     const handStripTop = layout.handCardsY - layout.cardHeight / 2
     expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(handStripTop + 0.5)
+    // The band must be tall enough to host at least one usable control (End
+    // Turn / counter / Pass button); a band of 0 means the renderer has no
+    // visible space for those actions on the short viewport this test guards.
+    expect(layout.activeInfoControlsHeight).toBeGreaterThanOrEqual(24)
   })
 })

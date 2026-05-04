@@ -349,18 +349,31 @@ describe('controller recording and replay', () => {
       const controller = new AppController('dom')
       controller.startGame('p2p-join')
       expect(controller.getViewModel().p2pStarted).toBe(false)
+      const initialGame = controller.getViewModel().game
 
-      // The setupP2P closure flips p2pStarted=true and reseeds state.game when
-      // a `start` packet arrives. Invoke the same state mutations directly to
-      // verify the joiner-side branch is reachable through the public view
-      // model, since the FakeRTCPeerConnection does not deliver real packets.
+      // Drive the actual `packet.type === 'start'` branch in setupP2P by
+      // invoking the P2PLink's onMessage callback directly. This exercises the
+      // real joiner-side state mutations (reseed, reinitialize game, recording
+      // setup, status update, p2pStarted flip) so a regression in any of those
+      // would fail the test instead of being masked by direct field writes.
       const internals = controller as unknown as {
-        state: { seed: number; game: unknown; p2pStarted: boolean }
+        p2p: { onMessage: (packet: { type: string; payload: unknown }) => void } | null
+        state: { game: unknown; seed: number }
       }
-      internals.state.seed = 4242
-      internals.state.p2pStarted = true
+      expect(internals.p2p).toBeTruthy()
+      internals.p2p!.onMessage({ type: 'start', payload: { seed: 4242 } })
 
-      expect(controller.getViewModel().p2pStarted).toBe(true)
+      const view = controller.getViewModel()
+      expect(view.p2pStarted).toBe(true)
+      expect(view.status).toContain('Remote game started')
+      expect(internals.state.seed).toBe(4242)
+      // The joiner reseeds state.game from the packet, so the game reference
+      // changes after the start packet is delivered.
+      expect(internals.state.game).not.toBe(initialGame)
+
+      // Invalid payload should not flip p2pStarted again or reseed the game.
+      internals.p2p!.onMessage({ type: 'start', payload: { foo: 'bar' } })
+      expect(controller.getViewModel().status).toContain('Ignored invalid start payload')
     } finally {
       restoreRtc()
     }

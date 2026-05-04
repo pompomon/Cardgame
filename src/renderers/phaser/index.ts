@@ -682,7 +682,13 @@ class CardgameScene extends Phaser.Scene {
     ))
 
     const nonActiveBattlefield = game.players[nonActiveIndex].battlefield
-    const nonActiveCardY = nonActiveY + 4
+    // Reserve a small header band at the top of the battlefield panel so the
+    // "Player N Battlefield" label doesn't overlap the top edge of the cards
+    // rendered inside the panel.
+    const battlefieldHeaderBand = 22
+    const nonActiveCardY = this.currentLayout.nonActiveBattlefieldY
+      + battlefieldHeaderBand
+      + Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - battlefieldHeaderBand) / 2
     for (let index = 0; index < nonActiveBattlefield.length; index += 1) {
       const card = nonActiveBattlefield[index]
       this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, nonActiveBattlefield.length), nonActiveCardY, card.name))
@@ -720,7 +726,11 @@ class CardgameScene extends Phaser.Scene {
     this.rootContainer?.add(dropZone)
 
     const activeBattlefield = game.players[activeIndex].battlefield
-    const activeCardY = activeY + 4
+    // Reserve the same header band as the non-active row so the active title
+    // sits in its own padding instead of overlapping the rendered cards.
+    const activeCardY = this.currentLayout.activeBattlefieldY
+      + battlefieldHeaderBand
+      + Math.max(0, this.currentLayout.activeBattlefieldHeight - battlefieldHeaderBand) / 2
     for (let index = 0; index < activeBattlefield.length; index += 1) {
       const card = activeBattlefield[index]
       this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, activeBattlefield.length), activeCardY, card.name))
@@ -968,7 +978,7 @@ class CardgameScene extends Phaser.Scene {
     }
   }
 
-  private closeMenuOverlay(): void {
+  closeMenuOverlay(): void {
     const overlay = this.menuOverlay
     this.menuOverlay = null
     this.menuOpen = false
@@ -1649,15 +1659,35 @@ export class PhaserRenderer implements AppRenderer {
     } else {
       entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => controller.backToLobby() })
       entries.push({ key: 'rematch', label: 'Rematch', onClick: () => controller.rematch() })
-      entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => this.handleDownloadRecording() })
-      entries.push({ key: 'recorder-save', label: 'Save Recording to Browser', onClick: () => controller.saveRecordingToLocalStorage() })
+      // Mirror the Phaser menu's recorder actions: close the menu overlay
+      // before invoking the controller so the resulting status message (e.g.
+      // "No saved recording found" or "Failed to read recording file") shows
+      // up in the scene's status footer instead of being hidden behind the
+      // open modal. Without these closes, keyboard / screen-reader users who
+      // trigger Save/Load via the a11y nav while the menu is open get no
+      // visible feedback at all.
+      const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
+      entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => {
+        closeSceneMenu()
+        this.handleDownloadRecording()
+      } })
+      entries.push({ key: 'recorder-save', label: 'Save Recording to Browser', onClick: () => {
+        closeSceneMenu()
+        controller.saveRecordingToLocalStorage()
+      } })
       entries.push({
         key: 'recorder-load-browser',
         label: 'Load Recording from Browser',
-        onClick: () => controller.loadRecordingFromLocalStorage(),
+        onClick: () => {
+          closeSceneMenu()
+          controller.loadRecordingFromLocalStorage()
+        },
         disabled: !view.recording.hasLocalSave,
       })
-      entries.push({ key: 'recorder-load-file', label: 'Load Recording from File', onClick: () => this.openRecordingFilePicker() })
+      entries.push({ key: 'recorder-load-file', label: 'Load Recording from File', onClick: () => {
+        closeSceneMenu()
+        this.openRecordingFilePicker()
+      } })
       if (view.replay.active) {
         entries.push({ key: 'replay-toggle', label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
           if (view.replay.isPlaying) {
