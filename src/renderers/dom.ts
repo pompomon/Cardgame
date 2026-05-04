@@ -195,7 +195,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
   return `
     <section class="panel game-scene">
       <div class="game-header">
-        <button id="menu-toggle" class="menu-toggle" aria-expanded="${menuOpen ? 'true' : 'false'}" aria-label="Menu">☰ Menu</button>
+        <button id="menu-toggle" class="menu-toggle" aria-expanded="${menuOpen ? 'true' : 'false'}" aria-controls="menu-panel" aria-label="Menu">☰ Menu</button>
         <h2>Turn ${game.turn} • Phase: ${game.phase}</h2>
       </div>
       ${menuPanel}
