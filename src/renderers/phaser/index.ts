@@ -903,33 +903,41 @@ class CardgameScene extends Phaser.Scene {
     })
 
     if (game.canInput && game.phase === 'respond') {
-      this.rootContainer?.add(this.add.text(this.currentLayout.boardColumnLeft + 8, this.currentLayout.responseInfoY, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
+      const promptText = this.add.text(this.currentLayout.boardColumnLeft + 8, this.currentLayout.responseInfoY, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
         color: '#f0f4ff',
         fontSize: this.currentLayout.bodyFontSize,
-      }))
+      })
+      this.rootContainer?.add(promptText)
 
-      // Response controls (counter options + Pass) must fit between the
-      // prompt line and the hand cards inside the active-info row. On short
-      // viewports the row may only be ~120px tall, so derive button height
-      // and spacing from the available vertical band rather than using fixed
-      // 36px buttons that would overlap the hand strip.
-      const promptBottom = this.currentLayout.responseInfoY + Math.max(16, this.currentLayout.actionButtonHeight * 0.7)
-      const handTop = this.currentLayout.handCardsY - this.currentLayout.cardHeight / 2 - 4
-      const respondBandHeight = Math.max(0, handTop - promptBottom)
+      // Response controls (counter options + Pass) must fit between the prompt
+      // line and the hand cards inside the active-info row's controls band
+      // (`activeInfoControlsHeight` already excludes the player-info text and
+      // the hand strip). On short viewports that band may be only ~40-60px
+      // tall, so derive button height + gap by exactly dividing the available
+      // space — no fixed minimum that could overflow back into the hand strip.
+      const promptHeight = Math.ceil(promptText.height + 4)
+      const respondBandTop = this.currentLayout.responseInfoY + promptHeight
+      const respondBandBottom = this.currentLayout.activeInfoControlsTop + this.currentLayout.activeInfoControlsHeight
+      const respondBandHeight = Math.max(0, respondBandBottom - respondBandTop)
       const totalButtons = game.legal.counterOptions.length + (game.legal.canPassResponse ? 1 : 0)
       const desiredButtonHeight = this.currentLayout.popupButtonHeight
       const desiredGap = 8
-      const desiredTotal = totalButtons * desiredButtonHeight + Math.max(0, totalButtons - 1) * desiredGap
-      const respondScale = totalButtons > 0 && desiredTotal > 0
-        ? Math.min(1, respondBandHeight / desiredTotal)
-        : 1
-      const respondButtonHeight = Math.max(20, desiredButtonHeight * respondScale)
-      const respondGap = Math.max(2, desiredGap * respondScale)
+      // Pick a gap that leaves room for the buttons themselves, then size each
+      // button to fill the remaining band height. This guarantees
+      // totalButtons * respondButtonHeight + (totalButtons - 1) * respondGap
+      // <= respondBandHeight, so the controls never spill over the hand strip
+      // even when individual buttons end up tiny.
+      const gapBudget = totalButtons > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
+      const respondGap = totalButtons > 1 ? gapBudget : 0
+      const heightForButtons = Math.max(0, respondBandHeight - Math.max(0, totalButtons - 1) * respondGap)
+      const respondButtonHeight = totalButtons > 0
+        ? Math.min(desiredButtonHeight, heightForButtons / totalButtons)
+        : desiredButtonHeight
       const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - 16)
       const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
       const buttonWidth = Math.min(preferredButtonWidth, availableWidth)
       const controlsX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
-      const startY = promptBottom + respondButtonHeight / 2
+      const startY = respondBandTop + respondButtonHeight / 2
 
       game.legal.counterOptions.forEach((option, index) => {
         this.rootContainer?.add(this.createButton(option.label, controlsX, startY + index * (respondButtonHeight + respondGap), () => {
@@ -947,9 +955,16 @@ class CardgameScene extends Phaser.Scene {
     if (game.canInput && game.legal.canEndTurn && game.phase === 'main') {
       const endTurnWidth = Math.min(this.currentLayout.actionButtonWidth, Math.max(120, this.currentLayout.boardColumnWidth - 16))
       const endTurnX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - endTurnWidth / 2 - 4
+      // Clamp End Turn button height so it never spills below the hand strip
+      // on short viewports where activeInfoControlsHeight may be smaller than
+      // the desired action button height.
+      const endTurnHeight = Math.min(
+        this.currentLayout.actionButtonHeight + 4,
+        Math.max(20, this.currentLayout.activeInfoControlsHeight),
+      )
       this.rootContainer?.add(this.createButton('End Turn', endTurnX, this.currentLayout.controlsStartY, () => {
         this.rendererRef.controller?.submitAction({ type: 'end_turn', actor: game.actor })
-      }, endTurnWidth, this.currentLayout.actionButtonHeight + 4))
+      }, endTurnWidth, endTurnHeight))
     }
   }
 
@@ -1071,18 +1086,22 @@ class CardgameScene extends Phaser.Scene {
 
     const recorderRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
     overlay.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
+      this.closeMenuOverlay()
       this.rendererRef.handleDownloadRecording()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight))
     overlay.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
+      this.closeMenuOverlay()
       this.rendererRef.controller?.saveRecordingToLocalStorage()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight))
     cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
     const recorderRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
     overlay.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
+      this.closeMenuOverlay()
       this.rendererRef.controller?.loadRecordingFromLocalStorage()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight))
     overlay.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
+      this.closeMenuOverlay()
       this.rendererRef.openRecordingFilePicker()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight))
     cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
@@ -1395,6 +1414,7 @@ export class PhaserRenderer implements AppRenderer {
   private fileInput: HTMLInputElement | null = null
   private lobbyP2POverlay: HTMLDivElement | null = null
   private a11yNavOverlay: HTMLElement | null = null
+  private a11yNavKeySignature: string | null = null
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
   currentView: AppViewModel | null = null
@@ -1605,12 +1625,14 @@ export class PhaserRenderer implements AppRenderer {
     const controller = this.controller
     if (!controller) {
       nav.innerHTML = ''
+      this.a11yNavKeySignature = null
       return
     }
 
-    const buttons: Array<{ label: string; onClick: () => void; disabled?: boolean }> = []
+    type NavEntry = { key: string; label: string; onClick: () => void; disabled?: boolean }
+    const entries: NavEntry[] = []
     const orientationLabel = this.orientationMode === 'vertical' ? 'Switch to landscape' : 'Switch to portrait'
-    buttons.push({ label: orientationLabel, onClick: () => this.toggleOrientationMode() })
+    entries.push({ key: 'orientation', label: orientationLabel, onClick: () => this.toggleOrientationMode() })
 
     if (lobbyActive) {
       const modes: Array<{ mode: Mode; label: string }> = [
@@ -1621,43 +1643,116 @@ export class PhaserRenderer implements AppRenderer {
         { mode: 'p2p-join', label: 'P2P Join' },
       ]
       for (const entry of modes) {
-        buttons.push({ label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
+        entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
       }
-      buttons.push({ label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
+      entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
-      buttons.push({ label: 'Back to Lobby', onClick: () => controller.backToLobby() })
-      buttons.push({ label: 'Rematch', onClick: () => controller.rematch() })
-      buttons.push({ label: 'Download Recording', onClick: () => this.handleDownloadRecording() })
-      buttons.push({ label: 'Save Recording to Browser', onClick: () => controller.saveRecordingToLocalStorage() })
-      buttons.push({
+      entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => controller.backToLobby() })
+      entries.push({ key: 'rematch', label: 'Rematch', onClick: () => controller.rematch() })
+      entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => this.handleDownloadRecording() })
+      entries.push({ key: 'recorder-save', label: 'Save Recording to Browser', onClick: () => controller.saveRecordingToLocalStorage() })
+      entries.push({
+        key: 'recorder-load-browser',
         label: 'Load Recording from Browser',
         onClick: () => controller.loadRecordingFromLocalStorage(),
         disabled: !view.recording.hasLocalSave,
       })
-      buttons.push({ label: 'Load Recording from File', onClick: () => this.openRecordingFilePicker() })
+      entries.push({ key: 'recorder-load-file', label: 'Load Recording from File', onClick: () => this.openRecordingFilePicker() })
       if (view.replay.active) {
-        buttons.push({ label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
+        entries.push({ key: 'replay-toggle', label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
           if (view.replay.isPlaying) {
             controller.pauseReplay()
           } else {
             controller.startReplay()
           }
         } })
-        buttons.push({ label: 'Previous Replay Step', onClick: () => controller.stepReplay(-1) })
-        buttons.push({ label: 'Next Replay Step', onClick: () => controller.stepReplay(1) })
-        buttons.push({ label: 'Jump Replay to End', onClick: () => controller.jumpReplayToEnd() })
-        buttons.push({ label: 'Exit Replay', onClick: () => controller.exitReplay() })
+        entries.push({ key: 'replay-prev', label: 'Previous Replay Step', onClick: () => controller.stepReplay(-1) })
+        entries.push({ key: 'replay-next', label: 'Next Replay Step', onClick: () => controller.stepReplay(1) })
+        entries.push({ key: 'replay-jump-end', label: 'Jump Replay to End', onClick: () => controller.jumpReplayToEnd() })
+        entries.push({ key: 'replay-exit', label: 'Exit Replay', onClick: () => controller.exitReplay() })
       } else {
-        buttons.push({
+        entries.push({
+          key: 'replay-start',
           label: 'Start Replay',
           onClick: () => controller.startReplay(),
           disabled: !view.recording.metadata,
         })
       }
+
+      // In-match gameplay actions: mirror the Phaser scene's interactive
+      // controls (play land options, counter responses, Pass, End Turn) as
+      // native <button> elements so keyboard and screen-reader users can take
+      // turns without relying on pointer-only Phaser hit areas.
+      const game = view.game
+      if (game && game.canInput) {
+        if (game.phase === 'main') {
+          for (const card of game.players[game.actor].handCards) {
+            const options = game.legal.playLandByCard[card.id]
+            if (!options) {
+              continue
+            }
+            for (const option of options) {
+              entries.push({
+                key: `play:${card.id}:${option.label}`,
+                label: `Play ${card.name}: ${option.label}`,
+                onClick: () => controller.submitAction(option.action),
+              })
+            }
+          }
+          if (game.legal.canEndTurn) {
+            entries.push({
+              key: 'end-turn',
+              label: 'End Turn',
+              onClick: () => controller.submitAction({ type: 'end_turn', actor: game.actor }),
+            })
+          }
+        } else if (game.phase === 'respond') {
+          game.legal.counterOptions.forEach((option, index) => {
+            entries.push({
+              key: `counter:${index}`,
+              label: option.label,
+              onClick: () => controller.submitAction(option.action),
+            })
+          })
+          if (game.legal.canPassResponse) {
+            entries.push({
+              key: 'pass-response',
+              label: 'Pass Response',
+              onClick: () => controller.submitAction({ type: 'pass_response', actor: game.actor }),
+            })
+          }
+        }
+      }
+    }
+
+    // Diff against the previous render to preserve focus on auto-updating
+    // states (e.g. replay playback). When the set of buttons (keyed by `key`)
+    // is unchanged, update labels / disabled and rebind handlers in place
+    // instead of clearing innerHTML, which would destroy focus.
+    const signature = entries.map((entry) => entry.key).join('|')
+    if (signature === this.a11yNavKeySignature && nav.children.length === entries.length) {
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index]
+        const button = nav.children[index] as HTMLButtonElement
+        if (button.textContent !== entry.label) {
+          button.textContent = entry.label
+        }
+        const shouldDisable = entry.disabled === true
+        if (button.disabled !== shouldDisable) {
+          button.disabled = shouldDisable
+        }
+        const previousHandler = (button as HTMLButtonElement & { _a11yHandler?: () => void })._a11yHandler
+        if (previousHandler) {
+          button.removeEventListener('click', previousHandler)
+        }
+        button.addEventListener('click', entry.onClick)
+        ;(button as HTMLButtonElement & { _a11yHandler?: () => void })._a11yHandler = entry.onClick
+      }
+      return
     }
 
     nav.innerHTML = ''
-    for (const entry of buttons) {
+    for (const entry of entries) {
       const button = document.createElement('button')
       button.type = 'button'
       button.textContent = entry.label
@@ -1665,8 +1760,10 @@ export class PhaserRenderer implements AppRenderer {
         button.disabled = true
       }
       button.addEventListener('click', entry.onClick)
+      ;(button as HTMLButtonElement & { _a11yHandler?: () => void })._a11yHandler = entry.onClick
       nav.appendChild(button)
     }
+    this.a11yNavKeySignature = signature
   }
 
   unmount(): void {

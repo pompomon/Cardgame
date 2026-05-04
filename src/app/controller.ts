@@ -446,7 +446,17 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
-    this.p2p?.send('start', { seed: this.state.seed })
+    // Only flip p2pStarted when the start packet is actually delivered. If the
+    // data channel is not open yet, P2PLink.send() returns false and we leave
+    // p2pStarted = false so the host UI keeps showing the lobby + Start Game
+    // control instead of transitioning into the match scene without the joiner
+    // ever receiving the synchronized seed.
+    const sent = this.p2p?.send('start', { seed: this.state.seed }) ?? false
+    if (!sent) {
+      this.state.status = 'P2P start packet not sent: peer is not connected yet.'
+      this.notify()
+      return
+    }
     this.state.p2pStarted = true
     this.state.status = 'P2P game started.'
     this.notify()

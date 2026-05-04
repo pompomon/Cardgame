@@ -88,4 +88,20 @@ describe('phaser buildLayout', () => {
       + layout.menuSectionGap * 6
     expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(worstCaseContent, viewportHeight - layout.margin * 2))
   })
+
+  it('reserves the active-info controls band below the player-info text and above the hand strip', () => {
+    // On a short landscape viewport the renderer must place End Turn / response
+    // controls in a band that does not overlap the 2-line player info text at
+    // the top of the active-info row, nor the hand strip anchored at its
+    // bottom. The layout exposes activeInfoControlsTop / activeInfoControlsHeight
+    // so renderers can size their controls to fit that band exactly.
+    const layout = buildLayout(1024, 480, 'horizontal')
+    expect(layout.activeInfoControlsTop).toBeGreaterThan(layout.activeInfoY + 6)
+    const activeInfoBottom = layout.activeInfoY + layout.activeInfoHeight
+    expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(activeInfoBottom + 0.5)
+    // The band must not overlap the hand strip (cards centered at handCardsY,
+    // top edge at handCardsY - cardHeight / 2).
+    const handStripTop = layout.handCardsY - layout.cardHeight / 2
+    expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(handStripTop + 0.5)
+  })
 })

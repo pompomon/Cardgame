@@ -108,12 +108,13 @@ export class P2PLink {
     await this.peer.setRemoteDescription(answer)
   }
 
-  send(type: string, payload: unknown): void {
+  send(type: string, payload: unknown): boolean {
     if (this.channel?.readyState !== 'open') {
-      return
+      return false
     }
     const packet: Packet = { type, payload }
     this.channel.send(JSON.stringify(packet))
+    return true
   }
 
   isConnected(): boolean {

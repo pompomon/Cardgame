@@ -43,6 +43,13 @@ export interface SceneLayout {
   handCardsY: number
   controlsStartY: number
   responseInfoY: number
+  // Vertical band inside the active-info row available for response/end-turn
+  // controls: starts below the 2-line player info text and ends above the
+  // hand-cards strip. Renderers should use this height to size their controls
+  // so they never overlap the player info or the hand strip on short
+  // viewports.
+  activeInfoControlsTop: number
+  activeInfoControlsHeight: number
   statusBottomOffset: number
   popupMaxWidth: number
   popupButtonHeight: number
@@ -198,8 +205,17 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   // active player's drag area lives at the bottom of the screen. Use the
   // effective card height so the hand strip always fits within the row.
   const handCardsY = activeInfoY + activeInfoHeight - effectiveCardHeight / 2 - 6
-  const controlsStartY = activeInfoY + 6
-  const responseInfoY = controlsStartY
+  // Player info text in renderPlayerInfoBlocks renders 2 lines starting at
+  // activeInfoY + 6, so reserve that vertical band before placing the End Turn
+  // button or the response prompt. Without this offset, the controls would
+  // render directly on top of the active-player summary text.
+  const lineHeight = bodyFontPx * 1.25
+  const activeInfoTextBottom = activeInfoY + 6 + Math.ceil(lineHeight * 2)
+  const handStripTop = handCardsY - effectiveCardHeight / 2 - 4
+  const activeInfoControlsTop = activeInfoTextBottom + 4
+  const activeInfoControlsHeight = Math.max(0, handStripTop - activeInfoControlsTop)
+  const controlsStartY = activeInfoControlsTop + Math.min(actionButtonHeight, activeInfoControlsHeight) / 2
+  const responseInfoY = activeInfoControlsTop
 
   const popupAvailableWidth = Math.max(0, safeWidth - margin * 2)
   const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
@@ -286,6 +302,8 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     handCardsY,
     controlsStartY,
     responseInfoY,
+    activeInfoControlsTop,
+    activeInfoControlsHeight,
     statusBottomOffset,
     popupMaxWidth,
     popupButtonHeight,
