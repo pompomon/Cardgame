@@ -4,6 +4,7 @@ import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
+const DOM_LOG_VISIBLE_ENTRIES = 14
 
 function escapeHtml(value: string): string {
   return value
@@ -188,7 +189,7 @@ function renderGame(view: AppViewModel): string {
       ${responseControls}
       <div class="log">
         <h3>Replay Log</h3>
-        <ul>${game.log.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+        <ul>${game.log.slice(-DOM_LOG_VISIBLE_ENTRIES).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
       </div>
       <div class="action-row">
         <button id="rematch">Rematch</button>

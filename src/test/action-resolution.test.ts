@@ -68,4 +68,15 @@ describe('action-resolution', () => {
     const resolution = resolvePlayLandDrop(vm.game!, 'missing-card-id')
     expect(resolution.kind).toBe('invalid')
   })
+
+  it('exposes the full game log to renderers without truncation', () => {
+    const state = createState(53)
+    const entries = Array.from({ length: 50 }, (_, index) => `entry-${index}`)
+    state.game!.log = entries
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.game?.log).toEqual(entries)
+    expect(vm.game?.log.length).toBe(entries.length)
+  })
 })
