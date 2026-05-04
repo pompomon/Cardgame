@@ -9,8 +9,6 @@ const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
-const MIN_SCROLLABLE_LOG_HEIGHT = 48
-const MIN_WORD_WRAP_WIDTH = 20
 const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -810,7 +808,7 @@ class CardgameScene extends Phaser.Scene {
     const logViewportTop = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
     const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
-    if (maxViewportHeight >= MIN_SCROLLABLE_LOG_HEIGHT) {
+    if (maxViewportHeight > 0) {
       overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
         color: '#e5ecf5',
         fontSize: this.currentLayout.bodyFontSize,
@@ -875,17 +873,6 @@ class CardgameScene extends Phaser.Scene {
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(1, 0.5))
       }
-    } else {
-      const fallbackTopY = buttonStackBottomY + sectionGap + 6
-      const fallbackText = lines.length > 0
-        ? `Replay Log\n${lines.join('\n')}`
-        : 'Replay Log\nNo log entries yet.'
-      overlay.add(this.add.text(0, fallbackTopY, fallbackText, {
-        color: '#9db0d9',
-        fontSize: this.currentLayout.smallFontSize,
-        align: 'center',
-        wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, buttonWidth) },
-      }).setOrigin(0.5, 0))
     }
 
     this.menuOverlay = overlay
