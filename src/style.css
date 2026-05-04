@@ -78,8 +78,8 @@ textarea {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 12px;
+  grid-template-rows: auto auto auto auto;
+  gap: 8px;
 }
 
 .player {
@@ -87,6 +87,42 @@ textarea {
   border-radius: 8px;
   padding: 10px;
   background: #111c3d;
+}
+
+.battlefield {
+  border: 1px solid #2a355f;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.battlefield h4 {
+  margin: 0 0 6px;
+  font-size: 0.95em;
+}
+
+.battlefield-active {
+  background: #1c3a2c;
+  border-color: #2f6a4a;
+}
+
+.battlefield-non-active {
+  background: #3a1c1c;
+  border-color: #6a2f2f;
+}
+
+.player-active {
+  background: #14304a;
+}
+
+.player-non-active {
+  background: #2a1233;
+}
+
+.battlefield-layout {
+  display: grid;
+  grid-template-columns: minmax(0, calc(25vw - 24px)) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .controls {
@@ -97,18 +133,74 @@ textarea {
   background: #111c3d;
 }
 
+.log {
+  border: 1px solid #2a355f;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0d162e;
+  max-width: 25vw;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+@media (max-width: 720px) {
+  .battlefield-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .log {
+    max-width: 100%;
+  }
+}
+
+.log h3 {
+  margin-top: 0;
+}
+
 .log ul {
   margin: 0;
   padding-left: 18px;
-  max-height: 240px;
-  overflow: auto;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+.log li {
+  white-space: normal;
+}
+
+.menu-toggle {
+  font-weight: bold;
+}
+
+.menu-panel {
+  margin-top: 8px;
+  border: 1px solid #2a355f;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0d162e;
+  display: grid;
+  gap: 12px;
+}
+
+.menu-section {
+  display: grid;
+  gap: 6px;
+}
+
+.menu-section h4 {
+  margin: 0;
 }
 
 .game-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+.game-header h2 {
+  margin: 0;
 }
 
 .renderer-link {
