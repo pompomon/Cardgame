@@ -748,21 +748,72 @@ class CardgameScene extends Phaser.Scene {
     viewportBg.setInteractive()
     this.rootContainer?.add(viewportBg)
 
-    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
-    this.rootContainer?.add(logContent)
-    const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.smallFontSize,
-      wordWrap: { width: Math.max(40, viewportWidth - 12) },
-    }).setOrigin(0, 0)
-    logContent.add(logText)
+    const logDisplayText = lines.length > 0 ? lines.join('\n') : 'No log entries yet.'
+    const logWrapWidth = Math.max(40, viewportWidth - 12)
+    const sceneState = this as typeof this & {
+      inSceneLogContent?: Phaser.GameObjects.Container
+      inSceneLogText?: Phaser.GameObjects.Text
+      inSceneLogMaskGraphics?: Phaser.GameObjects.Graphics
+      inSceneLogMask?: Phaser.Display.Masks.GeometryMask
+      inSceneLogRenderedText?: string
+      inSceneLogRenderedWrapWidth?: number
+      inSceneLogRenderedFontSize?: string | number
+    }
 
-    const logMask = this.add.graphics()
+    let logContent = sceneState.inSceneLogContent
+    if (!logContent || !logContent.active) {
+      logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
+      sceneState.inSceneLogContent = logContent
+    } else {
+      logContent.setPosition(viewportLeft + 6, viewportTop + 6)
+    }
+    this.rootContainer?.add(logContent)
+
+    let logText = sceneState.inSceneLogText
+    if (!logText || !logText.active) {
+      logText = this.add.text(0, 0, logDisplayText, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: logWrapWidth },
+      }).setOrigin(0, 0)
+      sceneState.inSceneLogText = logText
+      sceneState.inSceneLogRenderedText = logDisplayText
+      sceneState.inSceneLogRenderedWrapWidth = logWrapWidth
+      sceneState.inSceneLogRenderedFontSize = this.currentLayout.smallFontSize
+    } else {
+      logText.setPosition(0, 0)
+      if (sceneState.inSceneLogRenderedWrapWidth !== logWrapWidth) {
+        logText.setWordWrapWidth(logWrapWidth, true)
+        sceneState.inSceneLogRenderedWrapWidth = logWrapWidth
+      }
+      if (sceneState.inSceneLogRenderedFontSize !== this.currentLayout.smallFontSize) {
+        logText.setFontSize(this.currentLayout.smallFontSize)
+        sceneState.inSceneLogRenderedFontSize = this.currentLayout.smallFontSize
+      }
+      if (sceneState.inSceneLogRenderedText !== logDisplayText) {
+        logText.setText(logDisplayText)
+        sceneState.inSceneLogRenderedText = logDisplayText
+      }
+    }
+    if (!logContent.list.includes(logText)) {
+      logContent.add(logText)
+    }
+
+    let logMask = sceneState.inSceneLogMaskGraphics
+    if (!logMask || !logMask.active) {
+      logMask = this.add.graphics()
+      logMask.setVisible(false)
+      sceneState.inSceneLogMaskGraphics = logMask
+      sceneState.inSceneLogMask = logMask.createGeometryMask()
+    } else {
+      logMask.clear()
+    }
     logMask.fillStyle(0xffffff)
     logMask.fillRect(viewportLeft, viewportTop, viewportWidth, viewportHeight)
-    logMask.setVisible(false)
     this.rootContainer?.add(logMask)
-    logContent.setMask(logMask.createGeometryMask())
+    if (sceneState.inSceneLogMask) {
+      logContent.setMask(sceneState.inSceneLogMask)
+    }
 
     const maxScroll = Math.max(0, logText.height + 12 - viewportHeight)
     let scrollOffset: number
