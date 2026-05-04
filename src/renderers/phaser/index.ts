@@ -1360,6 +1360,7 @@ export class PhaserRenderer implements AppRenderer {
   private activeSceneKey: string | null = null
   private fileInput: HTMLInputElement | null = null
   private lobbyP2POverlay: HTMLDivElement | null = null
+  private a11yNavOverlay: HTMLElement | null = null
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
   currentView: AppViewModel | null = null
@@ -1425,6 +1426,19 @@ export class PhaserRenderer implements AppRenderer {
     container.appendChild(lobbyP2POverlay)
     this.lobbyP2POverlay = lobbyP2POverlay
 
+    // Hidden, visually-offscreen accessibility navigation. The Phaser canvas
+    // exposes its controls only through `pointerup`, which is unreachable for
+    // keyboard and screen-reader users. We render an equivalent <nav> of
+    // native <button> elements whose contents are kept in sync with the view
+    // model so assistive tech has full coverage of every Phaser control that
+    // used to be a native HTML button (Recorder, Replay, Rematch, Back to
+    // Lobby, orientation toggle, mode buttons, etc.).
+    const a11yNav = document.createElement('nav')
+    a11yNav.className = 'phaser-a11y-nav'
+    a11yNav.setAttribute('aria-label', 'Cardgame controls')
+    container.appendChild(a11yNav)
+    this.a11yNavOverlay = a11yNav
+
     this.lobbyScene = new LobbyScene(this)
     this.cardgameScene = new CardgameScene(this)
     this.activeSceneKey = LOBBY_SCENE_KEY
@@ -1458,6 +1472,7 @@ export class PhaserRenderer implements AppRenderer {
       : LOBBY_SCENE_KEY
 
     this.updateLobbyP2POverlay(view, targetSceneKey === LOBBY_SCENE_KEY)
+    this.updateA11yNav(view, targetSceneKey === LOBBY_SCENE_KEY)
 
     if (this.activeSceneKey !== targetSceneKey && this.game) {
       const sceneManager = this.game.scene
@@ -1546,11 +1561,85 @@ export class PhaserRenderer implements AppRenderer {
     })
   }
 
+  private updateA11yNav(view: AppViewModel, lobbyActive: boolean): void {
+    const nav = this.a11yNavOverlay
+    if (!nav) {
+      return
+    }
+    const controller = this.controller
+    if (!controller) {
+      nav.innerHTML = ''
+      return
+    }
+
+    const buttons: Array<{ label: string; onClick: () => void; disabled?: boolean }> = []
+    const orientationLabel = this.orientationMode === 'vertical' ? 'Switch to landscape' : 'Switch to portrait'
+    buttons.push({ label: orientationLabel, onClick: () => this.toggleOrientationMode() })
+
+    if (lobbyActive) {
+      const modes: Array<{ mode: Mode; label: string }> = [
+        { mode: 'local-hvh', label: 'Local Human vs Human' },
+        { mode: 'local-hvai', label: 'Local Human vs AI' },
+        { mode: 'local-aivai', label: 'Local AI vs AI' },
+        { mode: 'p2p-host', label: 'P2P Host' },
+        { mode: 'p2p-join', label: 'P2P Join' },
+      ]
+      for (const entry of modes) {
+        buttons.push({ label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
+      }
+      buttons.push({ label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
+    } else {
+      buttons.push({ label: 'Back to Lobby', onClick: () => controller.backToLobby() })
+      buttons.push({ label: 'Rematch', onClick: () => controller.rematch() })
+      buttons.push({ label: 'Download Recording', onClick: () => this.handleDownloadRecording() })
+      buttons.push({ label: 'Save Recording to Browser', onClick: () => controller.saveRecordingToLocalStorage() })
+      buttons.push({
+        label: 'Load Recording from Browser',
+        onClick: () => controller.loadRecordingFromLocalStorage(),
+        disabled: !view.recording.hasLocalSave,
+      })
+      buttons.push({ label: 'Load Recording from File', onClick: () => this.openRecordingFilePicker() })
+      if (view.replay.active) {
+        buttons.push({ label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
+          if (view.replay.isPlaying) {
+            controller.pauseReplay()
+          } else {
+            controller.startReplay()
+          }
+        } })
+        buttons.push({ label: 'Previous Replay Step', onClick: () => controller.stepReplay(-1) })
+        buttons.push({ label: 'Next Replay Step', onClick: () => controller.stepReplay(1) })
+        buttons.push({ label: 'Jump Replay to End', onClick: () => controller.jumpReplayToEnd() })
+        buttons.push({ label: 'Exit Replay', onClick: () => controller.exitReplay() })
+      } else {
+        buttons.push({
+          label: 'Start Replay',
+          onClick: () => controller.startReplay(),
+          disabled: !view.recording.metadata,
+        })
+      }
+    }
+
+    nav.innerHTML = ''
+    for (const entry of buttons) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = entry.label
+      if (entry.disabled) {
+        button.disabled = true
+      }
+      button.addEventListener('click', entry.onClick)
+      nav.appendChild(button)
+    }
+  }
+
   unmount(): void {
     this.fileInput?.remove()
     this.fileInput = null
     this.lobbyP2POverlay?.remove()
     this.lobbyP2POverlay = null
+    this.a11yNavOverlay?.remove()
+    this.a11yNavOverlay = null
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
 

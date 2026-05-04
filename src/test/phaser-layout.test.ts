@@ -52,18 +52,40 @@ describe('phaser buildLayout', () => {
     expect(totalRowsAndGaps).toBeLessThanOrEqual(layout.boardColumnHeight + 0.5)
   })
 
-  it('makes the menu popup tall enough to fit its fixed control rows', () => {
-    // On a short phone-sized viewport the menu popup used to bottom out at
-    // 280px, which was less than the ~340px of fixed buttons (Back/Rematch +
-    // orientation + recorder rows + Close), pushing the Close button below the
-    // panel. The popup must now reserve enough height for its visible controls.
+  it('keeps cards fitting inside their battlefield/active rows on short viewports', () => {
+    // Same short viewport as the row-sum test. The proportional `scale` would
+    // otherwise shrink battlefield rows below the desired cardHeight, causing
+    // cards to render past the row into adjacent info panels. The layout must
+    // expose effective cardHeight/cardWidth that fit within the row strip.
+    const layout = buildLayout(1024, 480, 'horizontal')
+    const cardRowPadding = 12
+    expect(layout.cardHeight).toBeLessThanOrEqual(layout.nonActiveBattlefieldHeight - cardRowPadding + 0.5)
+    expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeBattlefieldHeight - cardRowPadding + 0.5)
+    // Hand cards must also fit in the active info row with their bottom anchor.
+    expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeInfoHeight - cardRowPadding + 0.5)
+    // Aspect ratio (cardHeight ≈ 1.35 * cardWidth) is preserved within a small
+    // tolerance; the floor on cardWidth ensures cards are still visible.
+    expect(layout.cardWidth).toBeGreaterThan(0)
+    expect(layout.cardHeight / layout.cardWidth).toBeGreaterThan(1.2)
+  })
+
+  it('makes the menu popup tall enough to fit all worst-case control rows (replay + recorder)', () => {
+    // The previous test only covered a 6-row baseline. The replay-active menu
+    // additionally renders a "Replay Controls" heading and two extra control
+    // rows (Play/Pause + Prev/Next + Jump to End / Exit Replay), and the
+    // recorder section adds its own heading. The popup must be tall enough to
+    // hold all of those plus the fixed buttons on phone-sized viewports.
     const viewportHeight = 640
     const layout = buildLayout(360, viewportHeight, 'vertical')
-    const minRequired =
+    // Worst case: 6 fixed button rows + 2 replay-control rows + recorder
+    // heading + replay heading + section gaps + padding + title.
+    const headingHeight = 22
+    const worstCaseContent =
       layout.menuPopupPadding * 2
       + layout.menuTitleHeight
-      + layout.popupButtonHeight * 6
-      + layout.menuSectionGap * 4
-    expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(minRequired, viewportHeight - layout.margin * 2))
+      + headingHeight * 2
+      + layout.popupButtonHeight * (6 + 2)
+      + layout.menuSectionGap * 6
+    expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(worstCaseContent, viewportHeight - layout.margin * 2))
   })
 })

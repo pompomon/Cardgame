@@ -167,13 +167,37 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const activeBattlefieldHeight = battlefieldHeightRaw * scale
   const activeInfoHeight = activeInfoHeightRaw * scale
 
+  // Effective card dimensions: when the proportional `scale` above shrinks
+  // battlefield or active-info rows below the desired cardHeight, cards drawn
+  // at the original size would render outside their rows and overlap the
+  // adjacent info panels. Derive a row-fitting cardHeight (preserving the
+  // 1.35 aspect ratio) so cards always stay inside their assigned row.
+  const cardRowFloor = 40
+  const cardRowPadding = 12
+  const cardWidthFloor = 28
+  const cardGapFloor = 48
+  const minRowForCards = Math.min(
+    nonActiveBattlefieldHeight,
+    activeBattlefieldHeight,
+    activeInfoHeight,
+  )
+  const cardFitHeight = Math.max(cardRowFloor, minRowForCards - cardRowPadding)
+  const effectiveCardHeight = Math.min(cardHeight, cardFitHeight)
+  const effectiveCardWidth = effectiveCardHeight >= cardHeight
+    ? cardWidth
+    : Math.max(cardWidthFloor, effectiveCardHeight / 1.35)
+  const effectiveCardGap = effectiveCardHeight >= cardHeight
+    ? cardGap
+    : Math.max(cardGapFloor, cardGap * (effectiveCardWidth / Math.max(1, cardWidth)))
+
   const nonActiveInfoY = boardColumnTop
   const nonActiveBattlefieldY = nonActiveInfoY + nonActiveInfoHeight + innerGap
   const activeBattlefieldY = nonActiveBattlefieldY + nonActiveBattlefieldHeight + innerGap
   const activeInfoY = activeBattlefieldY + activeBattlefieldHeight + innerGap
   // Hand cards centered toward the bottom of the active info row so the
-  // active player's drag area lives at the bottom of the screen.
-  const handCardsY = activeInfoY + activeInfoHeight - cardHeight / 2 - 6
+  // active player's drag area lives at the bottom of the screen. Use the
+  // effective card height so the hand strip always fits within the row.
+  const handCardsY = activeInfoY + activeInfoHeight - effectiveCardHeight / 2 - 6
   const controlsStartY = activeInfoY + 6
   const responseInfoY = controlsStartY
 
@@ -238,9 +262,9 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     actionButtonWidth,
     actionButtonHeight,
     actionButtonGap,
-    cardWidth,
-    cardHeight,
-    cardGap,
+    cardWidth: effectiveCardWidth,
+    cardHeight: effectiveCardHeight,
+    cardGap: effectiveCardGap,
     bodyTop,
     bodyHeight,
     logColumnLeft,
