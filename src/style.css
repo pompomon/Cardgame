@@ -248,6 +248,46 @@ textarea {
   touch-action: none;
 }
 
+.phaser-lobby-p2p-overlay {
+  position: fixed;
+  right: 18px;
+  top: 18px;
+  z-index: 20;
+  width: min(420px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+}
+
+.phaser-lobby-p2p-panel {
+  border: 1px solid #2a355f;
+  border-radius: 12px;
+  background: rgba(10, 18, 38, 0.95);
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.phaser-lobby-p2p-panel h2 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.phaser-lobby-p2p-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.phaser-lobby-p2p-status {
+  margin: 0;
+  color: #9db0d9;
+}
+
+@supports not (height: 100dvh) {
+  .phaser-lobby-p2p-overlay {
+    max-height: calc(100vh - 36px);
+  }
+}
+
 @media (max-width: 960px) {
   .app-shell {
     padding: 12px;

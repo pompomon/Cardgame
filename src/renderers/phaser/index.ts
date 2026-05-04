@@ -57,6 +57,15 @@ function persistOrientationMode(mode: OrientationMode): void {
   }
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function cardStyleForLand(name: string): CardStyle {
   const fallback: CardStyle = { fill: 0x132652, stroke: 0x4f6caa, text: '#e5ecf5' }
   switch (name) {
@@ -126,10 +135,18 @@ class LobbyScene extends Phaser.Scene {
     this.rootContainer = this.add.container(0, 0)
     this.updateLayout()
 
-    this.scale.on('resize', () => {
+    // Save the resize listener so we can detach it on scene shutdown. Without
+    // this, every lobby↔game scene transition would reuse the same scene
+    // instance and rerun create(), accumulating duplicate listeners that fire
+    // on later resizes.
+    const onResize = (): void => {
       if (this.updateLayout()) {
         this.renderView(this.rendererRef.currentView)
       }
+    }
+    this.scale.on('resize', onResize)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off('resize', onResize)
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -341,10 +358,17 @@ class CardgameScene extends Phaser.Scene {
       this.showTargetPicker(game, cardId, resolution.options)
     })
 
-    this.scale.on('resize', () => {
+    // Detach the resize listener on scene shutdown so a stop/start cycle (e.g.
+    // when the user goes Back to Lobby and then starts a new match) does not
+    // accumulate duplicate listeners on the reused scene instance.
+    const onResize = (): void => {
       if (this.updateLayout()) {
         this.renderView(this.rendererRef.currentView)
       }
+    }
+    this.scale.on('resize', onResize)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off('resize', onResize)
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -536,18 +560,18 @@ class CardgameScene extends Phaser.Scene {
 
     const headerTextX = left + menuButtonWidth + 16
     const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
-    this.rootContainer?.add(this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, `Turn ${game.turn} • Phase: ${game.phase}`, {
-      color: '#e5ecf5',
+    // Winner text used to render as a separate second header row, but the
+    // layout only reserves a single-row header before bodyTop, so the banner
+    // spilled on top of the board. Inline it into the header text instead so
+    // everything stays within the reserved header strip.
+    const headerLabel = game.winnerText
+      ? `${game.winnerText} • Turn ${game.turn} • Phase: ${game.phase}`
+      : `Turn ${game.turn} • Phase: ${game.phase}`
+    this.rootContainer?.add(this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, headerLabel, {
+      color: game.winnerText ? '#f7d56b' : '#e5ecf5',
       fontSize: this.currentLayout.titleFontSize,
       wordWrap: { width: headerTextWidth },
     }).setOrigin(0, 0.5))
-
-    if (game.winnerText) {
-      this.rootContainer?.add(this.add.text(left, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight + 4, game.winnerText, {
-        color: '#f7d56b',
-        fontSize: this.currentLayout.subtitleFontSize,
-      }))
-    }
 
     this.renderInSceneLog(game.log)
     this.renderBattlefields(game)
@@ -1284,6 +1308,9 @@ export class PhaserRenderer implements AppRenderer {
   private lobbyScene: LobbyScene | null = null
   private activeSceneKey: string | null = null
   private fileInput: HTMLInputElement | null = null
+  private lobbyP2POverlay: HTMLDivElement | null = null
+  private hostAnswerDraft = ''
+  private joinOfferDraft = ''
   currentView: AppViewModel | null = null
   private _orientationMode: OrientationMode = 'horizontal'
 
@@ -1334,6 +1361,19 @@ export class PhaserRenderer implements AppRenderer {
     container.appendChild(fileInput)
     this.fileInput = fileInput
 
+    // Lobby-only HTML overlay for P2P manual signaling. Phaser scenes cannot
+    // host native <textarea> elements for paste/copy of the offer/answer
+    // payloads, so we render this section as plain HTML siblings of the canvas
+    // and only show it while the lobby is active and a P2P mode is selected.
+    // This mirrors the recommendation in the plan ("keep P2P signaling in
+    // Lobby only") without resurrecting the persistent recorder/p2p overlays
+    // that issue #11 asked to hide under the Menu.
+    const lobbyP2POverlay = document.createElement('div')
+    lobbyP2POverlay.className = 'phaser-lobby-p2p-overlay'
+    lobbyP2POverlay.hidden = true
+    container.appendChild(lobbyP2POverlay)
+    this.lobbyP2POverlay = lobbyP2POverlay
+
     this.lobbyScene = new LobbyScene(this)
     this.cardgameScene = new CardgameScene(this)
     this.activeSceneKey = LOBBY_SCENE_KEY
@@ -1356,7 +1396,17 @@ export class PhaserRenderer implements AppRenderer {
 
   render(view: AppViewModel): void {
     this.currentView = view
-    const targetSceneKey = view.game ? CARDGAME_SCENE_KEY : LOBBY_SCENE_KEY
+    // Treat P2P modes as "still in lobby" until the data channel is connected.
+    // controller.startGame() creates state.game immediately for every mode
+    // (including p2p-host/p2p-join) so without this gate the user is dropped
+    // into the in-match scene before they can ever exchange offer/answer.
+    const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
+    const p2pAwaitingConnection = isP2PMode && !view.p2pConnected
+    const targetSceneKey = view.game && !p2pAwaitingConnection
+      ? CARDGAME_SCENE_KEY
+      : LOBBY_SCENE_KEY
+
+    this.updateLobbyP2POverlay(view, targetSceneKey === LOBBY_SCENE_KEY)
 
     if (this.activeSceneKey !== targetSceneKey && this.game) {
       const sceneManager = this.game.scene
@@ -1378,9 +1428,80 @@ export class PhaserRenderer implements AppRenderer {
     }
   }
 
+  private updateLobbyP2POverlay(view: AppViewModel, lobbyActive: boolean): void {
+    const overlay = this.lobbyP2POverlay
+    if (!overlay) {
+      return
+    }
+    const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
+    const shouldShow = lobbyActive && isP2PMode && !view.replay.active
+    if (!shouldShow) {
+      overlay.hidden = true
+      overlay.innerHTML = ''
+      this.hostAnswerDraft = ''
+      this.joinOfferDraft = ''
+      return
+    }
+    overlay.hidden = false
+    const host = view.mode === 'p2p-host'
+    const safeStatus = escapeHtml(view.status)
+    const safeOffer = escapeHtml(view.offer)
+    const safeAnswer = escapeHtml(view.answer)
+    const safeHostAnswerDraft = escapeHtml(this.hostAnswerDraft)
+    const safeJoinOfferDraft = escapeHtml(this.joinOfferDraft)
+    overlay.innerHTML = `
+      <section class="phaser-lobby-p2p-panel">
+        <h2>P2P Manual Signaling</h2>
+        <p>${host ? 'Host: create offer, share it, then paste answer.' : 'Join: paste host offer, create answer, and share answer.'}</p>
+        <div class="phaser-lobby-p2p-grid">
+          ${host
+            ? `<button data-p2p-action="create-offer">Create Offer</button>
+               <textarea data-p2p-field="offer" placeholder="Offer" readonly>${safeOffer}</textarea>
+               <textarea data-p2p-field="host-answer" placeholder="Paste remote answer">${safeHostAnswerDraft}</textarea>
+               <button data-p2p-action="accept-answer">Accept Answer</button>
+               <button data-p2p-action="start-p2p-game">Start Game</button>`
+            : `<textarea data-p2p-field="join-offer" placeholder="Paste host offer">${safeJoinOfferDraft}</textarea>
+               <button data-p2p-action="create-answer">Create Answer</button>
+               <textarea data-p2p-field="answer" placeholder="Answer" readonly>${safeAnswer}</textarea>`
+          }
+          <button data-p2p-action="back-to-lobby">Cancel</button>
+        </div>
+        <p class="phaser-lobby-p2p-status">${safeStatus}</p>
+      </section>
+    `
+
+    overlay.querySelector<HTMLTextAreaElement>('[data-p2p-field="host-answer"]')?.addEventListener('input', (event) => {
+      this.hostAnswerDraft = (event.target as HTMLTextAreaElement).value
+    })
+    overlay.querySelector<HTMLTextAreaElement>('[data-p2p-field="join-offer"]')?.addEventListener('input', (event) => {
+      this.joinOfferDraft = (event.target as HTMLTextAreaElement).value
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="create-offer"]')?.addEventListener('click', () => {
+      void this.controller?.createOffer()
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="accept-answer"]')?.addEventListener('click', () => {
+      void this.controller?.acceptAnswer(this.hostAnswerDraft)
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="create-answer"]')?.addEventListener('click', () => {
+      void this.controller?.createAnswer(this.joinOfferDraft)
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="start-p2p-game"]')?.addEventListener('click', () => {
+      this.controller?.startP2PGame()
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="back-to-lobby"]')?.addEventListener('click', () => {
+      this.hostAnswerDraft = ''
+      this.joinOfferDraft = ''
+      this.controller?.backToLobby()
+    })
+  }
+
   unmount(): void {
     this.fileInput?.remove()
     this.fileInput = null
+    this.lobbyP2POverlay?.remove()
+    this.lobbyP2POverlay = null
+    this.hostAnswerDraft = ''
+    this.joinOfferDraft = ''
 
     this.game?.destroy(true)
     this.game = null

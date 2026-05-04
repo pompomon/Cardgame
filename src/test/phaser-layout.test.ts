@@ -35,4 +35,35 @@ describe('phaser buildLayout', () => {
     const layout = buildLayout(720, 600, 'horizontal')
     expect(layout.isCollapsed).toBe(false)
   })
+
+  it('keeps the four board rows within the available board column on short viewports', () => {
+    // Short viewport that forces totalRaw > remainingHeight so the proportional
+    // scale kicks in. After scaling, the four rows + their three inner gaps
+    // must still sum to <= boardColumnHeight (no spill of the active row
+    // outside the body area).
+    const layout = buildLayout(1024, 480, 'horizontal')
+    const innerGap = 8
+    const totalRowsAndGaps =
+      layout.nonActiveInfoHeight
+      + layout.nonActiveBattlefieldHeight
+      + layout.activeBattlefieldHeight
+      + layout.activeInfoHeight
+      + innerGap * 3
+    expect(totalRowsAndGaps).toBeLessThanOrEqual(layout.boardColumnHeight + 0.5)
+  })
+
+  it('makes the menu popup tall enough to fit its fixed control rows', () => {
+    // On a short phone-sized viewport the menu popup used to bottom out at
+    // 280px, which was less than the ~340px of fixed buttons (Back/Rematch +
+    // orientation + recorder rows + Close), pushing the Close button below the
+    // panel. The popup must now reserve enough height for its visible controls.
+    const viewportHeight = 640
+    const layout = buildLayout(360, viewportHeight, 'vertical')
+    const minRequired =
+      layout.menuPopupPadding * 2
+      + layout.menuTitleHeight
+      + layout.popupButtonHeight * 6
+      + layout.menuSectionGap * 4
+    expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(minRequired, viewportHeight - layout.margin * 2))
+  })
 })

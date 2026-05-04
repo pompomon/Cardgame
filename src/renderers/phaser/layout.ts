@@ -157,10 +157,15 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const battlefieldHeightRaw = Math.max(minBattlefieldHeight, remainingHeight * battlefieldShare)
   const totalRaw = nonActiveInfoHeightRaw + battlefieldHeightRaw + battlefieldHeightRaw + activeInfoHeightRaw
   const scale = totalRaw > 0 ? Math.min(1, remainingHeight / totalRaw) : 1
-  const nonActiveInfoHeight = Math.max(40, nonActiveInfoHeightRaw * scale)
-  const nonActiveBattlefieldHeight = Math.max(60, battlefieldHeightRaw * scale)
-  const activeBattlefieldHeight = Math.max(60, battlefieldHeightRaw * scale)
-  const activeInfoHeight = Math.max(40, activeInfoHeightRaw * scale)
+  // No post-scale floors: when totalRaw exceeds remainingHeight, scale shrinks
+  // each row proportionally so the four rows always sum to remainingHeight.
+  // Applying a Math.max(...) floor here would push the total back over the
+  // available height and spill the active-player row outside the body area on
+  // short viewports.
+  const nonActiveInfoHeight = nonActiveInfoHeightRaw * scale
+  const nonActiveBattlefieldHeight = battlefieldHeightRaw * scale
+  const activeBattlefieldHeight = battlefieldHeightRaw * scale
+  const activeInfoHeight = activeInfoHeightRaw * scale
 
   const nonActiveInfoY = boardColumnTop
   const nonActiveBattlefieldY = nonActiveInfoY + nonActiveInfoHeight + innerGap
@@ -186,9 +191,24 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     menuPopupMaxWidth,
   )
   const menuPopupMaxHeight = Math.max(1, safeHeight - margin * 2)
+  // The menu modal must always fit its fixed controls (Back/Rematch row,
+  // orientation toggle, recorder heading + two recorder rows, start-replay or
+  // replay-controls, close button). Compute a worst-case content height so the
+  // popup is at least tall enough to keep every action reachable on short
+  // phone-sized viewports — replay-log space comes from whatever is left over.
+  const recorderHeadingHeight = 22
+  const fixedButtonRows = 6 // back/rematch + orientation + 2 recorder rows + start-replay/end-section + close
+  const replayControlsRows = 2 // worst case when replay is active
+  const requiredMenuContentHeight =
+    menuPopupPadding * 2
+    + menuTitleHeight
+    + recorderHeadingHeight * 2
+    + popupButtonHeight * (fixedButtonRows + replayControlsRows)
+    + menuSectionGap * 6
+    + 24 // breathing room
   const menuPopupHeight = clamp(
     safeHeight * (orientation === 'vertical' ? 0.84 : 0.82),
-    Math.min(280, menuPopupMaxHeight),
+    Math.min(requiredMenuContentHeight, menuPopupMaxHeight),
     menuPopupMaxHeight,
   )
   const menuLogViewportHeight = Math.max(
