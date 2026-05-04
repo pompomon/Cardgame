@@ -78,14 +78,17 @@ function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: 
   `
 }
 
-function renderGame(view: AppViewModel): string {
+function renderGame(view: AppViewModel, menuOpen: boolean): string {
   const game = view.game
   if (!game) {
     return ''
   }
 
   const [p1, p2] = game.players
-  const actorState = game.actor === 0 ? p1 : p2
+  const activeIndex = game.actor
+  const nonActiveIndex = activeIndex === 0 ? 1 : 0
+  const activeState = activeIndex === 0 ? p1 : p2
+  const nonActiveState = nonActiveIndex === 0 ? p1 : p2
   const safeStatus = escapeHtml(view.status)
   const safeWinnerText = escapeHtml(game.winnerText)
   const recordingMeta = view.recording.metadata
@@ -107,7 +110,7 @@ function renderGame(view: AppViewModel): string {
       <div class="controls">
         <h3>Main Phase</h3>
         <div class="action-row">
-          ${actorState.handCards.map((card) => {
+          ${activeState.handCards.map((card) => {
             const options = game.legal.playLandByCard[card.id]
             if (!options || options.length === 0) {
               return ''
@@ -138,62 +141,80 @@ function renderGame(view: AppViewModel): string {
     `
     : ''
 
-  return `
-    <section class="panel">
-      <div class="game-header">
-        <h2>Turn ${game.turn} • Phase: ${game.phase}</h2>
-        <button id="back-to-lobby">Back to Lobby</button>
-      </div>
-      <p class="status">${safeStatus}</p>
-      <p>${safeWinnerText}</p>
-      <div class="controls">
-        <h3>Recorder</h3>
-        <p>${escapeHtml(recordingMetaText)}</p>
-        <div class="action-row">
-          <button id="save-recording-download">Download Save File</button>
-          <button id="save-recording-local">Save to Browser</button>
-          <button id="load-recording-local">Load from Browser</button>
-          <button id="load-recording-file-btn">Load from File</button>
-          ${view.replay.active ? '' : '<button id="replay-start">Start Replay</button>'}
+  const renderPlayerInfo = (player: typeof p1, playerIndex: number, kind: 'active' | 'non-active'): string => `
+    <article class="player player-${kind}">
+      <h3>Player ${playerIndex + 1} (${escapeHtml(view.controllers[playerIndex])})${kind === 'active' ? ' — Active' : ''}</h3>
+      <p>Hand: ${player.handCount} • Deck: ${player.deckCount} • Graveyard: ${player.graveyardCount}</p>
+      <p>Hand cards: ${escapeHtml(player.handCards.map((card) => card.name).join(', ') || 'None')}</p>
+    </article>
+  `
+
+  const renderBattlefield = (player: typeof p1, playerIndex: number, kind: 'active' | 'non-active'): string => `
+    <article class="battlefield battlefield-${kind}">
+      <h4>Player ${playerIndex + 1} Battlefield</h4>
+      <p>${escapeHtml(player.battlefield.map((entry) => entry.name).join(', ') || 'None')}</p>
+    </article>
+  `
+
+  const menuPanel = menuOpen
+    ? `
+      <div class="menu-panel" id="menu-panel">
+        <div class="menu-section">
+          <button id="back-to-lobby">Back to Lobby</button>
+          <button id="rematch">Rematch</button>
         </div>
-        <input id="load-recording-file" type="file" accept="application/json,.json" hidden />
-      </div>
-      ${view.replay.active
-        ? `<div class="controls">
-          <h3>Replay Controls</h3>
-          <p>Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}</p>
+        <div class="menu-section">
+          <h4>Recorder</h4>
+          <p>${escapeHtml(recordingMetaText)}</p>
           <div class="action-row">
-            <button id="replay-playpause">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
-            <button id="replay-prev">Previous</button>
-            <button id="replay-next">Next</button>
-            <button id="replay-end">Jump to End</button>
-            <button id="replay-exit">Exit Replay</button>
+            <button id="save-recording-download">Download Save File</button>
+            <button id="save-recording-local">Save to Browser</button>
+            <button id="load-recording-local">Load from Browser</button>
+            <button id="load-recording-file-btn">Load from File</button>
+            ${view.replay.active ? '' : '<button id="replay-start">Start Replay</button>'}
           </div>
-        </div>`
-        : ''}
-      <div class="board">
-        <article class="player">
-          <h3>Player 1 (${escapeHtml(view.controllers[0])})</h3>
-          <p>Hand: ${p1.handCount} • Deck: ${p1.deckCount} • Graveyard: ${p1.graveyardCount}</p>
-          <p>Battlefield: ${escapeHtml(p1.battlefield.map((entry) => entry.name).join(', ') || 'None')}</p>
-          <p>Hand cards: ${escapeHtml(p1.handCards.map((card) => card.name).join(', ') || 'None')}</p>
-        </article>
-        <article class="player">
-          <h3>Player 2 (${escapeHtml(view.controllers[1])})</h3>
-          <p>Hand: ${p2.handCount} • Deck: ${p2.deckCount} • Graveyard: ${p2.graveyardCount}</p>
-          <p>Battlefield: ${escapeHtml(p2.battlefield.map((entry) => entry.name).join(', ') || 'None')}</p>
-          <p>Hand cards: ${escapeHtml(p2.handCards.map((card) => card.name).join(', ') || 'None')}</p>
-        </article>
+          <input id="load-recording-file" type="file" accept="application/json,.json" hidden />
+        </div>
+        ${view.replay.active
+          ? `<div class="menu-section">
+            <h4>Replay Controls</h4>
+            <p>Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}</p>
+            <div class="action-row">
+              <button id="replay-playpause">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
+              <button id="replay-prev">Previous</button>
+              <button id="replay-next">Next</button>
+              <button id="replay-end">Jump to End</button>
+              <button id="replay-exit">Exit Replay</button>
+            </div>
+          </div>`
+          : ''}
+      </div>
+    `
+    : ''
+
+  return `
+    <section class="panel game-scene">
+      <div class="game-header">
+        <button id="menu-toggle" class="menu-toggle" aria-expanded="${menuOpen ? 'true' : 'false'}" aria-label="Menu">☰ Menu</button>
+        <h2>Turn ${game.turn} • Phase: ${game.phase}</h2>
+      </div>
+      ${menuPanel}
+      <p class="status">${safeStatus}</p>
+      ${safeWinnerText ? `<p class="winner">${safeWinnerText}</p>` : ''}
+      <div class="battlefield-layout">
+        <aside class="log">
+          <h3>Replay Log</h3>
+          <ul>${game.log.slice(-DOM_LOG_VISIBLE_ENTRIES).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+        </aside>
+        <div class="board">
+          ${renderPlayerInfo(nonActiveState, nonActiveIndex, 'non-active')}
+          ${renderBattlefield(nonActiveState, nonActiveIndex, 'non-active')}
+          ${renderBattlefield(activeState, activeIndex, 'active')}
+          ${renderPlayerInfo(activeState, activeIndex, 'active')}
+        </div>
       </div>
       ${mainControls}
       ${responseControls}
-      <div class="log">
-        <h3>Replay Log</h3>
-        <ul>${game.log.slice(-DOM_LOG_VISIBLE_ENTRIES).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
-      </div>
-      <div class="action-row">
-        <button id="rematch">Rematch</button>
-      </div>
     </section>
   `
 }
@@ -204,6 +225,7 @@ export class DomRenderer implements AppRenderer {
   private view: AppViewModel | null = null
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
+  private menuOpen = false
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -230,14 +252,18 @@ export class DomRenderer implements AppRenderer {
     if (view.mode !== 'p2p-join') {
       this.joinOfferDraft = ''
     }
+    if (!view.game) {
+      this.menuOpen = false
+    }
+
+    const inGame = !!view.game
+    const showP2P = (view.mode === 'p2p-host' || view.mode === 'p2p-join') && !view.replay.active && !inGame
 
     this.container.innerHTML = `
-      <main class="app-shell">
-        ${view.game ? '' : renderLobby(view)}
-        ${(view.mode === 'p2p-host' || view.mode === 'p2p-join') && !view.replay.active
-    ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft)
-    : ''}
-        ${view.game ? renderGame(view) : ''}
+      <main class="app-shell${inGame ? ' app-shell-game' : ' app-shell-lobby'}">
+        ${inGame ? '' : renderLobby(view)}
+        ${showP2P ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
+        ${inGame ? renderGame(view, this.menuOpen) : ''}
       </main>
     `
 
@@ -253,12 +279,20 @@ export class DomRenderer implements AppRenderer {
     this.view = null
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
+    this.menuOpen = false
   }
 
   private bindEvents(): void {
     if (!this.container || !this.controller || !this.view) {
       return
     }
+
+    this.container.querySelector('#menu-toggle')?.addEventListener('click', () => {
+      this.menuOpen = !this.menuOpen
+      if (this.view) {
+        this.render(this.view)
+      }
+    })
 
     this.container.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
       button.addEventListener('click', () => {
