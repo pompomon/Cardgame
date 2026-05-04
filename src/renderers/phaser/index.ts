@@ -14,6 +14,7 @@ const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
 const POPUP_MIN_WIDTH = 180
+const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
 const COMPACT_DIMENSION_THRESHOLD = 700
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 
@@ -233,6 +234,7 @@ class CardgameScene extends Phaser.Scene {
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
   private menuLogScrollOffset: number | null = null
+  private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
 
@@ -373,23 +375,51 @@ class CardgameScene extends Phaser.Scene {
 
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
+    const game = view?.game ?? null
+    const currentMenuSignature = this.menuOpen && game
+      ? this.computeMenuSignature(game.log)
+      : null
+    let preservedOverlay: Phaser.GameObjects.Container | null = null
+    if (
+      currentMenuSignature !== null
+      && currentMenuSignature === this.lastMenuSignature
+      && this.menuOverlay
+    ) {
+      preservedOverlay = this.menuOverlay
+      this.rootContainer?.remove(preservedOverlay, false)
+    }
     this.clearRoot()
     if (!view || !this.rootContainer) {
+      preservedOverlay?.destroy(true)
+      this.lastMenuSignature = null
       return
     }
 
     this.setStatus(view.status)
 
     if (!view.game) {
+      preservedOverlay?.destroy(true)
       this.closeMenuOverlay()
       this.renderLobby()
+      this.lastMenuSignature = null
       return
     }
 
     this.renderGame(view)
-    if (this.menuOpen) {
+    if (preservedOverlay) {
+      this.menuOverlay = preservedOverlay
+      this.rootContainer.add(preservedOverlay)
+    } else if (this.menuOpen) {
       this.openMenuOverlay(view.game.log)
     }
+    this.lastMenuSignature = this.menuOpen && this.menuOverlay
+      ? this.computeMenuSignature(view.game.log)
+      : null
+  }
+
+  private computeMenuSignature(lines: string[]): string {
+    const last = lines.length > 0 ? lines[lines.length - 1] : ''
+    return `${this.lastLayoutSignature}|${lines.length}|${last}`
   }
 
   private createButton(
@@ -715,6 +745,7 @@ class CardgameScene extends Phaser.Scene {
     this.menuOverlay = null
     this.menuOpen = false
     this.menuLogScrollOffset = null
+    this.lastMenuSignature = null
     overlay?.destroy(true)
   }
 
@@ -733,6 +764,7 @@ class CardgameScene extends Phaser.Scene {
       if (this.menuOverlay === overlay) {
         this.menuOverlay = null
         this.menuOpen = false
+        this.lastMenuSignature = null
       }
     })
     const swallowPointerEvent = (
@@ -808,7 +840,7 @@ class CardgameScene extends Phaser.Scene {
     const logViewportTop = logTitleY + 14 + sectionGap
     const logViewportWidth = buttonWidth
     const maxViewportHeight = Math.max(0, popupHeight / 2 - popupPadding - logViewportTop)
-    if (maxViewportHeight > 0) {
+    if (maxViewportHeight >= MIN_READABLE_LOG_VIEWPORT_HEIGHT) {
       overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
         color: '#e5ecf5',
         fontSize: this.currentLayout.bodyFontSize,
