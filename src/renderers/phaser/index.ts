@@ -1396,13 +1396,13 @@ export class PhaserRenderer implements AppRenderer {
 
   render(view: AppViewModel): void {
     this.currentView = view
-    // Treat P2P modes as "still in lobby" until the data channel is connected.
-    // controller.startGame() creates state.game immediately for every mode
-    // (including p2p-host/p2p-join) so without this gate the user is dropped
-    // into the in-match scene before they can ever exchange offer/answer.
+    // Treat P2P host/join modes as "still in lobby" until the explicit
+    // synchronized P2P start flow completes. controller.startGame() creates
+    // state.game immediately for every mode, so switching scenes as soon as
+    // p2pConnected becomes true hides the host's Start Game control before
+    // the start packet is sent and both peers are reseeded consistently.
     const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
-    const p2pAwaitingConnection = isP2PMode && !view.p2pConnected
-    const targetSceneKey = view.game && !p2pAwaitingConnection
+    const targetSceneKey = view.game && !isP2PMode
       ? CARDGAME_SCENE_KEY
       : LOBBY_SCENE_KEY
 
