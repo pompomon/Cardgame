@@ -260,7 +260,7 @@ export class DomRenderer implements AppRenderer {
     const showP2P = (view.mode === 'p2p-host' || view.mode === 'p2p-join') && !view.replay.active && !inGame
 
     this.container.innerHTML = `
-      <main class="app-shell${inGame ? ' app-shell-game' : ' app-shell-lobby'}">
+      <main class="app-shell">
         ${inGame ? '' : renderLobby(view)}
         ${showP2P ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
         ${inGame ? renderGame(view, this.menuOpen) : ''}
