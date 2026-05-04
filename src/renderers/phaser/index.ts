@@ -9,7 +9,6 @@ const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
-const FALLBACK_LOG_ENTRY_COUNT = 3
 const MIN_SCROLLABLE_LOG_HEIGHT = 48
 const MIN_WORD_WRAP_WIDTH = 20
 const POPUP_SECTION_GAP = 10
@@ -879,7 +878,7 @@ class CardgameScene extends Phaser.Scene {
     } else {
       const fallbackTopY = buttonStackBottomY + sectionGap + 6
       const fallbackText = lines.length > 0
-        ? `Replay Log (latest)\n${lines.slice(-FALLBACK_LOG_ENTRY_COUNT).join('\n')}`
+        ? `Replay Log\n${lines.join('\n')}`
         : 'Replay Log\nNo log entries yet.'
       overlay.add(this.add.text(0, fallbackTopY, fallbackText, {
         color: '#9db0d9',
