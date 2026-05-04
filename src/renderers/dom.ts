@@ -156,10 +156,10 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
     </article>
   `
 
-  const menuPanel = menuOpen
-    ? `
-      <div class="menu-panel" id="menu-panel">
-        <div class="menu-section">
+  const menuPanel = `
+      <div class="menu-panel" id="menu-panel"${menuOpen ? '' : ' hidden'}>
+        ${menuOpen
+          ? `<div class="menu-section">
           <button id="back-to-lobby">Back to Lobby</button>
           <button id="rematch">Rematch</button>
         </div>
@@ -187,10 +187,10 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
               <button id="replay-exit">Exit Replay</button>
             </div>
           </div>`
+          : ''}`
           : ''}
       </div>
     `
-    : ''
 
   return `
     <section class="panel game-scene">
