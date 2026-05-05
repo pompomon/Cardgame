@@ -182,8 +182,6 @@ describe('controller recording and replay', () => {
       expect(sentPackets[0]?.type).toBe('start')
       internals.p2p.onMessage({ type: 'start-ack', payload: { seed: internals.state.seed } })
       expect(controller.getViewModel().p2pStarted).toBe(true)
-
-      expect(controller.getViewModel().p2pStarted).toBe(true)
       const action = firstPlayableAction(controller)
       expect(action).toBeTruthy()
 

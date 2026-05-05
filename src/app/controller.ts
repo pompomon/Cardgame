@@ -405,19 +405,20 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
-    if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') && !this.state.p2pStarted) {
+    const inP2PMode = this.state.mode !== null && isP2PMode(this.state.mode)
+    if (source === 'remote' && inP2PMode && !this.state.p2pStarted) {
       this.state.status = 'Ignored action while start handshake is in progress.'
       this.notify()
       return
     }
-    if (this.state.pendingRematchSeed !== null && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+    if (this.state.pendingRematchSeed !== null && inP2PMode) {
       if (source === 'remote') {
         this.state.status = 'Ignored action while rematch handshake is in progress.'
         this.notify()
       }
       return
     }
-    if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+    if (source === 'remote' && inP2PMode) {
       const remoteActor = this.state.controllers.findIndex((controller) => controller === 'remote')
       if (remoteActor !== -1 && action.actor !== remoteActor) {
         this.state.status = 'Ignored out-of-role action from peer.'
