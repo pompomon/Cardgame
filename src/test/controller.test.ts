@@ -446,9 +446,20 @@ describe('controller recording and replay', () => {
       // lobby. Without this ack the host stays in 'Waiting...' forever.
       expect(sentPackets.some((packet) => packet.type === 'start-ack' && (packet.payload as { seed: number }).seed === 4242)).toBe(true)
 
-      // Invalid payload should not flip p2pStarted again or reseed the game.
+      // After match start, any replayed/duplicate start packet is ignored.
       internals.p2p!.onMessage({ type: 'start', payload: { foo: 'bar' } })
-      expect(controller.getViewModel().status).toContain('Ignored invalid start payload')
+      expect(controller.getViewModel().status).toContain('Ignored duplicate start packet')
+
+      // A duplicated/replayed start packet after match start must be ignored,
+      // otherwise the joiner could be reseeded mid-match and desync from host.
+      const seedAfterStart = internals.state.seed
+      const gameAfterStart = internals.state.game
+      const startAckCount = sentPackets.filter((packet) => packet.type === 'start-ack').length
+      internals.p2p!.onMessage({ type: 'start', payload: { seed: 9999 } })
+      expect(internals.state.seed).toBe(seedAfterStart)
+      expect(internals.state.game).toBe(gameAfterStart)
+      expect(sentPackets.filter((packet) => packet.type === 'start-ack')).toHaveLength(startAckCount)
+      expect(controller.getViewModel().status).toContain('Ignored duplicate start packet')
     } finally {
       restoreRtc()
     }

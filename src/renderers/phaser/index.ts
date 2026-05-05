@@ -331,6 +331,7 @@ class CardgameScene extends Phaser.Scene {
   private statusText: Phaser.GameObjects.Text | null = null
   private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
+  private pendingTargetPickerA11yEntries: Array<{ key: string; label: string; onSelect: () => void }> = []
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
   private menuLogScrollOffset: number | null = null
@@ -1082,14 +1083,17 @@ class CardgameScene extends Phaser.Scene {
         : desiredButtonHeight
       let { columnGap, cellWidth } = gridMetricsFor(columns)
       while (totalButtons > 0 && columns < totalButtons) {
-        // Stop widening the grid once either:
-        // 1) buttons are already tall enough, or
-        // 2) another column would make labels too narrow to stay readable.
-        const labelsWouldClip = cellWidth < minReadableButtonWidth
-        if (respondButtonHeight >= minUsableButtonHeight || labelsWouldClip) {
+        if (respondButtonHeight >= minUsableButtonHeight) {
           break
         }
-        columns += 1
+        const nextColumns = columns + 1
+        const nextMetrics = gridMetricsFor(nextColumns)
+        // Do not take a widening step if it would make labels unreadably
+        // narrow. Keep the previous readable layout instead.
+        if (nextMetrics.cellWidth < minReadableButtonWidth) {
+          break
+        }
+        columns = nextColumns
         rows = Math.ceil(totalButtons / columns)
         respondGap = rows > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
         heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
@@ -1173,6 +1177,10 @@ class CardgameScene extends Phaser.Scene {
 
   closeTargetPickerOverlay(): void {
     this.pendingTargetPicker?.destroy(true)
+  }
+
+  getTargetPickerA11yEntries(): Array<{ key: string; label: string; onSelect: () => void }> {
+    return this.pendingTargetPickerA11yEntries
   }
 
   private openMenuOverlay(view: AppViewModel): void {
@@ -1494,6 +1502,7 @@ class CardgameScene extends Phaser.Scene {
       if (this.pendingTargetPicker === overlay) {
         this.pendingTargetPicker = null
       }
+      this.pendingTargetPickerA11yEntries = []
       this.rendererRef.refreshA11yNavForCurrentView()
     })
     const swallowPointerEvent = (
@@ -1542,15 +1551,21 @@ class CardgameScene extends Phaser.Scene {
     optionsViewport.setMask(maskShape.createGeometryMask())
 
     options.slice(0, optionCount).forEach((option, index) => {
-      const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
-      const button = this.createButton(option.label, 0, buttonY, () => {
+      const selectOption = (): void => {
         const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
         if (action) {
           this.rendererRef.controller?.submitAction(action)
         }
         overlay.destroy(true)
-      }, buttonWidth, this.currentLayout.popupButtonHeight)
+      }
+      const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
+      const button = this.createButton(option.label, 0, buttonY, selectOption, buttonWidth, this.currentLayout.popupButtonHeight)
       optionsList.add(button)
+      this.pendingTargetPickerA11yEntries.push({
+        key: `target:${option.effectTargetId ?? `index-${index}`}`,
+        label: option.label,
+        onSelect: selectOption,
+      })
     })
 
     const optionsContentHeight = optionCount > 0
@@ -1595,12 +1610,24 @@ class CardgameScene extends Phaser.Scene {
     if (hasHiddenOptions) {
       const showAllY = cancelY + cancelHeight / 2 + POPUP_BUTTON_GAP + showAllButtonHeight / 2
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
-      const showAllButton = this.createButton(showAllLabel, 0, showAllY, () => {
+      const toggleShowAll = (): void => {
         overlay.destroy(true)
         this.showTargetPicker(game, cardId, options, !showAllTargets)
-      }, Math.min(buttonWidth, 300), showAllButtonHeight)
+      }
+      const showAllButton = this.createButton(showAllLabel, 0, showAllY, toggleShowAll, Math.min(buttonWidth, 300), showAllButtonHeight)
       overlay.add(showAllButton)
+      this.pendingTargetPickerA11yEntries.push({
+        key: 'target:toggle-visible-options',
+        label: showAllLabel,
+        onSelect: toggleShowAll,
+      })
     }
+
+    this.pendingTargetPickerA11yEntries.push({
+      key: 'target:cancel',
+      label: 'Cancel Target Selection',
+      onSelect: () => overlay.destroy(true),
+    })
 
     this.pendingTargetPicker = overlay
     this.rootContainer?.add(overlay)
@@ -1846,8 +1873,11 @@ export class PhaserRenderer implements AppRenderer {
 
     type NavEntry = { key: string; label: string; onClick: () => void; disabled?: boolean }
     const entries: NavEntry[] = []
-    const orientationLabel = this.orientationMode === 'vertical' ? 'Switch to landscape' : 'Switch to portrait'
-    entries.push({ key: 'orientation', label: orientationLabel, onClick: () => this.toggleOrientationMode() })
+    const targetPickerOpen = !lobbyActive && (this.cardgameScene?.isTargetPickerOpen() ?? false)
+    if (!targetPickerOpen) {
+      const orientationLabel = this.orientationMode === 'vertical' ? 'Switch to landscape' : 'Switch to portrait'
+      entries.push({ key: 'orientation', label: orientationLabel, onClick: () => this.toggleOrientationMode() })
+    }
 
     if (lobbyActive) {
       const modes: Array<{ mode: Mode; label: string }> = [
@@ -1878,9 +1908,18 @@ export class PhaserRenderer implements AppRenderer {
     } else {
       const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
       const closeTargetPicker = (): void => { this.cardgameScene?.closeTargetPickerOverlay() }
-      const targetPickerOpen = this.cardgameScene?.isTargetPickerOpen() ?? false
       if (targetPickerOpen) {
-        entries.push({ key: 'target-picker-cancel', label: 'Cancel Target Selection', onClick: () => closeTargetPicker() })
+        const targetPickerEntries = this.cardgameScene?.getTargetPickerA11yEntries() ?? []
+        for (const entry of targetPickerEntries) {
+          entries.push({
+            key: `target-picker:${entry.key}`,
+            label: entry.label,
+            onClick: entry.onSelect,
+          })
+        }
+        if (targetPickerEntries.length === 0) {
+          entries.push({ key: 'target-picker-cancel-fallback', label: 'Cancel Target Selection', onClick: () => closeTargetPicker() })
+        }
       } else {
         entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
           closeSceneMenu()

@@ -253,6 +253,11 @@ export class AppController implements ControllerApi {
           this.notify()
           return
         }
+        if (this.state.p2pStarted) {
+          this.state.status = 'Ignored duplicate start packet from peer.'
+          this.notify()
+          return
+        }
         if (!isSeedPayload(packet.payload)) {
           this.state.status = 'Ignored invalid start payload from peer.'
           this.notify()
