@@ -357,6 +357,12 @@ class CardgameScene extends Phaser.Scene {
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
+    // Reset per-match scroll state. The Phaser game keeps a single
+    // CardgameScene instance and re-runs create() on each scene start, so any
+    // log scroll offset from a previous game would otherwise persist and open
+    // the next match scrolled away from the newest log entries.
+    this.inSceneLogScrollOffset = null
+    this.inSceneLogPinnedToBottom = true
     this.updateLayout()
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
       color: '#9db0d9',
@@ -654,6 +660,9 @@ class CardgameScene extends Phaser.Scene {
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
       .setStrokeStyle(1, COLOR_PANEL_STROKE)
     this.rootContainer?.add(bg)
+    if (lines.length === 0) {
+      return
+    }
     const text = this.add.text(x + 10, y + 6, lines.join('\n'), {
       color: '#e5ecf5',
       fontSize: this.currentLayout.bodyFontSize,
@@ -690,13 +699,19 @@ class CardgameScene extends Phaser.Scene {
       `Player ${activeIndex + 1} (${view.controllers[activeIndex]}) — Active`,
       `Hand: ${activePlayer.handCount} • Deck: ${activePlayer.deckCount} • Graveyard: ${activePlayer.graveyardCount}`,
     ]
+    // On tight viewports the layout limits how many lines of active-info text
+    // fit above the controls band (End Turn / response buttons). Render only
+    // that many lines so the text does not spill into the controls band or
+    // the hand strip on short split layouts (e.g. 720x360 horizontal).
+    const allowedActiveLines = Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
+    const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
     this.renderInfoPanel(
       COLOR_PLAYER_ACTIVE_FILL,
       this.currentLayout.boardColumnLeft,
       this.currentLayout.activeInfoY,
       this.currentLayout.boardColumnWidth,
       this.currentLayout.activeInfoHeight,
-      activeLines,
+      visibleActiveLines,
     )
   }
 
@@ -1157,13 +1172,15 @@ class CardgameScene extends Phaser.Scene {
     cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
     // Section 3: Recorder.
-    const recorderHeadingHeight = 18
-    overlay.add(this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
+    const recorderHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
       color: '#9db0d9',
       fontSize: this.currentLayout.smallFontSize,
       wordWrap: { width: fullButtonWidth },
-    }).setOrigin(0, 0))
-    cursorY += recorderHeadingHeight + 4
+    }).setOrigin(0, 0)
+    overlay.add(recorderHeading)
+    // Use the rendered text height (which reflects wrapping at narrow widths)
+    // instead of a fixed 18px so the next row never overlaps a wrapped heading.
+    cursorY += Math.max(18, recorderHeading.height) + 4
 
     const recorderRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
     overlay.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
@@ -1200,12 +1217,13 @@ class CardgameScene extends Phaser.Scene {
 
     // Section 4: Replay controls (only when replay is active).
     if (view.replay.active) {
-      overlay.add(this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
+      const replayHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: fullButtonWidth },
-      }).setOrigin(0, 0))
-      cursorY += recorderHeadingHeight + 4
+      }).setOrigin(0, 0)
+      overlay.add(replayHeading)
+      cursorY += Math.max(18, replayHeading.height) + 4
 
       const replayRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
       const replayButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap * 2) / 3)

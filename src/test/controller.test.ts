@@ -378,4 +378,35 @@ describe('controller recording and replay', () => {
       restoreRtc()
     }
   })
+
+  it('aborts rematch local mutations when the P2P rematch packet cannot be delivered', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      // Stub send() to fail. Without the abort-before-mutate logic, rematch()
+      // would advance this peer's seed/game while the other peer stays on the
+      // previous game, guaranteeing a desync. With the fix, rematch must keep
+      // the existing seed/game and surface a status warning instead.
+      const internals = controller as unknown as {
+        p2p: { send: () => boolean; isConnected: () => boolean; close: () => void } | null
+        state: { seed: number; game: unknown }
+      }
+      const originalSeed = internals.state.seed
+      const originalGame = internals.state.game
+      internals.p2p = {
+        send: () => false,
+        isConnected: () => false,
+        close: () => {},
+      }
+
+      controller.rematch()
+
+      expect(internals.state.seed).toBe(originalSeed)
+      expect(internals.state.game).toBe(originalGame)
+      expect(controller.getViewModel().status).toContain('P2P send failed')
+    } finally {
+      restoreRtc()
+    }
+  })
 })

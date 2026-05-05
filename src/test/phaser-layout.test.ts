@@ -108,4 +108,19 @@ describe('phaser buildLayout', () => {
     // visible space for those actions on the short viewport this test guards.
     expect(layout.activeInfoControlsHeight).toBeGreaterThanOrEqual(24)
   })
+
+  it('keeps the active-info controls band usable on a 720x360 split landscape viewport', () => {
+    // 720x360 stays just above the responsive collapse width, so the layout
+    // splits log/board into two columns. Earlier iterations of this layout
+    // produced an activeInfoControlsHeight of ~14px here, which collapsed
+    // End Turn / response buttons below the min click target. The band must
+    // be at least the 28px min-click-target high, even if that means the
+    // active-info text band shrinks to one line (or zero on extreme rows).
+    const layout = buildLayout(720, 360, 'horizontal')
+    expect(layout.activeInfoControlsHeight).toBeGreaterThanOrEqual(28)
+    expect(layout.activeInfoTextLines).toBeGreaterThanOrEqual(0)
+    expect(layout.activeInfoTextLines).toBeLessThanOrEqual(2)
+    const handStripTop = layout.handCardsY - layout.cardHeight / 2
+    expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(handStripTop + 0.5)
+  })
 })

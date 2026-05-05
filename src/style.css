@@ -274,6 +274,19 @@ textarea {
   border: 0;
 }
 
+/* When any descendant button receives keyboard focus, expand the nav itself
+   so the focused button is actually visible to sighted keyboard users.
+   Without this rule, the parent's `overflow: hidden` + `clip: rect(0 0 0 0)`
+   keeps the focus target hidden even though the focused button promotes
+   itself to `position: fixed` below. */
+.phaser-a11y-nav:focus-within {
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+}
+
 .phaser-a11y-nav button:focus,
 .phaser-a11y-nav button:focus-visible {
   position: fixed;

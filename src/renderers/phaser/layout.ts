@@ -50,6 +50,10 @@ export interface SceneLayout {
   // viewports.
   activeInfoControlsTop: number
   activeInfoControlsHeight: number
+  // Number of player-info text lines that fit above the controls band on the
+  // active-info row. 2 = full label + counts, 1 = label only, 0 = no text
+  // (drop the active-info text on extremely tight viewports so controls fit).
+  activeInfoTextLines: number
   statusBottomOffset: number
   popupMaxWidth: number
   popupButtonHeight: number
@@ -227,26 +231,50 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const lineHeight = bodyFontPx * 1.25
   const handStripTop = handCardsY - effectiveCardHeight / 2 - 4
   const desiredTextBand = Math.ceil(lineHeight * 2)
-  const minControlsBand = Math.min(desiredTextBand, 32)
+  // Minimum click target for End Turn / response buttons. Prefer this over
+  // a fully visible 2-line player-info text on tight viewports so the
+  // controls remain usable. The text band shrinks to one line, then to zero,
+  // before the controls band collapses.
+  const minControlsBand = 28
+  const desiredControlsBand = Math.max(minControlsBand, 32)
   const interBandGap = 4
   const availableAboveHand = Math.max(0, handStripTop - activeInfoY - 6)
   let textBand: number
   let controlsBand: number
-  if (availableAboveHand >= desiredTextBand + minControlsBand + interBandGap) {
+  let textLines: number
+  if (availableAboveHand >= desiredTextBand + desiredControlsBand + interBandGap) {
+    // Full 2-line text + comfortable controls band.
     textBand = desiredTextBand
     controlsBand = availableAboveHand - desiredTextBand - interBandGap
-  } else if (availableAboveHand >= minControlsBand + interBandGap + Math.ceil(lineHeight)) {
-    // Reserve at least one line for player info text, give the rest to controls.
-    controlsBand = minControlsBand
-    textBand = availableAboveHand - controlsBand - interBandGap
+    textLines = 2
+  } else if (availableAboveHand >= desiredTextBand + minControlsBand + interBandGap) {
+    // Full 2-line text, controls shrunk to the minimum click target plus extra.
+    textBand = desiredTextBand
+    controlsBand = availableAboveHand - desiredTextBand - interBandGap
+    textLines = 2
+  } else if (availableAboveHand >= Math.ceil(lineHeight) + minControlsBand + interBandGap) {
+    // Reserve at least the min click target for controls; render single-line text.
+    textBand = Math.ceil(lineHeight)
+    controlsBand = availableAboveHand - textBand - interBandGap
+    textLines = 1
+  } else if (availableAboveHand >= minControlsBand) {
+    // Extremely tight row: drop the player-info text entirely so controls
+    // still fit. The active player's name/counts is duplicated by the
+    // non-active panel and surfaced in the status footer, so dropping it
+    // here is preferable to losing End Turn / response buttons.
+    textBand = 0
+    controlsBand = Math.min(availableAboveHand, desiredControlsBand)
+    textLines = 0
   } else if (availableAboveHand >= interBandGap) {
-    // Tiny row: split the remaining space equally between text and controls.
+    // Pathologically tight row: split equally so neither band fully vanishes.
     const half = Math.max(0, (availableAboveHand - interBandGap) / 2)
     textBand = half
     controlsBand = half
+    textLines = half >= Math.ceil(lineHeight) ? 1 : 0
   } else {
     textBand = 0
     controlsBand = 0
+    textLines = 0
   }
   const activeInfoTextBottom = activeInfoY + 6 + textBand
   const activeInfoControlsTop = activeInfoTextBottom + interBandGap
@@ -341,6 +369,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     responseInfoY,
     activeInfoControlsTop,
     activeInfoControlsHeight,
+    activeInfoTextLines: textLines,
     statusBottomOffset,
     popupMaxWidth,
     popupButtonHeight,

@@ -479,19 +479,24 @@ export class AppController implements ControllerApi {
     if (!this.state.mode || this.isReplayActive()) {
       return
     }
-    this.clearAiTimeout()
-    this.state.seed = Date.now()
-    this.state.game = createInitialGame(this.state.seed)
-    this.initializeRecording(this.state.mode)
+    // For P2P modes, attempt to deliver the rematch packet BEFORE mutating
+    // local seed/game/recording. Otherwise a failed send would leave this
+    // peer on a brand-new game while the other peer stays on the old one,
+    // guaranteeing a desync. If the send fails, abort the rematch entirely
+    // so both peers stay in sync on the previous game until reconnected.
+    const newSeed = Date.now()
     if (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') {
-      const delivered = this.p2p?.send('rematch', { seed: this.state.seed }) ?? false
+      const delivered = this.p2p?.send('rematch', { seed: newSeed }) ?? false
       if (!delivered) {
         this.state.status = 'P2P send failed: peer did not receive the rematch packet. Reconnect before continuing.'
         this.notify()
-        this.scheduleAiIfNeeded()
         return
       }
     }
+    this.clearAiTimeout()
+    this.state.seed = newSeed
+    this.state.game = createInitialGame(this.state.seed)
+    this.initializeRecording(this.state.mode)
     this.state.status = 'Rematch started.'
     this.notify()
     this.scheduleAiIfNeeded()
