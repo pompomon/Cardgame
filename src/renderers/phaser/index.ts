@@ -310,6 +310,7 @@ class LobbyScene extends Phaser.Scene {
       )
       if (entry.disabled) {
         button.setAlpha(0.4)
+        button.disableInteractive()
       }
       this.rootContainer?.add(button)
     })
