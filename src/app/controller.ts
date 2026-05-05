@@ -342,7 +342,16 @@ export class AppController implements ControllerApi {
     this.state.game = next
 
     if (broadcastToPeer && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
-      this.p2p?.send('action', action)
+      // P2PLink.send() returns false when the data channel is not open or when
+      // the underlying RTCDataChannel.send() throws (e.g. transient channel
+      // closure). The local game state has already been advanced above, so a
+      // send failure mid-match would silently desynchronize the peers. Surface
+      // a status warning so the user knows the peer never received the action
+      // and can rematch / reconnect instead of continuing on a desynced game.
+      const delivered = this.p2p?.send('action', action) ?? false
+      if (!delivered) {
+        this.state.status = 'P2P send failed: peer did not receive your action. The game may be out of sync.'
+      }
     }
 
     this.appendRecordingStep(action, next, source)
@@ -475,7 +484,13 @@ export class AppController implements ControllerApi {
     this.state.game = createInitialGame(this.state.seed)
     this.initializeRecording(this.state.mode)
     if (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') {
-      this.p2p?.send('rematch', { seed: this.state.seed })
+      const delivered = this.p2p?.send('rematch', { seed: this.state.seed }) ?? false
+      if (!delivered) {
+        this.state.status = 'P2P send failed: peer did not receive the rematch packet. Reconnect before continuing.'
+        this.notify()
+        this.scheduleAiIfNeeded()
+        return
+      }
     }
     this.state.status = 'Rematch started.'
     this.notify()

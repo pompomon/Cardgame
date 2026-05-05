@@ -210,19 +210,40 @@ class LobbyScene extends Phaser.Scene {
       { mode: 'p2p-join', label: 'P2P Join' },
     ]
 
+    const view = this.rendererRef.currentView
+    const hasLocalSave = view?.recording?.hasLocalSave ?? false
+    // Lobby recorder entry points so users can review or replay a saved match
+    // without having to start a throwaway game first (mirrors the DOM lobby
+    // and the previous Phaser overlay). The Browser entry is only enabled
+    // when a saved recording actually exists.
+    const recorderEntries: Array<{ key: string; label: string; disabled?: boolean; onClick: () => void }> = [
+      {
+        key: 'load-browser',
+        label: 'Load Recording from Browser',
+        disabled: !hasLocalSave,
+        onClick: () => { this.rendererRef.controller?.loadRecordingFromLocalStorage() },
+      },
+      {
+        key: 'load-file',
+        label: 'Load Recording from File',
+        onClick: () => { this.rendererRef.openRecordingFilePicker() },
+      },
+    ]
+
     const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
-    // Lobby buttons (5 modes + 1 renderer-switch) need to fit between the
-    // header/subtitle area and the status footer on every viewport. Derive Y
-    // positions from the available body region (compressing button height and
-    // gap if necessary) so options like P2P Join and the renderer switch stay
-    // on-screen even in short landscape phone layouts.
+    // Lobby buttons (5 modes + 2 recorder + 1 renderer-switch) need to fit
+    // between the header/subtitle area and the status footer on every
+    // viewport. Derive Y positions from the available body region
+    // (compressing button height and gap if necessary) so options like P2P
+    // Join, recorder loads, and the renderer switch stay on-screen even in
+    // short landscape phone layouts.
     const subtitleBottom = top + this.currentLayout.actionButtonHeight + 6
       + Math.max(this.currentLayout.actionButtonHeight, 28)
     const lobbyBodyTop = subtitleBottom + 16
     const lobbyBodyBottom = this.currentLayout.height
       - this.currentLayout.statusBottomOffset - this.currentLayout.margin
     const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
-    const totalRows = modes.length + 1 // mode buttons + renderer-switch button
+    const totalRows = modes.length + recorderEntries.length + 1 // mode buttons + recorder buttons + renderer-switch
     const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
     const desiredGap = this.currentLayout.isCompact ? 8 : 14
     const desiredRowHeight = desiredButtonHeight + desiredGap
@@ -247,11 +268,28 @@ class LobbyScene extends Phaser.Scene {
       ))
     })
 
+    recorderEntries.forEach((entry, index) => {
+      const button = buildButton(
+        this,
+        entry.label,
+        left + buttonWidth / 2,
+        modeStartY + (modes.length + index) * rowHeight,
+        this.currentLayout.bodyFontSize,
+        buttonWidth,
+        buttonHeight,
+        entry.disabled ? () => {} : entry.onClick,
+      )
+      if (entry.disabled) {
+        button.setAlpha(0.4)
+      }
+      this.rootContainer?.add(button)
+    })
+
     this.rootContainer.add(buildButton(
       this,
       'Switch to DOM renderer',
       left + buttonWidth / 2,
-      modeStartY + modes.length * rowHeight,
+      modeStartY + (modes.length + recorderEntries.length) * rowHeight,
       this.currentLayout.bodyFontSize,
       buttonWidth,
       buttonHeight,
@@ -585,10 +623,16 @@ class CardgameScene extends Phaser.Scene {
     const headerLabel = game.winnerText
       ? `${game.winnerText} • Turn ${game.turn} • Phase: ${game.phase}`
       : `Turn ${game.turn} • Phase: ${game.phase}`
+    // Cap the header text to a single line so the inlined winner banner can
+    // never wrap onto a second row and spill into bodyTop / overlap the log
+    // and board area on collapsed phone-sized layouts. Phaser truncates the
+    // text at the line boundary when maxLines is set, which is preferable to
+    // overflowing the reserved single-row header strip.
     this.rootContainer?.add(this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, headerLabel, {
       color: game.winnerText ? '#f7d56b' : '#e5ecf5',
       fontSize: this.currentLayout.titleFontSize,
       wordWrap: { width: headerTextWidth },
+      maxLines: 1,
     }).setOrigin(0, 0.5))
 
     this.renderInSceneLog(game.log)
@@ -923,8 +967,10 @@ class CardgameScene extends Phaser.Scene {
       // line and the hand cards inside the active-info row's controls band
       // (`activeInfoControlsHeight` already excludes the player-info text and
       // the hand strip). On short viewports that band may be only ~40-60px
-      // tall, so derive button height + gap by exactly dividing the available
-      // space — no fixed minimum that could overflow back into the hand strip.
+      // tall. Try a single-column stack first, but if it would shrink each
+      // button below a usable click target (~28px tall), switch to a multi-
+      // column grid that fits all buttons at the minimum usable height
+      // without spilling into the hand strip.
       const promptHeight = Math.ceil(promptText.height + 4)
       const respondBandTop = this.currentLayout.responseInfoY + promptHeight
       const respondBandBottom = this.currentLayout.activeInfoControlsTop + this.currentLayout.activeInfoControlsHeight
@@ -932,30 +978,55 @@ class CardgameScene extends Phaser.Scene {
       const totalButtons = game.legal.counterOptions.length + (game.legal.canPassResponse ? 1 : 0)
       const desiredButtonHeight = this.currentLayout.popupButtonHeight
       const desiredGap = 8
-      // Pick a gap that leaves room for the buttons themselves, then size each
-      // button to fill the remaining band height. This guarantees
-      // totalButtons * respondButtonHeight + (totalButtons - 1) * respondGap
-      // <= respondBandHeight, so the controls never spill over the hand strip
-      // even when individual buttons end up tiny.
-      const gapBudget = totalButtons > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
-      const respondGap = totalButtons > 1 ? gapBudget : 0
-      const heightForButtons = Math.max(0, respondBandHeight - Math.max(0, totalButtons - 1) * respondGap)
-      const respondButtonHeight = totalButtons > 0
-        ? Math.min(desiredButtonHeight, heightForButtons / totalButtons)
-        : desiredButtonHeight
+      const minUsableButtonHeight = 28
       const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - 16)
       const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
-      const buttonWidth = Math.min(preferredButtonWidth, availableWidth)
+      // Compute the smallest column count whose stacked rows fit at >= the
+      // minimum usable button height. The grid never exceeds totalButtons
+      // columns. This keeps every response action click-reachable on the
+      // short viewports the PR is targeting (e.g. 5 actions on 1024×480).
+      let columns = 1
+      let rows = totalButtons
+      let respondGap = totalButtons > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
+      let heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
+      let respondButtonHeight = totalButtons > 0
+        ? Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
+        : desiredButtonHeight
+      while (totalButtons > 0 && respondButtonHeight < minUsableButtonHeight && columns < totalButtons) {
+        columns += 1
+        rows = Math.ceil(totalButtons / columns)
+        respondGap = rows > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
+        heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
+        respondButtonHeight = Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
+      }
+      // If even a maxed-out grid cannot reach the minimum height, accept the
+      // largest possible button height so they remain at least visible.
+      respondButtonHeight = Math.max(respondButtonHeight, Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows)))
+      const columnGap = columns > 1 ? 8 : 0
+      const cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
+      const buttonWidth = Math.min(preferredButtonWidth, Math.max(60, cellWidth))
+      const gridWidth = columns * buttonWidth + Math.max(0, columns - 1) * columnGap
       const controlsX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
+      const gridLeft = controlsX - gridWidth / 2
       const startY = respondBandTop + respondButtonHeight / 2
+      const positionFor = (index: number): { x: number; y: number } => {
+        const row = Math.floor(index / columns)
+        const column = index % columns
+        return {
+          x: gridLeft + buttonWidth / 2 + column * (buttonWidth + columnGap),
+          y: startY + row * (respondButtonHeight + respondGap),
+        }
+      }
 
       game.legal.counterOptions.forEach((option, index) => {
-        this.rootContainer?.add(this.createButton(option.label, controlsX, startY + index * (respondButtonHeight + respondGap), () => {
+        const { x, y } = positionFor(index)
+        this.rootContainer?.add(this.createButton(option.label, x, y, () => {
           this.rendererRef.controller?.submitAction(option.action)
         }, buttonWidth, respondButtonHeight))
       })
       if (game.legal.canPassResponse) {
-        this.rootContainer?.add(this.createButton('Pass', controlsX, startY + game.legal.counterOptions.length * (respondButtonHeight + respondGap), () => {
+        const { x, y } = positionFor(game.legal.counterOptions.length)
+        this.rootContainer?.add(this.createButton('Pass', x, y, () => {
           this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor })
         }, buttonWidth, respondButtonHeight))
       }
@@ -1655,6 +1726,20 @@ export class PhaserRenderer implements AppRenderer {
       for (const entry of modes) {
         entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
       }
+      // Mirror the lobby's recorder entry points for keyboard / screen-reader
+      // users so they can load a saved match without first starting a
+      // throwaway game (matches the new visible lobby buttons).
+      entries.push({
+        key: 'lobby-recorder-load-browser',
+        label: 'Load Recording from Browser',
+        onClick: () => controller.loadRecordingFromLocalStorage(),
+        disabled: !view.recording.hasLocalSave,
+      })
+      entries.push({
+        key: 'lobby-recorder-load-file',
+        label: 'Load Recording from File',
+        onClick: () => this.openRecordingFilePicker(),
+      })
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
       entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => controller.backToLobby() })
