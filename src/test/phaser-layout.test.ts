@@ -143,4 +143,12 @@ describe('phaser buildLayout', () => {
     expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeBattlefieldHeight - cardRowPadding + 0.5)
     expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeInfoHeight - cardRowPadding + 0.5)
   })
+
+  it('keeps split log/board columns inside the viewport on very short heights', () => {
+    const viewportHeight = 220
+    const layout = buildLayout(720, viewportHeight, 'horizontal')
+    const contentBottom = viewportHeight - layout.margin - layout.statusBottomOffset - 8
+    expect(layout.logColumnTop + layout.logColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
+    expect(layout.boardColumnTop + layout.boardColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
+  })
 })

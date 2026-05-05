@@ -257,10 +257,12 @@ class LobbyScene extends Phaser.Scene {
     const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
     const desiredGap = this.currentLayout.isCompact ? 8 : 14
     const desiredRowHeight = desiredButtonHeight + desiredGap
-    // Scale rows to fit into the available body height.
+    // Keep row spacing and button height synchronized so short lobbies never
+    // overlap adjacent rows. A fixed minimum button height larger than the
+    // scaled row height can cause stacked mode/recorder actions to collide.
     const rowScale = Math.min(1, lobbyBodyHeight / Math.max(1, totalRows * desiredRowHeight))
-    const rowHeight = desiredRowHeight * rowScale
-    const buttonHeight = Math.max(24, desiredButtonHeight * rowScale)
+    const rowHeight = Math.max(1, desiredRowHeight * rowScale)
+    const buttonHeight = Math.min(desiredButtonHeight, rowHeight)
     const modeStartY = lobbyBodyTop + buttonHeight / 2
 
     modes.forEach((entry, index) => {
@@ -695,8 +697,11 @@ class CardgameScene extends Phaser.Scene {
     height: number,
     lines: string[],
   ): void {
-    const safeWidth = Math.max(20, width)
-    const safeHeight = Math.max(20, height)
+    const safeWidth = Math.max(0, width)
+    const safeHeight = Math.max(0, height)
+    if (safeWidth <= 0 || safeHeight <= 0) {
+      return
+    }
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
       .setStrokeStyle(1, COLOR_PANEL_STROKE)
     this.rootContainer?.add(bg)
@@ -792,7 +797,10 @@ class CardgameScene extends Phaser.Scene {
     // Reserve a small header band at the top of the battlefield panel so the
     // "Player N Battlefield" label doesn't overlap the top edge of the cards
     // rendered inside the panel.
-    const battlefieldHeaderBand = 22
+    const battlefieldHeaderBand = Math.min(
+      22,
+      Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - this.currentLayout.cardHeight),
+    )
     const nonActiveCardY = this.currentLayout.nonActiveBattlefieldY
       + battlefieldHeaderBand
       + Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - battlefieldHeaderBand) / 2
@@ -835,9 +843,13 @@ class CardgameScene extends Phaser.Scene {
     const activeBattlefield = game.players[activeIndex].battlefield
     // Reserve the same header band as the non-active row so the active title
     // sits in its own padding instead of overlapping the rendered cards.
+    const activeHeaderBand = Math.min(
+      22,
+      Math.max(0, this.currentLayout.activeBattlefieldHeight - this.currentLayout.cardHeight),
+    )
     const activeCardY = this.currentLayout.activeBattlefieldY
-      + battlefieldHeaderBand
-      + Math.max(0, this.currentLayout.activeBattlefieldHeight - battlefieldHeaderBand) / 2
+      + activeHeaderBand
+      + Math.max(0, this.currentLayout.activeBattlefieldHeight - activeHeaderBand) / 2
     for (let index = 0; index < activeBattlefield.length; index += 1) {
       const card = activeBattlefield[index]
       this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, activeBattlefield.length), activeCardY, card.name))

@@ -114,7 +114,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const bodyTop = headerTop + headerHeight + clamp(minDimension * 0.01, 6, 14)
   const statusBottomOffset = clamp(minDimension * 0.018, 14, 24)
   const bodyBottom = safeHeight - margin - statusBottomOffset - 8
-  const bodyHeight = Math.max(160, bodyBottom - bodyTop)
+  const bodyHeight = Math.max(0, bodyBottom - bodyTop)
 
   // Log column: capped at 25% viewport width, with a sensible minimum.
   const logColumnGap = 12
@@ -145,11 +145,11 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     logColumnLeft = margin
     logColumnTop = bodyTop
     logColumnWidth = Math.max(160, Math.min(desiredLogWidth, contentWidth - 200))
-    logColumnHeight = Math.max(120, bodyHeight)
+    logColumnHeight = Math.max(0, bodyHeight)
     boardColumnLeft = margin + logColumnWidth + logColumnGap
     boardColumnWidth = Math.max(200, safeWidth - margin - boardColumnLeft)
     boardColumnTop = bodyTop
-    boardColumnHeight = Math.max(160, bodyHeight)
+    boardColumnHeight = Math.max(0, bodyHeight)
   }
 
   // Stacked board rows: non-active info, non-active battlefield, active
