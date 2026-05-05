@@ -327,6 +327,11 @@ class CardgameScene extends Phaser.Scene {
   private menuLogPinnedToBottom = true
   private inSceneLogScrollOffset: number | null = null
   private inSceneLogPinnedToBottom = true
+  // Tracks the seed of the game currently rendered in this scene. When
+  // the seed changes (e.g. via rematch) we reset the log scroll state so
+  // the next game opens with the in-scene log pinned to the newest entry
+  // instead of preserving the stale offset from the previous match.
+  private lastRenderedSeed: number | null = null
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
@@ -363,6 +368,7 @@ class CardgameScene extends Phaser.Scene {
     // the next match scrolled away from the newest log entries.
     this.inSceneLogScrollOffset = null
     this.inSceneLogPinnedToBottom = true
+    this.lastRenderedSeed = null
     this.updateLayout()
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
       color: '#9db0d9',
@@ -485,6 +491,20 @@ class CardgameScene extends Phaser.Scene {
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
     const game = view?.game ?? null
+    // Reset the in-scene log scroll state when the seed changes, e.g. on
+    // a rematch. Without this, the reused CardgameScene would inherit the
+    // previous match's scroll offset (`inSceneLogPinnedToBottom = false`)
+    // and open the new game scrolled away from the newest log entries.
+    if (view && game) {
+      const currentSeed = view.seed
+      if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
+        this.inSceneLogScrollOffset = null
+        this.inSceneLogPinnedToBottom = true
+      }
+      this.lastRenderedSeed = currentSeed
+    } else {
+      this.lastRenderedSeed = null
+    }
     const currentMenuSignature = this.menuOpen && view && game
       ? this.computeMenuSignature(view)
       : null
@@ -1019,7 +1039,14 @@ class CardgameScene extends Phaser.Scene {
       respondButtonHeight = Math.max(respondButtonHeight, Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows)))
       const columnGap = columns > 1 ? 8 : 0
       const cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
-      const buttonWidth = Math.min(preferredButtonWidth, Math.max(60, cellWidth))
+      // Clamp button width so the assembled grid never exceeds availableWidth
+      // (the board column). On collapsed phone viewports (e.g. 320px) with
+      // many response actions the per-cell width can fall below the 28px
+      // minimum click target. Forcing a 60px floor here would push the
+      // rightmost buttons off-panel/off-screen, so we accept the small
+      // cellWidth instead and let the column-search above place buttons
+      // tightly inside the available width.
+      const buttonWidth = Math.min(preferredButtonWidth, Math.max(0, cellWidth))
       const gridWidth = columns * buttonWidth + Math.max(0, columns - 1) * columnGap
       const controlsX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
       const gridLeft = controlsX - gridWidth / 2
@@ -1072,6 +1099,10 @@ class CardgameScene extends Phaser.Scene {
     this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
     overlay?.destroy(true)
+  }
+
+  isMenuOverlayOpen(): boolean {
+    return this.menuOpen
   }
 
   private openMenuOverlay(view: AppViewModel): void {
@@ -1815,9 +1846,14 @@ export class PhaserRenderer implements AppRenderer {
       // In-match gameplay actions: mirror the Phaser scene's interactive
       // controls (play land options, counter responses, Pass, End Turn) as
       // native <button> elements so keyboard and screen-reader users can take
-      // turns without relying on pointer-only Phaser hit areas.
+      // turns without relying on pointer-only Phaser hit areas. Skip these
+      // when the Phaser menu modal is open: pointer users cannot interact
+      // with gameplay controls behind the modal, so exposing them through
+      // the a11y nav would let keyboard / screen-reader users mutate game
+      // state behind the overlay and break the modal semantics.
       const game = view.game
-      if (game && game.canInput) {
+      const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
+      if (game && game.canInput && !menuModalOpen) {
         if (game.phase === 'main') {
           for (const card of game.players[game.actor].handCards) {
             const options = game.legal.playLandByCard[card.id]

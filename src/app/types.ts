@@ -17,11 +17,27 @@ export interface AppState {
   recording: GameRecordFile | null
   replay: ReplaySessionState | null
   hasSavedRecording: boolean
-  // True once a P2P game's `start` packet has been sent by the host or
-  // received by the joiner. Used by renderers to decide when to leave the
-  // lobby for an in-match scene: P2P sessions stay in the lobby until both
-  // peers are reseeded with a synchronized seed via this flag.
+  // True once a P2P game's `start` packet has been acknowledged by the
+  // peer (host receives `start-ack`) or applied by the joiner (joiner
+  // received the `start` packet and acknowledged it). Used by renderers
+  // to decide when to leave the lobby for an in-match scene: P2P sessions
+  // stay in the lobby until BOTH peers have synchronized seeds confirmed
+  // via the application-level handshake.
   p2pStarted: boolean
+  // Host-side: the seed the host queued in a `start` packet but has not
+  // yet received an ack for. Stays non-null while the host is waiting on
+  // the joiner's `start-ack`. When the ack arrives the host applies this
+  // seed (it already initialized state.game from this seed in startP2PGame()
+  // because the seed is also used locally to keep the deck shuffle
+  // deterministic for both peers) and clears the field.
+  pendingP2PStartSeed: number | null
+  // Host-side (rematch initiator): the new seed the host queued in a
+  // `rematch` packet but has not yet received an ack for. While set the
+  // rematch is "in flight" — local seed/game/recording have NOT yet been
+  // mutated. When the ack arrives the host applies this seed, recreates
+  // the game, reinitializes the recording, and clears the field. If the
+  // peer never acks, the previous game stays intact on this side.
+  pendingRematchSeed: number | null
 }
 
 export interface ReplaySessionState {

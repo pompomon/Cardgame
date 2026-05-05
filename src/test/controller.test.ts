@@ -319,31 +319,60 @@ describe('controller recording and replay', () => {
     }
   })
 
-  it('flips p2pStarted on host when the start packet is delivered', () => {
+  it('flips p2pStarted on host only after the joiner acknowledges the start packet', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
       const controller = new AppController('dom')
       controller.startGame('p2p-host')
       expect(controller.getViewModel().p2pStarted).toBe(false)
 
-      // Stub the internal P2PLink so send() reports a successful delivery.
-      const internals = controller as unknown as { p2p: { send: () => boolean; isConnected: () => boolean; close: () => void } | null }
+      // Stub the internal P2PLink so send() reports a successful local
+      // queue. The host should NOT yet flip p2pStarted: WebRTC accepting
+      // the packet locally is not an acknowledgment that the joiner
+      // received it. The host must wait for an explicit `start-ack`.
+      const sentPackets: Array<{ type: string; payload: unknown }> = []
+      const internals = controller as unknown as {
+        p2p: {
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+          onMessage: (packet: { type: string; payload: unknown }) => void
+        } | null
+        state: { seed: number; pendingP2PStartSeed: number | null }
+      }
+      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
       internals.p2p = {
-        send: () => true,
+        send: (type, payload) => {
+          sentPackets.push({ type, payload })
+          return true
+        },
         isConnected: () => true,
         close: () => {},
+        onMessage: realOnMessage,
       }
 
       controller.startP2PGame()
+      expect(sentPackets[0]?.type).toBe('start')
+      expect(controller.getViewModel().p2pStarted).toBe(false)
+      expect(internals.state.pendingP2PStartSeed).toBe(internals.state.seed)
+      expect(controller.getViewModel().status).toContain('Waiting')
 
+      // Simulate the joiner's start-ack arriving. Only now should the
+      // host transition out of the lobby.
+      internals.p2p!.onMessage({ type: 'start-ack', payload: { seed: internals.state.seed } })
       expect(controller.getViewModel().p2pStarted).toBe(true)
+      expect(internals.state.pendingP2PStartSeed).toBeNull()
       expect(controller.getViewModel().status).toContain('P2P game started')
+
+      // A stale ack with a different seed must be ignored.
+      internals.p2p!.onMessage({ type: 'start-ack', payload: { seed: 999 } })
+      expect(controller.getViewModel().p2pStarted).toBe(true)
     } finally {
       restoreRtc()
     }
   })
 
-  it('flips p2pStarted on joiner when a start packet arrives', () => {
+  it('flips p2pStarted on joiner when a start packet arrives and acks it', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
       const controller = new AppController('dom')
@@ -352,15 +381,34 @@ describe('controller recording and replay', () => {
       const initialGame = controller.getViewModel().game
 
       // Drive the actual `packet.type === 'start'` branch in setupP2P by
-      // invoking the P2PLink's onMessage callback directly. This exercises the
-      // real joiner-side state mutations (reseed, reinitialize game, recording
-      // setup, status update, p2pStarted flip) so a regression in any of those
-      // would fail the test instead of being masked by direct field writes.
+      // invoking the P2PLink's onMessage callback directly. This exercises
+      // the real joiner-side state mutations (reseed, reinitialize game,
+      // recording setup, status update, p2pStarted flip) so a regression
+      // in any of those would fail the test instead of being masked by
+      // direct field writes.
+      const sentPackets: Array<{ type: string; payload: unknown }> = []
       const internals = controller as unknown as {
-        p2p: { onMessage: (packet: { type: string; payload: unknown }) => void } | null
+        p2p: {
+          onMessage: (packet: { type: string; payload: unknown }) => void
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+        } | null
         state: { game: unknown; seed: number }
       }
       expect(internals.p2p).toBeTruthy()
+      // Wrap send() so we can assert the start-ack is sent back to the
+      // host. The joiner must ack so the host can leave the lobby.
+      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      internals.p2p = {
+        onMessage: realOnMessage,
+        send: (type, payload) => {
+          sentPackets.push({ type, payload })
+          return true
+        },
+        isConnected: () => true,
+        close: () => {},
+      }
       internals.p2p!.onMessage({ type: 'start', payload: { seed: 4242 } })
 
       const view = controller.getViewModel()
@@ -370,6 +418,9 @@ describe('controller recording and replay', () => {
       // The joiner reseeds state.game from the packet, so the game reference
       // changes after the start packet is delivered.
       expect(internals.state.game).not.toBe(initialGame)
+      // The joiner must ack the start packet so the host can leave the
+      // lobby. Without this ack the host stays in 'Waiting...' forever.
+      expect(sentPackets.some((packet) => packet.type === 'start-ack' && (packet.payload as { seed: number }).seed === 4242)).toBe(true)
 
       // Invalid payload should not flip p2pStarted again or reseed the game.
       internals.p2p!.onMessage({ type: 'start', payload: { foo: 'bar' } })
@@ -390,7 +441,7 @@ describe('controller recording and replay', () => {
       // the existing seed/game and surface a status warning instead.
       const internals = controller as unknown as {
         p2p: { send: () => boolean; isConnected: () => boolean; close: () => void } | null
-        state: { seed: number; game: unknown }
+        state: { seed: number; game: unknown; pendingRematchSeed: number | null }
       }
       const originalSeed = internals.state.seed
       const originalGame = internals.state.game
@@ -404,7 +455,59 @@ describe('controller recording and replay', () => {
 
       expect(internals.state.seed).toBe(originalSeed)
       expect(internals.state.game).toBe(originalGame)
+      expect(internals.state.pendingRematchSeed).toBeNull()
       expect(controller.getViewModel().status).toContain('P2P send failed')
+    } finally {
+      restoreRtc()
+    }
+  })
+
+  it('defers P2P rematch local mutations until the peer acks the rematch packet', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const sentPackets: Array<{ type: string; payload: unknown }> = []
+      const internals = controller as unknown as {
+        p2p: {
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+          onMessage: (packet: { type: string; payload: unknown }) => void
+        } | null
+        state: { seed: number; game: unknown; pendingRematchSeed: number | null }
+      }
+      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      internals.p2p = {
+        send: (type, payload) => {
+          sentPackets.push({ type, payload })
+          return true
+        },
+        isConnected: () => true,
+        close: () => {},
+        onMessage: realOnMessage,
+      }
+      const originalSeed = internals.state.seed
+      const originalGame = internals.state.game
+
+      controller.rematch()
+
+      // Send queue accepted the packet, but the peer hasn't acked yet.
+      // Local seed/game/recording must NOT have changed.
+      expect(sentPackets.find((packet) => packet.type === 'rematch')).toBeTruthy()
+      expect(internals.state.seed).toBe(originalSeed)
+      expect(internals.state.game).toBe(originalGame)
+      expect(internals.state.pendingRematchSeed).not.toBeNull()
+      expect(controller.getViewModel().status).toContain('Waiting')
+
+      // Now simulate the peer's rematch-ack arriving with the matching seed.
+      const pendingSeed = internals.state.pendingRematchSeed!
+      internals.p2p!.onMessage({ type: 'rematch-ack', payload: { seed: pendingSeed } })
+
+      expect(internals.state.seed).toBe(pendingSeed)
+      expect(internals.state.game).not.toBe(originalGame)
+      expect(internals.state.pendingRematchSeed).toBeNull()
+      expect(controller.getViewModel().status).toContain('Rematch started')
     } finally {
       restoreRtc()
     }
