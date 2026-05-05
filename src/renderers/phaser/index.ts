@@ -26,6 +26,7 @@ const RESPONSE_PROMPT_X_OFFSET = 8
 const RESPONSE_PROMPT_Y_OFFSET = 6
 const RESPONSE_PROMPT_BOTTOM_GAP = 4
 const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
+const APPROX_CHAR_WIDTH_RATIO = 0.56
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -1056,12 +1057,17 @@ class CardgameScene extends Phaser.Scene {
         ...game.legal.counterOptions.map((option) => option.label),
         ...(game.legal.canPassResponse ? ['Pass'] : []),
       ]
-      const approxCharWidth = Math.max(6, parseFloat(this.currentLayout.bodyFontSize) * 0.56)
+      const approxCharWidth = Math.max(6, parseFloat(this.currentLayout.bodyFontSize) * APPROX_CHAR_WIDTH_RATIO)
       const longestLabelLength = responseLabels.reduce((max, label) => Math.max(max, label.length), 0)
       const minReadableButtonWidth = Math.min(
         preferredButtonWidth,
         Math.max(MIN_RESPONSE_LABEL_BUTTON_WIDTH, longestLabelLength * approxCharWidth + BUTTON_TEXT_HORIZONTAL_PADDING),
       )
+      const gridMetricsFor = (columnCount: number): { columnGap: number; cellWidth: number } => {
+        const columnGap = columnCount > 1 ? 8 : 0
+        const cellWidth = columnCount > 0 ? (availableWidth - columnGap * (columnCount - 1)) / columnCount : availableWidth
+        return { columnGap, cellWidth }
+      }
       // Compute the smallest column count whose stacked rows fit at >= the
       // minimum usable button height. The grid never exceeds totalButtons
       // columns. This keeps every response action click-reachable on the
@@ -1073,8 +1079,7 @@ class CardgameScene extends Phaser.Scene {
       let respondButtonHeight = totalButtons > 0
         ? Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
         : desiredButtonHeight
-      let columnGap = columns > 1 ? 8 : 0
-      let cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
+      let { columnGap, cellWidth } = gridMetricsFor(columns)
       while (totalButtons > 0 && columns < totalButtons) {
         const labelsWouldClip = cellWidth < minReadableButtonWidth
         if (respondButtonHeight >= minUsableButtonHeight || labelsWouldClip) {
@@ -1085,14 +1090,12 @@ class CardgameScene extends Phaser.Scene {
         respondGap = rows > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
         heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
         respondButtonHeight = Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
-        columnGap = columns > 1 ? 8 : 0
-        cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
+        ;({ columnGap, cellWidth } = gridMetricsFor(columns))
       }
       // If even a maxed-out grid cannot reach the minimum height, accept the
       // largest possible button height so they remain at least visible.
       respondButtonHeight = Math.max(respondButtonHeight, Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows)))
-      columnGap = columns > 1 ? 8 : 0
-      cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
+      ;({ columnGap, cellWidth } = gridMetricsFor(columns))
       // Clamp button width so the assembled grid never exceeds availableWidth
       // (the board column). On collapsed phone viewports (e.g. 320px) with
       // many response actions the per-cell width can fall below the 28px
