@@ -158,6 +158,10 @@ describe('controller recording and replay', () => {
     try {
       const controller = new AppController('dom')
       controller.startGame('p2p-host')
+      const internals = controller as unknown as {
+        state: { p2pStarted: boolean }
+      }
+      internals.state.p2pStarted = true
       const action = firstPlayableAction(controller)
       expect(action).toBeTruthy()
 
@@ -430,6 +434,46 @@ describe('controller recording and replay', () => {
     }
   })
 
+  it('ignores incoming start packets while in host mode', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const internals = controller as unknown as {
+        p2p: {
+          onMessage: (packet: { type: string; payload: unknown }) => void
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+        } | null
+        state: { seed: number; game: unknown; p2pStarted: boolean }
+      }
+      const originalSeed = internals.state.seed
+      const originalGame = internals.state.game
+      const sentPackets: Array<{ type: string; payload: unknown }> = []
+      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      internals.p2p = {
+        onMessage: realOnMessage,
+        send: (type, payload) => {
+          sentPackets.push({ type, payload })
+          return true
+        },
+        isConnected: () => true,
+        close: () => {},
+      }
+
+      internals.p2p.onMessage({ type: 'start', payload: { seed: 7777 } })
+
+      expect(internals.state.seed).toBe(originalSeed)
+      expect(internals.state.game).toBe(originalGame)
+      expect(internals.state.p2pStarted).toBe(false)
+      expect(sentPackets).toHaveLength(0)
+      expect(controller.getViewModel().status).toContain('Ignored unexpected start packet')
+    } finally {
+      restoreRtc()
+    }
+  })
+
   it('aborts rematch local mutations when the P2P rematch packet cannot be delivered', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
@@ -619,6 +663,29 @@ describe('controller recording and replay', () => {
       controller.rematch()
       expect(controller.getViewModel().status).toContain('Already waiting')
       expect(sentPackets.filter((packet) => packet.type === 'rematch')).toHaveLength(1)
+    } finally {
+      restoreRtc()
+    }
+  })
+
+  it('ignores remote actions while start handshake is still pending', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const internals = controller as unknown as {
+        state: { game: unknown; p2pStarted: boolean }
+      }
+      expect(internals.state.p2pStarted).toBe(false)
+      const gameBeforeAction = internals.state.game
+
+      ;(controller as unknown as RemoteActionApplier)
+        .applyRecordedAction({ type: 'end_turn', actor: 1 }, 'remote', false)
+
+      expect(internals.state.game).toBe(gameBeforeAction)
+      expect(controller.getViewModel().status).toContain('start handshake is in progress')
+      const record = parseExported(controller)
+      expect(record.timeline).toHaveLength(0)
     } finally {
       restoreRtc()
     }

@@ -712,13 +712,16 @@ class CardgameScene extends Phaser.Scene {
       `Player ${nonActiveIndex + 1} (${view.controllers[nonActiveIndex]})`,
       `Hand: ${nonActivePlayer.handCount} • Deck: ${nonActivePlayer.deckCount} • Graveyard: ${nonActivePlayer.graveyardCount}`,
     ]
+    const infoLineHeight = Math.ceil(parseFloat(this.currentLayout.bodyFontSize) * 1.25)
+    const maxNonActiveLines = Math.max(0, Math.floor((this.currentLayout.nonActiveInfoHeight - 12) / Math.max(1, infoLineHeight)))
+    const visibleNonActiveLines = nonActiveLines.slice(0, maxNonActiveLines)
     this.renderInfoPanel(
       COLOR_PLAYER_NON_ACTIVE_FILL,
       this.currentLayout.boardColumnLeft,
       this.currentLayout.nonActiveInfoY,
       this.currentLayout.boardColumnWidth,
       this.currentLayout.nonActiveInfoHeight,
-      nonActiveLines,
+      visibleNonActiveLines,
     )
 
     const activeLines = [
@@ -729,7 +732,9 @@ class CardgameScene extends Phaser.Scene {
     // fit above the controls band (End Turn / response buttons). Render only
     // that many lines so the text does not spill into the controls band or
     // the hand strip on short split layouts (e.g. 720x360 horizontal).
-    const allowedActiveLines = Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
+    const allowedActiveLines = game.phase === 'respond'
+      ? 0
+      : Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
     const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
     this.renderInfoPanel(
       COLOR_PLAYER_ACTIVE_FILL,
@@ -998,9 +1003,10 @@ class CardgameScene extends Phaser.Scene {
     })
 
     if (game.canInput && game.phase === 'respond') {
-      const promptText = this.add.text(this.currentLayout.boardColumnLeft + 8, this.currentLayout.responseInfoY, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
+      const promptText = this.add.text(this.currentLayout.boardColumnLeft + 8, this.currentLayout.activeInfoY + 6, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
         color: '#f0f4ff',
         fontSize: this.currentLayout.bodyFontSize,
+        wordWrap: { width: Math.max(40, this.currentLayout.boardColumnWidth - 16) },
       })
       this.rootContainer?.add(promptText)
 
@@ -1012,10 +1018,8 @@ class CardgameScene extends Phaser.Scene {
       // button below a usable click target (~28px tall), switch to a multi-
       // column grid that fits all buttons at the minimum usable height
       // without spilling into the hand strip.
-      const promptHeight = Math.ceil(promptText.height + 4)
-      const respondBandTop = this.currentLayout.responseInfoY + promptHeight
-      const respondBandBottom = this.currentLayout.activeInfoControlsTop + this.currentLayout.activeInfoControlsHeight
-      const respondBandHeight = Math.max(0, respondBandBottom - respondBandTop)
+      const respondBandTop = this.currentLayout.activeInfoControlsTop
+      const respondBandHeight = this.currentLayout.activeInfoControlsHeight
       const totalButtons = game.legal.counterOptions.length + (game.legal.canPassResponse ? 1 : 0)
       const desiredButtonHeight = this.currentLayout.popupButtonHeight
       const desiredGap = 8
@@ -1822,7 +1826,10 @@ export class PhaserRenderer implements AppRenderer {
         closeSceneMenu()
         controller.backToLobby()
       } })
-      entries.push({ key: 'rematch', label: 'Rematch', onClick: () => controller.rematch() })
+      entries.push({ key: 'rematch', label: 'Rematch', onClick: () => {
+        closeSceneMenu()
+        controller.rematch()
+      } })
       // Mirror the Phaser menu's recorder actions: close the menu overlay
       // before invoking the controller so the resulting status message (e.g.
       // "No saved recording found" or "Failed to read recording file") shows

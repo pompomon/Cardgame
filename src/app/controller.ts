@@ -248,6 +248,11 @@ export class AppController implements ControllerApi {
         return
       }
       if (packet.type === 'start') {
+        if (this.state.mode === 'p2p-host') {
+          this.state.status = 'Ignored unexpected start packet from peer.'
+          this.notify()
+          return
+        }
         if (!isSeedPayload(packet.payload)) {
           this.state.status = 'Ignored invalid start payload from peer.'
           this.notify()
@@ -398,6 +403,11 @@ export class AppController implements ControllerApi {
 
   private applyRecordedAction(action: GameAction, source: 'human' | 'ai' | 'remote', broadcastToPeer: boolean): void {
     if (!this.state.game || this.isReplayActive()) {
+      return
+    }
+    if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') && !this.state.p2pStarted) {
+      this.state.status = 'Ignored action while start handshake is in progress.'
+      this.notify()
       return
     }
     if (this.state.pendingRematchSeed !== null && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
