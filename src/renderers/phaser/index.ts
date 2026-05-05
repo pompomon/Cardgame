@@ -24,6 +24,8 @@ const CONTROLS_INNER_HORIZONTAL_PADDING = 16
 const MIN_WORD_WRAP_WIDTH = 40
 const RESPONSE_PROMPT_X_OFFSET = 8
 const RESPONSE_PROMPT_Y_OFFSET = 6
+const RESPONSE_PROMPT_BOTTOM_GAP = 4
+const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -560,7 +562,10 @@ class CardgameScene extends Phaser.Scene {
   private computeMenuSignature(view: AppViewModel): string {
     const lines = view.game?.log ?? []
     const last = lines.length > 0 ? lines[lines.length - 1] : ''
-    return `${this.lastLayoutSignature}|${lines.length}|${last}|replay:${view.replay.active}:${view.replay.step}/${view.replay.totalSteps}:${view.replay.isPlaying}|saved:${view.recording.hasLocalSave ? 1 : 0}`
+    const recordingMeta = view.recording.metadata
+      ? `${view.recording.metadata.seed}:${view.recording.metadata.mode}:${view.recording.metadata.completed ? 1 : 0}`
+      : 'none'
+    return `${this.lastLayoutSignature}|seed:${view.seed}|${lines.length}|${last}|recording:${recordingMeta}|replay:${view.replay.active}:${view.replay.step}/${view.replay.totalSteps}:${view.replay.isPlaying}|saved:${view.recording.hasLocalSave ? 1 : 0}`
   }
 
   private createButton(
@@ -1017,12 +1022,19 @@ class CardgameScene extends Phaser.Scene {
         this.currentLayout.activeInfoY + RESPONSE_PROMPT_Y_OFFSET,
         `Opponent played ${game.pendingLandName ?? 'a land'}.`,
         {
-        color: '#f0f4ff',
-        fontSize: this.currentLayout.bodyFontSize,
-        wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
+          color: '#f0f4ff',
+          fontSize: this.currentLayout.bodyFontSize,
+          wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
         },
       )
-      this.rootContainer?.add(promptText)
+      const promptBottom = promptText.y + promptText.height + RESPONSE_PROMPT_BOTTOM_GAP
+      if (promptBottom <= this.currentLayout.activeInfoControlsTop) {
+        this.rootContainer?.add(promptText)
+      } else {
+        // On ultra-short split layouts there may be no vertical room between
+        // activeInfoY and controlsTop; drop the prompt to avoid overlap.
+        promptText.destroy()
+      }
 
       // Response controls (counter options + Pass) must fit between the prompt
       // line and the hand cards inside the active-info row's controls band
@@ -1040,6 +1052,16 @@ class CardgameScene extends Phaser.Scene {
       const minUsableButtonHeight = 28
       const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING)
       const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
+      const responseLabels = [
+        ...game.legal.counterOptions.map((option) => option.label),
+        ...(game.legal.canPassResponse ? ['Pass'] : []),
+      ]
+      const approxCharWidth = Math.max(6, parseFloat(this.currentLayout.bodyFontSize) * 0.56)
+      const longestLabelLength = responseLabels.reduce((max, label) => Math.max(max, label.length), 0)
+      const minReadableButtonWidth = Math.min(
+        preferredButtonWidth,
+        Math.max(MIN_RESPONSE_LABEL_BUTTON_WIDTH, longestLabelLength * approxCharWidth + BUTTON_TEXT_HORIZONTAL_PADDING),
+      )
       // Compute the smallest column count whose stacked rows fit at >= the
       // minimum usable button height. The grid never exceeds totalButtons
       // columns. This keeps every response action click-reachable on the
@@ -1051,18 +1073,26 @@ class CardgameScene extends Phaser.Scene {
       let respondButtonHeight = totalButtons > 0
         ? Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
         : desiredButtonHeight
-      while (totalButtons > 0 && respondButtonHeight < minUsableButtonHeight && columns < totalButtons) {
+      let columnGap = columns > 1 ? 8 : 0
+      let cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
+      while (totalButtons > 0 && columns < totalButtons) {
+        const labelsWouldClip = cellWidth < minReadableButtonWidth
+        if (respondButtonHeight >= minUsableButtonHeight || labelsWouldClip) {
+          break
+        }
         columns += 1
         rows = Math.ceil(totalButtons / columns)
         respondGap = rows > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
         heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
         respondButtonHeight = Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
+        columnGap = columns > 1 ? 8 : 0
+        cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
       }
       // If even a maxed-out grid cannot reach the minimum height, accept the
       // largest possible button height so they remain at least visible.
       respondButtonHeight = Math.max(respondButtonHeight, Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows)))
-      const columnGap = columns > 1 ? 8 : 0
-      const cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
+      columnGap = columns > 1 ? 8 : 0
+      cellWidth = columns > 0 ? (availableWidth - columnGap * (columns - 1)) / columns : availableWidth
       // Clamp button width so the assembled grid never exceeds availableWidth
       // (the board column). On collapsed phone viewports (e.g. 320px) with
       // many response actions the per-cell width can fall below the 28px
@@ -1132,6 +1162,10 @@ class CardgameScene extends Phaser.Scene {
 
   isTargetPickerOpen(): boolean {
     return this.pendingTargetPicker !== null
+  }
+
+  closeTargetPickerOverlay(): void {
+    this.pendingTargetPicker?.destroy(true)
   }
 
   private openMenuOverlay(view: AppViewModel): void {
@@ -1836,14 +1870,19 @@ export class PhaserRenderer implements AppRenderer {
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
       const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
-      entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
-        closeSceneMenu()
-        controller.backToLobby()
-      } })
-      entries.push({ key: 'rematch', label: 'Rematch', onClick: () => {
-        closeSceneMenu()
-        controller.rematch()
-      } })
+      const closeTargetPicker = (): void => { this.cardgameScene?.closeTargetPickerOverlay() }
+      const targetPickerOpen = this.cardgameScene?.isTargetPickerOpen() ?? false
+      if (targetPickerOpen) {
+        entries.push({ key: 'target-picker-cancel', label: 'Cancel Target Selection', onClick: () => closeTargetPicker() })
+      } else {
+        entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
+          closeSceneMenu()
+          controller.backToLobby()
+        } })
+        entries.push({ key: 'rematch', label: 'Rematch', onClick: () => {
+          closeSceneMenu()
+          controller.rematch()
+        } })
       // Mirror the Phaser menu's recorder actions: close the menu overlay
       // before invoking the controller so the resulting status message (e.g.
       // "No saved recording found" or "Failed to read recording file") shows
@@ -1851,98 +1890,98 @@ export class PhaserRenderer implements AppRenderer {
       // open modal. Without these closes, keyboard / screen-reader users who
       // trigger Save/Load via the a11y nav while the menu is open get no
       // visible feedback at all.
-      const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
-      const targetPickerOpen = this.cardgameScene?.isTargetPickerOpen() ?? false
-      if (menuModalOpen) {
-        entries.push({ key: 'menu-close', label: 'Close Menu', onClick: () => closeSceneMenu() })
-      }
-      entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => {
-        closeSceneMenu()
-        this.handleDownloadRecording()
-      } })
-      entries.push({ key: 'recorder-save', label: 'Save Recording to Browser', onClick: () => {
-        closeSceneMenu()
-        controller.saveRecordingToLocalStorage()
-      } })
-      entries.push({
-        key: 'recorder-load-browser',
-        label: 'Load Recording from Browser',
-        onClick: () => {
+        const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
+        if (menuModalOpen) {
+          entries.push({ key: 'menu-close', label: 'Close Menu', onClick: () => closeSceneMenu() })
+        }
+        entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => {
           closeSceneMenu()
-          controller.loadRecordingFromLocalStorage()
-        },
-        disabled: !view.recording.hasLocalSave,
-      })
-      entries.push({ key: 'recorder-load-file', label: 'Load Recording from File', onClick: () => {
-        closeSceneMenu()
-        this.openRecordingFilePicker()
-      } })
-      if (view.replay.active) {
-        entries.push({ key: 'replay-toggle', label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
-          if (view.replay.isPlaying) {
-            controller.pauseReplay()
-          } else {
-            controller.startReplay()
-          }
+          this.handleDownloadRecording()
         } })
-        entries.push({ key: 'replay-prev', label: 'Previous Replay Step', onClick: () => controller.stepReplay(-1) })
-        entries.push({ key: 'replay-next', label: 'Next Replay Step', onClick: () => controller.stepReplay(1) })
-        entries.push({ key: 'replay-jump-end', label: 'Jump Replay to End', onClick: () => controller.jumpReplayToEnd() })
-        entries.push({ key: 'replay-exit', label: 'Exit Replay', onClick: () => controller.exitReplay() })
-      } else {
+        entries.push({ key: 'recorder-save', label: 'Save Recording to Browser', onClick: () => {
+          closeSceneMenu()
+          controller.saveRecordingToLocalStorage()
+        } })
         entries.push({
-          key: 'replay-start',
-          label: 'Start Replay',
-          onClick: () => controller.startReplay(),
-          disabled: !view.recording.metadata,
+          key: 'recorder-load-browser',
+          label: 'Load Recording from Browser',
+          onClick: () => {
+            closeSceneMenu()
+            controller.loadRecordingFromLocalStorage()
+          },
+          disabled: !view.recording.hasLocalSave,
         })
-      }
-
-      // In-match gameplay actions: mirror the Phaser scene's interactive
-      // controls (play land options, counter responses, Pass, End Turn) as
-      // native <button> elements so keyboard and screen-reader users can take
-      // turns without relying on pointer-only Phaser hit areas. Skip these
-      // when the Phaser menu modal is open: pointer users cannot interact
-      // with gameplay controls behind the modal, so exposing them through
-      // the a11y nav would let keyboard / screen-reader users mutate game
-      // state behind the overlay and break the modal semantics.
-      const game = view.game
-      if (game && game.canInput && !menuModalOpen && !targetPickerOpen) {
-        if (game.phase === 'main') {
-          for (const card of game.players[game.actor].handCards) {
-            const options = game.legal.playLandByCard[card.id]
-            if (!options) {
-              continue
+        entries.push({ key: 'recorder-load-file', label: 'Load Recording from File', onClick: () => {
+          closeSceneMenu()
+          this.openRecordingFilePicker()
+        } })
+        if (view.replay.active) {
+          entries.push({ key: 'replay-toggle', label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
+            if (view.replay.isPlaying) {
+              controller.pauseReplay()
+            } else {
+              controller.startReplay()
             }
-            for (const option of options) {
+          } })
+          entries.push({ key: 'replay-prev', label: 'Previous Replay Step', onClick: () => controller.stepReplay(-1) })
+          entries.push({ key: 'replay-next', label: 'Next Replay Step', onClick: () => controller.stepReplay(1) })
+          entries.push({ key: 'replay-jump-end', label: 'Jump Replay to End', onClick: () => controller.jumpReplayToEnd() })
+          entries.push({ key: 'replay-exit', label: 'Exit Replay', onClick: () => controller.exitReplay() })
+        } else {
+          entries.push({
+            key: 'replay-start',
+            label: 'Start Replay',
+            onClick: () => controller.startReplay(),
+            disabled: !view.recording.metadata,
+          })
+        }
+
+        // In-match gameplay actions: mirror the Phaser scene's interactive
+        // controls (play land options, counter responses, Pass, End Turn) as
+        // native <button> elements so keyboard and screen-reader users can take
+        // turns without relying on pointer-only Phaser hit areas. Skip these
+        // when the Phaser menu modal is open: pointer users cannot interact
+        // with gameplay controls behind the modal, so exposing them through
+        // the a11y nav would let keyboard / screen-reader users mutate game
+        // state behind the overlay and break the modal semantics.
+        const game = view.game
+        if (game && game.canInput && !menuModalOpen) {
+          if (game.phase === 'main') {
+            for (const card of game.players[game.actor].handCards) {
+              const options = game.legal.playLandByCard[card.id]
+              if (!options) {
+                continue
+              }
+              for (const option of options) {
+                entries.push({
+                  key: `play:${card.id}:${option.label}`,
+                  label: `Play ${card.name}: ${option.label}`,
+                  onClick: () => controller.submitAction(option.action),
+                })
+              }
+            }
+            if (game.legal.canEndTurn) {
               entries.push({
-                key: `play:${card.id}:${option.label}`,
-                label: `Play ${card.name}: ${option.label}`,
-                onClick: () => controller.submitAction(option.action),
+                key: 'end-turn',
+                label: 'End Turn',
+                onClick: () => controller.submitAction({ type: 'end_turn', actor: game.actor }),
               })
             }
-          }
-          if (game.legal.canEndTurn) {
-            entries.push({
-              key: 'end-turn',
-              label: 'End Turn',
-              onClick: () => controller.submitAction({ type: 'end_turn', actor: game.actor }),
+          } else if (game.phase === 'respond') {
+            game.legal.counterOptions.forEach((option, index) => {
+              entries.push({
+                key: `counter:${index}`,
+                label: option.label,
+                onClick: () => controller.submitAction(option.action),
+              })
             })
-          }
-        } else if (game.phase === 'respond') {
-          game.legal.counterOptions.forEach((option, index) => {
-            entries.push({
-              key: `counter:${index}`,
-              label: option.label,
-              onClick: () => controller.submitAction(option.action),
-            })
-          })
-          if (game.legal.canPassResponse) {
-            entries.push({
-              key: 'pass-response',
-              label: 'Pass Response',
-              onClick: () => controller.submitAction({ type: 'pass_response', actor: game.actor }),
-            })
+            if (game.legal.canPassResponse) {
+              entries.push({
+                key: 'pass-response',
+                label: 'Pass Response',
+                onClick: () => controller.submitAction({ type: 'pass_response', actor: game.actor }),
+              })
+            }
           }
         }
       }
