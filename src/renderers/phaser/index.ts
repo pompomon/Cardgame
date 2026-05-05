@@ -1908,7 +1908,6 @@ export class PhaserRenderer implements AppRenderer {
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
       const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
-      const closeTargetPicker = (): void => { this.cardgameScene?.closeTargetPickerOverlay() }
       if (targetPickerOpen) {
         const targetPickerEntries = this.cardgameScene?.getTargetPickerA11yEntries() ?? []
         for (const entry of targetPickerEntries) {
@@ -1917,9 +1916,6 @@ export class PhaserRenderer implements AppRenderer {
             label: entry.label,
             onClick: entry.onSelect,
           })
-        }
-        if (targetPickerEntries.length === 0) {
-          entries.push({ key: 'target-picker-cancel-fallback', label: 'Cancel Target Selection', onClick: () => closeTargetPicker() })
         }
       } else {
         entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
