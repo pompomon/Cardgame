@@ -261,7 +261,20 @@ class LobbyScene extends Phaser.Scene {
     // overlap adjacent rows. A fixed minimum button height larger than the
     // scaled row height can cause stacked mode/recorder actions to collide.
     const rowScale = Math.min(1, lobbyBodyHeight / Math.max(1, totalRows * desiredRowHeight))
-    const rowHeight = Math.max(1, desiredRowHeight * rowScale)
+    const rowHeight = desiredRowHeight * rowScale
+    if (rowHeight < 12) {
+      this.rootContainer?.add(this.add.text(
+        left,
+        lobbyBodyTop,
+        'Viewport too short to show lobby actions.',
+        {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+          wordWrap: { width: buttonWidth },
+        },
+      ))
+      return
+    }
     const buttonHeight = Math.min(desiredButtonHeight, rowHeight)
     const modeStartY = lobbyBodyTop + buttonHeight / 2
 
@@ -697,11 +710,11 @@ class CardgameScene extends Phaser.Scene {
     height: number,
     lines: string[],
   ): void {
-    const safeWidth = Math.max(0, width)
-    const safeHeight = Math.max(0, height)
-    if (safeWidth <= 0 || safeHeight <= 0) {
+    if (width <= 0 || height <= 0) {
       return
     }
+    const safeWidth = width
+    const safeHeight = height
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
       .setStrokeStyle(1, COLOR_PANEL_STROKE)
     this.rootContainer?.add(bg)
