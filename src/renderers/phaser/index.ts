@@ -1176,6 +1176,7 @@ class CardgameScene extends Phaser.Scene {
   }
 
   closeTargetPickerOverlay(): void {
+    this.pendingTargetPickerA11yEntries = []
     this.pendingTargetPicker?.destroy(true)
   }
 
@@ -1562,7 +1563,7 @@ class CardgameScene extends Phaser.Scene {
       const button = this.createButton(option.label, 0, buttonY, selectOption, buttonWidth, this.currentLayout.popupButtonHeight)
       optionsList.add(button)
       this.pendingTargetPickerA11yEntries.push({
-        key: `target:${option.effectTargetId ?? `index-${index}`}`,
+        key: `target:${option.effectTargetId ?? `fallback-index-${index}`}`,
         label: option.label,
         onSelect: selectOption,
       })
