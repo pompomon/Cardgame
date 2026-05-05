@@ -3,6 +3,22 @@ import type { GameAction, GameState } from '../game/types'
 import { activeActor } from './active-actor'
 import type { AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
 
+const PLAINS_TARGET_SEPARATOR = '::'
+
+function parsePlainsTargetSelection(effectTargetId?: string): { reuseTargetId?: string; reusedEffectTargetId?: string } {
+  if (!effectTargetId) {
+    return {}
+  }
+  const separatorIndex = effectTargetId.indexOf(PLAINS_TARGET_SEPARATOR)
+  if (separatorIndex < 0) {
+    return { reuseTargetId: effectTargetId }
+  }
+  return {
+    reuseTargetId: effectTargetId.slice(0, separatorIndex),
+    reusedEffectTargetId: effectTargetId.slice(separatorIndex + PLAINS_TARGET_SEPARATOR.length),
+  }
+}
+
 function winnerTextFor(game: GameState): string {
   if (game.winner === null) {
     return ''
@@ -48,9 +64,27 @@ function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAc
   }
 
   if (card.name === 'Plains') {
-    const target = me.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
+    const { reuseTargetId, reusedEffectTargetId } = parsePlainsTargetSelection(action.effectTargetId)
+    const target = me.battlefield.find((entry) => entry.instanceId === reuseTargetId)
     if (target) {
-      label += ` (reuse ${target.card.name})`
+      label += ` (reuse ${target.card.name}`
+      if (reusedEffectTargetId && target.card.name === 'Forest') {
+        const nestedTarget = me.graveyard.find((entry) => entry.id === reusedEffectTargetId)
+        if (nestedTarget) {
+          label += `, return ${nestedTarget.name}`
+        }
+      } else if (reusedEffectTargetId && target.card.name === 'Mountain') {
+        const nestedTarget = enemy.battlefield.find((entry) => entry.instanceId === reusedEffectTargetId)
+        if (nestedTarget) {
+          label += `, destroy ${nestedTarget.card.name}`
+        }
+      } else if (reusedEffectTargetId && target.card.name === 'Swamp') {
+        const nestedTarget = enemy.hand.find((entry) => entry.id === reusedEffectTargetId)
+        if (nestedTarget) {
+          label += `, discard ${nestedTarget.name}`
+        }
+      }
+      label += ')'
     }
   }
 

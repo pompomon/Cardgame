@@ -2,6 +2,28 @@ import { createStarterDeck } from './cards'
 import type { BattlefieldCard, Card, GameAction, GameState, PlayerState, Winner } from './types'
 
 const STARTING_HAND = 5
+const PLAINS_TARGET_SEPARATOR = '::'
+
+function encodePlainsEffectTargetId(reuseTargetId: string, reusedEffectTargetId?: string): string {
+  if (!reusedEffectTargetId) {
+    return reuseTargetId
+  }
+  return `${reuseTargetId}${PLAINS_TARGET_SEPARATOR}${reusedEffectTargetId}`
+}
+
+function decodePlainsEffectTargetId(effectTargetId?: string): { reuseTargetId?: string; reusedEffectTargetId?: string } {
+  if (!effectTargetId) {
+    return {}
+  }
+  const separatorIndex = effectTargetId.indexOf(PLAINS_TARGET_SEPARATOR)
+  if (separatorIndex < 0) {
+    return { reuseTargetId: effectTargetId }
+  }
+  return {
+    reuseTargetId: effectTargetId.slice(0, separatorIndex),
+    reusedEffectTargetId: effectTargetId.slice(separatorIndex + PLAINS_TARGET_SEPARATOR.length),
+  }
+}
 
 function cloneState(state: GameState): GameState {
   return structuredClone(state)
@@ -175,14 +197,15 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     return
   }
 
-  const target = effectTargetId
-    ? me.battlefield.find((entry) => entry.instanceId === effectTargetId && entry.card.name !== 'Plains')
+  const plainsTargets = decodePlainsEffectTargetId(effectTargetId)
+  const target = plainsTargets.reuseTargetId
+    ? me.battlefield.find((entry) => entry.instanceId === plainsTargets.reuseTargetId && entry.card.name !== 'Plains')
     : me.battlefield.find((entry) => entry.card.name !== 'Plains')
   if (!target) {
     return
   }
   state.log.push(`Plains reuses ${target.card.name}.`)
-  applyLandEffect(state, actor, target.card)
+  applyLandEffect(state, actor, target.card, plainsTargets.reusedEffectTargetId)
 }
 
 function resolvePendingLandPlay(state: GameState): void {
@@ -278,6 +301,42 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
           const targets = me.battlefield.filter((entry) => entry.card.name !== 'Plains')
           if (targets.length > 0) {
             for (const target of targets) {
+              if (target.card.name === 'Forest' && me.graveyard.length > 0) {
+                for (const nestedTarget of me.graveyard) {
+                  actions.push({
+                    type: 'play_land',
+                    actor,
+                    cardId: card.id,
+                    effectTargetId: encodePlainsEffectTargetId(target.instanceId, nestedTarget.id),
+                  })
+                }
+                continue
+              }
+
+              if (target.card.name === 'Mountain' && enemy.battlefield.length > 0) {
+                for (const nestedTarget of enemy.battlefield) {
+                  actions.push({
+                    type: 'play_land',
+                    actor,
+                    cardId: card.id,
+                    effectTargetId: encodePlainsEffectTargetId(target.instanceId, nestedTarget.instanceId),
+                  })
+                }
+                continue
+              }
+
+              if (target.card.name === 'Swamp' && enemy.hand.length > 0) {
+                for (const nestedTarget of enemy.hand) {
+                  actions.push({
+                    type: 'play_land',
+                    actor,
+                    cardId: card.id,
+                    effectTargetId: encodePlainsEffectTargetId(target.instanceId, nestedTarget.id),
+                  })
+                }
+                continue
+              }
+
               actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
             }
             continue
