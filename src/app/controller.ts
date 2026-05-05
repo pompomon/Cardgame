@@ -257,10 +257,10 @@ export class AppController implements ControllerApi {
           this.initializeRecording(this.state.mode)
         }
         // Acknowledge the start packet so the host can leave the lobby
-        // only after the joiner has actually received and applied the
-        // synchronized seed. Without this ack the host would advance into
-        // the match the moment its WebRTC send queue accepted the packet,
-        // even though the peer might disconnect before delivery.
+        // only after this peer (the joiner) has actually received and
+        // applied the synchronized seed. Without this ack the host would
+        // advance into the match the moment its WebRTC send queue accepted
+        // the packet, even though the peer might disconnect before delivery.
         this.p2p?.send('start-ack', { seed: packet.payload.seed })
         this.state.status = 'Remote game started.'
         this.notify()
