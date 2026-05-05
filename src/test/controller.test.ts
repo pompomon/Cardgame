@@ -512,4 +512,115 @@ describe('controller recording and replay', () => {
       restoreRtc()
     }
   })
+
+  it('does not start on joiner when start-ack cannot be sent', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-join')
+      const internals = controller as unknown as {
+        p2p: {
+          onMessage: (packet: { type: string; payload: unknown }) => void
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+        } | null
+        state: { seed: number; game: unknown; p2pStarted: boolean }
+      }
+      const originalSeed = internals.state.seed
+      const originalGame = internals.state.game
+      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      internals.p2p = {
+        onMessage: realOnMessage,
+        send: () => false,
+        isConnected: () => true,
+        close: () => {},
+      }
+
+      internals.p2p.onMessage({ type: 'start', payload: { seed: 9999 } })
+
+      expect(internals.state.p2pStarted).toBe(false)
+      expect(internals.state.seed).toBe(originalSeed)
+      expect(internals.state.game).toBe(originalGame)
+      expect(controller.getViewModel().status).toContain('could not acknowledge start')
+    } finally {
+      restoreRtc()
+    }
+  })
+
+  it('does not apply incoming rematch when rematch-ack cannot be sent', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-join')
+      const internals = controller as unknown as {
+        p2p: {
+          onMessage: (packet: { type: string; payload: unknown }) => void
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+        } | null
+        state: { seed: number; game: unknown }
+      }
+      const originalSeed = internals.state.seed
+      const originalGame = internals.state.game
+      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      internals.p2p = {
+        onMessage: realOnMessage,
+        send: () => false,
+        isConnected: () => true,
+        close: () => {},
+      }
+
+      internals.p2p.onMessage({ type: 'rematch', payload: { seed: 5555 } })
+
+      expect(internals.state.seed).toBe(originalSeed)
+      expect(internals.state.game).toBe(originalGame)
+      expect(controller.getViewModel().status).toContain('could not acknowledge rematch')
+    } finally {
+      restoreRtc()
+    }
+  })
+
+  it('blocks actions and duplicate rematch clicks while waiting for rematch acknowledgement', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const sentPackets: Array<{ type: string; payload: unknown }> = []
+      const internals = controller as unknown as {
+        p2p: {
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+        } | null
+        state: { game: unknown; pendingRematchSeed: number | null }
+      }
+      const originalGame = internals.state.game
+      internals.p2p = {
+        send: (type, payload) => {
+          sentPackets.push({ type, payload })
+          return true
+        },
+        isConnected: () => true,
+        close: () => {},
+      }
+
+      controller.rematch()
+      expect(internals.state.pendingRematchSeed).not.toBeNull()
+      const action = firstPlayableAction(controller)
+      expect(action).toBeTruthy()
+      if (action) {
+        controller.submitAction(action)
+      }
+      expect(internals.state.game).toBe(originalGame)
+      expect(controller.getViewModel().status).toContain('Rematch in progress')
+
+      controller.rematch()
+      expect(controller.getViewModel().status).toContain('Already waiting')
+      expect(sentPackets.filter((packet) => packet.type === 'rematch')).toHaveLength(1)
+    } finally {
+      restoreRtc()
+    }
+  })
 })

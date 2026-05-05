@@ -250,18 +250,21 @@ export class AppController implements ControllerApi {
           this.notify()
           return
         }
+        // If we cannot acknowledge the start packet, abort local transition.
+        // Otherwise this peer would move into the match while the host waits
+        // forever in the lobby for an ack that never arrives.
+        const acknowledged = this.p2p?.send('start-ack', { seed: packet.payload.seed }) ?? false
+        if (!acknowledged) {
+          this.state.status = 'P2P start failed: could not acknowledge start packet. Reconnect and retry.'
+          this.notify()
+          return
+        }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
         this.state.p2pStarted = true
         if (this.state.mode) {
           this.initializeRecording(this.state.mode)
         }
-        // Acknowledge the start packet so the host can leave the lobby
-        // only after this peer (the joiner) has actually received and
-        // applied the synchronized seed. Without this ack the host would
-        // advance into the match the moment its WebRTC send queue accepted
-        // the packet, even though the peer might disconnect before delivery.
-        this.p2p?.send('start-ack', { seed: packet.payload.seed })
         this.state.status = 'Remote game started.'
         this.notify()
         return
@@ -302,17 +305,31 @@ export class AppController implements ControllerApi {
           this.notify()
           return
         }
+        // Handle simultaneous rematch clicks deterministically: keep only the
+        // lower seed. This avoids each peer applying the other peer's seed
+        // and later applying its own pending seed again on ack.
+        if (this.state.pendingRematchSeed !== null && packet.payload.seed !== this.state.pendingRematchSeed) {
+          const winningSeed = Math.min(this.state.pendingRematchSeed, packet.payload.seed)
+          if (packet.payload.seed !== winningSeed) {
+            this.state.status = 'Ignoring competing rematch; waiting for peer acknowledgement.'
+            this.notify()
+            return
+          }
+          this.state.pendingRematchSeed = null
+        }
+        // If we cannot acknowledge the rematch packet, abort local transition.
+        // Applying locally without an ack would desynchronize peers.
+        const acknowledged = this.p2p?.send('rematch-ack', { seed: packet.payload.seed }) ?? false
+        if (!acknowledged) {
+          this.state.status = 'P2P rematch failed: could not acknowledge rematch packet. Reconnect and retry.'
+          this.notify()
+          return
+        }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
         if (this.state.mode) {
           this.initializeRecording(this.state.mode)
         }
-        // Acknowledge the rematch so the initiator only mutates its own
-        // seed/game/recording after the peer has actually applied the new
-        // seed. Without this ack a peer that disconnects between the
-        // initiator's send() returning true and the packet actually
-        // arriving would leave the two peers on different games.
-        this.p2p?.send('rematch-ack', { seed: packet.payload.seed })
         this.state.status = 'Rematch started.'
         this.notify()
         return
@@ -378,6 +395,13 @@ export class AppController implements ControllerApi {
 
   private applyRecordedAction(action: GameAction, source: 'human' | 'ai' | 'remote', broadcastToPeer: boolean): void {
     if (!this.state.game || this.isReplayActive()) {
+      return
+    }
+    if (this.state.pendingRematchSeed !== null && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+      if (source === 'remote') {
+        this.state.status = 'Ignored action while rematch handshake is in progress.'
+        this.notify()
+      }
       return
     }
     if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
@@ -520,6 +544,11 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
+    if (this.state.pendingP2PStartSeed !== null) {
+      this.state.status = 'Already waiting for peer to acknowledge start.'
+      this.notify()
+      return
+    }
     // Send the start packet but DO NOT flip p2pStarted yet. p2p.send()
     // returning true only means the WebRTC send queue accepted the packet
     // locally; it is NOT an acknowledgment that the joiner actually
@@ -540,11 +569,21 @@ export class AppController implements ControllerApi {
   }
 
   submitAction(action: GameAction): void {
+    if (this.state.pendingRematchSeed !== null) {
+      this.state.status = 'Rematch in progress. Wait for peer acknowledgement before taking actions.'
+      this.notify()
+      return
+    }
     this.applyRecordedAction(action, 'human', true)
   }
 
   rematch(): void {
     if (!this.state.mode || this.isReplayActive()) {
+      return
+    }
+    if (this.state.pendingRematchSeed !== null) {
+      this.state.status = 'Already waiting for peer to acknowledge rematch.'
+      this.notify()
       return
     }
     const newSeed = Date.now()

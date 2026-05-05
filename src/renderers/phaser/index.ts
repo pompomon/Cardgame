@@ -375,16 +375,17 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.bodyFontSize,
     })
 
-    this.input.on('drag', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
+    const onDrag = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number): void => {
       if (this.menuOpen) {
         return
       }
       const draggable = object as Phaser.GameObjects.Container
       draggable.x = dragX
       draggable.y = dragY
-    })
+    }
+    this.input.on('drag', onDrag)
 
-    this.input.on('dragend', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean) => {
+    const onDragEnd = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
       const card = object as Phaser.GameObjects.Container
       if (this.menuOpen) {
         this.snapCardToOrigin(card)
@@ -393,9 +394,10 @@ class CardgameScene extends Phaser.Scene {
       if (!dropped) {
         this.snapCardToOrigin(card)
       }
-    })
+    }
+    this.input.on('dragend', onDragEnd)
 
-    this.input.on('drop', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone) => {
+    const onDrop = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone): void => {
       if (this.menuOpen) {
         return
       }
@@ -424,7 +426,8 @@ class CardgameScene extends Phaser.Scene {
 
       this.snapCardToOrigin(card)
       this.showTargetPicker(game, cardId, resolution.options)
-    })
+    }
+    this.input.on('drop', onDrop)
 
     // Detach the resize listener on scene shutdown so a stop/start cycle (e.g.
     // when the user goes Back to Lobby and then starts a new match) does not
@@ -437,6 +440,9 @@ class CardgameScene extends Phaser.Scene {
     this.scale.on('resize', onResize)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', onResize)
+      this.input.off('drag', onDrag)
+      this.input.off('dragend', onDragEnd)
+      this.input.off('drop', onDrop)
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -1099,6 +1105,7 @@ class CardgameScene extends Phaser.Scene {
     this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
     overlay?.destroy(true)
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 
   isMenuOverlayOpen(): boolean {
@@ -1126,6 +1133,7 @@ class CardgameScene extends Phaser.Scene {
         this.menuOpen = false
         this.lastMenuSignature = null
       }
+      this.rendererRef.refreshA11yNavForCurrentView()
     })
     const swallowPointerEvent = (
       _pointer: Phaser.Input.Pointer,
@@ -1386,6 +1394,7 @@ class CardgameScene extends Phaser.Scene {
     this.menuOverlay = overlay
     this.rootContainer.add(overlay)
     this.lastMenuSignature = this.computeMenuSignature(view)
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 
   private showTargetPicker(
@@ -1680,6 +1689,13 @@ export class PhaserRenderer implements AppRenderer {
     }
   }
 
+  refreshA11yNavForCurrentView(): void {
+    if (!this.currentView) {
+      return
+    }
+    this.updateA11yNav(this.currentView, this.activeSceneKey === LOBBY_SCENE_KEY)
+  }
+
   private updateLobbyP2POverlay(view: AppViewModel, lobbyActive: boolean): void {
     const overlay = this.lobbyP2POverlay
     if (!overlay) {
@@ -1708,13 +1724,17 @@ export class PhaserRenderer implements AppRenderer {
         <div class="phaser-lobby-p2p-grid">
           ${host
             ? `<button data-p2p-action="create-offer">Create Offer</button>
-               <textarea data-p2p-field="offer" placeholder="Offer" readonly>${safeOffer}</textarea>
-               <textarea data-p2p-field="host-answer" placeholder="Paste remote answer">${safeHostAnswerDraft}</textarea>
+               <label for="phaser-p2p-offer">Offer</label>
+               <textarea id="phaser-p2p-offer" data-p2p-field="offer" aria-label="Offer" placeholder="Offer" readonly>${safeOffer}</textarea>
+               <label for="phaser-p2p-host-answer">Remote Answer</label>
+               <textarea id="phaser-p2p-host-answer" data-p2p-field="host-answer" aria-label="Paste remote answer" placeholder="Paste remote answer">${safeHostAnswerDraft}</textarea>
                <button data-p2p-action="accept-answer">Accept Answer</button>
                <button data-p2p-action="start-p2p-game">Start Game</button>`
-            : `<textarea data-p2p-field="join-offer" placeholder="Paste host offer">${safeJoinOfferDraft}</textarea>
-               <button data-p2p-action="create-answer">Create Answer</button>
-               <textarea data-p2p-field="answer" placeholder="Answer" readonly>${safeAnswer}</textarea>`
+            : `<label for="phaser-p2p-join-offer">Host Offer</label>
+               <textarea id="phaser-p2p-join-offer" data-p2p-field="join-offer" aria-label="Paste host offer" placeholder="Paste host offer">${safeJoinOfferDraft}</textarea>
+                <button data-p2p-action="create-answer">Create Answer</button>
+                <label for="phaser-p2p-answer">Answer</label>
+                <textarea id="phaser-p2p-answer" data-p2p-field="answer" aria-label="Answer" placeholder="Answer" readonly>${safeAnswer}</textarea>`
           }
           <button data-p2p-action="back-to-lobby">Cancel</button>
         </div>
