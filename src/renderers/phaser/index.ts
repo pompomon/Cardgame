@@ -27,6 +27,7 @@ const RESPONSE_PROMPT_Y_OFFSET = 6
 const RESPONSE_PROMPT_BOTTOM_GAP = 4
 const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
 const APPROX_CHAR_WIDTH_RATIO = 0.56
+const MIN_APPROX_CHAR_WIDTH = 6
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -1057,7 +1058,7 @@ class CardgameScene extends Phaser.Scene {
         ...game.legal.counterOptions.map((option) => option.label),
         ...(game.legal.canPassResponse ? ['Pass'] : []),
       ]
-      const approxCharWidth = Math.max(6, parseFloat(this.currentLayout.bodyFontSize) * APPROX_CHAR_WIDTH_RATIO)
+      const approxCharWidth = Math.max(MIN_APPROX_CHAR_WIDTH, parseFloat(this.currentLayout.bodyFontSize) * APPROX_CHAR_WIDTH_RATIO)
       const longestLabelLength = responseLabels.reduce((max, label) => Math.max(max, label.length), 0)
       const minReadableButtonWidth = Math.min(
         preferredButtonWidth,
@@ -1081,6 +1082,9 @@ class CardgameScene extends Phaser.Scene {
         : desiredButtonHeight
       let { columnGap, cellWidth } = gridMetricsFor(columns)
       while (totalButtons > 0 && columns < totalButtons) {
+        // Stop widening the grid once either:
+        // 1) buttons are already tall enough, or
+        // 2) another column would make labels too narrow to stay readable.
         const labelsWouldClip = cellWidth < minReadableButtonWidth
         if (respondButtonHeight >= minUsableButtonHeight || labelsWouldClip) {
           break
