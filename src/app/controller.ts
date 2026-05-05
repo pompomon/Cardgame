@@ -569,7 +569,7 @@ export class AppController implements ControllerApi {
   }
 
   submitAction(action: GameAction): void {
-    if (this.state.pendingRematchSeed !== null) {
+    if (this.state.pendingRematchSeed !== null && this.state.mode !== null && isP2PMode(this.state.mode)) {
       this.state.status = 'Rematch in progress. Wait for peer acknowledgement before taking actions.'
       this.notify()
       return
@@ -581,7 +581,7 @@ export class AppController implements ControllerApi {
     if (!this.state.mode || this.isReplayActive()) {
       return
     }
-    if (this.state.pendingRematchSeed !== null) {
+    if (this.state.pendingRematchSeed !== null && isP2PMode(this.state.mode)) {
       this.state.status = 'Already waiting for peer to acknowledge rematch.'
       this.notify()
       return
@@ -660,6 +660,9 @@ export class AppController implements ControllerApi {
     ]
     this.state.offer = ''
     this.state.answer = ''
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
     this.state.game = snapshotFromRecord(parsed.record, 0)
     this.state.status = 'Recording loaded. Use replay controls to play or jump to final state.'
     this.notify()

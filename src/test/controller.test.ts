@@ -623,4 +623,50 @@ describe('controller recording and replay', () => {
       restoreRtc()
     }
   })
+
+  it('clears pending P2P handshake state when importing a recording', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const internals = controller as unknown as {
+        p2p: {
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+        } | null
+        state: {
+          pendingP2PStartSeed: number | null
+          pendingRematchSeed: number | null
+          p2pStarted: boolean
+        }
+      }
+      internals.p2p = {
+        send: () => true,
+        isConnected: () => true,
+        close: () => {},
+      }
+      controller.startP2PGame()
+      controller.rematch()
+      expect(internals.state.pendingP2PStartSeed).not.toBeNull()
+      expect(internals.state.pendingRematchSeed).not.toBeNull()
+
+      controller.startGame('local-hvh')
+      const exported = controller.exportRecordingJson()
+      expect(exported).toBeTruthy()
+      controller.importRecordingJson(exported!)
+
+      expect(internals.state.pendingP2PStartSeed).toBeNull()
+      expect(internals.state.pendingRematchSeed).toBeNull()
+      expect(internals.state.p2pStarted).toBe(false)
+      const action = firstPlayableAction(controller)
+      expect(action).toBeTruthy()
+      if (action) {
+        controller.submitAction(action)
+      }
+      expect(controller.getViewModel().status).not.toContain('Rematch in progress')
+    } finally {
+      restoreRtc()
+    }
+  })
 })

@@ -190,7 +190,6 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   // at the original size would render outside their rows and overlap the
   // adjacent info panels. Derive a row-fitting cardHeight (preserving the
   // 1.35 aspect ratio) so cards always stay inside their assigned row.
-  const cardRowFloor = 40
   const cardRowPadding = 12
   const cardWidthFloor = 28
   const cardGapFloor = 48
@@ -199,7 +198,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     activeBattlefieldHeight,
     activeInfoHeight,
   )
-  const cardFitHeight = Math.max(cardRowFloor, minRowForCards - cardRowPadding)
+  const cardFitHeight = Math.max(0, minRowForCards - cardRowPadding)
   const effectiveCardHeight = Math.min(cardHeight, cardFitHeight)
   const effectiveCardWidth = effectiveCardHeight >= cardHeight
     ? cardWidth
@@ -277,7 +276,8 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     textLines = 0
   }
   const activeInfoTextBottom = activeInfoY + 6 + textBand
-  const activeInfoControlsTop = activeInfoTextBottom + interBandGap
+  const activeInfoGap = textBand > 0 && controlsBand > 0 ? interBandGap : 0
+  const activeInfoControlsTop = activeInfoTextBottom + activeInfoGap
   const activeInfoControlsHeight = controlsBand
   const controlsStartY = activeInfoControlsTop + Math.min(actionButtonHeight, activeInfoControlsHeight) / 2
   const responseInfoY = activeInfoControlsTop

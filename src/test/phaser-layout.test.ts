@@ -123,4 +123,24 @@ describe('phaser buildLayout', () => {
     const handStripTop = layout.handCardsY - layout.cardHeight / 2
     expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(handStripTop + 0.5)
   })
+
+  it('does not insert an extra inter-band gap when active-info text is dropped to 0 lines', () => {
+    // On very short split layouts textLines can be 0. In that case controls
+    // should start directly at activeInfoY + 6, without an extra 4px gap that
+    // steals space from the controls band and can push it into the hand strip.
+    let layout = buildLayout(720, 340, 'horizontal')
+    if (layout.activeInfoTextLines !== 0) {
+      layout = buildLayout(720, 320, 'horizontal')
+    }
+    expect(layout.activeInfoTextLines).toBe(0)
+    expect(layout.activeInfoControlsTop).toBeCloseTo(layout.activeInfoY + 6, 4)
+  })
+
+  it('keeps cards within row bounds on very short split layouts', () => {
+    const layout = buildLayout(720, 300, 'horizontal')
+    const cardRowPadding = 12
+    expect(layout.cardHeight).toBeLessThanOrEqual(layout.nonActiveBattlefieldHeight - cardRowPadding + 0.5)
+    expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeBattlefieldHeight - cardRowPadding + 0.5)
+    expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeInfoHeight - cardRowPadding + 0.5)
+  })
 })

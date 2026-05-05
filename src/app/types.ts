@@ -24,19 +24,13 @@ export interface AppState {
   // stay in the lobby until BOTH peers have synchronized seeds confirmed
   // via the application-level handshake.
   p2pStarted: boolean
-  // Host-side: the seed the host queued in a `start` packet but has not
-  // yet received an ack for. Stays non-null while the host is waiting on
-  // the joiner's `start-ack`. When the ack arrives the host applies this
-  // seed (it already initialized state.game from this seed in startP2PGame()
-  // because the seed is also used locally to keep the deck shuffle
-  // deterministic for both peers) and clears the field.
+  // Host-side: the seed queued in a `start` packet while waiting on the
+  // joiner's `start-ack`. This marks that the host has initiated handshake
+  // but must remain in the lobby until the peer confirms receipt.
   pendingP2PStartSeed: number | null
-  // Host-side (rematch initiator): the new seed the host queued in a
-  // `rematch` packet but has not yet received an ack for. While set the
-  // rematch is "in flight" — local seed/game/recording have NOT yet been
-  // mutated. When the ack arrives the host applies this seed, recreates
-  // the game, reinitializes the recording, and clears the field. If the
-  // peer never acks, the previous game stays intact on this side.
+  // P2P rematch seed currently waiting for peer ack. Set by whichever side
+  // initiated rematch (`p2p-host` or `p2p-join`); while set, local
+  // seed/game/recording stay unchanged until matching `rematch-ack` arrives.
   pendingRematchSeed: number | null
 }
 

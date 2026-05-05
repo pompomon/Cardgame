@@ -1112,6 +1112,10 @@ class CardgameScene extends Phaser.Scene {
     return this.menuOpen
   }
 
+  isTargetPickerOpen(): boolean {
+    return this.pendingTargetPicker !== null
+  }
+
   private openMenuOverlay(view: AppViewModel): void {
     if (!this.rootContainer || this.menuOverlay) {
       return
@@ -1431,6 +1435,7 @@ class CardgameScene extends Phaser.Scene {
       if (this.pendingTargetPicker === overlay) {
         this.pendingTargetPicker = null
       }
+      this.rendererRef.refreshA11yNavForCurrentView()
     })
     const swallowPointerEvent = (
       _pointer: Phaser.Input.Pointer,
@@ -1540,6 +1545,7 @@ class CardgameScene extends Phaser.Scene {
 
     this.pendingTargetPicker = overlay
     this.rootContainer?.add(overlay)
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 }
 
@@ -1821,6 +1827,11 @@ export class PhaserRenderer implements AppRenderer {
       // trigger Save/Load via the a11y nav while the menu is open get no
       // visible feedback at all.
       const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
+      const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
+      const targetPickerOpen = this.cardgameScene?.isTargetPickerOpen() ?? false
+      if (menuModalOpen) {
+        entries.push({ key: 'menu-close', label: 'Close Menu', onClick: () => closeSceneMenu() })
+      }
       entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => {
         closeSceneMenu()
         this.handleDownloadRecording()
@@ -1872,8 +1883,7 @@ export class PhaserRenderer implements AppRenderer {
       // the a11y nav would let keyboard / screen-reader users mutate game
       // state behind the overlay and break the modal semantics.
       const game = view.game
-      const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
-      if (game && game.canInput && !menuModalOpen) {
+      if (game && game.canInput && !menuModalOpen && !targetPickerOpen) {
         if (game.phase === 'main') {
           for (const card of game.players[game.actor].handCards) {
             const options = game.legal.playLandByCard[card.id]
