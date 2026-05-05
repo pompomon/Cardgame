@@ -28,7 +28,7 @@ const RESPONSE_PROMPT_BOTTOM_GAP = 4
 const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
 const APPROX_CHAR_WIDTH_RATIO = 0.56
 const MIN_APPROX_CHAR_WIDTH = 6
-const MIN_LOBBY_ROW_HEIGHT = 12
+const MIN_LOBBY_ROW_HEIGHT = 16
 const DEFAULT_BATTLEFIELD_HEADER_BAND = 22
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
