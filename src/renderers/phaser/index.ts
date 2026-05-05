@@ -18,6 +18,10 @@ const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const LOBBY_SCENE_KEY = 'cardgame-lobby'
 const CARDGAME_SCENE_KEY = 'cardgame-main'
+const INFO_PANEL_VERTICAL_PADDING = 12
+const INFO_PANEL_LINE_HEIGHT_MULTIPLIER = 1.25
+const CONTROLS_INNER_HORIZONTAL_PADDING = 16
+const MIN_WORD_WRAP_WIDTH = 40
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -712,8 +716,8 @@ class CardgameScene extends Phaser.Scene {
       `Player ${nonActiveIndex + 1} (${view.controllers[nonActiveIndex]})`,
       `Hand: ${nonActivePlayer.handCount} • Deck: ${nonActivePlayer.deckCount} • Graveyard: ${nonActivePlayer.graveyardCount}`,
     ]
-    const infoLineHeight = Math.ceil(parseFloat(this.currentLayout.bodyFontSize) * 1.25)
-    const maxNonActiveLines = Math.max(0, Math.floor((this.currentLayout.nonActiveInfoHeight - 12) / Math.max(1, infoLineHeight)))
+    const infoLineHeight = Math.ceil(parseFloat(this.currentLayout.bodyFontSize) * INFO_PANEL_LINE_HEIGHT_MULTIPLIER)
+    const maxNonActiveLines = Math.max(0, Math.floor((this.currentLayout.nonActiveInfoHeight - INFO_PANEL_VERTICAL_PADDING) / Math.max(1, infoLineHeight)))
     const visibleNonActiveLines = nonActiveLines.slice(0, maxNonActiveLines)
     this.renderInfoPanel(
       COLOR_PLAYER_NON_ACTIVE_FILL,
@@ -732,6 +736,9 @@ class CardgameScene extends Phaser.Scene {
     // fit above the controls band (End Turn / response buttons). Render only
     // that many lines so the text does not spill into the controls band or
     // the hand strip on short split layouts (e.g. 720x360 horizontal).
+    // During the response phase we show a dedicated "Opponent played …" prompt
+    // above the controls, so hide the active-info summary lines to avoid text
+    // overlap on short split layouts.
     const allowedActiveLines = game.phase === 'respond'
       ? 0
       : Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
@@ -1006,7 +1013,7 @@ class CardgameScene extends Phaser.Scene {
       const promptText = this.add.text(this.currentLayout.boardColumnLeft + 8, this.currentLayout.activeInfoY + 6, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
         color: '#f0f4ff',
         fontSize: this.currentLayout.bodyFontSize,
-        wordWrap: { width: Math.max(40, this.currentLayout.boardColumnWidth - 16) },
+        wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
       })
       this.rootContainer?.add(promptText)
 
@@ -1024,7 +1031,7 @@ class CardgameScene extends Phaser.Scene {
       const desiredButtonHeight = this.currentLayout.popupButtonHeight
       const desiredGap = 8
       const minUsableButtonHeight = 28
-      const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - 16)
+      const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING)
       const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
       // Compute the smallest column count whose stacked rows fit at >= the
       // minimum usable button height. The grid never exceeds totalButtons

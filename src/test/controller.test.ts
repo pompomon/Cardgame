@@ -159,9 +159,31 @@ describe('controller recording and replay', () => {
       const controller = new AppController('dom')
       controller.startGame('p2p-host')
       const internals = controller as unknown as {
-        state: { p2pStarted: boolean }
+        p2p: {
+          send: (type: string, payload: unknown) => boolean
+          isConnected: () => boolean
+          close: () => void
+          onMessage: (packet: { type: string; payload: unknown }) => void
+        } | null
+        state: { seed: number }
       }
-      internals.state.p2pStarted = true
+      const sentPackets: Array<{ type: string; payload: unknown }> = []
+      const p2pOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      internals.p2p = {
+        send: (type, payload) => {
+          sentPackets.push({ type, payload })
+          return true
+        },
+        isConnected: () => true,
+        close: () => {},
+        onMessage: p2pOnMessage,
+      }
+      controller.startP2PGame()
+      expect(sentPackets[0]?.type).toBe('start')
+      internals.p2p.onMessage({ type: 'start-ack', payload: { seed: internals.state.seed } })
+      expect(controller.getViewModel().p2pStarted).toBe(true)
+
+      expect(controller.getViewModel().p2pStarted).toBe(true)
       const action = firstPlayableAction(controller)
       expect(action).toBeTruthy()
 
@@ -403,9 +425,9 @@ describe('controller recording and replay', () => {
       expect(internals.p2p).toBeTruthy()
       // Wrap send() so we can assert the start-ack is sent back to the
       // host. The joiner must ack so the host can leave the lobby.
-      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      const p2pOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
       internals.p2p = {
-        onMessage: realOnMessage,
+        onMessage: p2pOnMessage,
         send: (type, payload) => {
           sentPackets.push({ type, payload })
           return true
