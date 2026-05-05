@@ -1,23 +1,8 @@
 import { canAct, getLegalActions } from '../game/engine'
+import { decodePlainsEffectTargetId } from '../game/plains-targeting'
 import type { GameAction, GameState } from '../game/types'
 import { activeActor } from './active-actor'
 import type { AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
-
-const PLAINS_TARGET_SEPARATOR = '::'
-
-function parsePlainsTargetSelection(effectTargetId?: string): { reuseTargetId?: string; reusedEffectTargetId?: string } {
-  if (!effectTargetId) {
-    return {}
-  }
-  const separatorIndex = effectTargetId.indexOf(PLAINS_TARGET_SEPARATOR)
-  if (separatorIndex < 0) {
-    return { reuseTargetId: effectTargetId }
-  }
-  return {
-    reuseTargetId: effectTargetId.slice(0, separatorIndex),
-    reusedEffectTargetId: effectTargetId.slice(separatorIndex + PLAINS_TARGET_SEPARATOR.length),
-  }
-}
 
 function winnerTextFor(game: GameState): string {
   if (game.winner === null) {
@@ -64,7 +49,7 @@ function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAc
   }
 
   if (card.name === 'Plains') {
-    const { reuseTargetId, reusedEffectTargetId } = parsePlainsTargetSelection(action.effectTargetId)
+    const { reuseTargetId, reusedEffectTargetId } = decodePlainsEffectTargetId(action.effectTargetId)
     const target = me.battlefield.find((entry) => entry.instanceId === reuseTargetId)
     if (target) {
       label += ` (reuse ${target.card.name}`

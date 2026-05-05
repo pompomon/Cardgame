@@ -1,29 +1,8 @@
 import { createStarterDeck } from './cards'
+import { decodePlainsEffectTargetId, encodePlainsEffectTargetId } from './plains-targeting'
 import type { BattlefieldCard, Card, GameAction, GameState, PlayerState, Winner } from './types'
 
 const STARTING_HAND = 5
-const PLAINS_TARGET_SEPARATOR = '::'
-
-function encodePlainsEffectTargetId(reuseTargetId: string, reusedEffectTargetId?: string): string {
-  if (!reusedEffectTargetId) {
-    return reuseTargetId
-  }
-  return `${reuseTargetId}${PLAINS_TARGET_SEPARATOR}${reusedEffectTargetId}`
-}
-
-function decodePlainsEffectTargetId(effectTargetId?: string): { reuseTargetId?: string; reusedEffectTargetId?: string } {
-  if (!effectTargetId) {
-    return {}
-  }
-  const separatorIndex = effectTargetId.indexOf(PLAINS_TARGET_SEPARATOR)
-  if (separatorIndex < 0) {
-    return { reuseTargetId: effectTargetId }
-  }
-  return {
-    reuseTargetId: effectTargetId.slice(0, separatorIndex),
-    reusedEffectTargetId: effectTargetId.slice(separatorIndex + PLAINS_TARGET_SEPARATOR.length),
-  }
-}
 
 function cloneState(state: GameState): GameState {
   return structuredClone(state)
