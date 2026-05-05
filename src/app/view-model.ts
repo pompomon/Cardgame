@@ -75,6 +75,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   const replayStep = state.replay?.step ?? 0
   const replayTotalSteps = state.replay?.record.timeline.length ?? 0
   const replayIsPlaying = state.replay?.isPlaying ?? false
+  const p2pStarted = state.p2pStarted
   const recordingMetadata = state.recording
     ? {
       seed: state.recording.metadata.seed,
@@ -94,6 +95,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       seed: state.seed,
       controllers: state.controllers,
       p2pConnected,
+      p2pStarted,
       game: null,
       recording: {
         canSave: state.recording !== null,
@@ -144,6 +146,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     seed: state.seed,
     controllers: state.controllers,
     p2pConnected,
+    p2pStarted,
     game: {
       turn: game.turn,
       phase: game.phase,

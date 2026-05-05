@@ -248,73 +248,91 @@ textarea {
   touch-action: none;
 }
 
-.phaser-p2p-overlay {
+.phaser-lobby-p2p-overlay {
   position: fixed;
   right: 18px;
   top: 18px;
   z-index: 20;
-}
-
-.phaser-recorder-overlay {
-  position: fixed;
-  left: 18px;
-  bottom: 18px;
-  z-index: 20;
-  max-width: min(720px, calc(100vw - 36px));
-}
-
-.phaser-recorder-panel {
-  display: grid;
-  gap: 8px;
-  background: rgba(10, 18, 38, 0.92);
-}
-
-.phaser-recorder-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-#app.phaser-root .phaser-p2p-overlay {
-  position: fixed;
-}
-
-.phaser-p2p-overlay button {
-  pointer-events: auto;
-}
-
-.phaser-settings-backdrop {
-  position: fixed;
-  inset: 0;
-  display: none;
-  padding: 16px;
-  background: rgba(4, 9, 22, 0.65);
-}
-
-.phaser-p2p-overlay.open .phaser-settings-backdrop {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-}
-
-.phaser-settings-panel {
-  width: min(420px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
+  width: min(420px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
   overflow: auto;
+}
+
+/* Visually-hidden but keyboard- and screen-reader-accessible navigation that
+   mirrors the Phaser-rendered controls (Menu actions, mode buttons, recorder,
+   replay). Phaser buttons are pointer-only, so this nav restores keyboard /
+   AT access without changing the visual layout. */
+.phaser-a11y-nav {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* When any descendant button receives keyboard focus, expand the nav itself
+   so the focused button is actually visible to sighted keyboard users.
+   Without this rule, the parent's `overflow: hidden` + `clip: rect(0 0 0 0)`
+   keeps the focus target hidden even though the focused button promotes
+   itself to `position: fixed` below. */
+.phaser-a11y-nav:focus-within {
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+}
+
+.phaser-a11y-nav button:focus,
+.phaser-a11y-nav button:focus-visible {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  height: auto;
+  padding: 8px 12px;
+  margin: 0;
+  clip: auto;
+  white-space: normal;
+  z-index: 30;
+  background: #1c2f63;
+  color: #e5ecf5;
+  border: 2px solid #6aa1ff;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.phaser-lobby-p2p-panel {
+  border: 1px solid #2a355f;
+  border-radius: 12px;
   background: rgba(10, 18, 38, 0.95);
+  padding: 16px;
   display: grid;
   gap: 8px;
+}
+
+.phaser-lobby-p2p-panel h2 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.phaser-lobby-p2p-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.phaser-lobby-p2p-status {
+  margin: 0;
+  color: #9db0d9;
 }
 
 @supports not (height: 100dvh) {
-  .phaser-settings-panel {
-    max-height: calc(100vh - 32px);
-  }
-}
-
-@media (max-width: 1200px) {
-  .phaser-p2p-overlay.open .phaser-settings-backdrop {
-    justify-content: center;
+  .phaser-lobby-p2p-overlay {
+    max-height: calc(100vh - 36px);
   }
 }
 

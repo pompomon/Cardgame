@@ -108,12 +108,22 @@ export class P2PLink {
     await this.peer.setRemoteDescription(answer)
   }
 
-  send(type: string, payload: unknown): void {
+  send(type: string, payload: unknown): boolean {
     if (this.channel?.readyState !== 'open') {
-      return
+      return false
     }
     const packet: Packet = { type, payload }
-    this.channel.send(JSON.stringify(packet))
+    // RTCDataChannel.send() can still throw if the channel transitions out of
+    // 'open' between the readyState check above and the actual send (e.g. peer
+    // disconnects mid-call). Treat any send failure the same as a closed
+    // channel so callers like AppController.startP2PGame() report the failure
+    // and keep the host in the lobby instead of letting the exception escape.
+    try {
+      this.channel.send(JSON.stringify(packet))
+    } catch {
+      return false
+    }
+    return true
   }
 
   isConnected(): boolean {

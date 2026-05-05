@@ -3,6 +3,7 @@ import { resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../../app/ac
 import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import type { AppRenderer } from '../types'
+import { buildLayout, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -13,61 +14,39 @@ const POPUP_SECTION_GAP = 10
 const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
-const POPUP_MIN_WIDTH = 180
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
-const COMPACT_DIMENSION_THRESHOLD = 700
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
+const LOBBY_SCENE_KEY = 'cardgame-lobby'
+const CARDGAME_SCENE_KEY = 'cardgame-main'
+const INFO_PANEL_VERTICAL_PADDING = 12
+const INFO_PANEL_LINE_HEIGHT_MULTIPLIER = 1.25
+const CONTROLS_INNER_HORIZONTAL_PADDING = 16
+const MIN_WORD_WRAP_WIDTH = 40
+const RESPONSE_PROMPT_X_OFFSET = 8
+const RESPONSE_PROMPT_Y_OFFSET = 6
+const RESPONSE_PROMPT_BOTTOM_GAP = 4
+const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
+const APPROX_CHAR_WIDTH_RATIO = 0.56
+const MIN_APPROX_CHAR_WIDTH = 6
+const MIN_LOBBY_ROW_HEIGHT = 16
+const DEFAULT_BATTLEFIELD_HEADER_BAND = 22
 
-type OrientationMode = 'vertical' | 'horizontal'
+// Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
+// .player-active / .player-non-active / .log) so both renderers feel consistent.
+const COLOR_BATTLEFIELD_ACTIVE_FILL = 0x1c3a2c
+const COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x2f6a4a
+const COLOR_BATTLEFIELD_NON_ACTIVE_FILL = 0x3a1c1c
+const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0x6a2f2f
+const COLOR_PLAYER_ACTIVE_FILL = 0x14304a
+const COLOR_PLAYER_NON_ACTIVE_FILL = 0x2a1233
+const COLOR_PANEL_STROKE = 0x2a355f
+const COLOR_LOG_PANEL_FILL = 0x0d162e
+const COLOR_LOG_VIEWPORT_FILL = 0x091227
 
 interface CardStyle {
   fill: number
   stroke: number
   text: string
-}
-
-interface SceneLayout {
-  width: number
-  height: number
-  orientation: OrientationMode
-  isCompact: boolean
-  margin: number
-  titleFontSize: string
-  subtitleFontSize: string
-  bodyFontSize: string
-  smallFontSize: string
-  headerTop: number
-  actionButtonWidth: number
-  actionButtonHeight: number
-  actionButtonGap: number
-  cardWidth: number
-  cardHeight: number
-  cardGap: number
-  summaryTopY: number
-  summaryBlockGap: number
-  battlefieldTopY: number
-  battlefieldHeight: number
-  battlefieldTopRowY: number
-  battlefieldBottomRowY: number
-  handActorY: number
-  handCardsY: number
-  controlsStartY: number
-  responseInfoY: number
-  statusBottomOffset: number
-  popupMaxWidth: number
-  popupButtonHeight: number
-  menuPopupWidth: number
-  menuPopupHeight: number
-  menuPopupPadding: number
-  menuSectionGap: number
-  menuTitleHeight: number
-  menuLogViewportHeight: number
-}
-
-function clamp(value: number, minValue: number, maxValue: number): number {
-  const lower = Math.min(minValue, maxValue)
-  const upper = Math.max(minValue, maxValue)
-  return Math.min(upper, Math.max(lower, value))
 }
 
 function readStoredOrientationMode(): OrientationMode | null {
@@ -90,121 +69,13 @@ function persistOrientationMode(mode: OrientationMode): void {
   }
 }
 
-function orientationFromViewport(width: number, height: number): OrientationMode {
-  return width >= height ? 'horizontal' : 'vertical'
-}
-
-function buildLayout(width: number, height: number, orientation: OrientationMode): SceneLayout {
-  const safeWidth = width > 0 ? width : 1
-  const safeHeight = height > 0 ? height : 1
-  const minDimension = Math.min(safeWidth, safeHeight)
-  const isCompact = minDimension < COMPACT_DIMENSION_THRESHOLD
-  const margin = Math.min(clamp(minDimension * 0.02, 10, 28), safeWidth / 2, safeHeight / 2)
-  const contentWidth = Math.max(0, safeWidth - margin * 2)
-  const bodyFontPx = clamp(minDimension * 0.018, 12, 18)
-  const smallFontPx = clamp(bodyFontPx * 0.86, 10, 16)
-  const subtitleFontPx = clamp(bodyFontPx * 1.08, 13, 22)
-  const titleFontPx = clamp(bodyFontPx * 1.55, 18, 34)
-  const titleFontSize = `${Math.round(titleFontPx)}px`
-  const subtitleFontSize = `${Math.round(subtitleFontPx)}px`
-  const bodyFontSize = `${Math.round(bodyFontPx)}px`
-  const smallFontSize = `${Math.round(smallFontPx)}px`
-  const actionButtonHeight = clamp(minDimension * 0.05, 32, 48)
-  const actionButtonWidth = Math.min(
-    contentWidth,
-    clamp(
-      safeWidth * (orientation === 'vertical' ? 0.36 : 0.24),
-      150,
-      orientation === 'vertical' ? 320 : 260,
-    ),
-  )
-  const actionButtonGap = clamp(actionButtonHeight * 0.2, 6, 12)
-  const cardWidth = clamp(safeWidth * (orientation === 'vertical' ? 0.15 : 0.11), 70, 132)
-  const cardHeight = clamp(cardWidth * 1.35, 98, 182)
-  const cardGap = clamp(cardWidth * 1.08, 76, 170)
-
-  const headerTop = margin
-  const leftHeaderTextHeight = titleFontPx + subtitleFontPx + margin
-  const rightButtonsHeight = actionButtonHeight * 2 + actionButtonGap
-  const headerHeight = Math.max(leftHeaderTextHeight, rightButtonsHeight)
-  const summaryTopY = headerTop + headerHeight + clamp(minDimension * 0.01, 8, 16)
-  const summaryBlockGap = clamp(bodyFontPx * 4.4, 58, 92)
-  const battlefieldTopY = summaryTopY + summaryBlockGap * 2 + clamp(minDimension * 0.012, 8, 18)
-  const battlefieldHeight = clamp(safeHeight * (orientation === 'vertical' ? 0.22 : 0.28), cardHeight * 1.9, safeHeight * 0.36)
-  const battlefieldTopRowY = battlefieldTopY + battlefieldHeight * 0.34
-  const battlefieldBottomRowY = battlefieldTopY + battlefieldHeight * 0.74
-  const handActorY = battlefieldTopY + battlefieldHeight + clamp(minDimension * 0.017, 12, 26)
-  const handCardsY = handActorY + clamp(minDimension * 0.06, 42, 84)
-  const controlsStartY = handActorY + clamp(minDimension * 0.032, 20, 42)
-  const responseInfoY = controlsStartY
-  const statusBottomOffset = clamp(minDimension * 0.018, 14, 24)
-  const popupAvailableWidth = Math.max(0, safeWidth - margin * 2)
-  const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
-  const popupMaxWidth = Math.min(popupAvailableWidth, Math.max(POPUP_MIN_WIDTH, popupTargetWidth))
-  const popupButtonHeight = clamp(actionButtonHeight * 1.05, 36, 48)
-  const menuPopupPadding = isCompact ? 12 : 16
-  const menuSectionGap = isCompact ? 8 : 10
-  const menuTitleHeight = clamp(actionButtonHeight * 0.95, 30, 46)
-  const menuPopupMaxWidth = Math.max(1, popupAvailableWidth)
-  const menuPopupWidth = clamp(
-    orientation === 'vertical' ? 560 : 760,
-    Math.min(POPUP_MIN_WIDTH, menuPopupMaxWidth),
-    menuPopupMaxWidth,
-  )
-  const menuPopupMaxHeight = Math.max(1, safeHeight - margin * 2)
-  const menuPopupHeight = clamp(
-    safeHeight * (orientation === 'vertical' ? 0.78 : 0.72),
-    Math.min(260, menuPopupMaxHeight),
-    menuPopupMaxHeight,
-  )
-  const menuLogViewportHeight = Math.max(
-    80,
-    menuPopupHeight - (
-      menuPopupPadding * 2
-      + menuTitleHeight
-      + menuSectionGap * 3
-      + popupButtonHeight * 3
-      + 28
-    ),
-  )
-
-  return {
-    width: safeWidth,
-    height: safeHeight,
-    orientation,
-    isCompact,
-    margin,
-    titleFontSize,
-    subtitleFontSize,
-    bodyFontSize,
-    smallFontSize,
-    headerTop,
-    actionButtonWidth,
-    actionButtonHeight,
-    actionButtonGap,
-    cardWidth,
-    cardHeight,
-    cardGap,
-    summaryTopY,
-    summaryBlockGap,
-    battlefieldTopY,
-    battlefieldHeight,
-    battlefieldTopRowY,
-    battlefieldBottomRowY,
-    handActorY,
-    handCardsY,
-    controlsStartY,
-    responseInfoY,
-    statusBottomOffset,
-    popupMaxWidth,
-    popupButtonHeight,
-    menuPopupWidth,
-    menuPopupHeight,
-    menuPopupPadding,
-    menuSectionGap,
-    menuTitleHeight,
-    menuLogViewportHeight,
-  }
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 function cardStyleForLand(name: string): CardStyle {
@@ -225,16 +96,273 @@ function cardStyleForLand(name: string): CardStyle {
   }
 }
 
+function recordingMetadataText(view: AppViewModel): string {
+  const meta = view.recording.metadata
+  if (!meta) {
+    return 'No recording loaded.'
+  }
+  return `Seed ${meta.seed} • ${meta.mode} • ${meta.controllers[0]}/${meta.controllers[1]} • Completed ${meta.completed ? 'Yes' : 'No'}`
+}
+
+function buildButton(
+  scene: Phaser.Scene,
+  label: string,
+  x: number,
+  y: number,
+  fontSize: string,
+  width: number,
+  height: number,
+  onClick: () => void,
+): Phaser.GameObjects.Container {
+  const background = scene.add.rectangle(0, 0, width, height, 0x1c2f63).setStrokeStyle(1, 0x365092)
+  const text = scene.add.text(0, 0, label, {
+    color: '#e5ecf5',
+    fontSize,
+    align: 'center',
+    wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
+  }).setOrigin(0.5)
+  const button = scene.add.container(x, y, [background, text])
+  button.setSize(width, height)
+  button.setInteractive({ useHandCursor: true })
+  button.on('pointerup', onClick)
+  return button
+}
+
+class LobbyScene extends Phaser.Scene {
+  private readonly rendererRef: PhaserRenderer
+  private rootContainer: Phaser.GameObjects.Container | null = null
+  private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
+  private lastLayoutSignature = ''
+
+  constructor(rendererRef: PhaserRenderer) {
+    super(LOBBY_SCENE_KEY)
+    this.rendererRef = rendererRef
+  }
+
+  handleOrientationChange(): void {
+    this.renderView(this.rendererRef.currentView)
+  }
+
+  create(): void {
+    this.rootContainer = this.add.container(0, 0)
+    this.updateLayout()
+
+    // Save the resize listener so we can detach it on scene shutdown. Without
+    // this, every lobby↔game scene transition would reuse the same scene
+    // instance and rerun create(), accumulating duplicate listeners that fire
+    // on later resizes.
+    const onResize = (): void => {
+      if (this.updateLayout()) {
+        this.renderView(this.rendererRef.currentView)
+      }
+    }
+    this.scale.on('resize', onResize)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off('resize', onResize)
+    })
+
+    this.renderView(this.rendererRef.currentView)
+  }
+
+  private updateLayout(): boolean {
+    const width = this.scale.gameSize.width ?? this.scale.width ?? BASE_WIDTH
+    const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
+    const orientation = this.rendererRef.orientationMode
+    this.currentLayout = buildLayout(width, height, orientation)
+    const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
+    const changed = signature !== this.lastLayoutSignature
+    this.lastLayoutSignature = signature
+    return changed
+  }
+
+  private orientationButtonLabel(): string {
+    return this.rendererRef.orientationMode === 'vertical'
+      ? 'Switch to landscape'
+      : 'Switch to portrait'
+  }
+
+  renderView(_view: AppViewModel | null): void {
+    this.updateLayout()
+    if (!this.rootContainer) {
+      return
+    }
+    this.rootContainer.removeAll(true)
+
+    const left = this.currentLayout.margin
+    const top = this.currentLayout.headerTop
+    const headerRight = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2
+
+    this.rootContainer.add(this.add.text(left, top, 'Basic Land Game (Phaser Renderer)', {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.titleFontSize,
+    }))
+    this.rootContainer.add(this.add.text(left, top + this.currentLayout.actionButtonHeight + 6, 'Land-only 2-player game with local AI and optional P2P mode.', {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.subtitleFontSize,
+      wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
+    }))
+    this.rootContainer.add(buildButton(
+      this,
+      this.orientationButtonLabel(),
+      headerRight,
+      top + this.currentLayout.actionButtonHeight / 2,
+      this.currentLayout.bodyFontSize,
+      this.currentLayout.actionButtonWidth,
+      this.currentLayout.actionButtonHeight,
+      () => {
+        this.rendererRef.toggleOrientationMode()
+      },
+    ))
+
+    const modes: Array<{ mode: Mode; label: string }> = [
+      { mode: 'local-hvh', label: 'Local Human vs Human' },
+      { mode: 'local-hvai', label: 'Local Human vs AI' },
+      { mode: 'local-aivai', label: 'Local AI vs AI' },
+      { mode: 'p2p-host', label: 'P2P Host' },
+      { mode: 'p2p-join', label: 'P2P Join' },
+    ]
+
+    const view = this.rendererRef.currentView
+    const hasLocalSave = view?.recording?.hasLocalSave ?? false
+    // Lobby recorder entry points so users can review or replay a saved match
+    // without having to start a throwaway game first (mirrors the DOM lobby
+    // and the previous Phaser overlay). The Browser entry is only enabled
+    // when a saved recording actually exists.
+    const recorderEntries: Array<{ key: string; label: string; disabled?: boolean; onClick: () => void }> = [
+      {
+        key: 'load-browser',
+        label: 'Load Recording from Browser',
+        disabled: !hasLocalSave,
+        onClick: () => { this.rendererRef.controller?.loadRecordingFromLocalStorage() },
+      },
+      {
+        key: 'load-file',
+        label: 'Load Recording from File',
+        onClick: () => { this.rendererRef.openRecordingFilePicker() },
+      },
+    ]
+
+    const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
+    // Lobby buttons (5 modes + 2 recorder + 1 renderer-switch) need to fit
+    // between the header/subtitle area and the status footer on every
+    // viewport. Derive Y positions from the available body region
+    // (compressing button height and gap if necessary) so options like P2P
+    // Join, recorder loads, and the renderer switch stay on-screen even in
+    // short landscape phone layouts.
+    const subtitleBottom = top + this.currentLayout.actionButtonHeight + 6
+      + Math.max(this.currentLayout.actionButtonHeight, 28)
+    const lobbyBodyTop = subtitleBottom + 16
+    const lobbyBodyBottom = this.currentLayout.height
+      - this.currentLayout.statusBottomOffset - this.currentLayout.margin
+    const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
+    const totalRows = modes.length + recorderEntries.length + 1 // mode buttons + recorder buttons + renderer-switch
+    const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
+    const desiredGap = this.currentLayout.isCompact ? 8 : 14
+    const desiredRowHeight = desiredButtonHeight + desiredGap
+    // Keep row spacing and button height synchronized so short lobbies never
+    // overlap adjacent rows. A fixed minimum button height larger than the
+    // scaled row height can cause stacked mode/recorder actions to collide.
+    const rowScale = Math.min(1, lobbyBodyHeight / Math.max(1, totalRows * desiredRowHeight))
+    const rowHeight = desiredRowHeight * rowScale
+    if (rowHeight < MIN_LOBBY_ROW_HEIGHT) {
+      this.rootContainer?.add(this.add.text(
+        left,
+        lobbyBodyTop,
+        'Viewport too short to show lobby actions. Increase window height.',
+        {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+          wordWrap: { width: buttonWidth },
+        },
+      ))
+      return
+    }
+    // Keep button height at or below the row step so vertically adjacent lobby
+    // buttons never overlap when the available body space is heavily compressed.
+    const buttonHeight = Math.min(desiredButtonHeight, rowHeight)
+    const modeStartY = lobbyBodyTop + buttonHeight / 2
+
+    modes.forEach((entry, index) => {
+      this.rootContainer?.add(buildButton(
+        this,
+        entry.label,
+        left + buttonWidth / 2,
+        modeStartY + index * rowHeight,
+        this.currentLayout.bodyFontSize,
+        buttonWidth,
+        buttonHeight,
+        () => {
+          this.rendererRef.controller?.startGame(entry.mode)
+        },
+      ))
+    })
+
+    recorderEntries.forEach((entry, index) => {
+      const button = buildButton(
+        this,
+        entry.label,
+        left + buttonWidth / 2,
+        modeStartY + (modes.length + index) * rowHeight,
+        this.currentLayout.bodyFontSize,
+        buttonWidth,
+        buttonHeight,
+        entry.disabled ? () => {} : entry.onClick,
+      )
+      if (entry.disabled) {
+        button.setAlpha(0.4)
+        button.disableInteractive()
+      }
+      this.rootContainer?.add(button)
+    })
+
+    this.rootContainer.add(buildButton(
+      this,
+      'Switch to DOM renderer',
+      left + buttonWidth / 2,
+      modeStartY + (modes.length + recorderEntries.length) * rowHeight,
+      this.currentLayout.bodyFontSize,
+      buttonWidth,
+      buttonHeight,
+      () => {
+        window.location.search = '?renderer=dom'
+      },
+    ))
+
+    // Status footer (renders any controller status strings such as P2P signaling errors).
+    const status = this.rendererRef.currentView?.status ?? ''
+    if (status) {
+      this.rootContainer.add(this.add.text(
+        this.currentLayout.margin,
+        this.currentLayout.height - this.currentLayout.statusBottomOffset,
+        status,
+        {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.bodyFontSize,
+          wordWrap: { width: Math.max(40, this.currentLayout.width - this.currentLayout.margin * 2) },
+        },
+      ))
+    }
+  }
+}
+
 class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRenderer
   private rootContainer: Phaser.GameObjects.Container | null = null
   private statusText: Phaser.GameObjects.Text | null = null
   private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
+  private pendingTargetPickerA11yEntries: Array<{ key: string; label: string; onSelect: () => void }> = []
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
   private menuLogScrollOffset: number | null = null
   private menuLogPinnedToBottom = true
+  private inSceneLogScrollOffset: number | null = null
+  private inSceneLogPinnedToBottom = true
+  // Tracks the seed of the game currently rendered in this scene. When
+  // the seed changes (e.g. via rematch) we reset the log scroll state so
+  // the next game opens with the in-scene log pinned to the newest entry
+  // instead of preserving the stale offset from the previous match.
+  private lastRenderedSeed: number | null = null
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
@@ -249,7 +377,7 @@ class CardgameScene extends Phaser.Scene {
   }
 
   constructor(rendererRef: PhaserRenderer) {
-    super('cardgame-main')
+    super(CARDGAME_SCENE_KEY)
     this.rendererRef = rendererRef
   }
 
@@ -265,22 +393,30 @@ class CardgameScene extends Phaser.Scene {
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
+    // Reset per-match scroll state. The Phaser game keeps a single
+    // CardgameScene instance and re-runs create() on each scene start, so any
+    // log scroll offset from a previous game would otherwise persist and open
+    // the next match scrolled away from the newest log entries.
+    this.inSceneLogScrollOffset = null
+    this.inSceneLogPinnedToBottom = true
+    this.lastRenderedSeed = null
     this.updateLayout()
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
       color: '#9db0d9',
       fontSize: this.currentLayout.bodyFontSize,
     })
 
-    this.input.on('drag', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
+    const onDrag = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number): void => {
       if (this.menuOpen) {
         return
       }
       const draggable = object as Phaser.GameObjects.Container
       draggable.x = dragX
       draggable.y = dragY
-    })
+    }
+    this.input.on('drag', onDrag)
 
-    this.input.on('dragend', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean) => {
+    const onDragEnd = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
       const card = object as Phaser.GameObjects.Container
       if (this.menuOpen) {
         this.snapCardToOrigin(card)
@@ -289,9 +425,10 @@ class CardgameScene extends Phaser.Scene {
       if (!dropped) {
         this.snapCardToOrigin(card)
       }
-    })
+    }
+    this.input.on('dragend', onDragEnd)
 
-    this.input.on('drop', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone) => {
+    const onDrop = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone): void => {
       if (this.menuOpen) {
         return
       }
@@ -320,12 +457,23 @@ class CardgameScene extends Phaser.Scene {
 
       this.snapCardToOrigin(card)
       this.showTargetPicker(game, cardId, resolution.options)
-    })
+    }
+    this.input.on('drop', onDrop)
 
-    this.scale.on('resize', () => {
+    // Detach the resize listener on scene shutdown so a stop/start cycle (e.g.
+    // when the user goes Back to Lobby and then starts a new match) does not
+    // accumulate duplicate listeners on the reused scene instance.
+    const onResize = (): void => {
       if (this.updateLayout()) {
         this.renderView(this.rendererRef.currentView)
       }
+    }
+    this.scale.on('resize', onResize)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off('resize', onResize)
+      this.input.off('drag', onDrag)
+      this.input.off('dragend', onDragEnd)
+      this.input.off('drop', onDrop)
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -336,7 +484,7 @@ class CardgameScene extends Phaser.Scene {
     const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
     const orientation = this.rendererRef.orientationMode
     this.currentLayout = buildLayout(width, height, orientation)
-    const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
+    const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}:${this.currentLayout.isCollapsed ? 'collapsed' : 'split'}`
     const changed = signature !== this.lastLayoutSignature
     this.lastLayoutSignature = signature
     return changed
@@ -359,26 +507,43 @@ class CardgameScene extends Phaser.Scene {
     this.menuOpen = wasMenuOpen
   }
 
-  private xForCard(index: number, count: number): number {
+  private xForCardInBoardColumn(index: number, count: number): number {
     if (count <= 1) {
-      return this.currentLayout.width / 2
+      return this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
     }
 
-    const minX = this.currentLayout.margin + this.currentLayout.cardWidth / 2
-    const maxX = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.cardWidth / 2
+    const minX = this.currentLayout.boardColumnLeft + this.currentLayout.cardWidth / 2 + 4
+    const maxX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - this.currentLayout.cardWidth / 2 - 4
+    if (maxX <= minX) {
+      return (minX + maxX) / 2
+    }
     const maxGap = (maxX - minX) / (count - 1)
     const gap = Math.min(this.currentLayout.cardGap, maxGap)
     const usedWidth = gap * (count - 1)
     const availableWidth = maxX - minX
-    const startX = minX + (availableWidth - usedWidth) / 2 // Center the card spread inside the available battlefield width.
+    const startX = minX + (availableWidth - usedWidth) / 2 // Center the card spread inside the available column.
     return startX + index * gap
   }
 
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
     const game = view?.game ?? null
-    const currentMenuSignature = this.menuOpen && game
-      ? this.computeMenuSignature(game.log)
+    // Reset the in-scene log scroll state when the seed changes, e.g. on
+    // a rematch. Without this, the reused CardgameScene would inherit the
+    // previous match's scroll offset (`inSceneLogPinnedToBottom = false`)
+    // and open the new game scrolled away from the newest log entries.
+    if (view && game) {
+      const currentSeed = view.seed
+      if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
+        this.inSceneLogScrollOffset = null
+        this.inSceneLogPinnedToBottom = true
+      }
+      this.lastRenderedSeed = currentSeed
+    } else {
+      this.lastRenderedSeed = null
+    }
+    const currentMenuSignature = this.menuOpen && view && game
+      ? this.computeMenuSignature(view)
       : null
     let preservedOverlay: Phaser.GameObjects.Container | null = null
     if (
@@ -401,7 +566,6 @@ class CardgameScene extends Phaser.Scene {
     if (!view.game) {
       preservedOverlay?.destroy(true)
       this.closeMenuOverlay()
-      this.renderLobby()
       this.lastMenuSignature = null
       return
     }
@@ -411,16 +575,20 @@ class CardgameScene extends Phaser.Scene {
       this.menuOverlay = preservedOverlay
       this.rootContainer.add(preservedOverlay)
     } else if (this.menuOpen) {
-      this.openMenuOverlay(view.game.log)
+      this.openMenuOverlay(view)
     }
     this.lastMenuSignature = this.menuOpen && this.menuOverlay
-      ? this.computeMenuSignature(view.game.log)
+      ? this.computeMenuSignature(view)
       : null
   }
 
-  private computeMenuSignature(lines: string[]): string {
+  private computeMenuSignature(view: AppViewModel): string {
+    const lines = view.game?.log ?? []
     const last = lines.length > 0 ? lines[lines.length - 1] : ''
-    return `${this.lastLayoutSignature}|${lines.length}|${last}`
+    const recordingMeta = view.recording.metadata
+      ? `${view.recording.metadata.seed}:${view.recording.metadata.mode}:${view.recording.metadata.completed ? 1 : 0}`
+      : 'none'
+    return `${this.lastLayoutSignature}|seed:${view.seed}|${lines.length}|${last}|recording:${recordingMeta}|replay:${view.replay.active}:${view.replay.step}/${view.replay.totalSteps}:${view.replay.isPlaying}|saved:${view.recording.hasLocalSave ? 1 : 0}`
   }
 
   private createButton(
@@ -431,18 +599,7 @@ class CardgameScene extends Phaser.Scene {
     width = 240,
     height = 44,
   ): Phaser.GameObjects.Container {
-    const background = this.add.rectangle(0, 0, width, height, 0x1c2f63).setStrokeStyle(1, 0x365092)
-    const text = this.add.text(0, 0, label, {
-      color: '#e5ecf5',
-      fontSize: this.currentLayout.bodyFontSize,
-      align: 'center',
-      wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
-    }).setOrigin(0.5)
-    const button = this.add.container(x, y, [background, text])
-    button.setSize(width, height)
-    button.setInteractive({ useHandCursor: true })
-    button.on('pointerup', onClick)
-    return button
+    return buildButton(this, label, x, y, this.currentLayout.bodyFontSize, width, height, onClick)
   }
 
   private bindScrollableViewport(
@@ -508,51 +665,6 @@ class CardgameScene extends Phaser.Scene {
     })
   }
 
-  private renderLobby(): void {
-    const left = this.currentLayout.margin
-    const top = this.currentLayout.headerTop
-    const headerRight = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2
-
-    this.rootContainer?.add(this.add.text(left, top, 'Basic Land Game (Phaser Renderer)', {
-      color: '#e5ecf5',
-      fontSize: this.currentLayout.titleFontSize,
-    }))
-    this.rootContainer?.add(this.add.text(left, top + this.currentLayout.actionButtonHeight + 6, 'Land-only 2-player game with local AI and optional P2P mode.', {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.subtitleFontSize,
-      wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
-    }))
-    this.rootContainer?.add(this.createButton(this.orientationButtonLabel(), headerRight, top + this.currentLayout.actionButtonHeight / 2, () => {
-      this.rendererRef.toggleOrientationMode()
-    }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight))
-
-    const modes: Array<{ mode: Mode; label: string }> = [
-      { mode: 'local-hvh', label: 'Local Human vs Human' },
-      { mode: 'local-hvai', label: 'Local Human vs AI' },
-      { mode: 'local-aivai', label: 'Local AI vs AI' },
-      { mode: 'p2p-host', label: 'P2P Host' },
-      { mode: 'p2p-join', label: 'P2P Join' },
-    ]
-
-    const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
-    const modeStartY = top + this.currentLayout.actionButtonHeight * 2 + 40
-    const modeGap = this.currentLayout.isCompact ? 46 : 58
-
-    modes.forEach((entry, index) => {
-      this.rootContainer?.add(
-        this.createButton(entry.label, left + buttonWidth / 2, modeStartY + index * modeGap, () => {
-          this.rendererRef.controller?.startGame(entry.mode)
-        }, buttonWidth, this.currentLayout.isCompact ? 38 : 44),
-      )
-    })
-
-    this.rootContainer?.add(
-      this.createButton('Switch to DOM renderer', left + buttonWidth / 2, modeStartY + modes.length * modeGap + 24, () => {
-        window.location.search = '?renderer=dom'
-      }, buttonWidth, this.currentLayout.isCompact ? 38 : 42),
-    )
-  }
-
   private renderGame(view: AppViewModel): void {
     const game = view.game
     if (!game) {
@@ -560,96 +672,184 @@ class CardgameScene extends Phaser.Scene {
     }
 
     const left = this.currentLayout.margin
-    const headerRight = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2
 
-    this.rootContainer?.add(this.add.text(left, this.currentLayout.headerTop, `Turn ${game.turn} • Phase: ${game.phase}`, {
-      color: '#e5ecf5',
+    // Header: Menu button on the left, then turn/phase label. No Rematch in the
+    // header — Rematch lives under the Menu (mirrors DOM PR #13 menu-section 1).
+    const menuButtonWidth = Math.min(this.currentLayout.actionButtonWidth, 180)
+    this.rootContainer?.add(this.createButton('☰ Menu', left + menuButtonWidth / 2, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, () => {
+      this.openMenuOverlay(view)
+    }, menuButtonWidth, this.currentLayout.actionButtonHeight))
+
+    const headerTextX = left + menuButtonWidth + 16
+    const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
+    // Winner text used to render as a separate second header row, but the
+    // layout only reserves a single-row header before bodyTop, so the banner
+    // spilled on top of the board. Inline it into the header text instead so
+    // everything stays within the reserved header strip.
+    const headerLabel = game.winnerText
+      ? `${game.winnerText} • Turn ${game.turn} • Phase: ${game.phase}`
+      : `Turn ${game.turn} • Phase: ${game.phase}`
+    // Cap the header text to a single line so the inlined winner banner can
+    // never wrap onto a second row and spill into bodyTop / overlap the log
+    // and board area on collapsed phone-sized layouts. Phaser truncates the
+    // text at the line boundary when maxLines is set, which is preferable to
+    // overflowing the reserved single-row header strip.
+    this.rootContainer?.add(this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, headerLabel, {
+      color: game.winnerText ? '#f7d56b' : '#e5ecf5',
       fontSize: this.currentLayout.titleFontSize,
-    }))
-    this.rootContainer?.add(this.add.text(left, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight + 6, game.winnerText, {
-      color: '#f7d56b',
-      fontSize: this.currentLayout.subtitleFontSize,
-    }))
+      wordWrap: { width: headerTextWidth },
+      maxLines: 1,
+    }).setOrigin(0, 0.5))
 
-    this.rootContainer?.add(this.createButton('Rematch', headerRight, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, () => {
-      this.rendererRef.controller?.rematch()
-    }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight))
-    this.rootContainer?.add(this.createButton('Menu', headerRight, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight + this.currentLayout.actionButtonGap + this.currentLayout.actionButtonHeight / 2, () => {
-      this.openMenuOverlay(game.log)
-    }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight))
-
-    this.renderPlayerSummaries(view)
-    this.renderBattlefield(game)
+    this.renderInSceneLog(game.log)
+    this.renderBattlefields(game)
+    this.renderPlayerInfoBlocks(view)
     this.renderHandAndControls(game)
   }
 
-  private renderPlayerSummaries(view: AppViewModel): void {
+  private renderInfoPanel(
+    bgColor: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    lines: string[],
+  ): void {
+    if (width <= 0 || height <= 0) {
+      return
+    }
+    const safeWidth = width
+    const safeHeight = height
+    const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
+      .setStrokeStyle(1, COLOR_PANEL_STROKE)
+    this.rootContainer?.add(bg)
+    if (lines.length === 0) {
+      return
+    }
+    const text = this.add.text(x + 10, y + 6, lines.join('\n'), {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.bodyFontSize,
+      wordWrap: { width: Math.max(40, safeWidth - 20) },
+    })
+    this.rootContainer?.add(text)
+  }
+
+  private renderPlayerInfoBlocks(view: AppViewModel): void {
     const game = view.game
     if (!game) {
       return
     }
 
-    const active = game.actor
-    const topPlayerIndex = active === 0 ? 1 : 0
-    const bottomPlayerIndex = active
-    const topPlayer = game.players[topPlayerIndex]
-    const bottomPlayer = game.players[bottomPlayerIndex]
+    const activeIndex = game.actor
+    const nonActiveIndex = activeIndex === 0 ? 1 : 0
+    const activePlayer = game.players[activeIndex]
+    const nonActivePlayer = game.players[nonActiveIndex]
 
-    const topSummary = this.add.text(this.currentLayout.margin, this.currentLayout.summaryTopY, [
-      `Top Board • Player ${topPlayerIndex + 1} (${view.controllers[topPlayerIndex]})`,
-      `Hand: ${topPlayer.handCount} • Deck: ${topPlayer.deckCount} • Graveyard: ${topPlayer.graveyardCount}`,
-      `Battlefield: ${topPlayer.battlefield.map((entry) => entry.name).join(', ') || 'None'}`,
-    ], {
-      color: '#c6d4ef',
-      fontSize: this.currentLayout.bodyFontSize,
-      wordWrap: { width: Math.max(40, this.currentLayout.width - this.currentLayout.margin * 2) },
-    })
-    this.rootContainer?.add(topSummary)
+    const nonActiveLines = [
+      `Player ${nonActiveIndex + 1} (${view.controllers[nonActiveIndex]})`,
+      `Hand: ${nonActivePlayer.handCount} • Deck: ${nonActivePlayer.deckCount} • Graveyard: ${nonActivePlayer.graveyardCount}`,
+    ]
+    const infoLineHeight = Math.ceil(parseFloat(this.currentLayout.bodyFontSize) * INFO_PANEL_LINE_HEIGHT_MULTIPLIER)
+    const maxNonActiveLines = Math.max(0, Math.floor((this.currentLayout.nonActiveInfoHeight - INFO_PANEL_VERTICAL_PADDING) / Math.max(1, infoLineHeight)))
+    const visibleNonActiveLines = nonActiveLines.slice(0, maxNonActiveLines)
+    this.renderInfoPanel(
+      COLOR_PLAYER_NON_ACTIVE_FILL,
+      this.currentLayout.boardColumnLeft,
+      this.currentLayout.nonActiveInfoY,
+      this.currentLayout.boardColumnWidth,
+      this.currentLayout.nonActiveInfoHeight,
+      visibleNonActiveLines,
+    )
 
-    const bottomSummary = this.add.text(this.currentLayout.margin, this.currentLayout.summaryTopY + this.currentLayout.summaryBlockGap, [
-      `Bottom Board • Player ${bottomPlayerIndex + 1} (${view.controllers[bottomPlayerIndex]})`,
-      `Hand: ${bottomPlayer.handCount} • Deck: ${bottomPlayer.deckCount} • Graveyard: ${bottomPlayer.graveyardCount}`,
-      `Battlefield: ${bottomPlayer.battlefield.map((entry) => entry.name).join(', ') || 'None'}`,
-    ], {
-      color: '#c6d4ef',
-      fontSize: this.currentLayout.bodyFontSize,
-      wordWrap: { width: Math.max(40, this.currentLayout.width - this.currentLayout.margin * 2) },
-    })
-    this.rootContainer?.add(bottomSummary)
+    const activeLines = [
+      `Player ${activeIndex + 1} (${view.controllers[activeIndex]}) — Active`,
+      `Hand: ${activePlayer.handCount} • Deck: ${activePlayer.deckCount} • Graveyard: ${activePlayer.graveyardCount}`,
+    ]
+    // On tight viewports the layout limits how many lines of active-info text
+    // fit above the controls band (End Turn / response buttons). Render only
+    // that many lines so the text does not spill into the controls band or
+    // the hand strip on short split layouts (e.g. 720x360 horizontal).
+    // During the response phase we show a dedicated "Opponent played …" prompt
+    // above the controls, so hide the active-info summary lines to avoid text
+    // overlap on short split layouts.
+    const allowedActiveLines = game.phase === 'respond'
+      ? 0
+      : Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
+    const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
+    this.renderInfoPanel(
+      COLOR_PLAYER_ACTIVE_FILL,
+      this.currentLayout.boardColumnLeft,
+      this.currentLayout.activeInfoY,
+      this.currentLayout.boardColumnWidth,
+      this.currentLayout.activeInfoHeight,
+      visibleActiveLines,
+    )
   }
 
-  private renderBattlefield(game: GameUiState): void {
-    const zoneX = this.currentLayout.width / 2
-    const zoneY = this.currentLayout.battlefieldTopY + this.currentLayout.battlefieldHeight / 2
-    const zoneWidth = this.currentLayout.width - this.currentLayout.margin * 2
+  private renderBattlefields(game: GameUiState): void {
+    const activeIndex = game.actor
+    const nonActiveIndex = activeIndex === 0 ? 1 : 0
 
-    const zoneBackground = this.add.rectangle(zoneX, zoneY, zoneWidth, this.currentLayout.battlefieldHeight, 0x0f1a3b).setStrokeStyle(2, 0x365092)
-    this.rootContainer?.add(zoneBackground)
+    // Non-active battlefield (top, no drop zone, red tint).
+    const nonActiveX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
+    const nonActiveY = this.currentLayout.nonActiveBattlefieldY + this.currentLayout.nonActiveBattlefieldHeight / 2
+    const nonActiveBg = this.add.rectangle(
+      nonActiveX,
+      nonActiveY,
+      this.currentLayout.boardColumnWidth,
+      this.currentLayout.nonActiveBattlefieldHeight,
+      COLOR_BATTLEFIELD_NON_ACTIVE_FILL,
+    ).setStrokeStyle(2, COLOR_BATTLEFIELD_NON_ACTIVE_STROKE)
+    this.rootContainer?.add(nonActiveBg)
+    this.rootContainer?.add(this.add.text(
+      this.currentLayout.boardColumnLeft + 8,
+      this.currentLayout.nonActiveBattlefieldY + 4,
+      `Player ${nonActiveIndex + 1} Battlefield`,
+      {
+        color: '#f0d2d2',
+        fontSize: this.currentLayout.smallFontSize,
+      },
+    ))
 
-    const title = this.currentLayout.isCompact
-      ? 'Battlefield (drop card here)'
-      : 'Battlefield (drop hand card here)'
+    const nonActiveBattlefield = game.players[nonActiveIndex].battlefield
+    // Reserve a small header band at the top of the battlefield panel so the
+    // "Player N Battlefield" label doesn't overlap the top edge of the cards
+    // rendered inside the panel.
+    const battlefieldHeaderBand = Math.min(
+      DEFAULT_BATTLEFIELD_HEADER_BAND,
+      Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - this.currentLayout.cardHeight),
+    )
+    const nonActiveCardY = this.currentLayout.nonActiveBattlefieldY
+      + battlefieldHeaderBand
+      + Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - battlefieldHeaderBand) / 2
+    for (let index = 0; index < nonActiveBattlefield.length; index += 1) {
+      const card = nonActiveBattlefield[index]
+      this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, nonActiveBattlefield.length), nonActiveCardY, card.name))
+    }
 
-    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.battlefieldTopY - (this.currentLayout.actionButtonHeight * 0.65), title, {
-      color: '#e5ecf5',
-      fontSize: this.currentLayout.subtitleFontSize,
-    }))
+    // Active battlefield (below non-active, drop zone enabled, green tint).
+    const activeX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
+    const activeY = this.currentLayout.activeBattlefieldY + this.currentLayout.activeBattlefieldHeight / 2
+    const activeBg = this.add.rectangle(
+      activeX,
+      activeY,
+      this.currentLayout.boardColumnWidth,
+      this.currentLayout.activeBattlefieldHeight,
+      COLOR_BATTLEFIELD_ACTIVE_FILL,
+    ).setStrokeStyle(2, COLOR_BATTLEFIELD_ACTIVE_STROKE)
+    this.rootContainer?.add(activeBg)
+    this.rootContainer?.add(this.add.text(
+      this.currentLayout.boardColumnLeft + 8,
+      this.currentLayout.activeBattlefieldY + 4,
+      `Player ${activeIndex + 1} Battlefield (drop card here)`,
+      {
+        color: '#d2f0d8',
+        fontSize: this.currentLayout.smallFontSize,
+      },
+    ))
 
-    const active = game.actor
-    const topPlayerIndex = active === 0 ? 1 : 0
-    const bottomPlayerIndex = active
-
-    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.battlefieldTopRowY - this.currentLayout.cardHeight / 2 - (this.currentLayout.actionButtonHeight * 0.5), `Top: Player ${topPlayerIndex + 1}`, {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.smallFontSize,
-    }))
-    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.battlefieldBottomRowY - this.currentLayout.cardHeight / 2 - (this.currentLayout.actionButtonHeight * 0.5), `Bottom (active): Player ${bottomPlayerIndex + 1}`, {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.smallFontSize,
-    }))
-
-    const dropZone = this.add.zone(zoneX, zoneY, zoneWidth, this.currentLayout.battlefieldHeight)
-    dropZone.setRectangleDropZone(zoneWidth, this.currentLayout.battlefieldHeight)
+    const dropZone = this.add.zone(activeX, activeY, this.currentLayout.boardColumnWidth, this.currentLayout.activeBattlefieldHeight)
+    dropZone.setRectangleDropZone(this.currentLayout.boardColumnWidth, this.currentLayout.activeBattlefieldHeight)
     dropZone.once(Phaser.GameObjects.Events.DESTROY, () => {
       if (this.battlefieldDropZone === dropZone) {
         this.battlefieldDropZone = null
@@ -658,16 +858,162 @@ class CardgameScene extends Phaser.Scene {
     this.battlefieldDropZone = dropZone
     this.rootContainer?.add(dropZone)
 
-    const topBattlefield = game.players[topPlayerIndex].battlefield
-    for (let index = 0; index < topBattlefield.length; index += 1) {
-      const card = topBattlefield[index]
-      this.rootContainer?.add(this.renderStaticCard(this.xForCard(index, topBattlefield.length), this.currentLayout.battlefieldTopRowY, card.name))
+    const activeBattlefield = game.players[activeIndex].battlefield
+    // Reserve the same header band as the non-active row so the active title
+    // sits in its own padding instead of overlapping the rendered cards.
+    const activeHeaderBand = Math.min(
+      DEFAULT_BATTLEFIELD_HEADER_BAND,
+      Math.max(0, this.currentLayout.activeBattlefieldHeight - this.currentLayout.cardHeight),
+    )
+    const activeCardY = this.currentLayout.activeBattlefieldY
+      + activeHeaderBand
+      + Math.max(0, this.currentLayout.activeBattlefieldHeight - activeHeaderBand) / 2
+    for (let index = 0; index < activeBattlefield.length; index += 1) {
+      const card = activeBattlefield[index]
+      this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, activeBattlefield.length), activeCardY, card.name))
+    }
+  }
+
+  private renderInSceneLog(lines: string[]): void {
+    const x = this.currentLayout.logColumnLeft
+    const y = this.currentLayout.logColumnTop
+    const width = this.currentLayout.logColumnWidth
+    const height = this.currentLayout.logColumnHeight
+
+    const panelBg = this.add.rectangle(
+      x + width / 2,
+      y + height / 2,
+      width,
+      height,
+      COLOR_LOG_PANEL_FILL,
+    ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    this.rootContainer?.add(panelBg)
+
+    const padding = 10
+    const headingHeight = Math.max(20, this.currentLayout.actionButtonHeight * 0.6)
+    const heading = this.add.text(x + padding, y + 6, 'Replay Log', {
+      color: '#e5ecf5',
+      fontSize: this.currentLayout.subtitleFontSize,
+    })
+    this.rootContainer?.add(heading)
+
+    const viewportTop = y + 6 + headingHeight
+    const viewportHeight = Math.max(40, height - (6 + headingHeight) - padding)
+    const viewportLeft = x + padding
+    const viewportWidth = Math.max(40, width - padding * 2)
+
+    const viewportBg = this.add.rectangle(
+      viewportLeft + viewportWidth / 2,
+      viewportTop + viewportHeight / 2,
+      viewportWidth,
+      viewportHeight,
+      COLOR_LOG_VIEWPORT_FILL,
+      0.6,
+    ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    viewportBg.setInteractive()
+    this.rootContainer?.add(viewportBg)
+
+    const logDisplayText = lines.length > 0 ? lines.join('\n') : 'No log entries yet.'
+    const logWrapWidth = Math.max(40, viewportWidth - 12)
+    const sceneState = this as typeof this & {
+      inSceneLogContent?: Phaser.GameObjects.Container
+      inSceneLogText?: Phaser.GameObjects.Text
+      inSceneLogMaskGraphics?: Phaser.GameObjects.Graphics
+      inSceneLogMask?: Phaser.Display.Masks.GeometryMask
+      inSceneLogRenderedText?: string
+      inSceneLogRenderedWrapWidth?: number
+      inSceneLogRenderedFontSize?: string | number
     }
 
-    const bottomBattlefield = game.players[bottomPlayerIndex].battlefield
-    for (let index = 0; index < bottomBattlefield.length; index += 1) {
-      const card = bottomBattlefield[index]
-      this.rootContainer?.add(this.renderStaticCard(this.xForCard(index, bottomBattlefield.length), this.currentLayout.battlefieldBottomRowY, card.name))
+    let logContent = sceneState.inSceneLogContent
+    if (!logContent || !logContent.active) {
+      logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
+      sceneState.inSceneLogContent = logContent
+    } else {
+      logContent.setPosition(viewportLeft + 6, viewportTop + 6)
+    }
+    this.rootContainer?.add(logContent)
+
+    let logText = sceneState.inSceneLogText
+    if (!logText || !logText.active) {
+      logText = this.add.text(0, 0, logDisplayText, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: logWrapWidth },
+      }).setOrigin(0, 0)
+      sceneState.inSceneLogText = logText
+      sceneState.inSceneLogRenderedText = logDisplayText
+      sceneState.inSceneLogRenderedWrapWidth = logWrapWidth
+      sceneState.inSceneLogRenderedFontSize = this.currentLayout.smallFontSize
+    } else {
+      logText.setPosition(0, 0)
+      if (sceneState.inSceneLogRenderedWrapWidth !== logWrapWidth) {
+        logText.setWordWrapWidth(logWrapWidth, true)
+        sceneState.inSceneLogRenderedWrapWidth = logWrapWidth
+      }
+      if (sceneState.inSceneLogRenderedFontSize !== this.currentLayout.smallFontSize) {
+        logText.setFontSize(this.currentLayout.smallFontSize)
+        sceneState.inSceneLogRenderedFontSize = this.currentLayout.smallFontSize
+      }
+      if (sceneState.inSceneLogRenderedText !== logDisplayText) {
+        logText.setText(logDisplayText)
+        sceneState.inSceneLogRenderedText = logDisplayText
+      }
+    }
+    if (!logContent.list.includes(logText)) {
+      logContent.add(logText)
+    }
+
+    let logMask = sceneState.inSceneLogMaskGraphics
+    if (!logMask || !logMask.active) {
+      logMask = this.add.graphics()
+      logMask.setVisible(false)
+      sceneState.inSceneLogMaskGraphics = logMask
+      sceneState.inSceneLogMask = logMask.createGeometryMask()
+    } else {
+      logMask.clear()
+    }
+    logMask.fillStyle(0xffffff)
+    logMask.fillRect(viewportLeft, viewportTop, viewportWidth, viewportHeight)
+    this.rootContainer?.add(logMask)
+    if (sceneState.inSceneLogMask) {
+      logContent.setMask(sceneState.inSceneLogMask)
+    }
+
+    const maxScroll = Math.max(0, logText.height + 12 - viewportHeight)
+    let scrollOffset: number
+    if (this.inSceneLogScrollOffset === null || this.inSceneLogPinnedToBottom) {
+      scrollOffset = maxScroll
+    } else {
+      scrollOffset = Phaser.Math.Clamp(this.inSceneLogScrollOffset, 0, maxScroll)
+    }
+    this.inSceneLogScrollOffset = scrollOffset
+    this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
+    logContent.y = viewportTop + 6 - scrollOffset
+
+    if (maxScroll > 0) {
+      const applyScroll = (deltaY: number): void => {
+        scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
+        this.inSceneLogScrollOffset = scrollOffset
+        this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
+        logContent.y = viewportTop + 6 - scrollOffset
+      }
+      // The in-scene log lives directly on the root container (not on an
+      // overlay container offset from origin), so we use a thin proxy whose
+      // origin is (0,0) for bindScrollableViewport bounds math.
+      const proxyOverlay = this.add.container(0, 0)
+      this.rootContainer?.add(proxyOverlay)
+      this.bindScrollableViewport(
+        proxyOverlay,
+        viewportBg,
+        {
+          left: viewportLeft,
+          right: viewportLeft + viewportWidth,
+          top: viewportTop,
+          bottom: viewportTop + viewportHeight,
+        },
+        applyScroll,
+      )
     }
   }
 
@@ -688,13 +1034,8 @@ class CardgameScene extends Phaser.Scene {
     const actorCards = game.players[actor].handCards
     const canDrag = game.canInput && game.phase === 'main'
 
-    this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.handActorY, `Actor: Player ${actor + 1} (${game.actorControl})`, {
-      color: '#f0f4ff',
-      fontSize: this.currentLayout.subtitleFontSize,
-    }))
-
     actorCards.forEach((card, index) => {
-      const x = this.xForCard(index, actorCards.length)
+      const x = this.xForCardInBoardColumn(index, actorCards.length)
       const y = this.currentLayout.handCardsY
       const cardObject = this.renderStaticCard(x, y, card.name)
       cardObject.setData('cardId', card.id)
@@ -709,39 +1050,143 @@ class CardgameScene extends Phaser.Scene {
     })
 
     if (game.canInput && game.phase === 'respond') {
-      this.rootContainer?.add(this.add.text(this.currentLayout.margin + 8, this.currentLayout.responseInfoY, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
-        color: '#f0f4ff',
-        fontSize: this.currentLayout.bodyFontSize,
-      }))
+      const promptText = this.add.text(
+        this.currentLayout.boardColumnLeft + RESPONSE_PROMPT_X_OFFSET,
+        this.currentLayout.activeInfoY + RESPONSE_PROMPT_Y_OFFSET,
+        `Opponent played ${game.pendingLandName ?? 'a land'}.`,
+        {
+          color: '#f0f4ff',
+          fontSize: this.currentLayout.bodyFontSize,
+          wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
+        },
+      )
+      const promptBottom = promptText.y + promptText.height + RESPONSE_PROMPT_BOTTOM_GAP
+      if (promptBottom <= this.currentLayout.activeInfoControlsTop) {
+        this.rootContainer?.add(promptText)
+      } else {
+        // On ultra-short split layouts there may be no vertical room between
+        // activeInfoY and controlsTop; drop the prompt to avoid overlap.
+        promptText.destroy()
+      }
 
-      const availableWidth = Math.max(0, this.currentLayout.width - this.currentLayout.margin * 2)
+      // Response controls (counter options + Pass) must fit between the prompt
+      // line and the hand cards inside the active-info row's controls band
+      // (`activeInfoControlsHeight` already excludes the player-info text and
+      // the hand strip). On short viewports that band may be only ~40-60px
+      // tall. Try a single-column stack first, but if it would shrink each
+      // button below a usable click target (~28px tall), switch to a multi-
+      // column grid that fits all buttons at the minimum usable height
+      // without spilling into the hand strip.
+      const respondBandTop = this.currentLayout.activeInfoControlsTop
+      const respondBandHeight = this.currentLayout.activeInfoControlsHeight
+      const totalButtons = game.legal.counterOptions.length + (game.legal.canPassResponse ? 1 : 0)
+      const desiredButtonHeight = this.currentLayout.popupButtonHeight
+      const desiredGap = 8
+      const minUsableButtonHeight = 28
+      const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING)
       const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
-      const buttonWidth = Math.min(preferredButtonWidth, availableWidth)
-      const controlsX = this.currentLayout.margin + buttonWidth / 2 + (availableWidth - buttonWidth) / 2
-      const buttonHeight = this.currentLayout.popupButtonHeight
-      const startY = this.currentLayout.responseInfoY + this.currentLayout.actionButtonHeight + this.currentLayout.actionButtonGap
+      const responseLabels = [
+        ...game.legal.counterOptions.map((option) => option.label),
+        ...(game.legal.canPassResponse ? ['Pass'] : []),
+      ]
+      const approxCharWidth = Math.max(MIN_APPROX_CHAR_WIDTH, parseFloat(this.currentLayout.bodyFontSize) * APPROX_CHAR_WIDTH_RATIO)
+      const longestLabelLength = responseLabels.reduce((max, label) => Math.max(max, label.length), 0)
+      const minReadableButtonWidth = Math.min(
+        preferredButtonWidth,
+        Math.max(MIN_RESPONSE_LABEL_BUTTON_WIDTH, longestLabelLength * approxCharWidth + BUTTON_TEXT_HORIZONTAL_PADDING),
+      )
+      const gridMetricsFor = (columnCount: number): { columnGap: number; cellWidth: number } => {
+        const columnGap = columnCount > 1 ? 8 : 0
+        const cellWidth = columnCount > 0 ? (availableWidth - columnGap * (columnCount - 1)) / columnCount : availableWidth
+        return { columnGap, cellWidth }
+      }
+      // Compute the smallest column count whose stacked rows fit at >= the
+      // minimum usable button height. The grid never exceeds totalButtons
+      // columns. This keeps every response action click-reachable on the
+      // short viewports the PR is targeting (e.g. 5 actions on 1024×480).
+      let columns = 1
+      let rows = totalButtons
+      let respondGap = totalButtons > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
+      let heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
+      let respondButtonHeight = totalButtons > 0
+        ? Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
+        : desiredButtonHeight
+      let { columnGap, cellWidth } = gridMetricsFor(columns)
+      while (totalButtons > 0 && columns < totalButtons) {
+        if (respondButtonHeight >= minUsableButtonHeight) {
+          break
+        }
+        const nextColumns = columns + 1
+        const nextMetrics = gridMetricsFor(nextColumns)
+        // Do not take a widening step if it would make labels unreadably
+        // narrow. Keep the previous readable layout instead.
+        if (nextMetrics.cellWidth < minReadableButtonWidth) {
+          break
+        }
+        columns = nextColumns
+        rows = Math.ceil(totalButtons / columns)
+        respondGap = rows > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
+        heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
+        respondButtonHeight = Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
+        ;({ columnGap, cellWidth } = gridMetricsFor(columns))
+      }
+      // If even a maxed-out grid cannot reach the minimum height, accept the
+      // largest possible button height so they remain at least visible.
+      respondButtonHeight = Math.max(respondButtonHeight, Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows)))
+      ;({ columnGap, cellWidth } = gridMetricsFor(columns))
+      // Clamp button width so the assembled grid never exceeds availableWidth
+      // (the board column). On collapsed phone viewports (e.g. 320px) with
+      // many response actions the per-cell width can fall below the 28px
+      // minimum click target. Forcing a 60px floor here would push the
+      // rightmost buttons off-panel/off-screen, so we accept the small
+      // cellWidth instead and let the column-search above place buttons
+      // tightly inside the available width.
+      const buttonWidth = Math.min(preferredButtonWidth, Math.max(0, cellWidth))
+      const gridWidth = columns * buttonWidth + Math.max(0, columns - 1) * columnGap
+      const controlsX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
+      const gridLeft = controlsX - gridWidth / 2
+      const startY = respondBandTop + respondButtonHeight / 2
+      const positionFor = (index: number): { x: number; y: number } => {
+        const row = Math.floor(index / columns)
+        const column = index % columns
+        return {
+          x: gridLeft + buttonWidth / 2 + column * (buttonWidth + columnGap),
+          y: startY + row * (respondButtonHeight + respondGap),
+        }
+      }
 
       game.legal.counterOptions.forEach((option, index) => {
-        this.rootContainer?.add(this.createButton(option.label, controlsX, startY + index * (buttonHeight + 8), () => {
+        const { x, y } = positionFor(index)
+        this.rootContainer?.add(this.createButton(option.label, x, y, () => {
           this.rendererRef.controller?.submitAction(option.action)
-        }, buttonWidth, buttonHeight))
+        }, buttonWidth, respondButtonHeight))
       })
       if (game.legal.canPassResponse) {
-        this.rootContainer?.add(this.createButton('Pass', controlsX, startY + game.legal.counterOptions.length * (buttonHeight + 8), () => {
+        const { x, y } = positionFor(game.legal.counterOptions.length)
+        this.rootContainer?.add(this.createButton('Pass', x, y, () => {
           this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor })
-        }, buttonWidth, buttonHeight))
+        }, buttonWidth, respondButtonHeight))
       }
       return
     }
 
     if (game.canInput && game.legal.canEndTurn && game.phase === 'main') {
-      this.rootContainer?.add(this.createButton('End Turn', this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2, this.currentLayout.controlsStartY, () => {
+      const endTurnWidth = Math.min(this.currentLayout.actionButtonWidth, Math.max(120, this.currentLayout.boardColumnWidth - 16))
+      const endTurnX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - endTurnWidth / 2 - 4
+      // Clamp End Turn button height so it never spills below the hand strip
+      // on short viewports where activeInfoControlsHeight may be smaller than
+      // the desired action button height.
+      const endTurnHeight = Math.min(
+        this.currentLayout.actionButtonHeight + 4,
+        Math.max(20, this.currentLayout.activeInfoControlsHeight),
+      )
+      this.rootContainer?.add(this.createButton('End Turn', endTurnX, this.currentLayout.controlsStartY, () => {
         this.rendererRef.controller?.submitAction({ type: 'end_turn', actor: game.actor })
-      }, this.currentLayout.actionButtonWidth, this.currentLayout.actionButtonHeight + 4))
+      }, endTurnWidth, endTurnHeight))
     }
   }
 
-  private closeMenuOverlay(): void {
+  closeMenuOverlay(): void {
     const overlay = this.menuOverlay
     this.menuOverlay = null
     this.menuOpen = false
@@ -749,10 +1194,32 @@ class CardgameScene extends Phaser.Scene {
     this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
     overlay?.destroy(true)
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 
-  private openMenuOverlay(lines: string[]): void {
+  isMenuOverlayOpen(): boolean {
+    return this.menuOpen
+  }
+
+  isTargetPickerOpen(): boolean {
+    return this.pendingTargetPicker !== null
+  }
+
+  closeTargetPickerOverlay(): void {
+    this.pendingTargetPickerA11yEntries = []
+    this.pendingTargetPicker?.destroy(true)
+  }
+
+  getTargetPickerA11yEntries(): Array<{ key: string; label: string; onSelect: () => void }> {
+    return this.pendingTargetPickerA11yEntries
+  }
+
+  private openMenuOverlay(view: AppViewModel): void {
     if (!this.rootContainer || this.menuOverlay) {
+      return
+    }
+    const game = view.game
+    if (!game) {
       return
     }
 
@@ -768,6 +1235,7 @@ class CardgameScene extends Phaser.Scene {
         this.menuOpen = false
         this.lastMenuSignature = null
       }
+      this.rendererRef.refreshA11yNavForCurrentView()
     })
     const swallowPointerEvent = (
       _pointer: Phaser.Input.Pointer,
@@ -819,28 +1287,124 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.subtitleFontSize,
     }).setOrigin(0.5))
 
-    const buttonWidth = Math.max(1, popupWidth - popupPadding * 2)
-    const firstButtonY = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap + this.currentLayout.popupButtonHeight / 2
+    const fullButtonWidth = Math.max(1, popupWidth - popupPadding * 2)
+    const halfButtonGap = POPUP_BUTTON_GAP
+    const halfButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap) / 2)
+    let cursorY = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
 
-    overlay.add(this.createButton('Back to Lobby', 0, firstButtonY, () => {
+    // Section 1: Back to Lobby + Rematch (mirrors DOM PR #13 menu-section 1).
+    const section1Y = cursorY + this.currentLayout.popupButtonHeight / 2
+    overlay.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.backToLobby()
-    }, buttonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    overlay.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
+      this.closeMenuOverlay()
+      this.rendererRef.controller?.rematch()
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
-    overlay.add(this.createButton(this.orientationButtonLabel(), 0, firstButtonY + this.currentLayout.popupButtonHeight + POPUP_BUTTON_GAP, () => {
+    // Section 2: orientation toggle.
+    const orientationY = cursorY + this.currentLayout.popupButtonHeight / 2
+    overlay.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
       this.closeMenuOverlay()
       this.rendererRef.toggleOrientationMode()
-    }, buttonWidth, this.currentLayout.popupButtonHeight))
+    }, fullButtonWidth, this.currentLayout.popupButtonHeight))
+    cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
-    const closeButtonY = firstButtonY + (this.currentLayout.popupButtonHeight + POPUP_BUTTON_GAP) * 2
+    // Section 3: Recorder.
+    const recorderHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.smallFontSize,
+      wordWrap: { width: fullButtonWidth },
+    }).setOrigin(0, 0)
+    overlay.add(recorderHeading)
+    // Use the rendered text height (which reflects wrapping at narrow widths)
+    // instead of a fixed 18px so the next row never overlaps a wrapped heading.
+    cursorY += Math.max(18, recorderHeading.height) + 4
+
+    const recorderRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
+    overlay.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
+      this.closeMenuOverlay()
+      this.rendererRef.handleDownloadRecording()
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    overlay.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
+      this.closeMenuOverlay()
+      this.rendererRef.controller?.saveRecordingToLocalStorage()
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
+
+    const recorderRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
+    overlay.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
+      this.closeMenuOverlay()
+      this.rendererRef.controller?.loadRecordingFromLocalStorage()
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    overlay.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
+      this.closeMenuOverlay()
+      this.rendererRef.openRecordingFilePicker()
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
+
+    if (!view.replay.active) {
+      const startReplayY = cursorY + this.currentLayout.popupButtonHeight / 2
+      overlay.add(this.createButton('Start Replay', 0, startReplayY, () => {
+        this.closeMenuOverlay()
+        this.rendererRef.controller?.startReplay()
+      }, fullButtonWidth, this.currentLayout.popupButtonHeight))
+      cursorY += this.currentLayout.popupButtonHeight + sectionGap
+    } else {
+      cursorY += sectionGap
+    }
+
+    // Section 4: Replay controls (only when replay is active).
+    if (view.replay.active) {
+      const replayHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: fullButtonWidth },
+      }).setOrigin(0, 0)
+      overlay.add(replayHeading)
+      cursorY += Math.max(18, replayHeading.height) + 4
+
+      const replayRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
+      const replayButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap * 2) / 3)
+      overlay.add(this.createButton(view.replay.isPlaying ? 'Pause' : 'Play', -replayButtonWidth - halfButtonGap, replayRow1Y, () => {
+        if (view.replay.isPlaying) {
+          this.rendererRef.controller?.pauseReplay()
+        } else {
+          this.rendererRef.controller?.startReplay()
+        }
+      }, replayButtonWidth, this.currentLayout.popupButtonHeight))
+      overlay.add(this.createButton('Previous', 0, replayRow1Y, () => {
+        this.rendererRef.controller?.stepReplay(-1)
+      }, replayButtonWidth, this.currentLayout.popupButtonHeight))
+      overlay.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
+        this.rendererRef.controller?.stepReplay(1)
+      }, replayButtonWidth, this.currentLayout.popupButtonHeight))
+      cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
+
+      const replayRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
+      overlay.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
+        this.rendererRef.controller?.jumpReplayToEnd()
+      }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+      overlay.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
+        this.closeMenuOverlay()
+        this.rendererRef.controller?.exitReplay()
+      }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+      cursorY += this.currentLayout.popupButtonHeight + sectionGap
+    }
+
+    // Close button.
+    const closeButtonY = cursorY + this.currentLayout.popupButtonHeight / 2
     overlay.add(this.createButton('Close', 0, closeButtonY, () => {
       this.closeMenuOverlay()
-    }, Math.min(buttonWidth, 220), this.currentLayout.popupButtonHeight))
-
+    }, Math.min(fullButtonWidth, 220), this.currentLayout.popupButtonHeight))
     const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
+
+    // Replay Log section: heading + masked scrollable viewport.
     const logTitleY = buttonStackBottomY + sectionGap + 14
     const logViewportTopWithHeading = logTitleY + 14 + sectionGap
-    const logViewportWidth = buttonWidth
+    const logViewportWidth = fullButtonWidth
     const popupBottomEdge = popupHeight / 2 - popupPadding
     const maxViewportHeightWithHeading = Math.max(0, popupBottomEdge - logViewportTopWithHeading)
     // If the heading + viewport doesn't fit readably, drop the heading so the log section
@@ -853,7 +1417,7 @@ class CardgameScene extends Phaser.Scene {
     const maxViewportHeight = Math.max(0, popupBottomEdge - logViewportTop)
     if (maxViewportHeight > 0) {
       if (showHeading) {
-        overlay.add(this.add.text(-buttonWidth / 2, logTitleY, 'Replay Log', {
+        overlay.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
           color: '#e5ecf5',
           fontSize: this.currentLayout.bodyFontSize,
         }).setOrigin(0, 0.5))
@@ -861,7 +1425,7 @@ class CardgameScene extends Phaser.Scene {
 
       const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
       const logViewportY = logViewportTop + logViewportHeight / 2
-      const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, 0x091227, 0.75)
+      const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, COLOR_LOG_VIEWPORT_FILL, 0.75)
         .setStrokeStyle(1, 0x365092)
       logViewportBackground.setInteractive()
       logViewportBackground.on('pointerdown', swallowPointerEvent)
@@ -871,6 +1435,7 @@ class CardgameScene extends Phaser.Scene {
 
       const logContent = this.add.container(-logViewportWidth / 2 + 10, logViewportTop + 8)
       overlay.add(logContent)
+      const lines = game.log
       const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
@@ -930,7 +1495,8 @@ class CardgameScene extends Phaser.Scene {
 
     this.menuOverlay = overlay
     this.rootContainer.add(overlay)
-    this.lastMenuSignature = this.computeMenuSignature(lines)
+    this.lastMenuSignature = this.computeMenuSignature(view)
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 
   private showTargetPicker(
@@ -967,6 +1533,8 @@ class CardgameScene extends Phaser.Scene {
       if (this.pendingTargetPicker === overlay) {
         this.pendingTargetPicker = null
       }
+      this.pendingTargetPickerA11yEntries = []
+      this.rendererRef.refreshA11yNavForCurrentView()
     })
     const swallowPointerEvent = (
       _pointer: Phaser.Input.Pointer,
@@ -1014,15 +1582,21 @@ class CardgameScene extends Phaser.Scene {
     optionsViewport.setMask(maskShape.createGeometryMask())
 
     options.slice(0, optionCount).forEach((option, index) => {
-      const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
-      const button = this.createButton(option.label, 0, buttonY, () => {
+      const selectOption = (): void => {
         const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
         if (action) {
           this.rendererRef.controller?.submitAction(action)
         }
         overlay.destroy(true)
-      }, buttonWidth, this.currentLayout.popupButtonHeight)
+      }
+      const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
+      const button = this.createButton(option.label, 0, buttonY, selectOption, buttonWidth, this.currentLayout.popupButtonHeight)
       optionsList.add(button)
+      this.pendingTargetPickerA11yEntries.push({
+        key: `target:${option.effectTargetId ?? `fallback-index-${index}`}`,
+        label: option.label,
+        onSelect: selectOption,
+      })
     })
 
     const optionsContentHeight = optionCount > 0
@@ -1067,15 +1641,28 @@ class CardgameScene extends Phaser.Scene {
     if (hasHiddenOptions) {
       const showAllY = cancelY + cancelHeight / 2 + POPUP_BUTTON_GAP + showAllButtonHeight / 2
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
-      const showAllButton = this.createButton(showAllLabel, 0, showAllY, () => {
+      const toggleShowAll = (): void => {
         overlay.destroy(true)
         this.showTargetPicker(game, cardId, options, !showAllTargets)
-      }, Math.min(buttonWidth, 300), showAllButtonHeight)
+      }
+      const showAllButton = this.createButton(showAllLabel, 0, showAllY, toggleShowAll, Math.min(buttonWidth, 300), showAllButtonHeight)
       overlay.add(showAllButton)
+      this.pendingTargetPickerA11yEntries.push({
+        key: 'target:toggle-visible-options',
+        label: showAllLabel,
+        onSelect: toggleShowAll,
+      })
     }
+
+    this.pendingTargetPickerA11yEntries.push({
+      key: 'target:cancel',
+      label: 'Cancel Target Selection',
+      onSelect: () => overlay.destroy(true),
+    })
 
     this.pendingTargetPicker = overlay
     this.rootContainer?.add(overlay)
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 }
 
@@ -1083,12 +1670,16 @@ export class PhaserRenderer implements AppRenderer {
   private container: HTMLElement | null = null
   controller: ControllerApi | null = null
   private game: Phaser.Game | null = null
-  private scene: CardgameScene | null = null
+  private cardgameScene: CardgameScene | null = null
+  private lobbyScene: LobbyScene | null = null
+  private activeSceneKey: string | null = null
+  private fileInput: HTMLInputElement | null = null
+  private lobbyP2POverlay: HTMLDivElement | null = null
+  private a11yNavOverlay: HTMLElement | null = null
+  private a11yNavKeySignature: string | null = null
+  private hostAnswerDraft = ''
+  private joinOfferDraft = ''
   currentView: AppViewModel | null = null
-  private p2pOverlay: HTMLDivElement | null = null
-  private recorderOverlay: HTMLDivElement | null = null
-  private p2pOverlayMode: 'host' | 'join' | null = null
-  private p2pSettingsOpen = false
   private _orientationMode: OrientationMode = 'horizontal'
 
   get orientationMode(): OrientationMode {
@@ -1098,7 +1689,8 @@ export class PhaserRenderer implements AppRenderer {
   toggleOrientationMode(): void {
     this._orientationMode = this._orientationMode === 'vertical' ? 'horizontal' : 'vertical'
     persistOrientationMode(this._orientationMode)
-    this.scene?.handleOrientationChange()
+    this.cardgameScene?.handleOrientationChange()
+    this.lobbyScene?.handleOrientationChange()
   }
 
   mount(container: HTMLElement, controller: ControllerApi): void {
@@ -1113,24 +1705,66 @@ export class PhaserRenderer implements AppRenderer {
     container.innerHTML = ''
     container.appendChild(canvasHost)
 
-    const overlay = document.createElement('div')
-    overlay.className = 'phaser-p2p-overlay'
-    container.appendChild(overlay)
-    this.p2pOverlay = overlay
+    // Hidden file input for "Load from File" recorder action. The Menu modal
+    // triggers it via openRecordingFilePicker(); no other DOM overlays remain
+    // (recorder/P2P controls are now exclusively under the Menu).
+    const fileInput = document.createElement('input')
+    fileInput.type = 'file'
+    fileInput.accept = 'application/json,.json'
+    fileInput.hidden = true
+    fileInput.style.display = 'none'
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0]
+      if (!file) {
+        return
+      }
+      try {
+        const text = await file.text()
+        this.controller?.importRecordingJson(text)
+      } catch {
+        this.controller?.reportStatus('Failed to read recording file.')
+      }
+      fileInput.value = ''
+    }
+    container.appendChild(fileInput)
+    this.fileInput = fileInput
 
-    const recorderOverlay = document.createElement('div')
-    recorderOverlay.className = 'phaser-recorder-overlay'
-    container.appendChild(recorderOverlay)
-    this.recorderOverlay = recorderOverlay
+    // Lobby-only HTML overlay for P2P manual signaling. Phaser scenes cannot
+    // host native <textarea> elements for paste/copy of the offer/answer
+    // payloads, so we render this section as plain HTML siblings of the canvas
+    // and only show it while the lobby is active and a P2P mode is selected.
+    // This mirrors the recommendation in the plan ("keep P2P signaling in
+    // Lobby only") without resurrecting the persistent recorder/p2p overlays
+    // that issue #11 asked to hide under the Menu.
+    const lobbyP2POverlay = document.createElement('div')
+    lobbyP2POverlay.className = 'phaser-lobby-p2p-overlay'
+    lobbyP2POverlay.hidden = true
+    container.appendChild(lobbyP2POverlay)
+    this.lobbyP2POverlay = lobbyP2POverlay
 
-    this.scene = new CardgameScene(this)
+    // Hidden, visually-offscreen accessibility navigation. The Phaser canvas
+    // exposes its controls only through `pointerup`, which is unreachable for
+    // keyboard and screen-reader users. We render an equivalent <nav> of
+    // native <button> elements whose contents are kept in sync with the view
+    // model so assistive tech has full coverage of every Phaser control that
+    // used to be a native HTML button (Recorder, Replay, Rematch, Back to
+    // Lobby, orientation toggle, mode buttons, etc.).
+    const a11yNav = document.createElement('nav')
+    a11yNav.className = 'phaser-a11y-nav'
+    a11yNav.setAttribute('aria-label', 'Cardgame controls')
+    container.appendChild(a11yNav)
+    this.a11yNavOverlay = a11yNav
+
+    this.lobbyScene = new LobbyScene(this)
+    this.cardgameScene = new CardgameScene(this)
+    this.activeSceneKey = LOBBY_SCENE_KEY
     this.game = new Phaser.Game({
       type: Phaser.AUTO,
       width: canvasHost.clientWidth > 0 ? canvasHost.clientWidth : BASE_WIDTH,
       height: canvasHost.clientHeight > 0 ? canvasHost.clientHeight : BASE_HEIGHT,
       parent: canvasHost,
       backgroundColor: '#0b1020',
-      scene: [this.scene],
+      scene: [this.lobbyScene, this.cardgameScene],
       scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -1143,22 +1777,345 @@ export class PhaserRenderer implements AppRenderer {
 
   render(view: AppViewModel): void {
     this.currentView = view
-    this.scene?.renderView(view)
-    this.renderP2POverlay(view)
-    this.renderRecorderOverlay(view)
+    // For P2P modes, controller.startGame() creates state.game immediately so
+    // both peers can prepare their boards, but the seed is only synchronized
+    // once the host clicks Start Game (which sends the `start` packet) or the
+    // joiner receives it. Until that handshake completes, stay in the lobby
+    // so the user can run the offer/answer signaling flow; afterwards switch
+    // to the match scene like a local game would.
+    const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
+    const p2pReady = !isP2PMode || view.p2pStarted
+    const targetSceneKey = view.game && p2pReady
+      ? CARDGAME_SCENE_KEY
+      : LOBBY_SCENE_KEY
+
+    this.updateLobbyP2POverlay(view, targetSceneKey === LOBBY_SCENE_KEY)
+    this.updateA11yNav(view, targetSceneKey === LOBBY_SCENE_KEY)
+
+    if (this.activeSceneKey !== targetSceneKey && this.game) {
+      const sceneManager = this.game.scene
+      const previousKey = this.activeSceneKey
+      this.activeSceneKey = targetSceneKey
+      // Stop the previous scene before starting the next one. The new scene's
+      // create() reads currentView from this renderer to render initial state.
+      if (previousKey && sceneManager.getScene(previousKey)) {
+        sceneManager.stop(previousKey)
+      }
+      sceneManager.start(targetSceneKey)
+      return
+    }
+
+    if (targetSceneKey === CARDGAME_SCENE_KEY) {
+      this.cardgameScene?.renderView(view)
+    } else {
+      this.lobbyScene?.renderView(view)
+    }
+  }
+
+  refreshA11yNavForCurrentView(): void {
+    if (!this.currentView) {
+      return
+    }
+    this.updateA11yNav(this.currentView, this.activeSceneKey === LOBBY_SCENE_KEY)
+  }
+
+  private updateLobbyP2POverlay(view: AppViewModel, lobbyActive: boolean): void {
+    const overlay = this.lobbyP2POverlay
+    if (!overlay) {
+      return
+    }
+    const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
+    const shouldShow = lobbyActive && isP2PMode && !view.replay.active
+    if (!shouldShow) {
+      overlay.hidden = true
+      overlay.innerHTML = ''
+      this.hostAnswerDraft = ''
+      this.joinOfferDraft = ''
+      return
+    }
+    overlay.hidden = false
+    const host = view.mode === 'p2p-host'
+    const safeStatus = escapeHtml(view.status)
+    const safeOffer = escapeHtml(view.offer)
+    const safeAnswer = escapeHtml(view.answer)
+    const safeHostAnswerDraft = escapeHtml(this.hostAnswerDraft)
+    const safeJoinOfferDraft = escapeHtml(this.joinOfferDraft)
+    overlay.innerHTML = `
+      <section class="phaser-lobby-p2p-panel">
+        <h2>P2P Manual Signaling</h2>
+        <p>${host ? 'Host: create offer, share it, then paste answer.' : 'Join: paste host offer, create answer, and share answer.'}</p>
+        <div class="phaser-lobby-p2p-grid">
+          ${host
+            ? `<button data-p2p-action="create-offer">Create Offer</button>
+               <label for="phaser-p2p-offer">Offer</label>
+               <textarea id="phaser-p2p-offer" data-p2p-field="offer" aria-label="Offer" placeholder="Offer" readonly>${safeOffer}</textarea>
+               <label for="phaser-p2p-host-answer">Remote Answer</label>
+               <textarea id="phaser-p2p-host-answer" data-p2p-field="host-answer" aria-label="Paste remote answer" placeholder="Paste remote answer">${safeHostAnswerDraft}</textarea>
+               <button data-p2p-action="accept-answer">Accept Answer</button>
+               <button data-p2p-action="start-p2p-game">Start Game</button>`
+            : `<label for="phaser-p2p-join-offer">Host Offer</label>
+               <textarea id="phaser-p2p-join-offer" data-p2p-field="join-offer" aria-label="Paste host offer" placeholder="Paste host offer">${safeJoinOfferDraft}</textarea>
+                <button data-p2p-action="create-answer">Create Answer</button>
+                <label for="phaser-p2p-answer">Answer</label>
+                <textarea id="phaser-p2p-answer" data-p2p-field="answer" aria-label="Answer" placeholder="Answer" readonly>${safeAnswer}</textarea>`
+          }
+          <button data-p2p-action="back-to-lobby">Cancel</button>
+        </div>
+        <p class="phaser-lobby-p2p-status">${safeStatus}</p>
+      </section>
+    `
+
+    overlay.querySelector<HTMLTextAreaElement>('[data-p2p-field="host-answer"]')?.addEventListener('input', (event) => {
+      this.hostAnswerDraft = (event.target as HTMLTextAreaElement).value
+    })
+    overlay.querySelector<HTMLTextAreaElement>('[data-p2p-field="join-offer"]')?.addEventListener('input', (event) => {
+      this.joinOfferDraft = (event.target as HTMLTextAreaElement).value
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="create-offer"]')?.addEventListener('click', () => {
+      void this.controller?.createOffer()
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="accept-answer"]')?.addEventListener('click', () => {
+      void this.controller?.acceptAnswer(this.hostAnswerDraft)
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="create-answer"]')?.addEventListener('click', () => {
+      void this.controller?.createAnswer(this.joinOfferDraft)
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="start-p2p-game"]')?.addEventListener('click', () => {
+      this.controller?.startP2PGame()
+    })
+    overlay.querySelector<HTMLButtonElement>('[data-p2p-action="back-to-lobby"]')?.addEventListener('click', () => {
+      this.hostAnswerDraft = ''
+      this.joinOfferDraft = ''
+      this.controller?.backToLobby()
+    })
+  }
+
+  private updateA11yNav(view: AppViewModel, lobbyActive: boolean): void {
+    const nav = this.a11yNavOverlay
+    if (!nav) {
+      return
+    }
+    const controller = this.controller
+    if (!controller) {
+      nav.innerHTML = ''
+      this.a11yNavKeySignature = null
+      return
+    }
+
+    type NavEntry = { key: string; label: string; onClick: () => void; disabled?: boolean }
+    const entries: NavEntry[] = []
+    const targetPickerOpen = !lobbyActive && (this.cardgameScene?.isTargetPickerOpen() ?? false)
+    if (!targetPickerOpen) {
+      const orientationLabel = this.orientationMode === 'vertical' ? 'Switch to landscape' : 'Switch to portrait'
+      entries.push({ key: 'orientation', label: orientationLabel, onClick: () => this.toggleOrientationMode() })
+    }
+
+    if (lobbyActive) {
+      const modes: Array<{ mode: Mode; label: string }> = [
+        { mode: 'local-hvh', label: 'Local Human vs Human' },
+        { mode: 'local-hvai', label: 'Local Human vs AI' },
+        { mode: 'local-aivai', label: 'Local AI vs AI' },
+        { mode: 'p2p-host', label: 'P2P Host' },
+        { mode: 'p2p-join', label: 'P2P Join' },
+      ]
+      for (const entry of modes) {
+        entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
+      }
+      // Mirror the lobby's recorder entry points for keyboard / screen-reader
+      // users so they can load a saved match without first starting a
+      // throwaway game (matches the new visible lobby buttons).
+      entries.push({
+        key: 'lobby-recorder-load-browser',
+        label: 'Load Recording from Browser',
+        onClick: () => controller.loadRecordingFromLocalStorage(),
+        disabled: !view.recording.hasLocalSave,
+      })
+      entries.push({
+        key: 'lobby-recorder-load-file',
+        label: 'Load Recording from File',
+        onClick: () => this.openRecordingFilePicker(),
+      })
+      entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
+    } else {
+      const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
+      if (targetPickerOpen) {
+        const targetPickerEntries = this.cardgameScene?.getTargetPickerA11yEntries() ?? []
+        for (const entry of targetPickerEntries) {
+          entries.push({
+            key: `target-picker:${entry.key}`,
+            label: entry.label,
+            onClick: entry.onSelect,
+          })
+        }
+      } else {
+        entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
+          closeSceneMenu()
+          controller.backToLobby()
+        } })
+        entries.push({ key: 'rematch', label: 'Rematch', onClick: () => {
+          closeSceneMenu()
+          controller.rematch()
+        } })
+      // Mirror the Phaser menu's recorder actions: close the menu overlay
+      // before invoking the controller so the resulting status message (e.g.
+      // "No saved recording found" or "Failed to read recording file") shows
+      // up in the scene's status footer instead of being hidden behind the
+      // open modal. Without these closes, keyboard / screen-reader users who
+      // trigger Save/Load via the a11y nav while the menu is open get no
+      // visible feedback at all.
+        const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
+        if (menuModalOpen) {
+          entries.push({ key: 'menu-close', label: 'Close Menu', onClick: () => closeSceneMenu() })
+        }
+        entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => {
+          closeSceneMenu()
+          this.handleDownloadRecording()
+        } })
+        entries.push({ key: 'recorder-save', label: 'Save Recording to Browser', onClick: () => {
+          closeSceneMenu()
+          controller.saveRecordingToLocalStorage()
+        } })
+        entries.push({
+          key: 'recorder-load-browser',
+          label: 'Load Recording from Browser',
+          onClick: () => {
+            closeSceneMenu()
+            controller.loadRecordingFromLocalStorage()
+          },
+          disabled: !view.recording.hasLocalSave,
+        })
+        entries.push({ key: 'recorder-load-file', label: 'Load Recording from File', onClick: () => {
+          closeSceneMenu()
+          this.openRecordingFilePicker()
+        } })
+        if (view.replay.active) {
+          entries.push({ key: 'replay-toggle', label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
+            if (view.replay.isPlaying) {
+              controller.pauseReplay()
+            } else {
+              controller.startReplay()
+            }
+          } })
+          entries.push({ key: 'replay-prev', label: 'Previous Replay Step', onClick: () => controller.stepReplay(-1) })
+          entries.push({ key: 'replay-next', label: 'Next Replay Step', onClick: () => controller.stepReplay(1) })
+          entries.push({ key: 'replay-jump-end', label: 'Jump Replay to End', onClick: () => controller.jumpReplayToEnd() })
+          entries.push({ key: 'replay-exit', label: 'Exit Replay', onClick: () => controller.exitReplay() })
+        } else {
+          entries.push({
+            key: 'replay-start',
+            label: 'Start Replay',
+            onClick: () => controller.startReplay(),
+            disabled: !view.recording.metadata,
+          })
+        }
+
+        // In-match gameplay actions: mirror the Phaser scene's interactive
+        // controls (play land options, counter responses, Pass, End Turn) as
+        // native <button> elements so keyboard and screen-reader users can take
+        // turns without relying on pointer-only Phaser hit areas. Skip these
+        // when the Phaser menu modal is open: pointer users cannot interact
+        // with gameplay controls behind the modal, so exposing them through
+        // the a11y nav would let keyboard / screen-reader users mutate game
+        // state behind the overlay and break the modal semantics.
+        const game = view.game
+        if (game && game.canInput && !menuModalOpen) {
+          if (game.phase === 'main') {
+            for (const card of game.players[game.actor].handCards) {
+              const options = game.legal.playLandByCard[card.id]
+              if (!options) {
+                continue
+              }
+              for (const option of options) {
+                entries.push({
+                  key: `play:${card.id}:${option.label}`,
+                  label: `Play ${card.name}: ${option.label}`,
+                  onClick: () => controller.submitAction(option.action),
+                })
+              }
+            }
+            if (game.legal.canEndTurn) {
+              entries.push({
+                key: 'end-turn',
+                label: 'End Turn',
+                onClick: () => controller.submitAction({ type: 'end_turn', actor: game.actor }),
+              })
+            }
+          } else if (game.phase === 'respond') {
+            game.legal.counterOptions.forEach((option, index) => {
+              entries.push({
+                key: `counter:${index}`,
+                label: option.label,
+                onClick: () => controller.submitAction(option.action),
+              })
+            })
+            if (game.legal.canPassResponse) {
+              entries.push({
+                key: 'pass-response',
+                label: 'Pass Response',
+                onClick: () => controller.submitAction({ type: 'pass_response', actor: game.actor }),
+              })
+            }
+          }
+        }
+      }
+    }
+
+    // Diff against the previous render to preserve focus on auto-updating
+    // states (e.g. replay playback). When the set of buttons (keyed by `key`)
+    // is unchanged, update labels / disabled and rebind handlers in place
+    // instead of clearing innerHTML, which would destroy focus.
+    const signature = entries.map((entry) => entry.key).join('|')
+    if (signature === this.a11yNavKeySignature && nav.children.length === entries.length) {
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index]
+        const button = nav.children[index] as HTMLButtonElement
+        if (button.textContent !== entry.label) {
+          button.textContent = entry.label
+        }
+        const shouldDisable = entry.disabled === true
+        if (button.disabled !== shouldDisable) {
+          button.disabled = shouldDisable
+        }
+        const previousHandler = (button as HTMLButtonElement & { _a11yHandler?: () => void })._a11yHandler
+        if (previousHandler) {
+          button.removeEventListener('click', previousHandler)
+        }
+        button.addEventListener('click', entry.onClick)
+        ;(button as HTMLButtonElement & { _a11yHandler?: () => void })._a11yHandler = entry.onClick
+      }
+      return
+    }
+
+    nav.innerHTML = ''
+    for (const entry of entries) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = entry.label
+      if (entry.disabled) {
+        button.disabled = true
+      }
+      button.addEventListener('click', entry.onClick)
+      ;(button as HTMLButtonElement & { _a11yHandler?: () => void })._a11yHandler = entry.onClick
+      nav.appendChild(button)
+    }
+    this.a11yNavKeySignature = signature
   }
 
   unmount(): void {
-    this.p2pOverlay?.remove()
-    this.p2pOverlay = null
-    this.recorderOverlay?.remove()
-    this.recorderOverlay = null
-    this.p2pOverlayMode = null
-    this.p2pSettingsOpen = false
+    this.fileInput?.remove()
+    this.fileInput = null
+    this.lobbyP2POverlay?.remove()
+    this.lobbyP2POverlay = null
+    this.a11yNavOverlay?.remove()
+    this.a11yNavOverlay = null
+    this.hostAnswerDraft = ''
+    this.joinOfferDraft = ''
 
     this.game?.destroy(true)
     this.game = null
-    this.scene = null
+    this.cardgameScene = null
+    this.lobbyScene = null
+    this.activeSceneKey = null
 
     if (this.container) {
       this.container.classList.remove('phaser-root')
@@ -1169,272 +2126,21 @@ export class PhaserRenderer implements AppRenderer {
     this.currentView = null
   }
 
-  private setP2POverlayOpen(open: boolean): void {
-    if (this.p2pSettingsOpen === open) {
-      return
-    }
-    this.p2pSettingsOpen = open
-    this.p2pOverlay?.classList.toggle('open', open)
+  openRecordingFilePicker(): void {
+    this.fileInput?.click()
   }
 
-  private bindP2PSettingsModalControls(): void {
-    if (!this.p2pOverlay) {
+  handleDownloadRecording(): void {
+    const payload = this.controller?.exportRecordingJson()
+    if (!payload) {
       return
     }
-
-    const settingsToggle = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-toggle')
-    if (settingsToggle) {
-      settingsToggle.onclick = () => {
-        this.setP2POverlayOpen(true)
-      }
-    }
-    const settingsClose = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-settings-close')
-    if (settingsClose) {
-      settingsClose.onclick = () => {
-        this.setP2POverlayOpen(false)
-      }
-    }
-    const settingsBackdrop = this.p2pOverlay.querySelector<HTMLDivElement>('.phaser-settings-backdrop')
-    if (settingsBackdrop) {
-      settingsBackdrop.onclick = (event: MouseEvent) => {
-        if (event.target === settingsBackdrop) {
-          this.setP2POverlayOpen(false)
-        }
-      }
-    }
-  }
-
-  private renderP2POverlay(view: AppViewModel): void {
-    if (!this.p2pOverlay) {
-      return
-    }
-
-    if (view.replay.active || (view.mode !== 'p2p-host' && view.mode !== 'p2p-join')) {
-      if (this.p2pOverlayMode !== null) {
-        this.p2pOverlay.innerHTML = ''
-      }
-      this.p2pOverlay.style.display = 'none'
-      this.p2pOverlayMode = null
-      this.setP2POverlayOpen(false)
-      return
-    }
-
-    this.p2pOverlay.style.display = 'block'
-
-    if (view.mode === 'p2p-host') {
-      if (this.p2pOverlayMode !== 'host') {
-        this.p2pOverlay.innerHTML = `
-          <button id="phaser-settings-toggle" type="button">P2P Settings</button>
-          <div class="phaser-settings-backdrop">
-            <div class="panel phaser-settings-panel">
-              <h3>P2P Host Signaling</h3>
-              <button id="phaser-create-offer" type="button">Create Offer</button>
-              <textarea id="phaser-offer" readonly></textarea>
-              <textarea id="phaser-answer" placeholder="Paste remote answer"></textarea>
-              <button id="phaser-accept-answer" type="button">Accept Answer</button>
-              <button id="phaser-start" type="button">Start Game</button>
-              <button id="phaser-settings-close" type="button">Close</button>
-            </div>
-          </div>
-        `
-        this.bindP2PSettingsModalControls()
-        const createOfferButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-create-offer')
-        if (createOfferButton) {
-          createOfferButton.onclick = () => {
-            void this.controller?.createOffer()
-          }
-        }
-        const acceptAnswerButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-accept-answer')
-        if (acceptAnswerButton) {
-          acceptAnswerButton.onclick = () => {
-            const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-answer')?.value ?? ''
-            void this.controller?.acceptAnswer(value)
-          }
-        }
-        const startButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-start')
-        if (startButton) {
-          startButton.onclick = () => {
-            this.controller?.startP2PGame()
-          }
-        }
-        this.p2pOverlayMode = 'host'
-        this.setP2POverlayOpen(false)
-      }
-
-      const offerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-offer')
-      if (offerField) {
-        offerField.value = view.offer
-      }
-      return
-    }
-
-    if (this.p2pOverlayMode !== 'join') {
-      this.p2pOverlay.innerHTML = `
-        <button id="phaser-settings-toggle" type="button">P2P Settings</button>
-        <div class="phaser-settings-backdrop">
-          <div class="panel phaser-settings-panel">
-            <h3>P2P Join Signaling</h3>
-            <textarea id="phaser-join-offer" placeholder="Paste host offer"></textarea>
-            <button id="phaser-create-answer" type="button">Create Answer</button>
-            <textarea id="phaser-join-answer" readonly></textarea>
-            <button id="phaser-settings-close" type="button">Close</button>
-          </div>
-        </div>
-      `
-      this.bindP2PSettingsModalControls()
-      const createAnswerButton = this.p2pOverlay.querySelector<HTMLButtonElement>('#phaser-create-answer')
-      if (createAnswerButton) {
-        createAnswerButton.onclick = () => {
-          const value = this.p2pOverlay?.querySelector<HTMLTextAreaElement>('#phaser-join-offer')?.value ?? ''
-          void this.controller?.createAnswer(value)
-        }
-      }
-      this.p2pOverlayMode = 'join'
-      this.setP2POverlayOpen(false)
-    }
-
-    const answerField = this.p2pOverlay.querySelector<HTMLTextAreaElement>('#phaser-join-answer')
-    if (answerField) {
-      answerField.value = view.answer
-    }
-  }
-
-  private renderRecorderOverlay(view: AppViewModel): void {
-    if (!this.recorderOverlay) {
-      return
-    }
-
-    const metadata = view.recording.metadata
-    const metadataText = metadata
-      ? `Seed ${metadata.seed} • ${metadata.mode} • ${metadata.controllers[0]}/${metadata.controllers[1]} • Completed ${metadata.completed ? 'Yes' : 'No'}`
-      : 'No recording loaded.'
-
-    this.recorderOverlay.innerHTML = `
-      <div class="panel phaser-recorder-panel">
-        <h3>Recorder</h3>
-        <p>${metadataText}</p>
-        <div class="phaser-recorder-buttons">
-          <button id="phaser-save-download" type="button">Download</button>
-          <button id="phaser-save-local" type="button">Save Browser</button>
-          <button id="phaser-load-local" type="button">Load Browser</button>
-          <button id="phaser-load-file-btn" type="button">Load File</button>
-          ${view.replay.active ? '' : '<button id="phaser-replay-start" type="button">Start Replay</button>'}
-        </div>
-        ${view.replay.active
-          ? `<div class="phaser-recorder-buttons">
-            <button id="phaser-replay-playpause" type="button">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
-            <button id="phaser-replay-prev" type="button">Prev</button>
-            <button id="phaser-replay-next" type="button">Next</button>
-            <button id="phaser-replay-end" type="button">End</button>
-            <button id="phaser-replay-exit" type="button">Exit Replay</button>
-          </div>
-          <p>Step ${view.replay.step}/${view.replay.totalSteps}</p>`
-          : ''}
-        <p>Local save available: ${view.recording.hasLocalSave ? 'Yes' : 'No'}</p>
-        <input id="phaser-load-file-input" type="file" accept="application/json,.json" hidden />
-      </div>
-    `
-
-    const saveDownload = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-save-download')
-    if (saveDownload) {
-      saveDownload.onclick = () => {
-        const payload = this.controller?.exportRecordingJson()
-        if (!payload) {
-          return
-        }
-        const blob = new Blob([payload], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `cardgame-recording-${Date.now()}.json`
-        link.click()
-        setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOCATION_DELAY_MS)
-      }
-    }
-
-    const saveLocal = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-save-local')
-    if (saveLocal) {
-      saveLocal.onclick = () => {
-        this.controller?.saveRecordingToLocalStorage()
-      }
-    }
-
-    const loadLocal = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-load-local')
-    if (loadLocal) {
-      loadLocal.onclick = () => {
-        this.controller?.loadRecordingFromLocalStorage()
-      }
-    }
-
-    const loadFileButton = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-load-file-btn')
-    if (loadFileButton) {
-      loadFileButton.onclick = () => {
-        const input = this.recorderOverlay?.querySelector<HTMLInputElement>('#phaser-load-file-input')
-        input?.click()
-      }
-    }
-
-    const fileInput = this.recorderOverlay.querySelector<HTMLInputElement>('#phaser-load-file-input')
-    if (fileInput) {
-      fileInput.onchange = async () => {
-        const file = fileInput.files?.[0]
-        if (!file) {
-          return
-        }
-        try {
-          const text = await file.text()
-          this.controller?.importRecordingJson(text)
-        } catch {
-          this.controller?.reportStatus('Failed to read recording file.')
-        }
-        fileInput.value = ''
-      }
-    }
-
-    const replayStart = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-start')
-    if (replayStart) {
-      replayStart.onclick = () => {
-        this.controller?.startReplay()
-      }
-    }
-
-    const replayPlayPause = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-playpause')
-    if (replayPlayPause) {
-      replayPlayPause.onclick = () => {
-        if (view.replay.isPlaying) {
-          this.controller?.pauseReplay()
-          return
-        }
-        this.controller?.startReplay()
-      }
-    }
-
-    const replayPrev = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-prev')
-    if (replayPrev) {
-      replayPrev.onclick = () => {
-        this.controller?.stepReplay(-1)
-      }
-    }
-
-    const replayNext = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-next')
-    if (replayNext) {
-      replayNext.onclick = () => {
-        this.controller?.stepReplay(1)
-      }
-    }
-
-    const replayEnd = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-end')
-    if (replayEnd) {
-      replayEnd.onclick = () => {
-        this.controller?.jumpReplayToEnd()
-      }
-    }
-
-    const replayExit = this.recorderOverlay.querySelector<HTMLButtonElement>('#phaser-replay-exit')
-    if (replayExit) {
-      replayExit.onclick = () => {
-        this.controller?.exitReplay()
-      }
-    }
+    const blob = new Blob([payload], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `cardgame-recording-${Date.now()}.json`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOCATION_DELAY_MS)
   }
 }

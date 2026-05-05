@@ -120,6 +120,9 @@ export class AppController implements ControllerApi {
       recording: null,
       replay: null,
       hasSavedRecording: this.hasSavedRecording(),
+      p2pStarted: false,
+      pendingP2PStartSeed: null,
+      pendingRematchSeed: null,
     }
   }
 
@@ -241,18 +244,60 @@ export class AppController implements ControllerApi {
   private setupP2P(): void {
     this.p2p?.close()
     this.p2p = new P2PLink((packet) => {
+      if (!this.state.mode || !isP2PMode(this.state.mode)) {
+        return
+      }
       if (packet.type === 'start') {
+        if (this.state.mode === 'p2p-host') {
+          this.state.status = 'Ignored unexpected start packet from peer.'
+          this.notify()
+          return
+        }
+        if (this.state.p2pStarted) {
+          this.state.status = 'Ignored duplicate start packet from peer.'
+          this.notify()
+          return
+        }
         if (!isSeedPayload(packet.payload)) {
           this.state.status = 'Ignored invalid start payload from peer.'
           this.notify()
           return
         }
+        // If we cannot acknowledge the start packet, abort local transition.
+        // Otherwise this peer would move into the match while the host waits
+        // forever in the lobby for an ack that never arrives.
+        const acknowledged = this.p2p?.send('start-ack', { seed: packet.payload.seed }) ?? false
+        if (!acknowledged) {
+          this.state.status = 'P2P start failed: could not acknowledge start packet. Reconnect and retry.'
+          this.notify()
+          return
+        }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
+        this.state.p2pStarted = true
         if (this.state.mode) {
           this.initializeRecording(this.state.mode)
         }
         this.state.status = 'Remote game started.'
+        this.notify()
+        return
+      }
+
+      if (packet.type === 'start-ack') {
+        if (!isSeedPayload(packet.payload)) {
+          this.state.status = 'Ignored invalid start-ack payload from peer.'
+          this.notify()
+          return
+        }
+        // Only flip p2pStarted when the ack matches the seed we are still
+        // waiting on, so a stale ack from a prior session can't push the
+        // host into a match it didn't initiate.
+        if (this.state.pendingP2PStartSeed !== packet.payload.seed) {
+          return
+        }
+        this.state.pendingP2PStartSeed = null
+        this.state.p2pStarted = true
+        this.state.status = 'P2P game started.'
         this.notify()
         return
       }
@@ -273,6 +318,26 @@ export class AppController implements ControllerApi {
           this.notify()
           return
         }
+        // Handle simultaneous rematch clicks deterministically: keep only the
+        // lower seed. This avoids each peer applying the other peer's seed
+        // and later applying its own pending seed again on ack.
+        if (this.state.pendingRematchSeed !== null && packet.payload.seed !== this.state.pendingRematchSeed) {
+          const winningSeed = Math.min(this.state.pendingRematchSeed, packet.payload.seed)
+          if (packet.payload.seed !== winningSeed) {
+            this.state.status = 'Ignoring competing rematch; waiting for peer acknowledgement.'
+            this.notify()
+            return
+          }
+          this.state.pendingRematchSeed = null
+        }
+        // If we cannot acknowledge the rematch packet, abort local transition.
+        // Applying locally without an ack would desynchronize peers.
+        const acknowledged = this.p2p?.send('rematch-ack', { seed: packet.payload.seed }) ?? false
+        if (!acknowledged) {
+          this.state.status = 'P2P rematch failed: could not acknowledge rematch packet. Reconnect and retry.'
+          this.notify()
+          return
+        }
         this.state.seed = packet.payload.seed
         this.state.game = createInitialGame(packet.payload.seed)
         if (this.state.mode) {
@@ -280,6 +345,30 @@ export class AppController implements ControllerApi {
         }
         this.state.status = 'Rematch started.'
         this.notify()
+        return
+      }
+
+      if (packet.type === 'rematch-ack') {
+        if (!isSeedPayload(packet.payload)) {
+          this.state.status = 'Ignored invalid rematch-ack payload from peer.'
+          this.notify()
+          return
+        }
+        if (this.state.pendingRematchSeed !== packet.payload.seed || !this.state.mode) {
+          return
+        }
+        // Apply the rematch only now, after the peer has acknowledged the
+        // new seed. Until this point neither seed/game nor recording were
+        // mutated, so a failed ack leaves the previous game intact and
+        // both peers stay in sync.
+        this.clearAiTimeout()
+        this.state.seed = this.state.pendingRematchSeed
+        this.state.game = createInitialGame(this.state.seed)
+        this.initializeRecording(this.state.mode)
+        this.state.pendingRematchSeed = null
+        this.state.status = 'Rematch started.'
+        this.notify()
+        this.scheduleAiIfNeeded()
       }
     })
   }
@@ -321,7 +410,20 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
-    if (source === 'remote' && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+    const inP2PMode = this.state.mode !== null && isP2PMode(this.state.mode)
+    if (source === 'remote' && inP2PMode && !this.state.p2pStarted) {
+      this.state.status = 'Ignored action while start handshake is in progress.'
+      this.notify()
+      return
+    }
+    if (this.state.pendingRematchSeed !== null && inP2PMode) {
+      if (source === 'remote') {
+        this.state.status = 'Ignored action while rematch handshake is in progress.'
+        this.notify()
+      }
+      return
+    }
+    if (source === 'remote' && inP2PMode) {
       const remoteActor = this.state.controllers.findIndex((controller) => controller === 'remote')
       if (remoteActor !== -1 && action.actor !== remoteActor) {
         this.state.status = 'Ignored out-of-role action from peer.'
@@ -336,12 +438,25 @@ export class AppController implements ControllerApi {
       }
       return
     }
+    if (broadcastToPeer && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
+      // Broadcast the action BEFORE applying it locally. P2PLink.send()
+      // returns false when the data channel is not open or when the
+      // underlying RTCDataChannel.send() throws (e.g. transient channel
+      // closure). If we applied locally first, a failed send would advance
+      // this peer's game while the other peer never receives the action,
+      // permanently desynchronizing the session. Aborting the action
+      // entirely keeps both peers on the same state and lets the user
+      // either retry once the channel recovers or reconnect.
+      const delivered = this.p2p?.send('action', action) ?? false
+      if (!delivered) {
+        this.state.status = 'P2P send failed: action was not delivered to peer. Try again or reconnect.'
+        this.notify()
+        return
+      }
+    }
+
     const next = applyAction(this.state.game, action)
     this.state.game = next
-
-    if (broadcastToPeer && (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join')) {
-      this.p2p?.send('action', action)
-    }
 
     this.appendRecordingStep(action, next, source)
     this.notify()
@@ -352,9 +467,16 @@ export class AppController implements ControllerApi {
     this.stopReplayInterval()
     this.clearAiTimeout()
     this.state.replay = null
+    if (!isP2PMode(mode)) {
+      this.p2p?.close()
+      this.p2p = null
+    }
     this.state.mode = mode
     this.state.seed = Date.now()
     this.state.game = createInitialGame(this.state.seed)
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
 
     if (mode === 'local-hvh') {
       this.state.controllers = ['human', 'human']
@@ -396,6 +518,9 @@ export class AppController implements ControllerApi {
     this.state.status = ''
     this.state.offer = ''
     this.state.answer = ''
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
     this.notify()
   }
 
@@ -442,12 +567,36 @@ export class AppController implements ControllerApi {
     if (!this.state.game || this.isReplayActive()) {
       return
     }
-    this.p2p?.send('start', { seed: this.state.seed })
-    this.state.status = 'P2P game started.'
+    if (this.state.pendingP2PStartSeed !== null) {
+      this.state.status = 'Already waiting for peer to acknowledge start.'
+      this.notify()
+      return
+    }
+    // Send the start packet but DO NOT flip p2pStarted yet. p2p.send()
+    // returning true only means the WebRTC send queue accepted the packet
+    // locally; it is NOT an acknowledgment that the joiner actually
+    // received and applied the synchronized seed. We wait for an explicit
+    // application-level `start-ack` from the joiner before transitioning
+    // the host out of the lobby. This prevents the host from stranding
+    // itself in the match scene if the peer disconnects between the local
+    // send() returning true and the packet actually being delivered.
+    const sent = this.p2p?.send('start', { seed: this.state.seed }) ?? false
+    if (!sent) {
+      this.state.status = 'P2P start packet not sent: peer is not connected yet.'
+      this.notify()
+      return
+    }
+    this.state.pendingP2PStartSeed = this.state.seed
+    this.state.status = 'Waiting for peer to acknowledge start...'
     this.notify()
   }
 
   submitAction(action: GameAction): void {
+    if (this.state.pendingRematchSeed !== null && this.state.mode !== null && isP2PMode(this.state.mode)) {
+      this.state.status = 'Rematch in progress. Wait for peer acknowledgement before taking actions.'
+      this.notify()
+      return
+    }
     this.applyRecordedAction(action, 'human', true)
   }
 
@@ -455,13 +604,36 @@ export class AppController implements ControllerApi {
     if (!this.state.mode || this.isReplayActive()) {
       return
     }
+    if (this.state.pendingRematchSeed !== null && isP2PMode(this.state.mode)) {
+      this.state.status = 'Already waiting for peer to acknowledge rematch.'
+      this.notify()
+      return
+    }
+    const newSeed = Date.now()
+    if (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') {
+      // For P2P, send the rematch packet but DO NOT mutate local
+      // seed/game/recording yet. p2p.send() returning true only means the
+      // WebRTC send queue accepted the packet locally — it is NOT an ack
+      // that the peer actually received and applied the new seed. We hold
+      // the new seed in pendingRematchSeed and only commit the rematch
+      // once the peer's `rematch-ack` arrives. This way a transient channel
+      // failure or peer disconnect after send() leaves the previous game
+      // intact on this side, so both peers stay in sync.
+      const delivered = this.p2p?.send('rematch', { seed: newSeed }) ?? false
+      if (!delivered) {
+        this.state.status = 'P2P send failed: peer did not receive the rematch packet. Reconnect before continuing.'
+        this.notify()
+        return
+      }
+      this.state.pendingRematchSeed = newSeed
+      this.state.status = 'Waiting for peer to acknowledge rematch...'
+      this.notify()
+      return
+    }
     this.clearAiTimeout()
-    this.state.seed = Date.now()
+    this.state.seed = newSeed
     this.state.game = createInitialGame(this.state.seed)
     this.initializeRecording(this.state.mode)
-    if (this.state.mode === 'p2p-host' || this.state.mode === 'p2p-join') {
-      this.p2p?.send('rematch', { seed: this.state.seed })
-    }
     this.state.status = 'Rematch started.'
     this.notify()
     this.scheduleAiIfNeeded()
@@ -511,6 +683,9 @@ export class AppController implements ControllerApi {
     ]
     this.state.offer = ''
     this.state.answer = ''
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
     this.state.game = snapshotFromRecord(parsed.record, 0)
     this.state.status = 'Recording loaded. Use replay controls to play or jump to final state.'
     this.notify()

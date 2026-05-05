@@ -16,6 +16,9 @@ function createState(seed: number): AppState {
     recording: null,
     replay: null,
     hasSavedRecording: false,
+    p2pStarted: false,
+    pendingP2PStartSeed: null,
+    pendingRematchSeed: null,
   }
 }
 

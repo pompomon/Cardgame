@@ -17,6 +17,21 @@ export interface AppState {
   recording: GameRecordFile | null
   replay: ReplaySessionState | null
   hasSavedRecording: boolean
+  // True once a P2P game's `start` packet has been acknowledged by the
+  // peer (host receives `start-ack`) or applied by the joiner (joiner
+  // received the `start` packet and acknowledged it). Used by renderers
+  // to decide when to leave the lobby for an in-match scene: P2P sessions
+  // stay in the lobby until BOTH peers have synchronized seeds confirmed
+  // via the application-level handshake.
+  p2pStarted: boolean
+  // Host-side: the seed queued in a `start` packet while waiting on the
+  // joiner's `start-ack`. This marks that the host has initiated handshake
+  // but must remain in the lobby until the peer confirms receipt.
+  pendingP2PStartSeed: number | null
+  // P2P rematch seed currently waiting for peer ack. Set by whichever side
+  // initiated rematch (`p2p-host` or `p2p-join`); while set, local
+  // seed/game/recording stay unchanged until matching `rematch-ack` arrives.
+  pendingRematchSeed: number | null
 }
 
 export interface ReplaySessionState {
@@ -82,6 +97,7 @@ export interface AppViewModel {
   seed: number
   controllers: [ControllerKind, ControllerKind]
   p2pConnected: boolean
+  p2pStarted: boolean
   game: GameUiState | null
   recording: {
     canSave: boolean
