@@ -22,6 +22,8 @@ const INFO_PANEL_VERTICAL_PADDING = 12
 const INFO_PANEL_LINE_HEIGHT_MULTIPLIER = 1.25
 const CONTROLS_INNER_HORIZONTAL_PADDING = 16
 const MIN_WORD_WRAP_WIDTH = 40
+const RESPONSE_PROMPT_X_OFFSET = 8
+const RESPONSE_PROMPT_Y_OFFSET = 6
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -1010,11 +1012,16 @@ class CardgameScene extends Phaser.Scene {
     })
 
     if (game.canInput && game.phase === 'respond') {
-      const promptText = this.add.text(this.currentLayout.boardColumnLeft + 8, this.currentLayout.activeInfoY + 6, `Opponent played ${game.pendingLandName ?? 'a land'}.`, {
+      const promptText = this.add.text(
+        this.currentLayout.boardColumnLeft + RESPONSE_PROMPT_X_OFFSET,
+        this.currentLayout.activeInfoY + RESPONSE_PROMPT_Y_OFFSET,
+        `Opponent played ${game.pendingLandName ?? 'a land'}.`,
+        {
         color: '#f0f4ff',
         fontSize: this.currentLayout.bodyFontSize,
         wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
-      })
+        },
+      )
       this.rootContainer?.add(promptText)
 
       // Response controls (counter options + Pass) must fit between the prompt
