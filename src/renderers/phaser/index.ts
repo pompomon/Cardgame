@@ -28,6 +28,8 @@ const RESPONSE_PROMPT_BOTTOM_GAP = 4
 const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
 const APPROX_CHAR_WIDTH_RATIO = 0.56
 const MIN_APPROX_CHAR_WIDTH = 6
+const MIN_LOBBY_ROW_HEIGHT = 12
+const DEFAULT_BATTLEFIELD_HEADER_BAND = 22
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -262,11 +264,11 @@ class LobbyScene extends Phaser.Scene {
     // scaled row height can cause stacked mode/recorder actions to collide.
     const rowScale = Math.min(1, lobbyBodyHeight / Math.max(1, totalRows * desiredRowHeight))
     const rowHeight = desiredRowHeight * rowScale
-    if (rowHeight < 12) {
+    if (rowHeight < MIN_LOBBY_ROW_HEIGHT) {
       this.rootContainer?.add(this.add.text(
         left,
         lobbyBodyTop,
-        'Viewport too short to show lobby actions.',
+        'Viewport too short to show lobby actions. Increase window height.',
         {
           color: '#9db0d9',
           fontSize: this.currentLayout.smallFontSize,
@@ -275,6 +277,8 @@ class LobbyScene extends Phaser.Scene {
       ))
       return
     }
+    // Keep button height at or below the row step so vertically adjacent lobby
+    // buttons never overlap when the available body space is heavily compressed.
     const buttonHeight = Math.min(desiredButtonHeight, rowHeight)
     const modeStartY = lobbyBodyTop + buttonHeight / 2
 
@@ -811,7 +815,7 @@ class CardgameScene extends Phaser.Scene {
     // "Player N Battlefield" label doesn't overlap the top edge of the cards
     // rendered inside the panel.
     const battlefieldHeaderBand = Math.min(
-      22,
+      DEFAULT_BATTLEFIELD_HEADER_BAND,
       Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - this.currentLayout.cardHeight),
     )
     const nonActiveCardY = this.currentLayout.nonActiveBattlefieldY
@@ -857,7 +861,7 @@ class CardgameScene extends Phaser.Scene {
     // Reserve the same header band as the non-active row so the active title
     // sits in its own padding instead of overlapping the rendered cards.
     const activeHeaderBand = Math.min(
-      22,
+      DEFAULT_BATTLEFIELD_HEADER_BAND,
       Math.max(0, this.currentLayout.activeBattlefieldHeight - this.currentLayout.cardHeight),
     )
     const activeCardY = this.currentLayout.activeBattlefieldY
