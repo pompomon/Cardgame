@@ -669,4 +669,31 @@ describe('controller recording and replay', () => {
       restoreRtc()
     }
   })
+
+  it('closes P2P and ignores stale peer packets after switching to non-P2P mode', () => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController('dom')
+      controller.startGame('p2p-host')
+      const internals = controller as unknown as {
+        p2p: {
+          onMessage: (packet: { type: string; payload: unknown }) => void
+        } | null
+        state: { game: unknown }
+      }
+      const staleOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+
+      controller.startGame('local-hvh')
+      expect(internals.p2p).toBeNull()
+
+      const gameBeforePacket = internals.state.game
+      const action = firstPlayableAction(controller)
+      expect(action).toBeTruthy()
+      staleOnMessage({ type: 'action', payload: action })
+
+      expect(internals.state.game).toBe(gameBeforePacket)
+    } finally {
+      restoreRtc()
+    }
+  })
 })

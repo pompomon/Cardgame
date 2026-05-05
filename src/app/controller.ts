@@ -244,6 +244,9 @@ export class AppController implements ControllerApi {
   private setupP2P(): void {
     this.p2p?.close()
     this.p2p = new P2PLink((packet) => {
+      if (!this.state.mode || !isP2PMode(this.state.mode)) {
+        return
+      }
       if (packet.type === 'start') {
         if (!isSeedPayload(packet.payload)) {
           this.state.status = 'Ignored invalid start payload from peer.'
@@ -448,6 +451,10 @@ export class AppController implements ControllerApi {
     this.stopReplayInterval()
     this.clearAiTimeout()
     this.state.replay = null
+    if (!isP2PMode(mode)) {
+      this.p2p?.close()
+      this.p2p = null
+    }
     this.state.mode = mode
     this.state.seed = Date.now()
     this.state.game = createInitialGame(this.state.seed)

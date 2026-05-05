@@ -1817,7 +1817,11 @@ export class PhaserRenderer implements AppRenderer {
       })
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
-      entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => controller.backToLobby() })
+      const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
+      entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
+        closeSceneMenu()
+        controller.backToLobby()
+      } })
       entries.push({ key: 'rematch', label: 'Rematch', onClick: () => controller.rematch() })
       // Mirror the Phaser menu's recorder actions: close the menu overlay
       // before invoking the controller so the resulting status message (e.g.
@@ -1826,7 +1830,6 @@ export class PhaserRenderer implements AppRenderer {
       // open modal. Without these closes, keyboard / screen-reader users who
       // trigger Save/Load via the a11y nav while the menu is open get no
       // visible feedback at all.
-      const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
       const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
       const targetPickerOpen = this.cardgameScene?.isTargetPickerOpen() ?? false
       if (menuModalOpen) {
