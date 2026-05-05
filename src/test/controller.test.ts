@@ -471,9 +471,9 @@ describe('controller recording and replay', () => {
       const originalSeed = internals.state.seed
       const originalGame = internals.state.game
       const sentPackets: Array<{ type: string; payload: unknown }> = []
-      const realOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
+      const p2pOnMessage = internals.p2p!.onMessage.bind(internals.p2p)
       internals.p2p = {
-        onMessage: realOnMessage,
+        onMessage: p2pOnMessage,
         send: (type, payload) => {
           sentPackets.push({ type, payload })
           return true
