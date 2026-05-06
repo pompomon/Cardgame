@@ -193,6 +193,18 @@ function isPlainsPlayActionForPreviousState(previous: GameState, action: GameAct
   return card?.name === 'Plains'
 }
 
+function plainsReuseNeedsFollowUp(previous: GameState, actor: number, reuseTargetId: string | undefined): boolean {
+  if (!reuseTargetId) {
+    return false
+  }
+  const reused = previous.players[actor].battlefield.find(
+    (entry) => entry.instanceId === reuseTargetId && entry.card.name !== 'Plains',
+  )
+  return reused?.card.name === 'Forest'
+    || reused?.card.name === 'Mountain'
+    || reused?.card.name === 'Swamp'
+}
+
 function upgradeLegacyPlainsTimeline(
   initialState: GameState,
   timeline: GameRecordStep[],
@@ -207,12 +219,18 @@ function upgradeLegacyPlainsTimeline(
     }
     upgraded.push(normalizedStep)
 
+    const pendingLegacyPlains = previous.pendingLandPlay?.card.name === 'Plains' ? previous.pendingLandPlay : null
+    const legacyPlainsPlayEffectTarget = step.action.type === 'play_land' && isPlainsPlayActionForPreviousState(previous, step.action)
+      ? step.action.effectTargetId
+      : undefined
     const completedLegacyPlainsResolution = normalizedStep.state.pendingLandPlay === null
       && normalizedStep.state.pendingPlainsReuse === null
       && (
         (step.action.type === 'pass_response'
-          && previous.pendingLandPlay?.card.name === 'Plains')
-        || isPlainsPlayActionForPreviousState(previous, step.action)
+          && pendingLegacyPlains !== null
+          && plainsReuseNeedsFollowUp(previous, pendingLegacyPlains.actor, pendingLegacyPlains.effectTargetId))
+        || (legacyPlainsPlayEffectTarget !== undefined
+          && plainsReuseNeedsFollowUp(previous, step.action.actor, legacyPlainsPlayEffectTarget))
       )
 
     if (completedLegacyPlainsResolution) {

@@ -260,6 +260,13 @@ describe('game-recording', () => {
         card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
         effectTargetId: 'self-mountain',
       },
+      players: [
+        {
+          ...initial.players[0],
+          battlefield: [{ instanceId: 'self-mountain', card: { id: 'self-mountain-card', name: 'Mountain', type: 'land' } }],
+        },
+        initial.players[1],
+      ],
     }
     const legacyAfter = {
       ...initial,
