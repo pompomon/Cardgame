@@ -248,6 +248,9 @@ describe('game-recording', () => {
       actor: 0,
       effectTargetId: 'enemy-a',
     })
+    if (parsed.record.timeline[0].action.type === 'resolve_plains_reuse') {
+      expect(parsed.record.timeline[0].action.effectTargetId).toBe('enemy-a')
+    }
   })
 
   it('upgrades legacy v1 plains resolution steps with synthesized resolve_plains_reuse', () => {
