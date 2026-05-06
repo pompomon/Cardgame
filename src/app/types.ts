@@ -4,6 +4,7 @@ import type { GameRecordFile } from './game-recording'
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'p2p-host' | 'p2p-join'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
+export type AiLevel = 'basic' | 'advanced' | 'hard'
 
 export interface AppState {
   mode: Mode | null
@@ -17,6 +18,7 @@ export interface AppState {
   recording: GameRecordFile | null
   replay: ReplaySessionState | null
   hasSavedRecording: boolean
+  aiLevel: AiLevel
   // True once a P2P game's `start` packet has been acknowledged by the
   // peer (host receives `start-ack`) or applied by the joiner (joiner
   // received the `start` packet and acknowledged it). Used by renderers
@@ -96,6 +98,7 @@ export interface AppViewModel {
   answer: string
   seed: number
   controllers: [ControllerKind, ControllerKind]
+  aiLevel: AiLevel
   p2pConnected: boolean
   p2pStarted: boolean
   game: GameUiState | null
@@ -107,6 +110,7 @@ export interface AppViewModel {
       seed: number
       mode: Mode
       controllers: [ControllerKind, ControllerKind]
+      aiLevel: AiLevel
       completed: boolean
     } | null
   }

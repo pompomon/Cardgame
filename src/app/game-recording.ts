@@ -1,5 +1,6 @@
-import type { ControllerKind, Mode } from './types'
+import type { AiLevel, ControllerKind, Mode } from './types'
 import type { BasicLand, GameAction, GamePhase, GameState, Winner } from '../game/types'
+import { isAiLevel } from './ai-levels'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
 export const GAME_RECORD_VERSION = 1
@@ -10,6 +11,7 @@ export interface GameRecordMetadata {
   seed: number
   mode: Mode
   controllers: [ControllerKind, ControllerKind]
+  aiLevel: AiLevel
   startedAt: number
   updatedAt: number
   completed: boolean
@@ -172,6 +174,13 @@ function isMode(value: unknown): value is Mode {
     || value === 'p2p-join'
 }
 
+function parseAiLevel(value: unknown): AiLevel | null {
+  if (value === undefined) {
+    return 'basic'
+  }
+  return isAiLevel(value) ? value : null
+}
+
 function isSource(value: unknown): value is GameActionSource {
   return value === 'human' || value === 'ai' || value === 'remote'
 }
@@ -180,6 +189,7 @@ export function createGameRecord(
   seed: number,
   mode: Mode,
   controllers: [ControllerKind, ControllerKind],
+  aiLevel: AiLevel,
   initialState: GameState,
   now = Date.now(),
 ): GameRecordFile {
@@ -190,6 +200,7 @@ export function createGameRecord(
       seed,
       mode,
       controllers: [...controllers] as [ControllerKind, ControllerKind],
+      aiLevel,
       startedAt: now,
       updatedAt: now,
       completed: initialState.phase === 'gameOver',
@@ -275,6 +286,10 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
   if (!isMode(metadata.mode)) {
     return { ok: false, error: 'Invalid game mode metadata.' }
   }
+  const aiLevel = parseAiLevel(metadata.aiLevel)
+  if (!aiLevel) {
+    return { ok: false, error: 'Invalid AI level metadata.' }
+  }
   if (typeof metadata.seed !== 'number'
     || typeof metadata.startedAt !== 'number'
     || typeof metadata.updatedAt !== 'number'
@@ -318,6 +333,7 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
       seed: metadata.seed,
       mode: metadata.mode,
       controllers: [controllers[0], controllers[1]],
+      aiLevel,
       startedAt: metadata.startedAt,
       updatedAt: metadata.updatedAt,
       completed: metadata.completed,
