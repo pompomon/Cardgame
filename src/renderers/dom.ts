@@ -1,5 +1,6 @@
 import type { ControllerApi } from '../app/controller'
-import type { AppViewModel, Mode, RendererKind } from '../app/types'
+import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
+import type { AiLevel, AppViewModel, Mode, RendererKind } from '../app/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
@@ -22,11 +23,21 @@ function rendererSwitchLink(kind: RendererKind): string {
 }
 
 function renderLobby(view: AppViewModel): string {
+  const aiLevelOptions = AI_LEVEL_OPTIONS.map((option) => {
+    const selected = option.value === view.aiLevel ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
+
   return `
     <section class="panel">
       <h1>Basic Land Game</h1>
       <p class="subtitle">Land-only 2-player game with local AI and optional P2P mode.</p>
       <p>${rendererSwitchLink(view.renderer)}</p>
+      <div class="controls">
+        <h3>AI Difficulty</h3>
+        <label for="ai-level-select">AI Level</label>
+        <select id="ai-level-select">${aiLevelOptions}</select>
+      </div>
       <div class="modes">
         <button data-mode="local-hvh">Local Human vs Human</button>
         <button data-mode="local-hvai">Local Human vs AI</button>
@@ -93,7 +104,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
   const safeWinnerText = escapeHtml(game.winnerText)
   const recordingMeta = view.recording.metadata
   const recordingMetaText = recordingMeta
-    ? `Seed ${recordingMeta.seed} • Mode ${recordingMeta.mode} • Controllers ${recordingMeta.controllers[0]}/${recordingMeta.controllers[1]} • Completed ${recordingMeta.completed ? 'Yes' : 'No'}`
+    ? `Seed ${recordingMeta.seed} • Mode ${recordingMeta.mode} • AI ${recordingMeta.aiLevel} • Controllers ${recordingMeta.controllers[0]}/${recordingMeta.controllers[1]} • Completed ${recordingMeta.completed ? 'Yes' : 'No'}`
     : 'No recording data.'
   const renderPlayLandButton = (option: {
     action: { cardId: string; effectTargetId?: string }
@@ -301,6 +312,11 @@ export class DomRenderer implements AppRenderer {
         const mode = button.dataset.mode as Mode
         this.controller?.startGame(mode)
       })
+    })
+
+    this.container.querySelector<HTMLSelectElement>('#ai-level-select')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value as AiLevel
+      this.controller?.setAiLevel(value)
     })
 
     this.container.querySelector('#back-to-lobby')?.addEventListener('click', () => {

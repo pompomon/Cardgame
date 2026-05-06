@@ -23,6 +23,24 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
 - Use the in-scene orientation button to manually switch between vertical and horizontal layout modes (saved in localStorage).
 
+## AI levels
+
+- Lobby now includes a shared AI level selector for all AI matches.
+- Available levels:
+  - **Basic**: plays the first legal action.
+  - **Advanced**: prioritizes winning progress and disruption when the opponent is near-win.
+  - **Hard**: advanced strategy + opponent hand awareness for targeted disruption.
+- In **AI vs AI**, both bots use the same selected level from the single lobby selector.
+- Recording metadata stores AI level and replay parsing keeps compatibility with older recordings that do not contain an AI level (defaults to `basic`).
+
+### Extending with more AI levels
+
+1. Add the level to `AiLevel` in `/home/runner/work/Cardgame/Cardgame/src/app/types.ts`.
+2. Add the label to `AI_LEVEL_OPTIONS` in `/home/runner/work/Cardgame/Cardgame/src/app/ai-levels.ts`.
+3. Implement a policy module in `/home/runner/work/Cardgame/Cardgame/src/game/ai-policies/`.
+4. Register the policy in `AI_POLICY_REGISTRY` in `/home/runner/work/Cardgame/Cardgame/src/game/ai.ts`.
+5. Add/update tests in `/home/runner/work/Cardgame/Cardgame/src/test/ai.test.ts` and controller/recording tests.
+
 ## Game recording and replay
 
 - You can save a game recording at any point, including after the game has ended.

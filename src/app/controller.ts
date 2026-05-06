@@ -11,7 +11,7 @@ import {
   snapshotFromRecord,
 } from './game-recording'
 import { buildViewModel } from './view-model'
-import type { AppState, AppViewModel, Mode, RendererKind } from './types'
+import type { AiLevel, AppState, AppViewModel, Mode, RendererKind } from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
@@ -80,6 +80,7 @@ function normalizeImportedMode(mode: Mode): Mode {
 export interface ControllerApi {
   subscribe(listener: (view: AppViewModel) => void): () => void
   getViewModel(): AppViewModel
+  setAiLevel(level: AiLevel): void
   startGame(mode: Mode): void
   backToLobby(): void
   createOffer(): Promise<void>
@@ -120,6 +121,7 @@ export class AppController implements ControllerApi {
       recording: null,
       replay: null,
       hasSavedRecording: this.hasSavedRecording(),
+      aiLevel: 'basic',
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
@@ -192,6 +194,7 @@ export class AppController implements ControllerApi {
       this.state.seed,
       mode,
       this.state.controllers,
+      this.state.aiLevel,
       this.state.game,
     )
   }
@@ -395,7 +398,7 @@ export class AppController implements ControllerApi {
       if (this.state.controllers[actor] !== 'ai') {
         return
       }
-      const action = chooseAiAction(game, actor)
+      const action = chooseAiAction(game, actor, { level: this.state.aiLevel })
       if (!action) {
         return
       }
@@ -461,6 +464,11 @@ export class AppController implements ControllerApi {
     this.appendRecordingStep(action, next, source)
     this.notify()
     this.scheduleAiIfNeeded()
+  }
+
+  setAiLevel(level: AiLevel): void {
+    this.state.aiLevel = level
+    this.notify()
   }
 
   startGame(mode: Mode): void {
@@ -676,6 +684,7 @@ export class AppController implements ControllerApi {
     }
     this.state.mode = normalizeImportedMode(parsed.record.metadata.mode)
     this.state.seed = parsed.record.metadata.seed
+    this.state.aiLevel = parsed.record.metadata.aiLevel
     const [controller0, controller1] = parsed.record.metadata.controllers
     this.state.controllers = [
       controller0 === 'remote' ? 'human' : controller0,

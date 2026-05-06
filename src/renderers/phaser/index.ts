@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../../app/action-resolution'
+import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import type { AppRenderer } from '../types'
@@ -101,7 +102,7 @@ function recordingMetadataText(view: AppViewModel): string {
   if (!meta) {
     return 'No recording loaded.'
   }
-  return `Seed ${meta.seed} • ${meta.mode} • ${meta.controllers[0]}/${meta.controllers[1]} • Completed ${meta.completed ? 'Yes' : 'No'}`
+  return `Seed ${meta.seed} • ${meta.mode} • AI ${meta.aiLevel} • ${meta.controllers[0]}/${meta.controllers[1]} • Completed ${meta.completed ? 'Yes' : 'No'}`
 }
 
 function buildButton(
@@ -224,6 +225,7 @@ class LobbyScene extends Phaser.Scene {
 
     const view = this.rendererRef.currentView
     const hasLocalSave = view?.recording?.hasLocalSave ?? false
+    const selectedAiLevel = view?.aiLevel ?? 'basic'
     // Lobby recorder entry points so users can review or replay a saved match
     // without having to start a throwaway game first (mirrors the DOM lobby
     // and the previous Phaser overlay). The Browser entry is only enabled
@@ -255,7 +257,7 @@ class LobbyScene extends Phaser.Scene {
     const lobbyBodyBottom = this.currentLayout.height
       - this.currentLayout.statusBottomOffset - this.currentLayout.margin
     const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
-    const totalRows = modes.length + recorderEntries.length + 1 // mode buttons + recorder buttons + renderer-switch
+    const totalRows = modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length + 1
     const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
     const desiredGap = this.currentLayout.isCompact ? 8 : 14
     const desiredRowHeight = desiredButtonHeight + desiredGap
@@ -297,12 +299,29 @@ class LobbyScene extends Phaser.Scene {
       ))
     })
 
+    AI_LEVEL_OPTIONS.forEach((option, index) => {
+      const selected = option.value === selectedAiLevel
+      const label = selected ? `AI Level: ${option.label} ✓` : `AI Level: ${option.label}`
+      this.rootContainer?.add(buildButton(
+        this,
+        label,
+        left + buttonWidth / 2,
+        modeStartY + (modes.length + index) * rowHeight,
+        this.currentLayout.bodyFontSize,
+        buttonWidth,
+        buttonHeight,
+        () => {
+          this.rendererRef.controller?.setAiLevel(option.value)
+        },
+      ))
+    })
+
     recorderEntries.forEach((entry, index) => {
       const button = buildButton(
         this,
         entry.label,
         left + buttonWidth / 2,
-        modeStartY + (modes.length + index) * rowHeight,
+        modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + index) * rowHeight,
         this.currentLayout.bodyFontSize,
         buttonWidth,
         buttonHeight,
@@ -319,7 +338,7 @@ class LobbyScene extends Phaser.Scene {
       this,
       'Switch to DOM renderer',
       left + buttonWidth / 2,
-      modeStartY + (modes.length + recorderEntries.length) * rowHeight,
+      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length) * rowHeight,
       this.currentLayout.bodyFontSize,
       buttonWidth,
       buttonHeight,
@@ -586,7 +605,7 @@ class CardgameScene extends Phaser.Scene {
     const lines = view.game?.log ?? []
     const last = lines.length > 0 ? lines[lines.length - 1] : ''
     const recordingMeta = view.recording.metadata
-      ? `${view.recording.metadata.seed}:${view.recording.metadata.mode}:${view.recording.metadata.completed ? 1 : 0}`
+      ? `${view.recording.metadata.seed}:${view.recording.metadata.mode}:${view.recording.metadata.aiLevel}:${view.recording.metadata.completed ? 1 : 0}`
       : 'none'
     return `${this.lastLayoutSignature}|seed:${view.seed}|${lines.length}|${last}|recording:${recordingMeta}|replay:${view.replay.active}:${view.replay.step}/${view.replay.totalSteps}:${view.replay.isPlaying}|saved:${view.recording.hasLocalSave ? 1 : 0}`
   }
@@ -1920,6 +1939,14 @@ export class PhaserRenderer implements AppRenderer {
       ]
       for (const entry of modes) {
         entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
+      }
+      for (const option of AI_LEVEL_OPTIONS) {
+        const selected = view.aiLevel === option.value ? ' (selected)' : ''
+        entries.push({
+          key: `ai-level:${option.value}`,
+          label: `Set AI level: ${option.label}${selected}`,
+          onClick: () => controller.setAiLevel(option.value),
+        })
       }
       // Mirror the lobby's recorder entry points for keyboard / screen-reader
       // users so they can load a saved match without first starting a

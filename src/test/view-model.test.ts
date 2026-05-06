@@ -16,6 +16,7 @@ function createState(seed: number): AppState {
     recording: null,
     replay: null,
     hasSavedRecording: false,
+    aiLevel: 'basic',
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
@@ -32,5 +33,6 @@ describe('buildViewModel', () => {
 
     expect(vm.game?.log).toEqual(entries)
     expect(vm.game?.log.length).toBe(entries.length)
+    expect(vm.aiLevel).toBe('basic')
   })
 })

@@ -11,7 +11,7 @@ import {
 describe('game-recording', () => {
   it('round-trips a recording through JSON parse/serialize', () => {
     const initial = createInitialGame(123)
-    const record = createGameRecord(123, 'local-hvh', ['human', 'human'], initial, 1000)
+    const record = createGameRecord(123, 'local-hvh', ['human', 'human'], 'basic', initial, 1000)
     const next = applyAction(initial, { type: 'end_turn', actor: 0 })
     const updated = appendGameRecordStep(
       record,
@@ -53,6 +53,7 @@ describe('game-recording', () => {
         seed: 55,
         mode: 'local-hvh',
         controllers: ['human', 'human'],
+        aiLevel: 'basic',
         startedAt: 1,
         updatedAt: 1,
         completed: false,
@@ -74,7 +75,7 @@ describe('game-recording', () => {
 
   it('falls back to initial state when snapshot step is beyond an empty timeline', () => {
     const initial = createInitialGame(77)
-    const record = createGameRecord(77, 'local-hvh', ['human', 'human'], initial, 100)
+    const record = createGameRecord(77, 'local-hvh', ['human', 'human'], 'basic', initial, 100)
     const snapshot = snapshotFromRecord(record, 4)
     expect(snapshot.turn).toBe(initial.turn)
     expect(snapshot.currentPlayer).toBe(initial.currentPlayer)
@@ -89,6 +90,7 @@ describe('game-recording', () => {
         seed: 66,
         mode: 'local-hvh',
         controllers: ['human', 'human'],
+        aiLevel: 'basic',
         startedAt: 1,
         updatedAt: 1,
         completed: false,
@@ -117,6 +119,7 @@ describe('game-recording', () => {
         seed: 88,
         mode: 'local-hvh',
         controllers: ['human', 'human'],
+        aiLevel: 'basic',
         startedAt: 1,
         updatedAt: 1,
         completed: false,
@@ -137,6 +140,7 @@ describe('game-recording', () => {
         seed: 89,
         mode: 'local-hvh',
         controllers: ['human', 'human'],
+        aiLevel: 'basic',
         startedAt: 1,
         updatedAt: 1,
         completed: false,
@@ -160,6 +164,7 @@ describe('game-recording', () => {
         seed: 99,
         mode: 'local-hvh',
         controllers: ['human', 'human'],
+        aiLevel: 'basic',
         startedAt: 1,
         updatedAt: 2,
         completed: false,
@@ -186,5 +191,29 @@ describe('game-recording', () => {
     expect(Object.hasOwn(parsed.record as unknown as Record<string, unknown>, 'unknownTopLevelProperty')).toBe(false)
     expect(Object.hasOwn(parsed.record.metadata as unknown as Record<string, unknown>, 'unknownProperty')).toBe(false)
     expect(Object.hasOwn(parsed.record.timeline[0] as unknown as Record<string, unknown>, 'unknownProperty')).toBe(false)
+  })
+
+  it('defaults missing aiLevel metadata to basic for backward compatibility', () => {
+    const initial = createInitialGame(1234)
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1234,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        startedAt: 1,
+        updatedAt: 1,
+        completed: false,
+      },
+      initialState: initial,
+      timeline: [],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.metadata.aiLevel).toBe('basic')
   })
 })

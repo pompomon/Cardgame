@@ -81,6 +81,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       seed: state.recording.metadata.seed,
       mode: state.recording.metadata.mode,
       controllers: state.recording.metadata.controllers,
+      aiLevel: state.recording.metadata.aiLevel,
       completed: state.recording.metadata.completed,
     }
     : null
@@ -94,6 +95,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       answer: state.answer,
       seed: state.seed,
       controllers: state.controllers,
+      aiLevel: state.aiLevel,
       p2pConnected,
       p2pStarted,
       game: null,
@@ -145,6 +147,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     answer: state.answer,
     seed: state.seed,
     controllers: state.controllers,
+    aiLevel: state.aiLevel,
     p2pConnected,
     p2pStarted,
     game: {
