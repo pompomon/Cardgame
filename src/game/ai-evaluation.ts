@@ -2,6 +2,7 @@ import { applyAction } from './engine'
 import type { GameAction, GameState, PlayerState } from './types'
 import type { AiPolicyContext } from './ai-policy-types'
 import { normalizeActionForVisibility } from './ai-visibility'
+import { cardNameForPlayAction } from './ai-action-utils'
 
 function opponentOf(actor: number): 0 | 1 {
   return actor === 0 ? 1 : 0
@@ -46,15 +47,6 @@ function immediateWinningCardCount(state: GameState, playerId: number): number {
     }
   }
   return winning
-}
-
-function cardNameForPlayAction(
-  state: GameState,
-  actor: number,
-  action: Extract<GameAction, { type: 'play_land' }>,
-): string | null {
-  const card = state.players[actor].hand.find((entry) => entry.id === action.cardId)
-  return card?.name ?? null
 }
 
 function findPlainsReusedLandName(

@@ -69,8 +69,6 @@ describe('ai', () => {
 
     expect(advancedAction).toMatchObject({ type: 'play_land', actor: 0, cardId: 'ai-swamp' })
     expect(hardAction).toMatchObject({ type: 'play_land', actor: 0, cardId: 'ai-swamp' })
-    expect(advancedAction?.type).toBe('play_land')
-    expect(hardAction?.type).toBe('play_land')
     if (advancedAction?.type === 'play_land' && hardAction?.type === 'play_land') {
       expect(advancedAction.effectTargetId).toBeUndefined()
       expect(hardAction.effectTargetId).toBe('winning-card')
