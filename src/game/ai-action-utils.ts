@@ -8,3 +8,14 @@ export function cardNameForPlayAction(
   const card = state.players[actor].hand.find((entry) => entry.id === action.cardId)
   return card?.name ?? null
 }
+
+export function reusedCardNameForPlainsReuseAction(
+  state: GameState,
+  action: Extract<GameAction, { type: 'resolve_plains_reuse' }>,
+): string | null {
+  const pending = state.pendingPlainsReuse
+  if (!pending || pending.actor !== action.actor) {
+    return null
+  }
+  return pending.reusedCardName
+}

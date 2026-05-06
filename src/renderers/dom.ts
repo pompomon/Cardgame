@@ -152,6 +152,23 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
     `
     : ''
 
+  const plainsReuseControls = game.canInput && game.phase === 'plains_target'
+    ? `
+      <div class="controls">
+        <h3>Plains Reuse</h3>
+        <p>Choose target for reused ${escapeHtml(game.pendingPlainsReuseName ?? 'land')}.</p>
+        <div class="action-row">
+          ${game.legal.plainsReuseOptions.map((option) => {
+            const targetAttr = option.action.effectTargetId
+              ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
+              : ''
+            return `<button data-action="resolve_plains_reuse"${targetAttr}>${escapeHtml(option.label)}</button>`
+          }).join('')}
+        </div>
+      </div>
+    `
+    : ''
+
   const renderPlayerInfo = (player: typeof p1, playerIndex: number, kind: 'active' | 'non-active'): string => `
     <article class="player player-${kind}">
       <h3>Player ${playerIndex + 1} (${escapeHtml(view.controllers[playerIndex])})${kind === 'active' ? ' — Active' : ''}</h3>
@@ -226,6 +243,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
       </div>
       ${mainControls}
       ${responseControls}
+      ${plainsReuseControls}
     </section>
   `
 }
@@ -441,6 +459,8 @@ export class DomRenderer implements AppRenderer {
           action = { type: 'counter_land', actor, discardCardId }
         } else if (dataAction === 'pass_response') {
           action = { type: 'pass_response', actor }
+        } else if (dataAction === 'resolve_plains_reuse') {
+          action = { type: 'resolve_plains_reuse', actor, effectTargetId }
         }
 
         if (action) {

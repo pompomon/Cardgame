@@ -48,7 +48,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(55)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 55,
         mode: 'local-hvh',
@@ -85,7 +85,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(66)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 66,
         mode: 'local-hvh',
@@ -114,7 +114,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(88)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 88,
         mode: 'local-hvh',
@@ -135,7 +135,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(89)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 89,
         mode: 'local-hvh',
@@ -159,7 +159,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(99)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 99,
         mode: 'local-hvh',
@@ -215,5 +215,85 @@ describe('game-recording', () => {
       return
     }
     expect(parsed.record.metadata.aiLevel).toBe('basic')
+  })
+
+  it('round-trips recordings containing resolve_plains_reuse actions', () => {
+    const initial = createInitialGame(1400)
+    const record = createGameRecord(1400, 'local-hvh', ['human', 'human'], 'basic', initial, 1000)
+    const plainsReuseState = {
+      ...initial,
+      phase: 'plains_target' as const,
+      pendingPlainsReuse: {
+        actor: 0 as const,
+        reusedInstanceId: 'self-mountain',
+        reusedCardName: 'Mountain' as const,
+      },
+      pendingLandPlay: null,
+    }
+    const updated = appendGameRecordStep(
+      record,
+      { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'enemy-a' },
+      plainsReuseState,
+      'human',
+      1100,
+    )
+
+    const parsed = parseGameRecordJson(serializeGameRecord(updated))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.timeline[0].action).toEqual({
+      type: 'resolve_plains_reuse',
+      actor: 0,
+      effectTargetId: 'enemy-a',
+    })
+  })
+
+  it('upgrades legacy v1 plains resolution steps with synthesized resolve_plains_reuse', () => {
+    const initial = createInitialGame(1401)
+    const legacyBefore = {
+      ...initial,
+      phase: 'respond' as const,
+      pendingLandPlay: {
+        actor: 0 as const,
+        card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
+        effectTargetId: 'self-mountain',
+      },
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+    }
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1401,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'pass_response', actor: 1 },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.timeline.some((step) => step.action.type === 'resolve_plains_reuse')).toBe(true)
   })
 })

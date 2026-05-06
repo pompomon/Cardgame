@@ -1,4 +1,4 @@
-import type { GameAction, GamePhase, GameState } from '../game/types'
+import type { BasicLand, GameAction, GamePhase, GameState } from '../game/types'
 import type { GameRecordFile } from './game-recording'
 
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'p2p-host' | 'p2p-join'
@@ -79,10 +79,15 @@ export interface GameUiState {
   actorControl: ControllerKind
   canInput: boolean
   pendingLandName: string | null
+  pendingPlainsReuseName: BasicLand | null
   players: [PlayerUiState, PlayerUiState]
   legal: {
     playLandByCard: Record<string, PlayLandOption[]>
     counterOptions: CounterOption[]
+    plainsReuseOptions: Array<{
+      action: Extract<GameAction, { type: 'resolve_plains_reuse' }>
+      label: string
+    }>
     canEndTurn: boolean
     canPassResponse: boolean
   }

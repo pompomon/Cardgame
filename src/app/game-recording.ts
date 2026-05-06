@@ -3,7 +3,7 @@ import type { BasicLand, GameAction, GamePhase, GameState, Winner } from '../gam
 import { isAiLevel } from './ai-levels'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
-export const GAME_RECORD_VERSION = 1
+export const GAME_RECORD_VERSION = 2
 
 export type GameActionSource = 'human' | 'ai' | 'remote'
 
@@ -87,7 +87,7 @@ function isPlayerLike(value: unknown): boolean {
 }
 
 function isPhase(value: unknown): value is GamePhase {
-  return value === 'main' || value === 'respond' || value === 'gameOver'
+  return value === 'main' || value === 'respond' || value === 'plains_target' || value === 'gameOver'
 }
 
 function isWinner(value: unknown): value is Winner {
@@ -129,6 +129,19 @@ function isGameStateLike(value: unknown): value is GameState {
     }
   }
 
+  if (value.pendingPlainsReuse !== undefined && value.pendingPlainsReuse !== null) {
+    if (!isRecordObject(value.pendingPlainsReuse)) {
+      return false
+    }
+    const pendingReuse = value.pendingPlainsReuse as Record<string, unknown>
+    if ((pendingReuse.actor !== 0 && pendingReuse.actor !== 1)
+      || typeof pendingReuse.reusedInstanceId !== 'string'
+      || typeof pendingReuse.reusedCardName !== 'string'
+      || !BASIC_LANDS.includes(pendingReuse.reusedCardName as BasicLand)) {
+      return false
+    }
+  }
+
   return typeof value.turn === 'number'
     && (value.currentPlayer === 0 || value.currentPlayer === 1)
     && typeof value.nextInstanceId === 'number'
@@ -156,10 +169,68 @@ function isGameActionLike(payload: unknown): payload is GameAction {
     }
     return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
   }
+  if (action.type === 'resolve_plains_reuse') {
+    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
+  }
   if (action.type === 'counter_land') {
     return action.discardCardId === undefined || typeof action.discardCardId === 'string'
   }
   return action.type === 'end_turn' || action.type === 'pass_response'
+}
+
+function normalizeStateSchema(state: GameState): GameState {
+  return {
+    ...state,
+    pendingPlainsReuse: state.pendingPlainsReuse ?? null,
+  }
+}
+
+function isPlainsPlayActionForPreviousState(previous: GameState, action: GameAction): boolean {
+  if (action.type !== 'play_land') {
+    return false
+  }
+  const card = previous.players[action.actor]?.hand.find((entry) => entry.id === action.cardId)
+  return card?.name === 'Plains'
+}
+
+function upgradeLegacyPlainsTimeline(
+  initialState: GameState,
+  timeline: GameRecordStep[],
+): GameRecordStep[] {
+  const upgraded: GameRecordStep[] = []
+  let previous = initialState
+  for (const step of timeline) {
+    const normalizedStep = {
+      ...step,
+      index: upgraded.length + 1,
+      state: normalizeStateSchema(step.state),
+    }
+    upgraded.push(normalizedStep)
+
+    const completedLegacyPlainsResolution = normalizedStep.state.pendingLandPlay === null
+      && normalizedStep.state.pendingPlainsReuse === null
+      && (
+        (step.action.type === 'pass_response'
+          && previous.pendingLandPlay?.card.name === 'Plains')
+        || isPlainsPlayActionForPreviousState(previous, step.action)
+      )
+
+    if (completedLegacyPlainsResolution) {
+      upgraded.push({
+        index: upgraded.length + 1,
+        source: step.source,
+        action: {
+          type: 'resolve_plains_reuse',
+          actor: previous.pendingLandPlay?.actor ?? step.action.actor,
+        },
+        state: normalizeStateSchema(step.state),
+        timestamp: step.timestamp,
+      })
+    }
+
+    previous = normalizedStep.state
+  }
+  return upgraded
 }
 
 function isControllerKind(value: unknown): value is ControllerKind {
@@ -268,7 +339,8 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
   if (payload.kind !== GAME_RECORD_KIND) {
     return { ok: false, error: 'Unsupported record kind.' }
   }
-  if (payload.version !== GAME_RECORD_VERSION) {
+  const version = payload.version
+  if (version !== 1 && version !== GAME_RECORD_VERSION) {
     return { ok: false, error: `Unsupported record version: ${String(payload.version)}.` }
   }
 
@@ -326,6 +398,22 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     }
   }
 
+  const initialState = normalizeStateSchema(payload.initialState as GameState)
+  const parsedTimeline = payload.timeline.map((step) => {
+    const entry = step as Record<string, unknown>
+    return {
+      index: entry.index as number,
+      source: entry.source as GameActionSource,
+      action: entry.action as GameAction,
+      state: normalizeStateSchema(entry.state as GameState),
+      timestamp: entry.timestamp as number,
+    }
+  })
+
+  const timeline = version === 1
+    ? upgradeLegacyPlainsTimeline(initialState, parsedTimeline)
+    : parsedTimeline
+
   const sanitizedRecord: GameRecordFile = {
     kind: GAME_RECORD_KIND,
     version: GAME_RECORD_VERSION,
@@ -338,17 +426,8 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
       updatedAt: metadata.updatedAt,
       completed: metadata.completed,
     },
-    initialState: payload.initialState as GameState,
-    timeline: payload.timeline.map((step) => {
-      const entry = step as Record<string, unknown>
-      return {
-        index: entry.index as number,
-        source: entry.source as GameActionSource,
-        action: entry.action as GameAction,
-        state: entry.state as GameState,
-        timestamp: entry.timestamp as number,
-      }
-    }),
+    initialState,
+    timeline,
   }
 
   return {

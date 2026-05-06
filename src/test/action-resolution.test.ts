@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../app/action-resolution'
+import { resolvePlainsReuseAction, resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../app/action-resolution'
 import { buildViewModel } from '../app/view-model'
 import { createInitialGame } from '../game/engine'
 import type { AppState } from '../app/types'
@@ -71,5 +71,23 @@ describe('action-resolution', () => {
 
     const resolution = resolvePlayLandDrop(vm.game!, 'missing-card-id')
     expect(resolution.kind).toBe('invalid')
+  })
+
+  it('resolves plains reuse target selection action', () => {
+    const state = createState(53)
+    state.game!.phase = 'plains_target'
+    state.game!.pendingPlainsReuse = {
+      actor: 0,
+      reusedInstanceId: 'self-swamp',
+      reusedCardName: 'Swamp',
+    }
+    state.game!.players[1].hand = [
+      { id: 'opp-1', name: 'Forest', type: 'land' },
+      { id: 'opp-2', name: 'Mountain', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+    const action = resolvePlainsReuseAction(vm.game!, 'opp-2')
+    expect(action).toEqual({ type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'opp-2' })
   })
 })
