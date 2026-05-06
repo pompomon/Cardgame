@@ -1,5 +1,6 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
+import { decodePlainsTargeting } from '../game/plains-targeting'
 import { activeActor } from './active-actor'
 import type { AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
 
@@ -48,9 +49,30 @@ function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAc
   }
 
   if (card.name === 'Plains') {
-    const target = me.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
+    const plainsTargeting = decodePlainsTargeting(action.effectTargetId)
+    const reuseTargetId = plainsTargeting?.reuseTargetId ?? action.effectTargetId
+    const target = reuseTargetId
+      ? me.battlefield.find((entry) => entry.instanceId === reuseTargetId)
+      : undefined
     if (target) {
-      label += ` (reuse ${target.card.name})`
+      label += ` (reuse ${target.card.name}`
+      if (target.card.name === 'Forest' && plainsTargeting?.reusedEffectTargetId) {
+        const nested = me.graveyard.find((entry) => entry.id === plainsTargeting.reusedEffectTargetId)
+        if (nested) {
+          label += `: return ${nested.name}`
+        }
+      } else if (target.card.name === 'Mountain' && plainsTargeting?.reusedEffectTargetId) {
+        const nested = enemy.battlefield.find((entry) => entry.instanceId === plainsTargeting.reusedEffectTargetId)
+        if (nested) {
+          label += `: destroy ${nested.card.name}`
+        }
+      } else if (target.card.name === 'Swamp' && plainsTargeting?.reusedEffectTargetId) {
+        const nested = enemy.hand.find((entry) => entry.id === plainsTargeting.reusedEffectTargetId)
+        if (nested) {
+          label += `: discard ${nested.name}`
+        }
+      }
+      label += ')'
     }
   }
 

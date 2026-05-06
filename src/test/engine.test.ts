@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { applyAction, createInitialGame } from '../game/engine'
-import type { BasicLand } from '../game/types'
+import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
+import { encodePlainsTargeting } from '../game/plains-targeting'
+import type { BasicLand, GameAction } from '../game/types'
 
 describe('engine', () => {
   it('allows one land play per turn', () => {
@@ -194,6 +195,152 @@ describe('engine', () => {
 
     expect(state.players[0].hand.some((card) => card.id === 'grave-target')).toBe(true)
     expect(state.players[1].hand.some((card) => card.id === 'opp-card')).toBe(true)
+  })
+
+  it('plains emits nested target actions when reusing target-dependent lands', () => {
+    const state = createInitialGame(26)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].graveyard = [
+      { id: 'grave-a', name: 'Forest', type: 'land' },
+      { id: 'grave-b', name: 'Mountain', type: 'land' },
+    ]
+    state.players[0].battlefield = [
+      { instanceId: 'self-forest', card: { id: 'bf-forest', name: 'Forest', type: 'land' } },
+      { instanceId: 'self-swamp', card: { id: 'bf-swamp', name: 'Swamp', type: 'land' } },
+      { instanceId: 'self-mountain', card: { id: 'bf-mountain', name: 'Mountain', type: 'land' } },
+      { instanceId: 'self-island', card: { id: 'bf-island', name: 'Island', type: 'land' } },
+    ]
+    state.players[1].hand = [
+      { id: 'opp-hand-a', name: 'Swamp', type: 'land' },
+      { id: 'opp-hand-b', name: 'Plains', type: 'land' },
+    ]
+    state.players[1].battlefield = [
+      { instanceId: 'opp-bf-a', card: { id: 'opp-bf-card-a', name: 'Forest', type: 'land' } },
+      { instanceId: 'opp-bf-b', card: { id: 'opp-bf-card-b', name: 'Island', type: 'land' } },
+    ]
+
+    const actions = getLegalActions(state, 0).filter(
+      (action): action is Extract<GameAction, { type: 'play_land' }> =>
+        action.type === 'play_land' && action.cardId === 'plains-play',
+    )
+    const encodedTargets = new Set(actions.map((action) => action.effectTargetId))
+
+    expect(encodedTargets).toEqual(new Set([
+      encodePlainsTargeting('self-forest', 'grave-a'),
+      encodePlainsTargeting('self-forest', 'grave-b'),
+      encodePlainsTargeting('self-swamp', 'opp-hand-a'),
+      encodePlainsTargeting('self-swamp', 'opp-hand-b'),
+      encodePlainsTargeting('self-mountain', 'opp-bf-a'),
+      encodePlainsTargeting('self-mountain', 'opp-bf-b'),
+      encodePlainsTargeting('self-island'),
+    ]))
+  })
+
+  it('plains can reuse forest with explicit nested graveyard target', () => {
+    let state = createInitialGame(27)
+    state.players[1].hand = []
+    state.players[0].graveyard = [
+      { id: 'grave-a', name: 'Swamp', type: 'land' },
+      { id: 'grave-b', name: 'Mountain', type: 'land' },
+    ]
+    state.players[0].battlefield = [
+      { instanceId: 'self-forest', card: { id: 'bf-forest', name: 'Forest', type: 'land' } },
+    ]
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'plains-play',
+      effectTargetId: encodePlainsTargeting('self-forest', 'grave-b'),
+    })
+
+    expect(state.players[0].hand.some((card) => card.id === 'grave-b')).toBe(true)
+    expect(state.players[0].graveyard.some((card) => card.id === 'grave-b')).toBe(false)
+  })
+
+  it('plains can reuse swamp with explicit nested opponent hand target', () => {
+    let state = createInitialGame(28)
+    state.players[0].battlefield = [
+      { instanceId: 'self-swamp', card: { id: 'bf-swamp', name: 'Swamp', type: 'land' } },
+    ]
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[1].hand = [
+      { id: 'opp-a', name: 'Forest', type: 'land' },
+      { id: 'opp-b', name: 'Mountain', type: 'land' },
+    ]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'plains-play',
+      effectTargetId: encodePlainsTargeting('self-swamp', 'opp-b'),
+    })
+
+    expect(state.players[1].hand.map((card) => card.id)).toEqual(['opp-a'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-b')).toBe(true)
+  })
+
+  it('plains can reuse mountain with explicit nested enemy battlefield target', () => {
+    let state = createInitialGame(29)
+    state.players[0].battlefield = [
+      { instanceId: 'self-mountain', card: { id: 'bf-mountain', name: 'Mountain', type: 'land' } },
+    ]
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[1].hand = []
+    state.players[1].battlefield = [
+      { instanceId: 'opp-a', card: { id: 'opp-card-a', name: 'Forest', type: 'land' } },
+      { instanceId: 'opp-b', card: { id: 'opp-card-b', name: 'Island', type: 'land' } },
+    ]
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'plains-play',
+      effectTargetId: encodePlainsTargeting('self-mountain', 'opp-b'),
+    })
+
+    expect(state.players[1].battlefield.map((entry) => entry.instanceId)).toEqual(['opp-a'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-card-b')).toBe(true)
+  })
+
+  it('plains can reuse island without nested target', () => {
+    let state = createInitialGame(30)
+    state.players[1].hand = []
+    state.players[0].battlefield = [
+      { instanceId: 'self-island', card: { id: 'bf-island', name: 'Island', type: 'land' } },
+    ]
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    const deckBefore = state.players[0].deck.length
+
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'plains-play',
+      effectTargetId: encodePlainsTargeting('self-island'),
+    })
+
+    expect(state.players[0].deck.length).toBe(deckBefore - 1)
+  })
+
+  it('plains nested targeting safely ignores malformed composite target ids', () => {
+    let state = createInitialGame(31)
+    state.players[0].battlefield = [
+      { instanceId: 'self-forest', card: { id: 'bf-forest', name: 'Forest', type: 'land' } },
+    ]
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].graveyard = []
+    state.players[1].hand = [{ id: 'opp-a', name: 'Forest', type: 'land' }]
+
+    const handBefore = state.players[1].hand.length
+    state = applyAction(state, {
+      type: 'play_land',
+      actor: 0,
+      cardId: 'plains-play',
+      effectTargetId: '::bad',
+    })
+
+    expect(state.players[1].hand).toHaveLength(handBefore)
   })
 
   it('island counter discards the selected additional hand card', () => {

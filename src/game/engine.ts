@@ -1,5 +1,6 @@
 import { createStarterDeck } from './cards'
 import type { BattlefieldCard, Card, GameAction, GameState, PlayerState, Winner } from './types'
+import { decodePlainsTargeting, encodePlainsTargeting } from './plains-targeting'
 
 const STARTING_HAND = 5
 
@@ -175,14 +176,16 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     return
   }
 
-  const target = effectTargetId
-    ? me.battlefield.find((entry) => entry.instanceId === effectTargetId && entry.card.name !== 'Plains')
+  const plainsTargeting = decodePlainsTargeting(effectTargetId)
+  const plainsReuseTargetId = plainsTargeting?.reuseTargetId
+  const target = plainsReuseTargetId
+    ? me.battlefield.find((entry) => entry.instanceId === plainsReuseTargetId && entry.card.name !== 'Plains')
     : me.battlefield.find((entry) => entry.card.name !== 'Plains')
   if (!target) {
     return
   }
   state.log.push(`Plains reuses ${target.card.name}.`)
-  applyLandEffect(state, actor, target.card)
+  applyLandEffect(state, actor, target.card, plainsTargeting?.reusedEffectTargetId)
 }
 
 function resolvePendingLandPlay(state: GameState): void {
@@ -278,7 +281,48 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
           const targets = me.battlefield.filter((entry) => entry.card.name !== 'Plains')
           if (targets.length > 0) {
             for (const target of targets) {
-              actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
+              if (target.card.name === 'Forest' && me.graveyard.length > 0) {
+                for (const graveyardTarget of me.graveyard) {
+                  actions.push({
+                    type: 'play_land',
+                    actor,
+                    cardId: card.id,
+                    effectTargetId: encodePlainsTargeting(target.instanceId, graveyardTarget.id),
+                  })
+                }
+                continue
+              }
+
+              if (target.card.name === 'Mountain' && enemy.battlefield.length > 0) {
+                for (const battlefieldTarget of enemy.battlefield) {
+                  actions.push({
+                    type: 'play_land',
+                    actor,
+                    cardId: card.id,
+                    effectTargetId: encodePlainsTargeting(target.instanceId, battlefieldTarget.instanceId),
+                  })
+                }
+                continue
+              }
+
+              if (target.card.name === 'Swamp' && enemy.hand.length > 0) {
+                for (const handTarget of enemy.hand) {
+                  actions.push({
+                    type: 'play_land',
+                    actor,
+                    cardId: card.id,
+                    effectTargetId: encodePlainsTargeting(target.instanceId, handTarget.id),
+                  })
+                }
+                continue
+              }
+
+              actions.push({
+                type: 'play_land',
+                actor,
+                cardId: card.id,
+                effectTargetId: encodePlainsTargeting(target.instanceId),
+              })
             }
             continue
           }

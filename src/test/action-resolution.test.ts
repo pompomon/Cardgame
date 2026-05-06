@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../app/action-resolution'
 import { buildViewModel } from '../app/view-model'
 import { createInitialGame } from '../game/engine'
+import { encodePlainsTargeting } from '../game/plains-targeting'
 import type { AppState } from '../app/types'
 
 function createState(seed: number): AppState {
@@ -71,5 +72,31 @@ describe('action-resolution', () => {
 
     const resolution = resolvePlayLandDrop(vm.game!, 'missing-card-id')
     expect(resolution.kind).toBe('invalid')
+  })
+
+  it('resolves Plains nested encoded target options', () => {
+    const state = createState(53)
+    state.game!.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.game!.players[0].battlefield = [
+      { instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } },
+    ]
+    state.game!.players[1].hand = [
+      { id: 'opp-a', name: 'Forest', type: 'land' },
+      { id: 'opp-b', name: 'Mountain', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+    const game = vm.game!
+
+    const resolution = resolvePlayLandDrop(game, 'plains-play')
+    expect(resolution.kind).toBe('needs_target')
+    if (resolution.kind === 'needs_target') {
+      const nestedTarget = encodePlainsTargeting('self-swamp', 'opp-b')
+      const option = resolution.options.find((entry) => entry.effectTargetId === nestedTarget)
+      expect(option).toBeTruthy()
+
+      const action = resolveTargetedPlayLandAction(game, 'plains-play', nestedTarget)
+      expect(action?.effectTargetId).toBe(nestedTarget)
+    }
   })
 })
