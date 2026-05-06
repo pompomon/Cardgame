@@ -1,6 +1,6 @@
 import type { ControllerApi } from '../app/controller'
-import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
-import type { AiLevel, AppViewModel, Mode, RendererKind } from '../app/types'
+import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
+import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
@@ -315,8 +315,10 @@ export class DomRenderer implements AppRenderer {
     })
 
     this.container.querySelector<HTMLSelectElement>('#ai-level-select')?.addEventListener('change', (event) => {
-      const value = (event.target as HTMLSelectElement).value as AiLevel
-      this.controller?.setAiLevel(value)
+      const value = (event.target as HTMLSelectElement).value
+      if (isAiLevel(value)) {
+        this.controller?.setAiLevel(value)
+      }
     })
 
     this.container.querySelector('#back-to-lobby')?.addEventListener('click', () => {

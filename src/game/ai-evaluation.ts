@@ -88,6 +88,23 @@ function disruptionHintForAction(state: GameState, actor: number, action: GameAc
   return 0
 }
 
+function toEvaluationState(state: GameState): GameState {
+  return {
+    ...state,
+    log: [],
+    players: [
+      {
+        ...state.players[0],
+        deck: state.players[0].deck.length > 0 ? [state.players[0].deck[0]] : [],
+      },
+      {
+        ...state.players[1],
+        deck: state.players[1].deck.length > 0 ? [state.players[1].deck[0]] : [],
+      },
+    ],
+  }
+}
+
 export function chooseStrategicAction(
   state: GameState,
   actor: number,
@@ -105,13 +122,14 @@ export function chooseStrategicAction(
   const knownEnemyThreatBefore = context.visibility.canInspectOpponentHand
     ? immediateWinningCardCount(state, enemy)
     : 0
+  const evaluationState = toEvaluationState(state)
 
   let bestAction: GameAction | null = null
   let bestScore = Number.NEGATIVE_INFINITY
   let bestIndex = Number.POSITIVE_INFINITY
   actions.forEach((action, index) => {
     const visibleAction = normalizeActionForVisibility(state, actor, action, context)
-    const next = applyAction(state, visibleAction)
+    const next = applyAction(evaluationState, visibleAction)
     const ownAfter = progressForPlayer(next.players[actor])
     const enemyAfter = progressForPlayer(next.players[enemy])
     const knownEnemyThreatAfter = context.visibility.canInspectOpponentHand
@@ -142,7 +160,7 @@ export function chooseStrategicAction(
     }
 
     if (score > bestScore || (score === bestScore && index < bestIndex)) {
-      bestAction = visibleAction
+      bestAction = action
       bestScore = score
       bestIndex = index
     }

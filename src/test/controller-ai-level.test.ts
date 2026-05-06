@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { chooseAiActionMock } = vi.hoisted(() => ({
   chooseAiActionMock: vi.fn(),
@@ -39,6 +39,11 @@ describe('controller ai level wiring', () => {
     chooseAiActionMock.mockImplementation((_state: GameState, actor: number): GameAction => {
       return { type: 'end_turn', actor }
     })
+  })
+
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
   })
 
   it('passes selected ai level into local Human vs AI decisions', () => {

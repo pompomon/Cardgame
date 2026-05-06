@@ -66,11 +66,13 @@ describe('ai', () => {
 
     const advancedAction = chooseAiAction(state, 0, { level: 'advanced' })
     const hardAction = chooseAiAction(state, 0, { level: 'hard' })
+    const legal = getLegalActions(state, 0)
 
     expect(advancedAction).toMatchObject({ type: 'play_land', actor: 0, cardId: 'ai-swamp' })
     expect(hardAction).toMatchObject({ type: 'play_land', actor: 0, cardId: 'ai-swamp' })
     if (advancedAction?.type === 'play_land' && hardAction?.type === 'play_land') {
-      expect(advancedAction.effectTargetId).toBeUndefined()
+      expect(advancedAction.effectTargetId).toBeDefined()
+      expect(legal).toContainEqual(advancedAction)
       expect(hardAction.effectTargetId).toBe('winning-card')
     }
   })
