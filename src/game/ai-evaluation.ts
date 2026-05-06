@@ -88,18 +88,26 @@ function disruptionHintForAction(state: GameState, actor: number, action: GameAc
   return 0
 }
 
+function trimDeckForEvaluation(state: GameState, playerId: 0 | 1): PlayerState['deck'] {
+  const deck = state.players[playerId].deck
+  return deck.length > 0 ? [deck[0]] : []
+}
+
 function toEvaluationState(state: GameState): GameState {
+  // AI scoring only needs immediate action outcomes, not full log history or
+  // deep deck contents. Keeping one top card preserves single-draw behavior
+  // while reducing per-candidate structuredClone payload size in applyAction.
   return {
     ...state,
     log: [],
     players: [
       {
         ...state.players[0],
-        deck: state.players[0].deck.length > 0 ? [state.players[0].deck[0]] : [],
+        deck: trimDeckForEvaluation(state, 0),
       },
       {
         ...state.players[1],
-        deck: state.players[1].deck.length > 0 ? [state.players[1].deck[0]] : [],
+        deck: trimDeckForEvaluation(state, 1),
       },
     ],
   }
