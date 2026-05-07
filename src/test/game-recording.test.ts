@@ -399,6 +399,7 @@ describe('game-recording', () => {
         legacyBefore.players[1],
       ],
     }
+    expect(legacyAfter.pendingLandPlay).toBeNull()
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
       version: 1,
