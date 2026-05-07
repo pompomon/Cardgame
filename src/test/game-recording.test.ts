@@ -431,4 +431,69 @@ describe('game-recording', () => {
     }
     expect(parsed.record.timeline.some((step) => step.action.type === 'resolve_plains_reuse')).toBe(false)
   })
+
+  it('synthesizes resolve_plains_reuse for legacy pass_response when swamp reuse has discard targets', () => {
+    const initial = createInitialGame(1404)
+    const legacyBefore = {
+      ...initial,
+      phase: 'respond' as const,
+      pendingLandPlay: {
+        actor: 0 as const,
+        card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
+        effectTargetId: 'self-swamp::enemy-a',
+      },
+      players: [
+        {
+          ...initial.players[0],
+          battlefield: [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }],
+        },
+        {
+          ...initial.players[1],
+          hand: [{ id: 'enemy-a', name: 'Forest' as const, type: 'land' as const }],
+        },
+      ],
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+      players: [
+        legacyBefore.players[0],
+        legacyBefore.players[1],
+      ],
+    }
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1404,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'pass_response', actor: 1 },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    const synthesized = parsed.record.timeline.find((step) => step.action.type === 'resolve_plains_reuse')
+    expect(synthesized).toBeDefined()
+    if (synthesized?.action.type === 'resolve_plains_reuse') {
+      expect(synthesized.action.effectTargetId).toBe('enemy-a')
+    }
+  })
 })

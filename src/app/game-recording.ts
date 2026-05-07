@@ -199,10 +199,12 @@ function parseLegacyReuseTargetId(
   if (!reuseTargetId) {
     return { normalizedReuseTargetId: null }
   }
-  if (!reuseTargetId.includes('::')) {
+  const separatorIndex = reuseTargetId.indexOf('::')
+  if (separatorIndex < 0) {
     return { normalizedReuseTargetId: reuseTargetId }
   }
-  const [normalizedReuseTargetId, nestedTargetId] = reuseTargetId.split('::')
+  const normalizedReuseTargetId = reuseTargetId.slice(0, separatorIndex)
+  const nestedTargetId = reuseTargetId.slice(separatorIndex + 2)
   return {
     normalizedReuseTargetId: normalizedReuseTargetId || null,
     nestedTargetId: nestedTargetId || undefined,
