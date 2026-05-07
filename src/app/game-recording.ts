@@ -193,23 +193,54 @@ function isPlainsPlayActionForPreviousState(previous: GameState, action: GameAct
   return card?.name === 'Plains'
 }
 
-function normalizeLegacyReuseTargetId(reuseTargetId: string): string {
-  return reuseTargetId.includes('::')
-    ? reuseTargetId.split('::')[0]
-    : reuseTargetId
+function parseLegacyReuseTargetId(
+  reuseTargetId: string | undefined,
+): { normalizedReuseTargetId: string | null; nestedTargetId?: string } {
+  if (!reuseTargetId) {
+    return { normalizedReuseTargetId: null }
+  }
+  if (!reuseTargetId.includes('::')) {
+    return { normalizedReuseTargetId: reuseTargetId }
+  }
+  const [normalizedReuseTargetId, nestedTargetId] = reuseTargetId.split('::')
+  return {
+    normalizedReuseTargetId: normalizedReuseTargetId || null,
+    nestedTargetId: nestedTargetId || undefined,
+  }
 }
 
-function plainsReuseNeedsFollowUp(previous: GameState, actor: number, reuseTargetId: string | undefined): boolean {
+function plainsReuseFollowUpAction(
+  previous: GameState,
+  actor: number,
+  reuseTargetId: string | undefined,
+): Extract<GameAction, { type: 'resolve_plains_reuse' }> | null {
   if (!reuseTargetId) {
-    return false
+    return null
   }
-  const normalizedReuseTargetId = normalizeLegacyReuseTargetId(reuseTargetId)
+  const { normalizedReuseTargetId, nestedTargetId } = parseLegacyReuseTargetId(reuseTargetId)
+  if (!normalizedReuseTargetId) {
+    return null
+  }
   const reused = previous.players[actor].battlefield.find(
     (entry) => entry.instanceId === normalizedReuseTargetId && entry.card.name !== 'Plains',
   )
-  return reused?.card.name === 'Forest'
-    || reused?.card.name === 'Mountain'
-    || reused?.card.name === 'Swamp'
+  if (!reused) {
+    return null
+  }
+  const opponent = previous.players[actor === 0 ? 1 : 0]
+  const hasNestedTargets = reused.card.name === 'Forest'
+    ? previous.players[actor].graveyard.length > 0
+    : reused.card.name === 'Mountain'
+      ? opponent.battlefield.length > 0
+      : reused.card.name === 'Swamp'
+        ? opponent.hand.length > 0
+        : false
+  if (!hasNestedTargets) {
+    return null
+  }
+  return nestedTargetId
+    ? { type: 'resolve_plains_reuse', actor, effectTargetId: nestedTargetId }
+    : { type: 'resolve_plains_reuse', actor }
 }
 
 function upgradeLegacyPlainsTimeline(
@@ -232,22 +263,17 @@ function upgradeLegacyPlainsTimeline(
       : undefined
     const completedLegacyPlainsResolution = normalizedStep.state.pendingLandPlay === null
       && normalizedStep.state.pendingPlainsReuse === null
-      && (
-        (step.action.type === 'pass_response'
-          && pendingLegacyPlains !== null
-          && plainsReuseNeedsFollowUp(previous, pendingLegacyPlains.actor, pendingLegacyPlains.effectTargetId))
-        || (legacyPlainsPlayEffectTarget !== undefined
-          && plainsReuseNeedsFollowUp(previous, step.action.actor, legacyPlainsPlayEffectTarget))
-      )
+    const synthesizedResolveAction = step.action.type === 'pass_response' && pendingLegacyPlains !== null
+      ? plainsReuseFollowUpAction(previous, pendingLegacyPlains.actor, pendingLegacyPlains.effectTargetId)
+      : legacyPlainsPlayEffectTarget !== undefined
+        ? plainsReuseFollowUpAction(previous, step.action.actor, legacyPlainsPlayEffectTarget)
+        : null
 
-    if (completedLegacyPlainsResolution) {
+    if (completedLegacyPlainsResolution && synthesizedResolveAction) {
       upgraded.push({
         index: upgraded.length + 1,
         source: step.source,
-        action: {
-          type: 'resolve_plains_reuse',
-          actor: previous.pendingLandPlay?.actor ?? step.action.actor,
-        },
+        action: synthesizedResolveAction,
         state: normalizeStateSchema(step.state),
         timestamp: step.timestamp,
       })
