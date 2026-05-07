@@ -18,8 +18,9 @@ const BUTTON_TEXT_HEIGHT_RATIO = 0.42
 const BUTTON_TEXT_NARROW_WIDTH_THRESHOLD = 180
 const BUTTON_TEXT_NARROW_WIDTH_SCALE = 0.92
 const BUTTON_TEXT_MAX_LINES = 2
-const MIN_BUTTON_FONT_PX = 10
-const MAX_BUTTON_FONT_PX = 24
+// Keep renderer-side clamping aligned with layout button typography limits.
+const MIN_BUTTON_FONT_PX = 12
+const MAX_BUTTON_FONT_PX = 20
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
