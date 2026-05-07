@@ -55,6 +55,14 @@ export interface SceneLayout {
   // (drop the active-info text on extremely tight viewports so controls fit).
   activeInfoTextLines: number
   statusBottomOffset: number
+  actionButtonFontSize: string
+  popupButtonFontSize: string
+  popupTitleFontSize: string
+  popupScrimAlpha: number
+  popupPanelAlpha: number
+  popupBackdropAlpha: number
+  popupViewportAlpha: number
+  popupButtonGap: number
   popupMaxWidth: number
   popupButtonHeight: number
   menuPopupWidth: number
@@ -68,6 +76,8 @@ export interface SceneLayout {
 export const COMPACT_DIMENSION_THRESHOLD = 700
 export const RESPONSIVE_COLLAPSE_WIDTH = 720
 export const POPUP_MIN_WIDTH = 180
+const POPUP_SCRIM_ALPHA = 0.62
+const POPUP_OPAQUE_ALPHA = 1
 
 export function clamp(value: number, minValue: number, maxValue: number): number {
   const lower = Math.min(minValue, maxValue)
@@ -96,6 +106,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const bodyFontSize = `${Math.round(bodyFontPx)}px`
   const smallFontSize = `${Math.round(smallFontPx)}px`
   const actionButtonHeight = clamp(minDimension * 0.05, 32, 48)
+  const actionButtonFontPx = clamp(actionButtonHeight * 0.42, 12, 20)
   const actionButtonWidth = Math.min(
     contentWidth,
     clamp(
@@ -286,9 +297,12 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
   const popupMaxWidth = Math.min(popupAvailableWidth, Math.max(POPUP_MIN_WIDTH, popupTargetWidth))
   const popupButtonHeight = clamp(actionButtonHeight * 1.05, 36, 48)
-  const menuPopupPadding = isCompact ? 12 : 16
-  const menuSectionGap = isCompact ? 8 : 10
-  const menuTitleHeight = clamp(actionButtonHeight * 0.95, 30, 46)
+  const popupButtonFontPx = clamp(popupButtonHeight * 0.42, 12, 20)
+  const popupTitleFontPx = clamp(popupButtonHeight * 0.58, 16, 28)
+  const popupButtonGap = clamp(popupButtonHeight * 0.2, 6, 12)
+  const menuPopupPadding = Math.round(clamp(popupButtonHeight * (isCompact ? 0.35 : 0.42), 12, 20))
+  const menuSectionGap = Math.round(clamp(popupButtonHeight * 0.24, 8, 14))
+  const menuTitleHeight = Math.round(clamp(popupButtonHeight * 0.95, 30, 46))
   const menuPopupMaxWidth = Math.max(1, popupAvailableWidth)
   const menuPopupWidth = clamp(
     orientation === 'vertical' ? 560 : 760,
@@ -371,6 +385,14 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     activeInfoControlsHeight,
     activeInfoTextLines: textLines,
     statusBottomOffset,
+    actionButtonFontSize: `${Math.round(actionButtonFontPx)}px`,
+    popupButtonFontSize: `${Math.round(popupButtonFontPx)}px`,
+    popupTitleFontSize: `${Math.round(popupTitleFontPx)}px`,
+    popupScrimAlpha: POPUP_SCRIM_ALPHA,
+    popupPanelAlpha: POPUP_OPAQUE_ALPHA,
+    popupBackdropAlpha: POPUP_OPAQUE_ALPHA,
+    popupViewportAlpha: POPUP_OPAQUE_ALPHA,
+    popupButtonGap,
     popupMaxWidth,
     popupButtonHeight,
     menuPopupWidth,
