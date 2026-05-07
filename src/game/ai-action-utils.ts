@@ -1,4 +1,4 @@
-import type { GameAction, GameState } from './types'
+import type { BasicLand, GameAction, GameState } from './types'
 
 export function cardNameForPlayAction(
   state: GameState,
@@ -12,7 +12,7 @@ export function cardNameForPlayAction(
 export function reusedCardNameForPlainsReuseAction(
   state: GameState,
   action: Extract<GameAction, { type: 'resolve_plains_reuse' }>,
-): string | null {
+): BasicLand | null {
   const pending = state.pendingPlainsReuse
   if (!pending || pending.actor !== action.actor) {
     return null
