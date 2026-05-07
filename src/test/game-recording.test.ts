@@ -48,7 +48,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(55)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 55,
         mode: 'local-hvh',
@@ -85,7 +85,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(66)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 66,
         mode: 'local-hvh',
@@ -114,7 +114,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(88)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 88,
         mode: 'local-hvh',
@@ -135,7 +135,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(89)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 89,
         mode: 'local-hvh',
@@ -159,7 +159,7 @@ describe('game-recording', () => {
     const initial = createInitialGame(99)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
-      version: 1,
+      version: 2,
       metadata: {
         seed: 99,
         mode: 'local-hvh',
@@ -215,5 +215,286 @@ describe('game-recording', () => {
       return
     }
     expect(parsed.record.metadata.aiLevel).toBe('basic')
+  })
+
+  it('round-trips recordings containing resolve_plains_reuse actions', () => {
+    const initial = createInitialGame(1400)
+    const record = createGameRecord(1400, 'local-hvh', ['human', 'human'], 'basic', initial, 1000)
+    const plainsReuseState = {
+      ...initial,
+      phase: 'plains_target' as const,
+      pendingPlainsReuse: {
+        actor: 0 as const,
+        reusedInstanceId: 'self-mountain',
+        reusedCardName: 'Mountain' as const,
+      },
+      pendingLandPlay: null,
+    }
+    const updated = appendGameRecordStep(
+      record,
+      { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'enemy-a' },
+      plainsReuseState,
+      'human',
+      1100,
+    )
+
+    const parsed = parseGameRecordJson(serializeGameRecord(updated))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.timeline[0].action).toEqual({
+      type: 'resolve_plains_reuse',
+      actor: 0,
+      effectTargetId: 'enemy-a',
+    })
+    if (parsed.record.timeline[0].action.type === 'resolve_plains_reuse') {
+      expect(parsed.record.timeline[0].action.effectTargetId).toBe('enemy-a')
+    }
+  })
+
+  it('upgrades legacy v1 plains resolution steps with synthesized resolve_plains_reuse', () => {
+    const initial = createInitialGame(1401)
+    const legacyBefore = {
+      ...initial,
+      phase: 'respond' as const,
+      pendingLandPlay: {
+        actor: 0 as const,
+        card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
+        effectTargetId: 'self-mountain::enemy-a',
+      },
+      players: [
+        {
+          ...initial.players[0],
+          battlefield: [{ instanceId: 'self-mountain', card: { id: 'self-mountain-card', name: 'Mountain', type: 'land' } }],
+        },
+        {
+          ...initial.players[1],
+          battlefield: [{ instanceId: 'enemy-a', card: { id: 'enemy-a-card', name: 'Forest', type: 'land' } }],
+        },
+      ],
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+    }
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1401,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'pass_response', actor: 1 },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    const synthesized = parsed.record.timeline.find((step) => step.action.type === 'resolve_plains_reuse')
+    expect(synthesized).toBeDefined()
+    if (synthesized?.action.type === 'resolve_plains_reuse') {
+      expect(synthesized.action.effectTargetId).toBe('enemy-a')
+    }
+  })
+
+  it('upgrades legacy v1 play_land plains resolution when target id includes nested legacy encoding', () => {
+    const initial = createInitialGame(1402)
+    const legacyBefore = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+      players: [
+        {
+          ...initial.players[0],
+          hand: [{ id: 'plains-play', name: 'Plains' as const, type: 'land' as const }],
+          battlefield: [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }],
+        },
+        initial.players[1],
+      ],
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+    }
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1402,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-swamp::enemy-a' },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    const synthesized = parsed.record.timeline.find((step) => step.action.type === 'resolve_plains_reuse')
+    expect(synthesized).toBeDefined()
+    if (synthesized?.action.type === 'resolve_plains_reuse') {
+      expect(synthesized.action.effectTargetId).toBe('enemy-a')
+    }
+  })
+
+  it('does not synthesize resolve_plains_reuse when reused land has no nested targets', () => {
+    const initial = createInitialGame(1403)
+    const legacyBefore = {
+      ...initial,
+      phase: 'respond' as const,
+      pendingLandPlay: {
+        actor: 0 as const,
+        card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
+        effectTargetId: 'self-swamp::enemy-a',
+      },
+      players: [
+        {
+          ...initial.players[0],
+          battlefield: [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }],
+        },
+        {
+          ...initial.players[1],
+          hand: [],
+        },
+      ],
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+      players: [
+        legacyBefore.players[0],
+        legacyBefore.players[1],
+      ],
+    }
+    expect(legacyAfter.pendingLandPlay).toBeNull()
+    expect(legacyBefore.players[1].hand).toHaveLength(0)
+    expect(legacyBefore.players[0].battlefield.some((entry) => entry.instanceId === 'self-swamp')).toBe(true)
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1403,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'pass_response', actor: 1 },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.timeline.some((step) => step.action.type === 'resolve_plains_reuse')).toBe(false)
+  })
+
+  it('synthesizes resolve_plains_reuse for legacy pass_response when swamp reuse has discard targets', () => {
+    const initial = createInitialGame(1404)
+    const legacyBefore = {
+      ...initial,
+      phase: 'respond' as const,
+      pendingLandPlay: {
+        actor: 0 as const,
+        card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
+        effectTargetId: 'self-swamp::enemy-a',
+      },
+      players: [
+        {
+          ...initial.players[0],
+          battlefield: [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }],
+        },
+        {
+          ...initial.players[1],
+          hand: [{ id: 'enemy-a', name: 'Forest' as const, type: 'land' as const }],
+        },
+      ],
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+      players: [
+        legacyBefore.players[0],
+        legacyBefore.players[1],
+      ],
+    }
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1404,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'pass_response', actor: 1 },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    const synthesized = parsed.record.timeline.find((step) => step.action.type === 'resolve_plains_reuse')
+    expect(synthesized).toBeDefined()
+    if (synthesized?.action.type === 'resolve_plains_reuse') {
+      expect(synthesized.action.effectTargetId).toBe('enemy-a')
+    }
   })
 })

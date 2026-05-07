@@ -10,9 +10,31 @@ function winnerTextFor(game: GameState): string {
   return game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
 }
 
-function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAction, { type: 'play_land' }>): string {
+function nestedTargetLabel(
+  game: GameState,
+  actor: number,
+  cardName: 'Forest' | 'Mountain' | 'Swamp',
+  effectTargetId: string | undefined,
+): string | null {
+  if (!effectTargetId) {
+    return null
+  }
   const me = game.players[actor]
   const enemy = game.players[actor === 0 ? 1 : 0]
+  if (cardName === 'Forest') {
+    const target = me.graveyard.find((entry) => entry.id === effectTargetId)
+    return target ? `return ${target.name}` : null
+  }
+  if (cardName === 'Mountain') {
+    const target = enemy.battlefield.find((entry) => entry.instanceId === effectTargetId)
+    return target ? `destroy ${target.card.name}` : null
+  }
+  const target = enemy.hand.find((entry) => entry.id === effectTargetId)
+  return target ? `discard ${target.name}` : null
+}
+
+function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAction, { type: 'play_land' }>): string {
+  const me = game.players[actor]
   const card = me.hand.find((entry) => entry.id === action.cardId)
   if (!card) {
     return 'Play card'
@@ -23,26 +45,10 @@ function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAc
     return label
   }
 
-  if (card.name === 'Forest') {
-    const target = me.graveyard.find((entry) => entry.id === action.effectTargetId)
-    if (target) {
-      label += ` (return ${target.name})`
-    }
-    return label
-  }
-
-  if (card.name === 'Mountain') {
-    const target = enemy.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
-    if (target) {
-      label += ` (destroy ${target.card.name})`
-    }
-    return label
-  }
-
-  if (card.name === 'Swamp') {
-    const target = enemy.hand.find((entry) => entry.id === action.effectTargetId)
-    if (target) {
-      label += ` (discard ${target.name})`
+  if (card.name === 'Forest' || card.name === 'Mountain' || card.name === 'Swamp') {
+    const suffix = nestedTargetLabel(game, actor, card.name, action.effectTargetId)
+    if (suffix) {
+      label += ` (${suffix})`
     }
     return label
   }
@@ -55,6 +61,22 @@ function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAc
   }
 
   return label
+}
+
+function plainsReuseLabelFor(
+  game: GameState,
+  actor: number,
+  action: Extract<GameAction, { type: 'resolve_plains_reuse' }>,
+): string {
+  const reusedName = game.pendingPlainsReuse?.reusedCardName
+  if (!reusedName) {
+    return 'Resolve Plains reuse'
+  }
+  if (reusedName === 'Forest' || reusedName === 'Mountain' || reusedName === 'Swamp') {
+    const suffix = nestedTargetLabel(game, actor, reusedName, action.effectTargetId)
+    return suffix ? `Reuse ${reusedName} (${suffix})` : `Reuse ${reusedName}`
+  }
+  return `Reuse ${reusedName}`
 }
 
 function counterLabelFor(
@@ -122,6 +144,10 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
   const playLandByCard: Record<string, PlayLandOption[]> = {}
   const counterOptions: CounterOption[] = []
+  const plainsReuseOptions: Array<{
+    action: Extract<GameAction, { type: 'resolve_plains_reuse' }>
+    label: string
+  }> = []
 
   for (const action of legalActions) {
     if (action.type === 'play_land') {
@@ -136,6 +162,11 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
     if (action.type === 'counter_land') {
       counterOptions.push({ action, label: counterLabelFor(game, actor, action) })
+      continue
+    }
+
+    if (action.type === 'resolve_plains_reuse') {
+      plainsReuseOptions.push({ action, label: plainsReuseLabelFor(game, actor, action) })
     }
   }
 
@@ -158,6 +189,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       actorControl,
       canInput,
       pendingLandName: game.pendingLandPlay?.card.name ?? null,
+      pendingPlainsReuseName: game.pendingPlainsReuse?.reusedCardName ?? null,
       players: [
         {
           id: 0,
@@ -179,6 +211,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       legal: {
         playLandByCard,
         counterOptions,
+        plainsReuseOptions,
         canEndTurn: legalActions.some((action) => action.type === 'end_turn'),
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),
       },

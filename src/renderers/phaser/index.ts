@@ -1,8 +1,12 @@
 import Phaser from 'phaser'
-import { resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../../app/action-resolution'
+import {
+  resolvePlayLandDrop,
+  resolveTargetedPlayLandAction,
+} from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
+import type { GameAction } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { buildLayout, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
 
@@ -475,7 +479,10 @@ class CardgameScene extends Phaser.Scene {
       }
 
       this.snapCardToOrigin(card)
-      this.showTargetPicker(game, cardId, resolution.options)
+      this.showTargetPicker(
+        resolution.options,
+        (targetId) => resolveTargetedPlayLandAction(game, cardId, targetId),
+      )
     }
     this.input.on('drop', onDrop)
 
@@ -788,10 +795,10 @@ class CardgameScene extends Phaser.Scene {
     // fit above the controls band (End Turn / response buttons). Render only
     // that many lines so the text does not spill into the controls band or
     // the hand strip on short split layouts (e.g. 720x360 horizontal).
-    // During the response phase we show a dedicated "Opponent played …" prompt
-    // above the controls, so hide the active-info summary lines to avoid text
-    // overlap on short split layouts.
-    const allowedActiveLines = game.phase === 'respond'
+    // During response/plains-target phases we show a dedicated prompt above the
+    // controls, so hide the active-info summary lines to avoid text overlap on
+    // short split layouts.
+    const allowedActiveLines = game.phase === 'respond' || game.phase === 'plains_target'
       ? 0
       : Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
     const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
@@ -1067,6 +1074,45 @@ class CardgameScene extends Phaser.Scene {
       }
       this.rootContainer?.add(cardObject)
     })
+
+    if (game.canInput && game.phase === 'plains_target') {
+      const promptText = this.add.text(
+        this.currentLayout.boardColumnLeft + RESPONSE_PROMPT_X_OFFSET,
+        this.currentLayout.activeInfoY + RESPONSE_PROMPT_Y_OFFSET,
+        `Choose target for reused ${game.pendingPlainsReuseName ?? 'land'}.`,
+        {
+          color: '#f0f4ff',
+          fontSize: this.currentLayout.bodyFontSize,
+          wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
+        },
+      )
+      const promptBottom = promptText.y + promptText.height + RESPONSE_PROMPT_BOTTOM_GAP
+      if (promptBottom <= this.currentLayout.activeInfoControlsTop) {
+        this.rootContainer?.add(promptText)
+      } else {
+        promptText.destroy()
+      }
+
+      const options = game.legal.plainsReuseOptions
+      const totalButtons = options.length
+      if (totalButtons > 0) {
+        const buttonWidth = Math.min(this.currentLayout.actionButtonWidth, Math.max(120, this.currentLayout.boardColumnWidth - 16))
+        const buttonHeight = Math.min(
+          this.currentLayout.actionButtonHeight + 4,
+          Math.max(20, this.currentLayout.activeInfoControlsHeight / Math.max(1, totalButtons)),
+        )
+        options.forEach((option, index) => {
+          const y = this.currentLayout.activeInfoControlsTop
+            + buttonHeight / 2
+            + index * Math.min(buttonHeight + 6, this.currentLayout.activeInfoControlsHeight / Math.max(1, totalButtons))
+          const x = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
+          this.rootContainer?.add(this.createButton(option.label, x, y, () => {
+            this.rendererRef.controller?.submitAction(option.action)
+          }, buttonWidth, buttonHeight))
+        })
+      }
+      return
+    }
 
     if (game.canInput && game.phase === 'respond') {
       const promptText = this.add.text(
@@ -1519,9 +1565,8 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private showTargetPicker(
-    game: GameUiState,
-    cardId: string,
     options: Array<{ effectTargetId?: string; label: string }>,
+    resolver: (effectTargetId?: string) => GameAction | null,
     showAllTargets = false,
   ): void {
     if (this.menuOpen) {
@@ -1602,7 +1647,7 @@ class CardgameScene extends Phaser.Scene {
 
     options.slice(0, optionCount).forEach((option, index) => {
       const selectOption = (): void => {
-        const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
+        const action = resolver(option.effectTargetId)
         if (action) {
           this.rendererRef.controller?.submitAction(action)
         }
@@ -1662,7 +1707,7 @@ class CardgameScene extends Phaser.Scene {
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
       const toggleShowAll = (): void => {
         overlay.destroy(true)
-        this.showTargetPicker(game, cardId, options, !showAllTargets)
+        this.showTargetPicker(options, resolver, !showAllTargets)
       }
       const showAllButton = this.createButton(showAllLabel, 0, showAllY, toggleShowAll, Math.min(buttonWidth, 300), showAllButtonHeight)
       overlay.add(showAllButton)
@@ -2082,6 +2127,14 @@ export class PhaserRenderer implements AppRenderer {
                 onClick: () => controller.submitAction({ type: 'pass_response', actor: game.actor }),
               })
             }
+          } else if (game.phase === 'plains_target') {
+            game.legal.plainsReuseOptions.forEach((option, index) => {
+              entries.push({
+                key: `plains-reuse:${index}:${option.action.effectTargetId ?? 'default'}`,
+                label: option.label,
+                onClick: () => controller.submitAction(option.action),
+              })
+            })
           }
         }
       }

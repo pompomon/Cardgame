@@ -41,3 +41,11 @@ export function resolveTargetedPlayLandAction(
   const match = options.find((option) => option.action.effectTargetId === effectTargetId)
   return match?.action ?? null
 }
+
+export function resolvePlainsReuseAction(
+  game: GameUiState,
+  effectTargetId?: string,
+): Extract<GameAction, { type: 'resolve_plains_reuse' }> | null {
+  const match = game.legal.plainsReuseOptions.find((option) => option.action.effectTargetId === effectTargetId)
+  return match?.action ?? null
+}

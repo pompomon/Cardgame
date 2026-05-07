@@ -43,6 +43,9 @@ function isGameAction(payload: unknown): payload is GameAction {
     }
     return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
   }
+  if (action.type === 'resolve_plains_reuse') {
+    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
+  }
   if (action.type === 'counter_land') {
     return action.discardCardId === undefined || typeof action.discardCardId === 'string'
   }
@@ -55,6 +58,9 @@ function isSameAction(left: GameAction, right: GameAction): boolean {
   }
   if (left.type === 'play_land' && right.type === 'play_land') {
     return left.cardId === right.cardId && left.effectTargetId === right.effectTargetId
+  }
+  if (left.type === 'resolve_plains_reuse' && right.type === 'resolve_plains_reuse') {
+    return left.effectTargetId === right.effectTargetId
   }
   if (left.type === 'counter_land' && right.type === 'counter_land') {
     return left.discardCardId === right.discardCardId

@@ -25,6 +25,7 @@ function drawCard(state: GameState, playerId: number): void {
     state.winner = playerId === 0 ? 1 : 0
     state.phase = 'gameOver'
     state.pendingLandPlay = null
+    state.pendingPlainsReuse = null
     state.log.push(`Player ${playerId + 1} loses by drawing from empty deck.`)
     return
   }
@@ -108,6 +109,7 @@ function finalizeWinnerIfAny(state: GameState): void {
   state.winner = winner
   state.phase = 'gameOver'
   state.pendingLandPlay = null
+  state.pendingPlainsReuse = null
   state.log.push(winner === 'draw' ? 'Game ends in a draw.' : `Player ${winner + 1} wins.`)
 }
 
@@ -131,6 +133,25 @@ function discardForIslandCounter(player: PlayerState, discardCardId?: string): b
   removeFromHand(player, other.id)
   player.graveyard.push(island, other)
   return true
+}
+
+function enumerateEffectTargetIds(state: GameState, actor: number, cardName: Card['name']): string[] {
+  const me = state.players[actor]
+  const enemy = state.players[actor === 0 ? 1 : 0]
+
+  if (cardName === 'Forest') {
+    return me.graveyard.map((card) => card.id)
+  }
+
+  if (cardName === 'Mountain') {
+    return enemy.battlefield.map((entry) => entry.instanceId)
+  }
+
+  if (cardName === 'Swamp') {
+    return enemy.hand.map((card) => card.id)
+  }
+
+  return []
 }
 
 function applyLandEffect(state: GameState, actor: number, playedCard: Card, effectTargetId?: string): void {
@@ -181,8 +202,20 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
   if (!target) {
     return
   }
-  state.log.push(`Plains reuses ${target.card.name}.`)
-  applyLandEffect(state, actor, target.card)
+
+  const nestedTargets = enumerateEffectTargetIds(state, actor, target.card.name)
+  if (target.card.name === 'Island' || nestedTargets.length === 0) {
+    state.log.push(`Plains reuses ${target.card.name}.`)
+    applyLandEffect(state, actor, target.card)
+    return
+  }
+
+  state.pendingPlainsReuse = {
+    actor,
+    reusedInstanceId: target.instanceId,
+    reusedCardName: target.card.name,
+  }
+  state.phase = 'plains_target'
 }
 
 function resolvePendingLandPlay(state: GameState): void {
@@ -193,9 +226,9 @@ function resolvePendingLandPlay(state: GameState): void {
   const me = state.players[pending.actor]
   addToBattlefield(state, me, pending.card)
   state.log.push(`Player ${pending.actor + 1} plays ${pending.card.name}.`)
-  applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
   state.pendingLandPlay = null
-  if (state.phase !== 'gameOver') {
+  applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
+  if (state.phase === 'main') {
     finalizeWinnerIfAny(state)
   }
 }
@@ -215,6 +248,7 @@ export function createInitialGame(seed = Date.now()): GameState {
     nextInstanceId: 1,
     phase: 'main',
     pendingLandPlay: null,
+    pendingPlainsReuse: null,
     winner: null,
     log: ['Game started.'],
   }
@@ -238,6 +272,9 @@ export function canAct(state: GameState, actor: number): boolean {
   if (state.phase === 'main') {
     return actor === state.currentPlayer
   }
+  if (state.phase === 'plains_target') {
+    return actor === state.pendingPlainsReuse?.actor
+  }
   return actor === responseActorFor(state)
 }
 
@@ -249,29 +286,33 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
   const actions: GameAction[] = []
   const me = state.players[actor]
 
+  if (state.phase === 'plains_target') {
+    const pendingReuse = state.pendingPlainsReuse
+    if (!pendingReuse) {
+      return actions
+    }
+    const targets = enumerateEffectTargetIds(state, actor, pendingReuse.reusedCardName)
+    if (pendingReuse.reusedCardName === 'Island' || targets.length === 0) {
+      actions.push({ type: 'resolve_plains_reuse', actor })
+      return actions
+    }
+    for (const targetId of targets) {
+      actions.push({ type: 'resolve_plains_reuse', actor, effectTargetId: targetId })
+    }
+    return actions
+  }
+
   if (state.phase === 'main') {
     if (me.landsPlayedThisTurn < 1) {
-      const enemy = state.players[actor === 0 ? 1 : 0]
       for (const card of me.hand) {
-        if (card.name === 'Forest' && me.graveyard.length > 0) {
-          for (const target of me.graveyard) {
-            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.id })
+        if (card.name === 'Forest' || card.name === 'Mountain' || card.name === 'Swamp') {
+          const targets = enumerateEffectTargetIds(state, actor, card.name)
+          if (targets.length > 0) {
+            for (const targetId of targets) {
+              actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: targetId })
+            }
+            continue
           }
-          continue
-        }
-
-        if (card.name === 'Mountain' && enemy.battlefield.length > 0) {
-          for (const target of enemy.battlefield) {
-            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.instanceId })
-          }
-          continue
-        }
-
-        if (card.name === 'Swamp' && enemy.hand.length > 0) {
-          for (const target of enemy.hand) {
-            actions.push({ type: 'play_land', actor, cardId: card.id, effectTargetId: target.id })
-          }
-          continue
         }
 
         if (card.name === 'Plains') {
@@ -340,6 +381,26 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     return state
   }
 
+  if (action.type === 'resolve_plains_reuse' && state.phase === 'plains_target' && state.pendingPlainsReuse) {
+    const pendingReuse = state.pendingPlainsReuse
+    if (pendingReuse.actor !== action.actor) {
+      return state
+    }
+    state.log.push(`Plains reuses ${pendingReuse.reusedCardName}.`)
+    const reusedCard: Card = {
+      id: `reused-${pendingReuse.reusedInstanceId}`,
+      name: pendingReuse.reusedCardName,
+      type: 'land',
+    }
+    state.pendingPlainsReuse = null
+    state.phase = 'main'
+    applyLandEffect(state, action.actor, reusedCard, action.effectTargetId)
+    if (state.phase === 'main') {
+      finalizeWinnerIfAny(state)
+    }
+    return state
+  }
+
   if (action.type === 'counter_land' && state.phase === 'respond' && state.pendingLandPlay) {
     const responder = state.players[action.actor]
     if (!discardForIslandCounter(responder, action.discardCardId)) {
@@ -351,6 +412,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     caster.graveyard.push(pending.card)
     state.log.push(`Player ${action.actor + 1} counters ${pending.card.name}.`)
     state.pendingLandPlay = null
+    state.pendingPlainsReuse = null
     state.phase = 'main'
     return state
   }

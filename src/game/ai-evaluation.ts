@@ -1,8 +1,8 @@
 import { applyAction } from './engine'
-import type { GameAction, GameState, PlayerState } from './types'
+import type { BasicLand, GameAction, GameState, PlayerState } from './types'
 import type { AiPolicyContext } from './ai-policy-types'
 import { normalizeActionForVisibility } from './ai-visibility'
-import { cardNameForPlayAction } from './ai-action-utils'
+import { cardNameForPlayAction, reusedCardNameForPlainsReuseAction } from './ai-action-utils'
 
 function opponentOf(actor: number): 0 | 1 {
   return actor === 0 ? 1 : 0
@@ -53,18 +53,27 @@ function findPlainsReusedLandName(
   state: GameState,
   actor: number,
   effectTargetId: string | undefined,
-): string | null {
+): BasicLand | null {
   if (!effectTargetId) {
     return null
   }
-  const [reuseTargetId] = effectTargetId.split('::')
-  const reused = state.players[actor].battlefield.find((entry) => entry.instanceId === reuseTargetId)
+  const reused = state.players[actor].battlefield.find((entry) => entry.instanceId === effectTargetId)
   return reused?.card.name ?? null
 }
 
 function disruptionHintForAction(state: GameState, actor: number, action: GameAction): number {
   if (action.type === 'counter_land') {
     return 4
+  }
+  if (action.type === 'resolve_plains_reuse') {
+    const reusedLand = reusedCardNameForPlainsReuseAction(state, action)
+    if (reusedLand === 'Mountain') {
+      return 3
+    }
+    if (reusedLand === 'Swamp') {
+      return 2
+    }
+    return 0
   }
   if (action.type !== 'play_land') {
     return 0

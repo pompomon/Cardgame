@@ -3,7 +3,7 @@ import type { BasicLand, GameAction, GamePhase, GameState, Winner } from '../gam
 import { isAiLevel } from './ai-levels'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
-export const GAME_RECORD_VERSION = 1
+export const GAME_RECORD_VERSION = 2
 
 export type GameActionSource = 'human' | 'ai' | 'remote'
 
@@ -87,7 +87,7 @@ function isPlayerLike(value: unknown): boolean {
 }
 
 function isPhase(value: unknown): value is GamePhase {
-  return value === 'main' || value === 'respond' || value === 'gameOver'
+  return value === 'main' || value === 'respond' || value === 'plains_target' || value === 'gameOver'
 }
 
 function isWinner(value: unknown): value is Winner {
@@ -129,6 +129,29 @@ function isGameStateLike(value: unknown): value is GameState {
     }
   }
 
+  const pendingPlainsReuse = value.pendingPlainsReuse
+  if (value.phase === 'plains_target') {
+    if (pendingPlainsReuse === undefined || pendingPlainsReuse === null) {
+      return false
+    }
+  } else if (pendingPlainsReuse !== undefined && pendingPlainsReuse !== null) {
+    return false
+  }
+
+  if (pendingPlainsReuse !== undefined && pendingPlainsReuse !== null) {
+    if (!isRecordObject(pendingPlainsReuse)) {
+      return false
+    }
+    const pendingReuse = pendingPlainsReuse as Record<string, unknown>
+    if ((pendingReuse.actor !== 0 && pendingReuse.actor !== 1)
+      || typeof pendingReuse.reusedInstanceId !== 'string'
+      || typeof pendingReuse.reusedCardName !== 'string'
+      || pendingReuse.reusedCardName === 'Plains'
+      || !BASIC_LANDS.includes(pendingReuse.reusedCardName as BasicLand)) {
+      return false
+    }
+  }
+
   return typeof value.turn === 'number'
     && (value.currentPlayer === 0 || value.currentPlayer === 1)
     && typeof value.nextInstanceId === 'number'
@@ -156,10 +179,122 @@ function isGameActionLike(payload: unknown): payload is GameAction {
     }
     return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
   }
+  if (action.type === 'resolve_plains_reuse') {
+    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
+  }
   if (action.type === 'counter_land') {
     return action.discardCardId === undefined || typeof action.discardCardId === 'string'
   }
   return action.type === 'end_turn' || action.type === 'pass_response'
+}
+
+function normalizeStateSchema(state: GameState): GameState {
+  return {
+    ...state,
+    pendingPlainsReuse: state.pendingPlainsReuse ?? null,
+  }
+}
+
+function isPlainsPlayActionForPreviousState(previous: GameState, action: GameAction): boolean {
+  if (action.type !== 'play_land') {
+    return false
+  }
+  const card = previous.players[action.actor]?.hand.find((entry) => entry.id === action.cardId)
+  return card?.name === 'Plains'
+}
+
+function parseLegacyReuseTargetId(
+  reuseTargetId: string | undefined,
+): { normalizedReuseTargetId: string | null; nestedTargetId?: string } {
+  if (!reuseTargetId) {
+    return { normalizedReuseTargetId: null }
+  }
+  const separatorIndex = reuseTargetId.indexOf('::')
+  if (separatorIndex < 0) {
+    return { normalizedReuseTargetId: reuseTargetId }
+  }
+  const normalizedReuseTargetId = reuseTargetId.slice(0, separatorIndex)
+  const nestedTargetId = reuseTargetId.slice(separatorIndex + 2)
+  return {
+    normalizedReuseTargetId: separatorIndex > 0 ? normalizedReuseTargetId : null,
+    nestedTargetId: nestedTargetId || undefined,
+  }
+}
+
+function plainsReuseFollowUpAction(
+  previous: GameState,
+  actor: number,
+  reuseTargetId: string | undefined,
+): Extract<GameAction, { type: 'resolve_plains_reuse' }> | null {
+  if (!reuseTargetId) {
+    return null
+  }
+  const { normalizedReuseTargetId, nestedTargetId } = parseLegacyReuseTargetId(reuseTargetId)
+  if (!normalizedReuseTargetId) {
+    return null
+  }
+  const reused = previous.players[actor].battlefield.find(
+    (entry) => entry.instanceId === normalizedReuseTargetId && entry.card.name !== 'Plains',
+  )
+  if (!reused) {
+    return null
+  }
+  const opponent = previous.players[actor === 0 ? 1 : 0]
+  let hasNestedTargets = false
+  if (reused.card.name === 'Forest') {
+    hasNestedTargets = previous.players[actor].graveyard.length > 0
+  } else if (reused.card.name === 'Mountain') {
+    hasNestedTargets = opponent.battlefield.length > 0
+  } else if (reused.card.name === 'Swamp') {
+    hasNestedTargets = opponent.hand.length > 0
+  }
+  if (!hasNestedTargets) {
+    return null
+  }
+  return nestedTargetId
+    ? { type: 'resolve_plains_reuse', actor, effectTargetId: nestedTargetId }
+    : { type: 'resolve_plains_reuse', actor }
+}
+
+function upgradeLegacyPlainsTimeline(
+  initialState: GameState,
+  timeline: GameRecordStep[],
+): GameRecordStep[] {
+  const upgraded: GameRecordStep[] = []
+  let previous = initialState
+  for (const step of timeline) {
+    const normalizedStep = {
+      ...step,
+      index: upgraded.length + 1,
+      state: normalizeStateSchema(step.state),
+    }
+    upgraded.push(normalizedStep)
+
+    const pendingLegacyPlains = previous.pendingLandPlay?.card.name === 'Plains' ? previous.pendingLandPlay : null
+    const legacyPlainsPlayEffectTarget = step.action.type === 'play_land' && isPlainsPlayActionForPreviousState(previous, step.action)
+      ? step.action.effectTargetId
+      : undefined
+    const completedLegacyPlainsResolution = normalizedStep.state.pendingLandPlay === null
+      && normalizedStep.state.pendingPlainsReuse === null
+    const synthesizedResolveAction = step.action.type === 'pass_response' && pendingLegacyPlains !== null
+      ? plainsReuseFollowUpAction(previous, pendingLegacyPlains.actor, pendingLegacyPlains.effectTargetId)
+      : legacyPlainsPlayEffectTarget !== undefined
+        ? plainsReuseFollowUpAction(previous, step.action.actor, legacyPlainsPlayEffectTarget)
+        : null
+
+    if (completedLegacyPlainsResolution && synthesizedResolveAction) {
+      upgraded.push({
+        index: upgraded.length + 1,
+        source: step.source,
+        action: synthesizedResolveAction,
+        state: normalizeStateSchema(step.state),
+        timestamp: step.timestamp,
+      })
+    }
+
+    previous = normalizedStep.state
+  }
+  return upgraded
 }
 
 function isControllerKind(value: unknown): value is ControllerKind {
@@ -268,7 +403,8 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
   if (payload.kind !== GAME_RECORD_KIND) {
     return { ok: false, error: 'Unsupported record kind.' }
   }
-  if (payload.version !== GAME_RECORD_VERSION) {
+  const version = payload.version
+  if (version !== 1 && version !== GAME_RECORD_VERSION) {
     return { ok: false, error: `Unsupported record version: ${String(payload.version)}.` }
   }
 
@@ -326,6 +462,22 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     }
   }
 
+  const initialState = normalizeStateSchema(payload.initialState as GameState)
+  const parsedTimeline = payload.timeline.map((step) => {
+    const entry = step as Record<string, unknown>
+    return {
+      index: entry.index as number,
+      source: entry.source as GameActionSource,
+      action: entry.action as GameAction,
+      state: normalizeStateSchema(entry.state as GameState),
+      timestamp: entry.timestamp as number,
+    }
+  })
+
+  const timeline = version === 1
+    ? upgradeLegacyPlainsTimeline(initialState, parsedTimeline)
+    : parsedTimeline
+
   const sanitizedRecord: GameRecordFile = {
     kind: GAME_RECORD_KIND,
     version: GAME_RECORD_VERSION,
@@ -338,17 +490,8 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
       updatedAt: metadata.updatedAt,
       completed: metadata.completed,
     },
-    initialState: payload.initialState as GameState,
-    timeline: payload.timeline.map((step) => {
-      const entry = step as Record<string, unknown>
-      return {
-        index: entry.index as number,
-        source: entry.source as GameActionSource,
-        action: entry.action as GameAction,
-        state: entry.state as GameState,
-        timestamp: entry.timestamp as number,
-      }
-    }),
+    initialState,
+    timeline,
   }
 
   return {

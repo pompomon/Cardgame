@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyAction, createInitialGame } from '../game/engine'
+import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
 import type { BasicLand } from '../game/types'
 
 describe('engine', () => {
@@ -192,6 +192,9 @@ describe('engine', () => {
       effectTargetId: 'self-forest',
     })
 
+    expect(state.phase).toBe('plains_target')
+    state = applyAction(state, { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'grave-target' })
+
     expect(state.players[0].hand.some((card) => card.id === 'grave-target')).toBe(true)
     expect(state.players[1].hand.some((card) => card.id === 'opp-card')).toBe(true)
   })
@@ -214,5 +217,161 @@ describe('engine', () => {
     expect(state.players[1].graveyard.some((card) => card.id === 'p1-discard')).toBe(true)
     expect(state.players[1].hand.some((card) => card.id === 'p1-keep')).toBe(true)
     expect(state.players[0].graveyard.some((card) => card.id === 'p0-play')).toBe(true)
+  })
+
+  it('plains to mountain prompts nested target after pass and resolves chosen target', () => {
+    let state = createInitialGame(26)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-mountain', card: { id: 'self-mountain-card', name: 'Mountain', type: 'land' } }]
+    state.players[1].hand = [
+      { id: 'opp-island', name: 'Island', type: 'land' },
+      { id: 'opp-forest', name: 'Forest', type: 'land' },
+    ]
+    state.players[1].battlefield = [
+      { instanceId: 'enemy-a', card: { id: 'enemy-a-card', name: 'Forest', type: 'land' } },
+      { instanceId: 'enemy-b', card: { id: 'enemy-b-card', name: 'Swamp', type: 'land' } },
+    ]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-mountain' })
+
+    expect(state.phase).toBe('respond')
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+
+    expect(state.phase).toBe('plains_target')
+    expect(state.pendingPlainsReuse?.reusedCardName).toBe('Mountain')
+    const actions = getLegalActions(state, 0).filter((action) => action.type === 'resolve_plains_reuse')
+    expect(actions.map((action) => action.effectTargetId)).toEqual(['enemy-a', 'enemy-b'])
+
+    state = applyAction(state, { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'enemy-b' })
+    expect(state.phase).toBe('main')
+    expect(state.players[1].battlefield.map((entry) => entry.instanceId)).toEqual(['enemy-a'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'enemy-b-card')).toBe(true)
+  })
+
+  it('plains to swamp prompts nested target and discards selected card', () => {
+    let state = createInitialGame(27)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }]
+    state.players[1].hand = [
+      { id: 'opp-1', name: 'Forest', type: 'land' },
+      { id: 'opp-2', name: 'Mountain', type: 'land' },
+    ]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-swamp' })
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+    expect(state.phase).toBe('plains_target')
+
+    state = applyAction(state, { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'opp-2' })
+    expect(state.players[1].hand.map((card) => card.id)).toEqual(['opp-1'])
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-2')).toBe(true)
+  })
+
+  it('plains to forest prompts nested target and returns selected graveyard card', () => {
+    let state = createInitialGame(28)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-forest', card: { id: 'self-forest-card', name: 'Forest', type: 'land' } }]
+    state.players[0].graveyard = [
+      { id: 'g-1', name: 'Mountain', type: 'land' },
+      { id: 'g-2', name: 'Swamp', type: 'land' },
+    ]
+    state.players[1].hand = []
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-forest' })
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+    expect(state.phase).toBe('plains_target')
+
+    state = applyAction(state, { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'g-2' })
+    expect(state.players[0].hand.some((card) => card.id === 'g-2')).toBe(true)
+    expect(state.players[0].graveyard.some((card) => card.id === 'g-2')).toBe(false)
+  })
+
+  it('plains to island resolves immediately after pass without plains_target phase', () => {
+    let state = createInitialGame(29)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-island', card: { id: 'self-island-card', name: 'Island', type: 'land' } }]
+    state.players[0].deck = [{ id: 'drawn-card', name: 'Forest', type: 'land' }]
+    state.players[1].hand = [{ id: 'opp-forest', name: 'Forest', type: 'land' }]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-island' })
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+
+    expect(state.phase).toBe('main')
+    expect(state.pendingPlainsReuse).toBeNull()
+    expect(state.players[0].hand.some((card) => card.id === 'drawn-card')).toBe(true)
+  })
+
+  it('countering plains prevents plains_target prompt', () => {
+    let state = createInitialGame(30)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-mountain', card: { id: 'self-mountain-card', name: 'Mountain', type: 'land' } }]
+    state.players[1].hand = [
+      { id: 'opp-island', name: 'Island', type: 'land' },
+      { id: 'opp-discard', name: 'Forest', type: 'land' },
+    ]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-mountain' })
+    expect(state.phase).toBe('respond')
+
+    state = applyAction(state, { type: 'counter_land', actor: 1, discardCardId: 'opp-discard' })
+    expect(state.phase).toBe('main')
+    expect(state.pendingPlainsReuse).toBeNull()
+    expect(state.players[0].graveyard.some((card) => card.id === 'plains-play')).toBe(true)
+  })
+
+  it('only active plains caster can act during plains_target', () => {
+    let state = createInitialGame(31)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }]
+    state.players[1].hand = [
+      { id: 'opp-1', name: 'Forest', type: 'land' },
+      { id: 'opp-2', name: 'Mountain', type: 'land' },
+    ]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-swamp' })
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+    expect(state.phase).toBe('plains_target')
+
+    expect(canAct(state, 1)).toBe(false)
+    const before = structuredClone(state)
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+    expect(state).toEqual(before)
+  })
+
+  it('plains_target legal actions only contain resolve_plains_reuse', () => {
+    let state = createInitialGame(32)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-forest', card: { id: 'self-forest-card', name: 'Forest', type: 'land' } }]
+    state.players[0].graveyard = [{ id: 'g-1', name: 'Mountain', type: 'land' }]
+    state.players[1].hand = []
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-forest' })
+    state = applyAction(state, { type: 'pass_response', actor: 1 })
+    const legal = getLegalActions(state, 0)
+    expect(legal.every((action) => action.type === 'resolve_plains_reuse')).toBe(true)
+  })
+
+  it('plains cannot target another plains for reuse', () => {
+    const state = createInitialGame(34)
+    state.players[0].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+    state.players[0].battlefield = [{ instanceId: 'self-plains', card: { id: 'self-plains-card', name: 'Plains', type: 'land' } }]
+    const legal = getLegalActions(state, 0).filter((action) => action.type === 'play_land')
+    expect(legal.some((action) => action.cardId === 'plains-play' && action.effectTargetId === 'self-plains')).toBe(false)
+  })
+
+  it('default plains reuse path with no effectTargetId matches legacy fallback', () => {
+    let state = createInitialGame(33)
+    state = {
+      ...state,
+      phase: 'plains_target',
+      pendingLandPlay: null,
+      pendingPlainsReuse: { actor: 0, reusedInstanceId: 'self-forest', reusedCardName: 'Forest' },
+    }
+    state.players[0].graveyard = [
+      { id: 'g-1', name: 'Swamp', type: 'land' },
+      { id: 'g-2', name: 'Mountain', type: 'land' },
+    ]
+
+    state = applyAction(state, { type: 'resolve_plains_reuse', actor: 0 })
+    expect(state.players[0].hand.some((card) => card.id === 'g-2')).toBe(true)
   })
 })

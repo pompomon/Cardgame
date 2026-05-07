@@ -76,4 +76,24 @@ describe('ai', () => {
       expect(hardAction.effectTargetId).toBe('winning-card')
     }
   })
+
+  it('ai picks resolve_plains_reuse action during plains_target phase', () => {
+    const state = createInitialGame(82)
+    state.phase = 'plains_target'
+    state.pendingPlainsReuse = {
+      actor: 0,
+      reusedInstanceId: 'self-swamp',
+      reusedCardName: 'Swamp',
+    }
+    state.players[1].hand = [
+      { id: 'hidden-a', name: 'Forest', type: 'land' },
+      { id: 'hidden-b', name: 'Mountain', type: 'land' },
+    ]
+
+    const basicAction = chooseAiAction(state, 0, { level: 'basic' })
+    const advancedAction = chooseAiAction(state, 0, { level: 'advanced' })
+
+    expect(basicAction?.type).toBe('resolve_plains_reuse')
+    expect(advancedAction?.type).toBe('resolve_plains_reuse')
+  })
 })
