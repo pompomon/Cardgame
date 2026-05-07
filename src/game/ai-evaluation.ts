@@ -1,5 +1,5 @@
 import { applyAction } from './engine'
-import type { GameAction, GameState, PlayerState } from './types'
+import type { BasicLand, GameAction, GameState, PlayerState } from './types'
 import type { AiPolicyContext } from './ai-policy-types'
 import { normalizeActionForVisibility } from './ai-visibility'
 import { cardNameForPlayAction, reusedCardNameForPlainsReuseAction } from './ai-action-utils'
@@ -53,7 +53,7 @@ function findPlainsReusedLandName(
   state: GameState,
   actor: number,
   effectTargetId: string | undefined,
-): string | null {
+): BasicLand | null {
   if (!effectTargetId) {
     return null
   }
