@@ -59,7 +59,7 @@ const COLOR_PANEL_STROKE = 0x2a355f
 const COLOR_LOG_PANEL_FILL = 0x0d162e
 const COLOR_LOG_VIEWPORT_FILL = 0x091227
 
-const POPUP_THEME = {
+const UI_THEME = {
   buttonFill: 0x1c2f63,
   buttonStroke: 0x365092,
   panelFill: 0x0f1a3b,
@@ -150,9 +150,9 @@ function buildButton(
     MIN_BUTTON_FONT_PX,
     MAX_BUTTON_FONT_PX,
   )
-  const background = scene.add.rectangle(0, 0, width, height, POPUP_THEME.buttonFill).setStrokeStyle(1, POPUP_THEME.buttonStroke)
+  const background = scene.add.rectangle(0, 0, width, height, UI_THEME.buttonFill).setStrokeStyle(1, UI_THEME.buttonStroke)
   const text = scene.add.text(0, 0, label, {
-    color: POPUP_THEME.primaryText,
+    color: UI_THEME.primaryText,
     fontSize: `${Math.round(resolvedPx)}px`,
     align: 'center',
     wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
@@ -1361,7 +1361,7 @@ class CardgameScene extends Phaser.Scene {
       0,
       this.currentLayout.width,
       this.currentLayout.height,
-      POPUP_THEME.scrimFill,
+      UI_THEME.scrimFill,
       this.currentLayout.popupScrimAlpha,
     )
     scrim.setInteractive()
@@ -1389,9 +1389,9 @@ class CardgameScene extends Phaser.Scene {
       0,
       popupWidth,
       popupHeight,
-      POPUP_THEME.panelFill,
+      UI_THEME.panelFill,
       this.currentLayout.popupPanelAlpha,
-    ).setStrokeStyle(2, POPUP_THEME.panelStroke)
+    ).setStrokeStyle(2, UI_THEME.panelStroke)
     panel.setInteractive()
     panel.on('pointerdown', swallowPointerEvent)
     panel.on('pointerup', swallowPointerEvent)
@@ -1399,7 +1399,7 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(panel)
 
     overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight / 2, 'Menu', {
-      color: POPUP_THEME.primaryText,
+      color: UI_THEME.primaryText,
       fontSize: this.currentLayout.popupTitleFontSize,
     }).setOrigin(0.5))
 
@@ -1430,7 +1430,7 @@ class CardgameScene extends Phaser.Scene {
 
     // Section 3: Recorder.
     const recorderHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
-      color: POPUP_THEME.secondaryText,
+      color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.smallFontSize,
       wordWrap: { width: fullButtonWidth },
     }).setOrigin(0, 0)
@@ -1475,7 +1475,7 @@ class CardgameScene extends Phaser.Scene {
     // Section 4: Replay controls (only when replay is active).
     if (view.replay.active) {
       const replayHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
-        color: POPUP_THEME.secondaryText,
+        color: UI_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: fullButtonWidth },
       }).setOrigin(0, 0)
@@ -1539,7 +1539,7 @@ class CardgameScene extends Phaser.Scene {
     if (maxViewportHeight > 0) {
       if (showHeading) {
         overlay.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
-          color: POPUP_THEME.primaryText,
+          color: UI_THEME.primaryText,
           fontSize: this.currentLayout.bodyFontSize,
         }).setOrigin(0, 0.5))
       }
@@ -1551,9 +1551,9 @@ class CardgameScene extends Phaser.Scene {
         logViewportY,
         logViewportWidth,
         logViewportHeight,
-        POPUP_THEME.viewportFill,
+        UI_THEME.viewportFill,
         this.currentLayout.popupViewportAlpha,
-      ).setStrokeStyle(1, POPUP_THEME.buttonStroke)
+      ).setStrokeStyle(1, UI_THEME.buttonStroke)
       logViewportBackground.setInteractive()
       logViewportBackground.on('pointerdown', swallowPointerEvent)
       logViewportBackground.on('pointerup', swallowPointerEvent)
@@ -1614,7 +1614,7 @@ class CardgameScene extends Phaser.Scene {
         )
 
         overlay.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-          color: POPUP_THEME.secondaryText,
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(1, 0.5))
       }
@@ -1677,16 +1677,16 @@ class CardgameScene extends Phaser.Scene {
       0,
       popupWidth,
       popupHeight,
-      POPUP_THEME.backdropFill,
+      UI_THEME.backdropFill,
       this.currentLayout.popupBackdropAlpha,
-    ).setStrokeStyle(2, POPUP_THEME.panelStroke)
+    ).setStrokeStyle(2, UI_THEME.panelStroke)
     backdrop.setInteractive()
     backdrop.on('pointerdown', swallowPointerEvent)
     backdrop.on('pointerup', swallowPointerEvent)
     backdrop.on('pointermove', swallowPointerEvent)
     overlay.add(backdrop)
     overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + titleHeight / 2, 'Choose target', {
-      color: POPUP_THEME.primaryText,
+      color: UI_THEME.primaryText,
       fontSize: this.currentLayout.popupTitleFontSize,
     }).setOrigin(0.5))
 
@@ -1700,9 +1700,9 @@ class CardgameScene extends Phaser.Scene {
       optionsViewportY,
       buttonWidth,
       optionsAreaHeight,
-      POPUP_THEME.panelFill,
+      UI_THEME.panelFill,
       this.currentLayout.popupViewportAlpha,
-    ).setStrokeStyle(1, POPUP_THEME.buttonStroke)
+    ).setStrokeStyle(1, UI_THEME.buttonStroke)
     optionsViewportBackground.setInteractive()
     optionsViewportBackground.on('pointerdown', swallowPointerEvent)
     optionsViewportBackground.on('pointerup', swallowPointerEvent)
@@ -1780,7 +1780,7 @@ class CardgameScene extends Phaser.Scene {
           optionsTopY + optionsAreaHeight / 2,
           'Scroll or drag',
           {
-            color: POPUP_THEME.secondaryText,
+            color: UI_THEME.secondaryText,
             fontSize: this.currentLayout.smallFontSize,
           },
         ).setOrigin(1, 0.5),
