@@ -198,7 +198,7 @@ function plainsReuseNeedsFollowUp(previous: GameState, actor: number, reuseTarge
     return false
   }
   const normalizedReuseTargetId = reuseTargetId.includes('::')
-    ? reuseTargetId.split('::', 1)[0]
+    ? reuseTargetId.split('::')[0]
     : reuseTargetId
   const reused = previous.players[actor].battlefield.find(
     (entry) => entry.instanceId === normalizedReuseTargetId && entry.card.name !== 'Plains',
