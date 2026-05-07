@@ -796,10 +796,10 @@ class CardgameScene extends Phaser.Scene {
     // fit above the controls band (End Turn / response buttons). Render only
     // that many lines so the text does not spill into the controls band or
     // the hand strip on short split layouts (e.g. 720x360 horizontal).
-    // During the response phase we show a dedicated "Opponent played …" prompt
-    // above the controls, so hide the active-info summary lines to avoid text
-    // overlap on short split layouts.
-    const allowedActiveLines = game.phase === 'respond'
+    // During response/plains-target phases we show a dedicated prompt above the
+    // controls, so hide the active-info summary lines to avoid text overlap on
+    // short split layouts.
+    const allowedActiveLines = game.phase === 'respond' || game.phase === 'plains_target'
       ? 0
       : Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
     const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
