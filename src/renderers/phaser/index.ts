@@ -480,7 +480,6 @@ class CardgameScene extends Phaser.Scene {
 
       this.snapCardToOrigin(card)
       this.showTargetPicker(
-        game,
         resolution.options,
         (targetId) => resolveTargetedPlayLandAction(game, cardId, targetId),
       )
@@ -1566,7 +1565,6 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private showTargetPicker(
-    game: GameUiState,
     options: Array<{ effectTargetId?: string; label: string }>,
     resolver: (effectTargetId?: string) => GameAction | null,
     showAllTargets = false,
@@ -1709,7 +1707,7 @@ class CardgameScene extends Phaser.Scene {
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
       const toggleShowAll = (): void => {
         overlay.destroy(true)
-        this.showTargetPicker(game, options, resolver, !showAllTargets)
+        this.showTargetPicker(options, resolver, !showAllTargets)
       }
       const showAllButton = this.createButton(showAllLabel, 0, showAllY, toggleShowAll, Math.min(buttonWidth, 300), showAllButtonHeight)
       overlay.add(showAllButton)
