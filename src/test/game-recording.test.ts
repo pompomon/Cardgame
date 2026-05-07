@@ -261,7 +261,7 @@ describe('game-recording', () => {
       pendingLandPlay: {
         actor: 0 as const,
         card: { id: 'plains-play', name: 'Plains' as const, type: 'land' as const },
-        effectTargetId: 'self-mountain',
+        effectTargetId: 'self-mountain::enemy-a',
       },
       players: [
         {
@@ -294,6 +294,57 @@ describe('game-recording', () => {
           index: 1,
           source: 'human',
           action: { type: 'pass_response', actor: 1 },
+          state: legacyAfter,
+          timestamp: 2,
+        },
+      ],
+    })
+    const parsed = parseGameRecordJson(payload)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.timeline.some((step) => step.action.type === 'resolve_plains_reuse')).toBe(true)
+  })
+
+  it('upgrades legacy v1 play_land plains resolution when target id includes nested legacy encoding', () => {
+    const initial = createInitialGame(1402)
+    const legacyBefore = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+      players: [
+        {
+          ...initial.players[0],
+          hand: [{ id: 'plains-play', name: 'Plains' as const, type: 'land' as const }],
+          battlefield: [{ instanceId: 'self-swamp', card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' } }],
+        },
+        initial.players[1],
+      ],
+    }
+    const legacyAfter = {
+      ...initial,
+      phase: 'main' as const,
+      pendingLandPlay: null,
+    }
+    const payload = JSON.stringify({
+      kind: 'cardgame.recording',
+      version: 1,
+      metadata: {
+        seed: 1402,
+        mode: 'local-hvh',
+        controllers: ['human', 'human'],
+        aiLevel: 'basic',
+        startedAt: 1,
+        updatedAt: 2,
+        completed: false,
+      },
+      initialState: legacyBefore,
+      timeline: [
+        {
+          index: 1,
+          source: 'human',
+          action: { type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-swamp::enemy-a' },
           state: legacyAfter,
           timestamp: 2,
         },
