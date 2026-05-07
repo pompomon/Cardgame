@@ -193,13 +193,17 @@ function isPlainsPlayActionForPreviousState(previous: GameState, action: GameAct
   return card?.name === 'Plains'
 }
 
+function normalizeLegacyReuseTargetId(reuseTargetId: string): string {
+  return reuseTargetId.includes('::')
+    ? reuseTargetId.split('::')[0]
+    : reuseTargetId
+}
+
 function plainsReuseNeedsFollowUp(previous: GameState, actor: number, reuseTargetId: string | undefined): boolean {
   if (!reuseTargetId) {
     return false
   }
-  const normalizedReuseTargetId = reuseTargetId.includes('::')
-    ? reuseTargetId.split('::')[0]
-    : reuseTargetId
+  const normalizedReuseTargetId = normalizeLegacyReuseTargetId(reuseTargetId)
   const reused = previous.players[actor].battlefield.find(
     (entry) => entry.instanceId === normalizedReuseTargetId && entry.card.name !== 'Plains',
   )
