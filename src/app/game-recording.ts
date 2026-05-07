@@ -228,13 +228,14 @@ function plainsReuseFollowUpAction(
     return null
   }
   const opponent = previous.players[actor === 0 ? 1 : 0]
-  const hasNestedTargets = reused.card.name === 'Forest'
-    ? previous.players[actor].graveyard.length > 0
-    : reused.card.name === 'Mountain'
-      ? opponent.battlefield.length > 0
-      : reused.card.name === 'Swamp'
-        ? opponent.hand.length > 0
-        : false
+  let hasNestedTargets = false
+  if (reused.card.name === 'Forest') {
+    hasNestedTargets = previous.players[actor].graveyard.length > 0
+  } else if (reused.card.name === 'Mountain') {
+    hasNestedTargets = opponent.battlefield.length > 0
+  } else if (reused.card.name === 'Swamp') {
+    hasNestedTargets = opponent.hand.length > 0
+  }
   if (!hasNestedTargets) {
     return null
   }
