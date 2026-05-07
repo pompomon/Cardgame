@@ -1773,10 +1773,17 @@ class CardgameScene extends Phaser.Scene {
         applyScroll,
       )
 
-        overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll or drag', {
-        color: POPUP_THEME.secondaryText,
-        fontSize: this.currentLayout.smallFontSize,
-      }).setOrigin(1, 0.5))
+      overlay.add(
+        this.add.text(
+          buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET,
+          optionsTopY + optionsAreaHeight / 2,
+          'Scroll or drag',
+          {
+            color: POPUP_THEME.secondaryText,
+            fontSize: this.currentLayout.smallFontSize,
+          },
+        ).setOrigin(1, 0.5),
+      )
     }
 
     const cancelY = footerTopY + cancelHeight / 2
