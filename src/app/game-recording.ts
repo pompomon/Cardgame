@@ -129,14 +129,24 @@ function isGameStateLike(value: unknown): value is GameState {
     }
   }
 
-  if (value.pendingPlainsReuse !== undefined && value.pendingPlainsReuse !== null) {
-    if (!isRecordObject(value.pendingPlainsReuse)) {
+  const pendingPlainsReuse = value.pendingPlainsReuse
+  if (value.phase === 'plains_target') {
+    if (pendingPlainsReuse === undefined || pendingPlainsReuse === null) {
       return false
     }
-    const pendingReuse = value.pendingPlainsReuse as Record<string, unknown>
+  } else if (pendingPlainsReuse !== undefined && pendingPlainsReuse !== null) {
+    return false
+  }
+
+  if (pendingPlainsReuse !== undefined && pendingPlainsReuse !== null) {
+    if (!isRecordObject(pendingPlainsReuse)) {
+      return false
+    }
+    const pendingReuse = pendingPlainsReuse as Record<string, unknown>
     if ((pendingReuse.actor !== 0 && pendingReuse.actor !== 1)
       || typeof pendingReuse.reusedInstanceId !== 'string'
       || typeof pendingReuse.reusedCardName !== 'string'
+      || pendingReuse.reusedCardName === 'Plains'
       || !BASIC_LANDS.includes(pendingReuse.reusedCardName as BasicLand)) {
       return false
     }
