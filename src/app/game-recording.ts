@@ -206,7 +206,7 @@ function parseLegacyReuseTargetId(
   const normalizedReuseTargetId = reuseTargetId.slice(0, separatorIndex)
   const nestedTargetId = reuseTargetId.slice(separatorIndex + 2)
   return {
-    normalizedReuseTargetId: normalizedReuseTargetId || null,
+    normalizedReuseTargetId: separatorIndex > 0 ? normalizedReuseTargetId : null,
     nestedTargetId: nestedTargetId || undefined,
   }
 }

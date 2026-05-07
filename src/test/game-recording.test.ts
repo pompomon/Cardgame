@@ -401,6 +401,7 @@ describe('game-recording', () => {
     }
     expect(legacyAfter.pendingLandPlay).toBeNull()
     expect(legacyBefore.players[1].hand).toHaveLength(0)
+    expect(legacyBefore.players[0].battlefield.some((entry) => entry.instanceId === 'self-swamp')).toBe(true)
     const payload = JSON.stringify({
       kind: 'cardgame.recording',
       version: 1,
