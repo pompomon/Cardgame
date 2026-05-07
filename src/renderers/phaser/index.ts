@@ -8,15 +8,19 @@ import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import type { AppRenderer } from '../types'
-import { buildLayout, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
+import { buildLayout, clamp, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const BUTTON_TEXT_HORIZONTAL_PADDING = 24
+const BUTTON_TEXT_HEIGHT_RATIO = 0.42
+const BUTTON_TEXT_NARROW_WIDTH_THRESHOLD = 180
+const BUTTON_TEXT_NARROW_WIDTH_SCALE = 0.92
+const BUTTON_TEXT_MAX_LINES = 2
+const MIN_BUTTON_FONT_PX = 10
+const MAX_BUTTON_FONT_PX = 24
 const SCROLL_WHEEL_MULTIPLIER = 0.8
-const POPUP_SECTION_GAP = 10
-const POPUP_BUTTON_GAP = 8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
@@ -35,6 +39,12 @@ const APPROX_CHAR_WIDTH_RATIO = 0.56
 const MIN_APPROX_CHAR_WIDTH = 6
 const MIN_LOBBY_ROW_HEIGHT = 16
 const DEFAULT_BATTLEFIELD_HEADER_BAND = 22
+const POPUP_CLOSE_BUTTON_WIDTH_RATIO = 0.5
+const POPUP_CLOSE_BUTTON_MIN_WIDTH = 160
+const POPUP_CANCEL_BUTTON_WIDTH_RATIO = 0.62
+const POPUP_CANCEL_BUTTON_MIN_WIDTH = 180
+const POPUP_TOGGLE_BUTTON_WIDTH_RATIO = 0.72
+const POPUP_TOGGLE_BUTTON_MIN_WIDTH = 200
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -47,6 +57,18 @@ const COLOR_PLAYER_NON_ACTIVE_FILL = 0x2a1233
 const COLOR_PANEL_STROKE = 0x2a355f
 const COLOR_LOG_PANEL_FILL = 0x0d162e
 const COLOR_LOG_VIEWPORT_FILL = 0x091227
+
+const POPUP_THEME = {
+  buttonFill: 0x1c2f63,
+  buttonStroke: 0x365092,
+  panelFill: 0x0f1a3b,
+  panelStroke: 0x365092,
+  viewportFill: COLOR_LOG_VIEWPORT_FILL,
+  backdropFill: 0x000000,
+  scrimFill: 0x000000,
+  primaryText: '#e5ecf5',
+  secondaryText: '#9db0d9',
+}
 
 interface CardStyle {
   fill: number
@@ -119,12 +141,21 @@ function buildButton(
   height: number,
   onClick: () => void,
 ): Phaser.GameObjects.Container {
-  const background = scene.add.rectangle(0, 0, width, height, 0x1c2f63).setStrokeStyle(1, 0x365092)
+  const requestedPx = Number.parseFloat(fontSize)
+  const derivedPx = clamp(height * BUTTON_TEXT_HEIGHT_RATIO, MIN_BUTTON_FONT_PX, MAX_BUTTON_FONT_PX)
+  const widthScale = width < BUTTON_TEXT_NARROW_WIDTH_THRESHOLD ? BUTTON_TEXT_NARROW_WIDTH_SCALE : 1
+  const resolvedPx = clamp(
+    Math.min(Number.isFinite(requestedPx) ? requestedPx : derivedPx, derivedPx * 1.08) * widthScale,
+    MIN_BUTTON_FONT_PX,
+    MAX_BUTTON_FONT_PX,
+  )
+  const background = scene.add.rectangle(0, 0, width, height, POPUP_THEME.buttonFill).setStrokeStyle(1, POPUP_THEME.buttonStroke)
   const text = scene.add.text(0, 0, label, {
-    color: '#e5ecf5',
-    fontSize,
+    color: POPUP_THEME.primaryText,
+    fontSize: `${Math.round(resolvedPx)}px`,
     align: 'center',
     wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
+    maxLines: BUTTON_TEXT_MAX_LINES,
   }).setOrigin(0.5)
   const button = scene.add.container(x, y, [background, text])
   button.setSize(width, height)
@@ -294,7 +325,7 @@ class LobbyScene extends Phaser.Scene {
         entry.label,
         left + buttonWidth / 2,
         modeStartY + index * rowHeight,
-        this.currentLayout.bodyFontSize,
+        this.currentLayout.actionButtonFontSize,
         buttonWidth,
         buttonHeight,
         () => {
@@ -311,7 +342,7 @@ class LobbyScene extends Phaser.Scene {
         label,
         left + buttonWidth / 2,
         modeStartY + (modes.length + index) * rowHeight,
-        this.currentLayout.bodyFontSize,
+        this.currentLayout.actionButtonFontSize,
         buttonWidth,
         buttonHeight,
         () => {
@@ -326,7 +357,7 @@ class LobbyScene extends Phaser.Scene {
         entry.label,
         left + buttonWidth / 2,
         modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + index) * rowHeight,
-        this.currentLayout.bodyFontSize,
+        this.currentLayout.actionButtonFontSize,
         buttonWidth,
         buttonHeight,
         entry.disabled ? () => {} : entry.onClick,
@@ -343,7 +374,7 @@ class LobbyScene extends Phaser.Scene {
       'Switch to DOM renderer',
       left + buttonWidth / 2,
       modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length) * rowHeight,
-      this.currentLayout.bodyFontSize,
+      this.currentLayout.actionButtonFontSize,
       buttonWidth,
       buttonHeight,
       () => {
@@ -624,8 +655,13 @@ class CardgameScene extends Phaser.Scene {
     onClick: () => void,
     width = 240,
     height = 44,
+    fontSize = this.currentLayout.actionButtonFontSize,
   ): Phaser.GameObjects.Container {
-    return buildButton(this, label, x, y, this.currentLayout.bodyFontSize, width, height, onClick)
+    return buildButton(this, label, x, y, fontSize, width, height, onClick)
+  }
+
+  private popupActionWidth(maxWidth: number, ratio: number, minWidth: number): number {
+    return Math.min(maxWidth, Math.max(minWidth, maxWidth * ratio))
   }
 
   private bindScrollableViewport(
@@ -1319,7 +1355,14 @@ class CardgameScene extends Phaser.Scene {
     const panelRight = panelLeft + popupWidth
     const panelTop = (this.currentLayout.height - popupHeight) / 2
     const panelBottom = panelTop + popupHeight
-    const scrim = this.add.rectangle(0, 0, this.currentLayout.width, this.currentLayout.height, 0x000000, 0.62)
+    const scrim = this.add.rectangle(
+      0,
+      0,
+      this.currentLayout.width,
+      this.currentLayout.height,
+      POPUP_THEME.scrimFill,
+      this.currentLayout.popupScrimAlpha,
+    )
     scrim.setInteractive()
     scrim.on('pointerdown', swallowPointerEvent)
     scrim.on('pointerup', (
@@ -1340,7 +1383,14 @@ class CardgameScene extends Phaser.Scene {
     scrim.on('pointermove', swallowPointerEvent)
     overlay.add(scrim)
 
-    const panel = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x0f1a3b, 0.96).setStrokeStyle(2, 0x365092)
+    const panel = this.add.rectangle(
+      0,
+      0,
+      popupWidth,
+      popupHeight,
+      POPUP_THEME.panelFill,
+      this.currentLayout.popupPanelAlpha,
+    ).setStrokeStyle(2, POPUP_THEME.panelStroke)
     panel.setInteractive()
     panel.on('pointerdown', swallowPointerEvent)
     panel.on('pointerup', swallowPointerEvent)
@@ -1348,12 +1398,12 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(panel)
 
     overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight / 2, 'Menu', {
-      color: '#e5ecf5',
-      fontSize: this.currentLayout.subtitleFontSize,
+      color: POPUP_THEME.primaryText,
+      fontSize: this.currentLayout.popupTitleFontSize,
     }).setOrigin(0.5))
 
     const fullButtonWidth = Math.max(1, popupWidth - popupPadding * 2)
-    const halfButtonGap = POPUP_BUTTON_GAP
+    const halfButtonGap = this.currentLayout.popupButtonGap
     const halfButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap) / 2)
     let cursorY = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
 
@@ -1362,11 +1412,11 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.backToLobby()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     overlay.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.rematch()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
     // Section 2: orientation toggle.
@@ -1374,12 +1424,12 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
       this.closeMenuOverlay()
       this.rendererRef.toggleOrientationMode()
-    }, fullButtonWidth, this.currentLayout.popupButtonHeight))
+    }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
     // Section 3: Recorder.
     const recorderHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
-      color: '#9db0d9',
+      color: POPUP_THEME.secondaryText,
       fontSize: this.currentLayout.smallFontSize,
       wordWrap: { width: fullButtonWidth },
     }).setOrigin(0, 0)
@@ -1392,22 +1442,22 @@ class CardgameScene extends Phaser.Scene {
     overlay.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.handleDownloadRecording()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     overlay.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.saveRecordingToLocalStorage()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
     const recorderRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
     overlay.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.loadRecordingFromLocalStorage()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     overlay.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.openRecordingFilePicker()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
     if (!view.replay.active) {
@@ -1415,7 +1465,7 @@ class CardgameScene extends Phaser.Scene {
       overlay.add(this.createButton('Start Replay', 0, startReplayY, () => {
         this.closeMenuOverlay()
         this.rendererRef.controller?.startReplay()
-      }, fullButtonWidth, this.currentLayout.popupButtonHeight))
+      }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       cursorY += this.currentLayout.popupButtonHeight + sectionGap
     } else {
       cursorY += sectionGap
@@ -1424,7 +1474,7 @@ class CardgameScene extends Phaser.Scene {
     // Section 4: Replay controls (only when replay is active).
     if (view.replay.active) {
       const replayHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
-        color: '#9db0d9',
+        color: POPUP_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: fullButtonWidth },
       }).setOrigin(0, 0)
@@ -1439,31 +1489,36 @@ class CardgameScene extends Phaser.Scene {
         } else {
           this.rendererRef.controller?.startReplay()
         }
-      }, replayButtonWidth, this.currentLayout.popupButtonHeight))
+      }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       overlay.add(this.createButton('Previous', 0, replayRow1Y, () => {
         this.rendererRef.controller?.stepReplay(-1)
-      }, replayButtonWidth, this.currentLayout.popupButtonHeight))
+      }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       overlay.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
         this.rendererRef.controller?.stepReplay(1)
-      }, replayButtonWidth, this.currentLayout.popupButtonHeight))
+      }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
       const replayRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
       overlay.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
         this.rendererRef.controller?.jumpReplayToEnd()
-      }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+      }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       overlay.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
         this.closeMenuOverlay()
         this.rendererRef.controller?.exitReplay()
-      }, halfButtonWidth, this.currentLayout.popupButtonHeight))
+      }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       cursorY += this.currentLayout.popupButtonHeight + sectionGap
     }
 
     // Close button.
     const closeButtonY = cursorY + this.currentLayout.popupButtonHeight / 2
+    const closeButtonWidth = this.popupActionWidth(
+      fullButtonWidth,
+      POPUP_CLOSE_BUTTON_WIDTH_RATIO,
+      POPUP_CLOSE_BUTTON_MIN_WIDTH,
+    )
     overlay.add(this.createButton('Close', 0, closeButtonY, () => {
       this.closeMenuOverlay()
-    }, Math.min(fullButtonWidth, 220), this.currentLayout.popupButtonHeight))
+    }, closeButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
 
     // Replay Log section: heading + masked scrollable viewport.
@@ -1483,15 +1538,21 @@ class CardgameScene extends Phaser.Scene {
     if (maxViewportHeight > 0) {
       if (showHeading) {
         overlay.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
-          color: '#e5ecf5',
+          color: POPUP_THEME.primaryText,
           fontSize: this.currentLayout.bodyFontSize,
         }).setOrigin(0, 0.5))
       }
 
       const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
       const logViewportY = logViewportTop + logViewportHeight / 2
-      const logViewportBackground = this.add.rectangle(0, logViewportY, logViewportWidth, logViewportHeight, COLOR_LOG_VIEWPORT_FILL, 0.75)
-        .setStrokeStyle(1, 0x365092)
+      const logViewportBackground = this.add.rectangle(
+        0,
+        logViewportY,
+        logViewportWidth,
+        logViewportHeight,
+        POPUP_THEME.viewportFill,
+        this.currentLayout.popupViewportAlpha,
+      ).setStrokeStyle(1, POPUP_THEME.buttonStroke)
       logViewportBackground.setInteractive()
       logViewportBackground.on('pointerdown', swallowPointerEvent)
       logViewportBackground.on('pointerup', swallowPointerEvent)
@@ -1552,7 +1613,7 @@ class CardgameScene extends Phaser.Scene {
         )
 
         overlay.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-          color: '#9db0d9',
+          color: POPUP_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(1, 0.5))
       }
@@ -1576,19 +1637,20 @@ class CardgameScene extends Phaser.Scene {
 
     const optionCount = showAllTargets ? options.length : Math.min(DEFAULT_TARGET_OPTIONS, options.length)
     const hasHiddenOptions = options.length > DEFAULT_TARGET_OPTIONS
-    const popupPadding = this.currentLayout.isCompact ? 16 : 20
+    const popupPadding = this.currentLayout.menuPopupPadding
     const popupWidth = Math.max(0, this.currentLayout.popupMaxWidth)
     const buttonWidth = Math.max(0, popupWidth - popupPadding * 2)
-    const titleHeight = this.currentLayout.isCompact ? 44 : 56
-    const optionGap = this.currentLayout.isCompact ? 8 : 10
+    const titleHeight = this.currentLayout.menuTitleHeight
+    const sectionGap = this.currentLayout.menuSectionGap
+    const optionGap = this.currentLayout.popupButtonGap
     const cancelHeight = this.currentLayout.popupButtonHeight
     const showAllButtonHeight = hasHiddenOptions ? cancelHeight : 0
-    const footerGap = hasHiddenOptions ? POPUP_BUTTON_GAP : 0
+    const footerGap = hasHiddenOptions ? this.currentLayout.popupButtonGap : 0
     const footerHeight = cancelHeight + footerGap + showAllButtonHeight
     const optionsHeightWanted = optionCount > 0
       ? optionCount * this.currentLayout.popupButtonHeight + Math.max(0, optionCount - 1) * optionGap
       : this.currentLayout.popupButtonHeight
-    const desiredHeight = titleHeight + optionsHeightWanted + footerHeight + popupPadding * 2 + POPUP_SECTION_GAP * 2
+    const desiredHeight = titleHeight + optionsHeightWanted + footerHeight + popupPadding * 2 + sectionGap * 2
     const maxHeight = this.currentLayout.height - this.currentLayout.margin * 2
     const popupHeight = Math.min(desiredHeight, maxHeight)
 
@@ -1609,24 +1671,37 @@ class CardgameScene extends Phaser.Scene {
       event.stopPropagation()
     }
 
-    const backdrop = this.add.rectangle(0, 0, popupWidth, popupHeight, 0x000000, 0.82).setStrokeStyle(2, 0x4f6caa)
+    const backdrop = this.add.rectangle(
+      0,
+      0,
+      popupWidth,
+      popupHeight,
+      POPUP_THEME.backdropFill,
+      this.currentLayout.popupBackdropAlpha,
+    ).setStrokeStyle(2, POPUP_THEME.panelStroke)
     backdrop.setInteractive()
     backdrop.on('pointerdown', swallowPointerEvent)
     backdrop.on('pointerup', swallowPointerEvent)
     backdrop.on('pointermove', swallowPointerEvent)
     overlay.add(backdrop)
     overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + titleHeight / 2, 'Choose target', {
-      color: '#e5ecf5',
-      fontSize: this.currentLayout.subtitleFontSize,
+      color: POPUP_THEME.primaryText,
+      fontSize: this.currentLayout.popupTitleFontSize,
     }).setOrigin(0.5))
 
     const optionsTopY = -popupHeight / 2 + popupPadding + titleHeight
     const footerTopY = popupHeight / 2 - popupPadding - footerHeight
-    const optionsAreaHeight = Math.max(48, footerTopY - optionsTopY - POPUP_SECTION_GAP)
+    const optionsAreaHeight = Math.max(48, footerTopY - optionsTopY - sectionGap)
     const optionsViewportY = optionsTopY + optionsAreaHeight / 2
 
-    const optionsViewportBackground = this.add.rectangle(0, optionsViewportY, buttonWidth, optionsAreaHeight, 0x0f1a3b, 0.4)
-      .setStrokeStyle(1, 0x365092)
+    const optionsViewportBackground = this.add.rectangle(
+      0,
+      optionsViewportY,
+      buttonWidth,
+      optionsAreaHeight,
+      POPUP_THEME.panelFill,
+      this.currentLayout.popupViewportAlpha,
+    ).setStrokeStyle(1, POPUP_THEME.buttonStroke)
     optionsViewportBackground.setInteractive()
     optionsViewportBackground.on('pointerdown', swallowPointerEvent)
     optionsViewportBackground.on('pointerup', swallowPointerEvent)
@@ -1654,7 +1729,15 @@ class CardgameScene extends Phaser.Scene {
         overlay.destroy(true)
       }
       const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
-      const button = this.createButton(option.label, 0, buttonY, selectOption, buttonWidth, this.currentLayout.popupButtonHeight)
+      const button = this.createButton(
+        option.label,
+        0,
+        buttonY,
+        selectOption,
+        buttonWidth,
+        this.currentLayout.popupButtonHeight,
+        this.currentLayout.popupButtonFontSize,
+      )
       optionsList.add(button)
       this.pendingTargetPickerA11yEntries.push({
         key: `target:${option.effectTargetId ?? `fallback-index-${index}`}`,
@@ -1690,26 +1773,44 @@ class CardgameScene extends Phaser.Scene {
         applyScroll,
       )
 
-      overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll or drag', {
-        color: '#9db0d9',
+        overlay.add(this.add.text(buttonWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, optionsTopY + optionsAreaHeight / 2, 'Scroll or drag', {
+        color: POPUP_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
       }).setOrigin(1, 0.5))
     }
 
     const cancelY = footerTopY + cancelHeight / 2
+    const cancelWidth = this.popupActionWidth(
+      buttonWidth,
+      POPUP_CANCEL_BUTTON_WIDTH_RATIO,
+      POPUP_CANCEL_BUTTON_MIN_WIDTH,
+    )
     const cancelButton = this.createButton('Cancel', 0, cancelY, () => {
       overlay.destroy(true)
-    }, Math.min(buttonWidth, 260), cancelHeight)
+    }, cancelWidth, cancelHeight, this.currentLayout.popupButtonFontSize)
     overlay.add(cancelButton)
 
     if (hasHiddenOptions) {
-      const showAllY = cancelY + cancelHeight / 2 + POPUP_BUTTON_GAP + showAllButtonHeight / 2
+      const showAllY = cancelY + cancelHeight / 2 + this.currentLayout.popupButtonGap + showAllButtonHeight / 2
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
       const toggleShowAll = (): void => {
         overlay.destroy(true)
         this.showTargetPicker(options, resolver, !showAllTargets)
       }
-      const showAllButton = this.createButton(showAllLabel, 0, showAllY, toggleShowAll, Math.min(buttonWidth, 300), showAllButtonHeight)
+      const toggleWidth = this.popupActionWidth(
+        buttonWidth,
+        POPUP_TOGGLE_BUTTON_WIDTH_RATIO,
+        POPUP_TOGGLE_BUTTON_MIN_WIDTH,
+      )
+      const showAllButton = this.createButton(
+        showAllLabel,
+        0,
+        showAllY,
+        toggleShowAll,
+        toggleWidth,
+        showAllButtonHeight,
+        this.currentLayout.popupButtonFontSize,
+      )
       overlay.add(showAllButton)
       this.pendingTargetPickerA11yEntries.push({
         key: 'target:toggle-visible-options',

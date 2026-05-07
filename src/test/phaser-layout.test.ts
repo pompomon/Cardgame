@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { buildLayout } from '../renderers/phaser/layout'
 
 describe('phaser buildLayout', () => {
+  const px = (value: string): number => Number.parseFloat(value)
+
   it('caps the log column at ~25% of viewport width on wide screens', () => {
     const layout = buildLayout(1280, 820, 'horizontal')
     expect(layout.isCollapsed).toBe(false)
@@ -150,5 +152,25 @@ describe('phaser buildLayout', () => {
     const contentBottom = viewportHeight - layout.margin - layout.statusBottomOffset - 8
     expect(layout.logColumnTop + layout.logColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
     expect(layout.boardColumnTop + layout.boardColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
+  })
+
+  it('uses opaque popup layers while keeping scrim dimming configurable', () => {
+    const layout = buildLayout(1024, 480, 'horizontal')
+    expect(layout.popupPanelAlpha).toBe(1)
+    expect(layout.popupBackdropAlpha).toBe(1)
+    expect(layout.popupViewportAlpha).toBe(1)
+    expect(layout.popupScrimAlpha).toBeGreaterThan(0)
+    expect(layout.popupScrimAlpha).toBeLessThan(1)
+  })
+
+  it('derives button typography from button geometry across viewport sizes', () => {
+    const compactLayout = buildLayout(360, 640, 'vertical')
+    const wideLayout = buildLayout(1280, 820, 'horizontal')
+    expect(px(compactLayout.actionButtonFontSize)).toBeGreaterThanOrEqual(12)
+    expect(px(compactLayout.popupButtonFontSize)).toBeGreaterThanOrEqual(px(compactLayout.actionButtonFontSize))
+    expect(px(wideLayout.actionButtonFontSize)).toBeGreaterThanOrEqual(px(compactLayout.actionButtonFontSize))
+    expect(px(wideLayout.popupButtonFontSize)).toBeGreaterThanOrEqual(px(compactLayout.popupButtonFontSize))
+    expect(px(wideLayout.popupTitleFontSize)).toBeGreaterThanOrEqual(px(compactLayout.popupTitleFontSize))
+    expect(px(wideLayout.popupButtonFontSize)).toBeLessThanOrEqual(24)
   })
 })
