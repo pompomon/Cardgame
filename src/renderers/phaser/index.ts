@@ -407,6 +407,7 @@ class CardgameScene extends Phaser.Scene {
   private pendingTargetPickerA11yEntries: Array<{ key: string; label: string; onSelect: () => void }> = []
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
+  private menuContentScrollOffset: number | null = null
   private menuLogScrollOffset: number | null = null
   private menuLogPinnedToBottom = true
   private inSceneLogScrollOffset: number | null = null
@@ -762,7 +763,7 @@ class CardgameScene extends Phaser.Scene {
       maxLines: 1,
     }).setOrigin(0, 0.5))
 
-    if (!this.menuOpen) {
+    if (!this.menuOpen && !this.pendingTargetPicker) {
       this.renderInSceneLog(game.log)
     }
     this.renderBattlefields(game)
@@ -965,9 +966,12 @@ class CardgameScene extends Phaser.Scene {
 
     const viewportTop = heading.y + heading.height + 6
     const viewportBottom = y + height - padding
-    const viewportHeight = Math.max(40, viewportBottom - viewportTop)
+    const viewportHeight = viewportBottom - viewportTop
     const viewportLeft = x + padding
-    const viewportWidth = Math.max(40, width - padding * 2)
+    const viewportWidth = width - padding * 2
+    if (viewportHeight <= 0 || viewportWidth <= 0) {
+      return
+    }
 
     const viewportBg = this.add.rectangle(
       viewportLeft + viewportWidth / 2,
@@ -1139,6 +1143,7 @@ class CardgameScene extends Phaser.Scene {
     const overlay = this.menuOverlay
     this.menuOverlay = null
     this.menuOpen = false
+    this.menuContentScrollOffset = null
     this.menuLogScrollOffset = null
     this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
@@ -1253,15 +1258,44 @@ class CardgameScene extends Phaser.Scene {
     const fullButtonWidth = Math.max(1, popupWidth - popupPadding * 2)
     const halfButtonGap = this.currentLayout.popupButtonGap
     const halfButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap) / 2)
-    let cursorY = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
+    const contentViewportTop = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
+    const contentViewportBottom = popupHeight / 2 - popupPadding
+    const contentViewportHeight = Math.max(1, contentViewportBottom - contentViewportTop)
+    const contentViewportBackground = this.add.rectangle(
+      0,
+      contentViewportTop + contentViewportHeight / 2,
+      fullButtonWidth,
+      contentViewportHeight,
+      UI_THEME.backdropFill,
+      0,
+    )
+    contentViewportBackground.setInteractive()
+    overlay.add(contentViewportBackground)
+    const contentViewport = this.add.container(0, contentViewportTop)
+    const content = this.add.container(0, 0)
+    contentViewport.add(content)
+    overlay.add(contentViewport)
+
+    const contentMask = this.add.graphics()
+    contentMask.fillStyle(0xffffff)
+    contentMask.fillRect(
+      -fullButtonWidth / 2,
+      contentViewportTop,
+      fullButtonWidth,
+      contentViewportHeight,
+    )
+    contentMask.setVisible(false)
+    overlay.add(contentMask)
+    contentViewport.setMask(contentMask.createGeometryMask())
+    let cursorY = 0
 
     // Section 1: Back to Lobby + Rematch (mirrors DOM PR #13 menu-section 1).
     const section1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
+    content.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.backToLobby()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    overlay.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
+    content.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.rematch()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1269,7 +1303,7 @@ class CardgameScene extends Phaser.Scene {
 
     // Section 2: orientation toggle.
     const orientationY = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
+    content.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
       this.closeMenuOverlay()
       this.rendererRef.toggleOrientationMode()
     }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1281,28 +1315,28 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.smallFontSize,
       wordWrap: { width: fullButtonWidth },
     }).setOrigin(0, 0)
-    overlay.add(recorderHeading)
+    content.add(recorderHeading)
     // Use the rendered text height (which reflects wrapping at narrow widths)
     // instead of a fixed 18px so the next row never overlaps a wrapped heading.
     cursorY += Math.max(18, recorderHeading.height) + 4
 
     const recorderRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
+    content.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.handleDownloadRecording()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    overlay.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
+    content.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.saveRecordingToLocalStorage()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
     const recorderRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
+    content.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.loadRecordingFromLocalStorage()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    overlay.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
+    content.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.openRecordingFilePicker()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1310,7 +1344,7 @@ class CardgameScene extends Phaser.Scene {
 
     if (!view.replay.active) {
       const startReplayY = cursorY + this.currentLayout.popupButtonHeight / 2
-      overlay.add(this.createButton('Start Replay', 0, startReplayY, () => {
+      content.add(this.createButton('Start Replay', 0, startReplayY, () => {
         this.closeMenuOverlay()
         this.rendererRef.controller?.startReplay()
       }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1326,31 +1360,31 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: fullButtonWidth },
       }).setOrigin(0, 0)
-      overlay.add(replayHeading)
+      content.add(replayHeading)
       cursorY += Math.max(18, replayHeading.height) + 4
 
       const replayRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
       const replayButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap * 2) / 3)
-      overlay.add(this.createButton(view.replay.isPlaying ? 'Pause' : 'Play', -replayButtonWidth - halfButtonGap, replayRow1Y, () => {
+      content.add(this.createButton(view.replay.isPlaying ? 'Pause' : 'Play', -replayButtonWidth - halfButtonGap, replayRow1Y, () => {
         if (view.replay.isPlaying) {
           this.rendererRef.controller?.pauseReplay()
         } else {
           this.rendererRef.controller?.startReplay()
         }
       }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      overlay.add(this.createButton('Previous', 0, replayRow1Y, () => {
+      content.add(this.createButton('Previous', 0, replayRow1Y, () => {
         this.rendererRef.controller?.stepReplay(-1)
       }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      overlay.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
+      content.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
         this.rendererRef.controller?.stepReplay(1)
       }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
       const replayRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
-      overlay.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
+      content.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
         this.rendererRef.controller?.jumpReplayToEnd()
       }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      overlay.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
+      content.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
         this.closeMenuOverlay()
         this.rendererRef.controller?.exitReplay()
       }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1364,7 +1398,7 @@ class CardgameScene extends Phaser.Scene {
       POPUP_CLOSE_BUTTON_WIDTH_RATIO,
       POPUP_CLOSE_BUTTON_MIN_WIDTH,
     )
-    overlay.add(this.createButton('Close', 0, closeButtonY, () => {
+    content.add(this.createButton('Close', 0, closeButtonY, () => {
       this.closeMenuOverlay()
     }, closeButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
@@ -1373,7 +1407,7 @@ class CardgameScene extends Phaser.Scene {
     const logTitleY = buttonStackBottomY + sectionGap + 14
     const logViewportTopWithHeading = logTitleY + 14 + sectionGap
     const logViewportWidth = fullButtonWidth
-    const popupBottomEdge = popupHeight / 2 - popupPadding
+    const popupBottomEdge = contentViewportHeight
     const maxViewportHeightWithHeading = Math.max(0, popupBottomEdge - logViewportTopWithHeading)
     // If the heading + viewport doesn't fit readably, drop the heading so the log section
     // still has somewhere to render. This preserves access to the replay log on short
@@ -1383,9 +1417,11 @@ class CardgameScene extends Phaser.Scene {
       ? logViewportTopWithHeading
       : Math.max(buttonStackBottomY + sectionGap, popupBottomEdge - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
     const maxViewportHeight = Math.max(0, popupBottomEdge - logViewportTop)
+    let contentBottomY = buttonStackBottomY
+    let bindMenuLogScroll: (() => void) | null = null
     if (maxViewportHeight > 0) {
       if (showHeading) {
-        overlay.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
+        content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
           color: UI_THEME.primaryText,
           fontSize: this.currentLayout.bodyFontSize,
         }).setOrigin(0, 0.5))
@@ -1405,15 +1441,15 @@ class CardgameScene extends Phaser.Scene {
       logViewportBackground.on('pointerdown', swallowPointerEvent)
       logViewportBackground.on('pointerup', swallowPointerEvent)
       logViewportBackground.on('pointermove', swallowPointerEvent)
-      overlay.add(logViewportBackground)
+      content.add(logViewportBackground)
 
       const logContent = this.add.container(-logViewportWidth / 2 + 10, logViewportTop + 8)
-      overlay.add(logContent)
+      content.add(logContent)
       const lines = game.log
       const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: Math.max(40, logViewportWidth - 20) },
+        wordWrap: { width: Math.max(1, logViewportWidth - 20) },
       }).setOrigin(0, 0)
       logContent.add(logText)
 
@@ -1421,7 +1457,7 @@ class CardgameScene extends Phaser.Scene {
       logMask.fillStyle(0xffffff)
       logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
       logMask.setVisible(false)
-      overlay.add(logMask)
+      content.add(logMask)
       logContent.setMask(logMask.createGeometryMask())
 
       const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
@@ -1448,23 +1484,50 @@ class CardgameScene extends Phaser.Scene {
       }
 
       if (maxScroll > 0) {
-        this.bindScrollableViewport(
-          overlay,
-          logViewportBackground,
-          {
-            left: -logViewportWidth / 2,
-            right: logViewportWidth / 2,
-            top: logViewportTop,
-            bottom: logViewportTop + logViewportHeight,
-          },
-          applyScroll,
-        )
-
-        overlay.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-          color: UI_THEME.secondaryText,
-          fontSize: this.currentLayout.smallFontSize,
-        }).setOrigin(1, 0.5))
+        bindMenuLogScroll = () => {
+          this.bindScrollableViewport(
+            overlay,
+            logViewportBackground,
+            {
+              left: -logViewportWidth / 2,
+              right: logViewportWidth / 2,
+              top: contentViewportTop + logViewportTop,
+              bottom: contentViewportTop + logViewportTop + logViewportHeight,
+            },
+            applyScroll,
+          )
+          content.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
+            color: UI_THEME.secondaryText,
+            fontSize: this.currentLayout.smallFontSize,
+          }).setOrigin(1, 0.5))
+        }
       }
+      contentBottomY = Math.max(contentBottomY, logViewportTop + logViewportHeight)
+    }
+
+    const contentMaxScroll = Math.max(0, contentBottomY - contentViewportHeight)
+    if (contentMaxScroll > 0) {
+      let contentScrollOffset = Phaser.Math.Clamp(this.menuContentScrollOffset ?? 0, 0, contentMaxScroll)
+      content.y = -contentScrollOffset
+      const applyContentScroll = (deltaY: number): void => {
+        contentScrollOffset = Phaser.Math.Clamp(contentScrollOffset + deltaY, 0, contentMaxScroll)
+        this.menuContentScrollOffset = contentScrollOffset
+        content.y = -contentScrollOffset
+      }
+      this.bindScrollableViewport(
+        overlay,
+        contentViewportBackground,
+        {
+          left: -fullButtonWidth / 2,
+          right: fullButtonWidth / 2,
+          top: contentViewportTop,
+          bottom: contentViewportTop + contentViewportHeight,
+        },
+        applyContentScroll,
+      )
+    } else {
+      this.menuContentScrollOffset = null
+      bindMenuLogScroll?.()
     }
 
     this.menuOverlay = overlay

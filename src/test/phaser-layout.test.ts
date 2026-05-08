@@ -170,6 +170,31 @@ describe('phaser buildLayout', () => {
     expect(layout.popupScrimAlpha).toBeLessThan(1)
   })
 
+  it('keeps menu content viewport inside popup bounds on short mobile heights', () => {
+    const layout = buildLayout(360, 420, 'vertical')
+    const contentViewportHeight =
+      layout.menuPopupHeight
+      - layout.menuPopupPadding * 2
+      - layout.menuTitleHeight
+      - layout.menuSectionGap
+    expect(contentViewportHeight).toBeGreaterThan(0)
+    expect(contentViewportHeight).toBeLessThanOrEqual(layout.menuPopupHeight)
+  })
+
+  it('does not budget a menu log viewport larger than available replay-log remainder', () => {
+    const layout = buildLayout(360, 640, 'vertical')
+    const replayLogRemainder =
+      layout.menuPopupHeight
+      - (
+        layout.menuPopupPadding * 2
+        + layout.menuTitleHeight
+        + layout.menuSectionGap * 4
+        + layout.popupButtonHeight * 6
+        + 60
+      )
+    expect(layout.menuLogViewportHeight).toBeLessThanOrEqual(Math.max(80, replayLogRemainder))
+  })
+
   it('derives button typography from button geometry across viewport sizes', () => {
     const compactLayout = buildLayout(360, 640, 'vertical')
     const wideLayout = buildLayout(1280, 820, 'horizontal')
