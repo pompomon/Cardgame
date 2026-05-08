@@ -666,16 +666,13 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private bindScrollableViewport(
-    overlay: Phaser.GameObjects.Container,
     viewportBackground: Phaser.GameObjects.Rectangle,
-    viewportBounds: { left: number; right: number; top: number; bottom: number },
     applyScroll: (deltaY: number) => void,
   ): void {
     const isPointerWithinViewport = (pointer: Phaser.Input.Pointer): boolean => {
-      const localX = pointer.worldX - overlay.x
-      const localY = pointer.worldY - overlay.y
-      const withinX = localX >= viewportBounds.left && localX <= viewportBounds.right
-      const withinY = localY >= viewportBounds.top && localY <= viewportBounds.bottom
+      const bounds = viewportBackground.getBounds()
+      const withinX = pointer.worldX >= bounds.left && pointer.worldX <= bounds.right
+      const withinY = pointer.worldY >= bounds.top && pointer.worldY <= bounds.bottom
       return withinX && withinY
     }
 
@@ -718,7 +715,7 @@ class CardgameScene extends Phaser.Scene {
     this.input.on('pointermove', handlePointerMove)
     this.input.on('pointerup', handlePointerUp)
     this.input.on('pointerupoutside', handlePointerUp)
-    overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+    viewportBackground.once(Phaser.GameObjects.Events.DESTROY, () => {
       dragPointerId = null
       this.input.off('wheel', handleWheel)
       viewportBackground.off('pointerdown', handleViewportPointerDown)
@@ -1023,20 +1020,8 @@ class CardgameScene extends Phaser.Scene {
         this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
         logContent.y = viewportTop + 6 - scrollOffset
       }
-      // The in-scene log lives directly on the root container (not on an
-      // overlay container offset from origin), so we use a thin proxy whose
-      // origin is (0,0) for bindScrollableViewport bounds math.
-      const proxyOverlay = this.add.container(0, 0)
-      this.rootContainer?.add(proxyOverlay)
       this.bindScrollableViewport(
-        proxyOverlay,
         viewportBg,
-        {
-          left: viewportLeft,
-          right: viewportLeft + viewportWidth,
-          top: viewportTop,
-          bottom: viewportTop + viewportHeight,
-        },
         applyScroll,
       )
     }
@@ -1488,14 +1473,7 @@ class CardgameScene extends Phaser.Scene {
       if (maxScroll > 0) {
         deferredMenuLogScrollSetup = () => {
           this.bindScrollableViewport(
-            overlay,
             logViewportBackground,
-            {
-              left: -logViewportWidth / 2,
-              right: logViewportWidth / 2,
-              top: contentViewportTop + logViewportTop,
-              bottom: contentViewportTop + logViewportTop + logViewportHeight,
-            },
             applyScroll,
           )
           content.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
@@ -1517,14 +1495,7 @@ class CardgameScene extends Phaser.Scene {
         content.y = -contentScrollOffset
       }
       this.bindScrollableViewport(
-        overlay,
         contentViewportBackground,
-        {
-          left: -fullButtonWidth / 2,
-          right: fullButtonWidth / 2,
-          top: contentViewportTop,
-          bottom: contentViewportTop + contentViewportHeight,
-        },
         applyContentScroll,
       )
     } else {
@@ -1680,14 +1651,7 @@ class CardgameScene extends Phaser.Scene {
 
     if (maxScroll > 0) {
       this.bindScrollableViewport(
-        overlay,
         optionsViewportBackground,
-        {
-          left: -buttonWidth / 2,
-          right: buttonWidth / 2,
-          top: optionsTopY,
-          bottom: optionsTopY + optionsAreaHeight,
-        },
         applyScroll,
       )
 
