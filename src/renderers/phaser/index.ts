@@ -23,6 +23,7 @@ const MIN_BUTTON_FONT_PX = 12
 const MAX_BUTTON_FONT_PX = 20
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
+const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
@@ -970,6 +971,7 @@ class CardgameScene extends Phaser.Scene {
     const viewportLeft = x + padding
     const viewportWidth = width - padding * 2
     if (viewportHeight <= 0 || viewportWidth <= 0) {
+      heading.destroy()
       return
     }
 
@@ -1418,7 +1420,7 @@ class CardgameScene extends Phaser.Scene {
       : Math.max(buttonStackBottomY + sectionGap, popupBottomEdge - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
     const maxViewportHeight = Math.max(0, popupBottomEdge - logViewportTop)
     let contentBottomY = buttonStackBottomY
-    let bindMenuLogScroll: (() => void) | null = null
+    let deferredMenuLogScrollSetup: (() => void) | null = null
     if (maxViewportHeight > 0) {
       if (showHeading) {
         content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
@@ -1443,13 +1445,13 @@ class CardgameScene extends Phaser.Scene {
       logViewportBackground.on('pointermove', swallowPointerEvent)
       content.add(logViewportBackground)
 
-      const logContent = this.add.container(-logViewportWidth / 2 + 10, logViewportTop + 8)
+      const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
       content.add(logContent)
       const lines = game.log
       const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: Math.max(1, logViewportWidth - 20) },
+        wordWrap: { width: Math.max(1, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2) },
       }).setOrigin(0, 0)
       logContent.add(logText)
 
@@ -1484,7 +1486,7 @@ class CardgameScene extends Phaser.Scene {
       }
 
       if (maxScroll > 0) {
-        bindMenuLogScroll = () => {
+        deferredMenuLogScrollSetup = () => {
           this.bindScrollableViewport(
             overlay,
             logViewportBackground,
@@ -1527,7 +1529,10 @@ class CardgameScene extends Phaser.Scene {
       )
     } else {
       this.menuContentScrollOffset = null
-      bindMenuLogScroll?.()
+      // Defer menu-log wheel/drag binding until we know the outer menu-content
+      // viewport is not scrollable; otherwise both handlers compete in the same
+      // pointer region and produce double-scroll behavior.
+      deferredMenuLogScrollSetup?.()
     }
 
     this.menuOverlay = overlay

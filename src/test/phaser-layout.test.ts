@@ -183,6 +183,10 @@ describe('phaser buildLayout', () => {
 
   it('does not budget a menu log viewport larger than available replay-log remainder', () => {
     const layout = buildLayout(360, 640, 'vertical')
+    const minimumMenuLogViewport = 80
+    // Matches the static breathing-room reserve in buildLayout's menu
+    // replay-log remainder calculation.
+    const menuReplayRemainderReserve = 60
     const replayLogRemainder =
       layout.menuPopupHeight
       - (
@@ -190,9 +194,9 @@ describe('phaser buildLayout', () => {
         + layout.menuTitleHeight
         + layout.menuSectionGap * 4
         + layout.popupButtonHeight * 6
-        + 60
+        + menuReplayRemainderReserve
       )
-    expect(layout.menuLogViewportHeight).toBeLessThanOrEqual(Math.max(80, replayLogRemainder))
+    expect(layout.menuLogViewportHeight).toBeLessThanOrEqual(Math.max(minimumMenuLogViewport, replayLogRemainder))
   })
 
   it('derives button typography from button geometry across viewport sizes', () => {
