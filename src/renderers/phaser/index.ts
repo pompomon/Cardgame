@@ -1410,7 +1410,7 @@ class CardgameScene extends Phaser.Scene {
     const maxViewportHeight = Math.max(0, contentViewportVisibleHeight - logViewportTop)
     let contentBottomY = buttonStackBottomY
     let deferredMenuLogScrollSetup: (() => void) | null = null
-    let logViewportBackgroundForWheelPriority: Phaser.GameObjects.Rectangle | null = null
+    let innerLogViewportBackground: Phaser.GameObjects.Rectangle | null = null
     if (maxViewportHeight > 0) {
       if (showHeading) {
         content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
@@ -1434,7 +1434,7 @@ class CardgameScene extends Phaser.Scene {
       logViewportBackground.on('pointerup', swallowPointerEvent)
       logViewportBackground.on('pointermove', swallowPointerEvent)
       content.add(logViewportBackground)
-      logViewportBackgroundForWheelPriority = logViewportBackground
+      innerLogViewportBackground = logViewportBackground
 
       const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
       content.add(logContent)
@@ -1504,10 +1504,10 @@ class CardgameScene extends Phaser.Scene {
         contentViewportBackground,
         applyContentScroll,
         (pointer): boolean => {
-          if (!logViewportBackgroundForWheelPriority) {
+          if (!innerLogViewportBackground) {
             return true
           }
-          const logBounds = logViewportBackgroundForWheelPriority.getBounds()
+          const logBounds = innerLogViewportBackground.getBounds()
           return !(
             pointer.worldX >= logBounds.left
             && pointer.worldX <= logBounds.right
