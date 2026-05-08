@@ -1529,11 +1529,11 @@ class CardgameScene extends Phaser.Scene {
       )
     } else {
       this.menuContentScrollOffset = null
-      // Defer menu-log wheel/drag binding until we know the outer menu-content
-      // viewport is not scrollable; otherwise both handlers compete in the same
-      // pointer region and produce double-scroll behavior.
-      deferredMenuLogScrollSetup?.()
     }
+
+    // Always bind the replay-log viewport as well so it remains scrollable
+    // when the outer menu content also needs scrolling on shorter layouts.
+    deferredMenuLogScrollSetup?.()
 
     this.menuOverlay = overlay
     this.rootContainer.add(overlay)
