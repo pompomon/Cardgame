@@ -14,15 +14,25 @@
           if (prefix !== '/') {
             prefix += '/'
           }
-          if (candidates.indexOf(prefix) === -1) {
-            candidates.push(prefix)
-          }
+          candidates.push(prefix)
+        }
+
+        var withTimeout = function (promise, timeoutMs) {
+          return Promise.race([
+            promise,
+            new Promise(function (resolve) {
+              setTimeout(function () { resolve(false) }, timeoutMs)
+            }),
+          ])
         }
 
         var fetchManifest = function (candidate) {
-          return fetch(candidate + 'manifest.webmanifest', { cache: 'no-store' })
-            .then(function (response) { return response.ok })
-            .catch(function () { return false })
+          return withTimeout(
+            fetch(candidate + 'manifest.webmanifest', { cache: 'no-store' })
+              .then(function (response) { return response.ok })
+              .catch(function () { return false }),
+            1200,
+          )
         }
 
         var findBasePath = function (candidateIndex) {
