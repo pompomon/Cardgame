@@ -31,7 +31,7 @@ body {
   gap: 16px;
 }
 
-@supports (padding: max(0px)) {
+@supports (padding: max(0px, 1px)) {
   .app-shell {
     padding-top: max(16px, env(safe-area-inset-top, 0));
     padding-right: max(16px, env(safe-area-inset-right, 0));
@@ -364,5 +364,14 @@ textarea {
 
   .phaser-host {
     margin: 8px auto;
+  }
+
+  @supports (padding: max(0px, 1px)) {
+    .app-shell {
+      padding-top: max(12px, env(safe-area-inset-top, 0));
+      padding-right: max(12px, env(safe-area-inset-right, 0));
+      padding-bottom: max(12px, env(safe-area-inset-bottom, 0));
+      padding-left: max(12px, env(safe-area-inset-left, 0));
+    }
   }
 }

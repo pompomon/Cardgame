@@ -6,18 +6,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script>
       (function () {
-        var segments = window.location.pathname.split('/').filter(Boolean)
-        // Project Pages assumption: app base is the first path segment ("/<repo>/").
-        // Root-hosted deployments fall back to "/".
-        var basePath = segments.length > 0 ? '/' + segments[0] + '/' : '/'
-        var relativePath = segments.length > 1 ? '/' + segments.slice(1).join('/') : '/'
-        var params = new URLSearchParams(window.location.search)
-        params.set('__gh_path', relativePath)
-        if (window.location.hash) {
-          params.set('__gh_hash', window.location.hash)
+        var pathname = window.location.pathname
+        var segments = pathname.split('/').filter(Boolean)
+        var candidates = []
+        for (var index = segments.length; index >= 0; index -= 1) {
+          var prefix = '/' + segments.slice(0, index).join('/')
+          if (prefix !== '/') {
+            prefix += '/'
+          }
+          if (candidates.indexOf(prefix) === -1) {
+            candidates.push(prefix)
+          }
         }
-        var target = window.location.origin + basePath + (params.toString() ? '?' + params.toString() : '')
-        window.location.replace(target)
+
+        var fetchManifest = function (candidate) {
+          return fetch(candidate + 'manifest.webmanifest', { cache: 'no-store' })
+            .then(function (response) { return response.ok })
+            .catch(function () { return false })
+        }
+
+        var findBasePath = function (candidateIndex) {
+          if (candidateIndex >= candidates.length) {
+            return Promise.resolve('/')
+          }
+          return fetchManifest(candidates[candidateIndex]).then(function (exists) {
+            if (exists) {
+              return candidates[candidateIndex]
+            }
+            return findBasePath(candidateIndex + 1)
+          })
+        }
+
+        findBasePath(0).then(function (basePath) {
+          var relativePath = '/'
+          if (pathname.indexOf(basePath) === 0) {
+            var remainder = pathname.slice(basePath.length)
+            relativePath = remainder ? '/' + remainder : '/'
+          }
+
+          var params = new URLSearchParams(window.location.search)
+          params.set('__gh_path', relativePath)
+          if (window.location.hash) {
+            params.set('__gh_hash', window.location.hash)
+          }
+
+          var target = window.location.origin + basePath + (params.toString() ? '?' + params.toString() : '')
+          window.location.replace(target)
+        })
       })()
     </script>
   </head>

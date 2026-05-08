@@ -12,7 +12,6 @@ export type InstallUiState = {
   isStandalone: boolean
   canPromptInstall: boolean
   showIosInstallHint: boolean
-  showInstallUi: boolean
   statusText: string
   iosInstructions: string
 }
@@ -58,9 +57,14 @@ export function initInstallSupport(): void {
   })
 
   const displayModeQuery = window.matchMedia('(display-mode: standalone)')
-  displayModeQuery.addEventListener('change', () => {
+  const handleDisplayModeChange = (): void => {
     notifyChange()
-  })
+  }
+  if (typeof displayModeQuery.addEventListener === 'function') {
+    displayModeQuery.addEventListener('change', handleDisplayModeChange)
+  } else if (typeof displayModeQuery.addListener === 'function') {
+    displayModeQuery.addListener(handleDisplayModeChange)
+  }
 }
 
 export function subscribeInstallSupport(listener: () => void): () => void {
@@ -75,7 +79,6 @@ export function getInstallUiState(): InstallUiState {
   const isStandalone = isStandaloneDisplayMode()
   const canPromptInstall = deferredInstallPrompt !== null && !isStandalone
   const showIosInstallHint = isIos && isSafari && !isStandalone && !canPromptInstall
-  const showInstallUi = !isStandalone && (canPromptInstall || showIosInstallHint)
   const statusText = isStandalone
     ? 'Installed app mode active.'
     : canPromptInstall
@@ -87,7 +90,6 @@ export function getInstallUiState(): InstallUiState {
     isStandalone,
     canPromptInstall,
     showIosInstallHint,
-    showInstallUi,
     statusText,
     iosInstructions: 'Open Share and tap Add to Home Screen.',
   }
