@@ -668,6 +668,7 @@ class CardgameScene extends Phaser.Scene {
   private bindScrollableViewport(
     viewportBackground: Phaser.GameObjects.Rectangle,
     applyScroll: (deltaY: number) => void,
+    shouldHandleWheel?: (pointer: Phaser.Input.Pointer) => boolean,
   ): void {
     const isPointerWithinViewport = (pointer: Phaser.Input.Pointer): boolean => {
       const bounds = viewportBackground.getBounds()
@@ -682,6 +683,9 @@ class CardgameScene extends Phaser.Scene {
       _deltaX: number,
       deltaY: number,
     ): void => {
+      if (shouldHandleWheel && !shouldHandleWheel(pointer)) {
+        return
+      }
       if (isPointerWithinViewport(pointer)) {
         applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
       }
@@ -1406,6 +1410,7 @@ class CardgameScene extends Phaser.Scene {
     const maxViewportHeight = Math.max(0, contentViewportVisibleHeight - logViewportTop)
     let contentBottomY = buttonStackBottomY
     let deferredMenuLogScrollSetup: (() => void) | null = null
+    let logViewportBackgroundForWheelPriority: Phaser.GameObjects.Rectangle | null = null
     if (maxViewportHeight > 0) {
       if (showHeading) {
         content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
@@ -1429,6 +1434,7 @@ class CardgameScene extends Phaser.Scene {
       logViewportBackground.on('pointerup', swallowPointerEvent)
       logViewportBackground.on('pointermove', swallowPointerEvent)
       content.add(logViewportBackground)
+      logViewportBackgroundForWheelPriority = logViewportBackground
 
       const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
       content.add(logContent)
@@ -1497,6 +1503,18 @@ class CardgameScene extends Phaser.Scene {
       this.bindScrollableViewport(
         contentViewportBackground,
         applyContentScroll,
+        (pointer): boolean => {
+          if (!logViewportBackgroundForWheelPriority) {
+            return true
+          }
+          const logBounds = logViewportBackgroundForWheelPriority.getBounds()
+          return !(
+            pointer.worldX >= logBounds.left
+            && pointer.worldX <= logBounds.right
+            && pointer.worldY >= logBounds.top
+            && pointer.worldY <= logBounds.bottom
+          )
+        },
       )
     } else {
       this.menuContentScrollOffset = null
