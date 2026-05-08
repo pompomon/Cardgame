@@ -154,6 +154,13 @@ describe('phaser buildLayout', () => {
     expect(layout.boardColumnTop + layout.boardColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
   })
 
+  it('keeps the replay-log column fully below the header strip on mobile portrait', () => {
+    const layout = buildLayout(360, 800, 'vertical')
+    const headerBottom = layout.headerTop + layout.headerHeight
+    expect(layout.logColumnTop).toBeGreaterThanOrEqual(layout.bodyTop)
+    expect(layout.logColumnTop).toBeGreaterThanOrEqual(headerBottom)
+  })
+
   it('uses opaque popup layers while keeping scrim dimming configurable', () => {
     const layout = buildLayout(1024, 480, 'horizontal')
     expect(layout.popupPanelAlpha).toBe(1)

@@ -30,14 +30,6 @@ const LOBBY_SCENE_KEY = 'cardgame-lobby'
 const CARDGAME_SCENE_KEY = 'cardgame-main'
 const INFO_PANEL_VERTICAL_PADDING = 12
 const INFO_PANEL_LINE_HEIGHT_MULTIPLIER = 1.25
-const CONTROLS_INNER_HORIZONTAL_PADDING = 16
-const MIN_WORD_WRAP_WIDTH = 40
-const RESPONSE_PROMPT_X_OFFSET = 8
-const RESPONSE_PROMPT_Y_OFFSET = 6
-const RESPONSE_PROMPT_BOTTOM_GAP = 4
-const MIN_RESPONSE_LABEL_BUTTON_WIDTH = 120
-const APPROX_CHAR_WIDTH_RATIO = 0.56
-const MIN_APPROX_CHAR_WIDTH = 6
 const MIN_LOBBY_ROW_HEIGHT = 16
 const DEFAULT_BATTLEFIELD_HEADER_BAND = 22
 const POPUP_CLOSE_BUTTON_WIDTH_RATIO = 0.5
@@ -764,7 +756,9 @@ class CardgameScene extends Phaser.Scene {
       maxLines: 1,
     }).setOrigin(0, 0.5))
 
-    this.renderInSceneLog(game.log)
+    if (!this.menuOpen) {
+      this.renderInSceneLog(game.log)
+    }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
     this.renderHandAndControls(game)
@@ -942,6 +936,9 @@ class CardgameScene extends Phaser.Scene {
     const y = this.currentLayout.logColumnTop
     const width = this.currentLayout.logColumnWidth
     const height = this.currentLayout.logColumnHeight
+    if (width <= 0 || height <= 0) {
+      return
+    }
 
     const panelBg = this.add.rectangle(
       x + width / 2,
@@ -953,15 +950,16 @@ class CardgameScene extends Phaser.Scene {
     this.rootContainer?.add(panelBg)
 
     const padding = 10
-    const headingHeight = Math.max(20, this.currentLayout.actionButtonHeight * 0.6)
-    const heading = this.add.text(x + padding, y + 6, 'Replay Log', {
+    const headingTop = y + 6
+    const heading = this.add.text(x + padding, headingTop, 'Replay Log', {
       color: '#e5ecf5',
       fontSize: this.currentLayout.subtitleFontSize,
     })
     this.rootContainer?.add(heading)
 
-    const viewportTop = y + 6 + headingHeight
-    const viewportHeight = Math.max(40, height - (6 + headingHeight) - padding)
+    const viewportTop = heading.y + heading.height + 6
+    const viewportBottom = y + height - padding
+    const viewportHeight = Math.max(40, viewportBottom - viewportTop)
     const viewportLeft = x + padding
     const viewportWidth = Math.max(40, width - padding * 2)
 
@@ -978,70 +976,22 @@ class CardgameScene extends Phaser.Scene {
 
     const logDisplayText = lines.length > 0 ? lines.join('\n') : 'No log entries yet.'
     const logWrapWidth = Math.max(40, viewportWidth - 12)
-    const sceneState = this as typeof this & {
-      inSceneLogContent?: Phaser.GameObjects.Container
-      inSceneLogText?: Phaser.GameObjects.Text
-      inSceneLogMaskGraphics?: Phaser.GameObjects.Graphics
-      inSceneLogMask?: Phaser.Display.Masks.GeometryMask
-      inSceneLogRenderedText?: string
-      inSceneLogRenderedWrapWidth?: number
-      inSceneLogRenderedFontSize?: string | number
-    }
-
-    let logContent = sceneState.inSceneLogContent
-    if (!logContent || !logContent.active) {
-      logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
-      sceneState.inSceneLogContent = logContent
-    } else {
-      logContent.setPosition(viewportLeft + 6, viewportTop + 6)
-    }
+    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
     this.rootContainer?.add(logContent)
 
-    let logText = sceneState.inSceneLogText
-    if (!logText || !logText.active) {
-      logText = this.add.text(0, 0, logDisplayText, {
-        color: '#9db0d9',
-        fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: logWrapWidth },
-      }).setOrigin(0, 0)
-      sceneState.inSceneLogText = logText
-      sceneState.inSceneLogRenderedText = logDisplayText
-      sceneState.inSceneLogRenderedWrapWidth = logWrapWidth
-      sceneState.inSceneLogRenderedFontSize = this.currentLayout.smallFontSize
-    } else {
-      logText.setPosition(0, 0)
-      if (sceneState.inSceneLogRenderedWrapWidth !== logWrapWidth) {
-        logText.setWordWrapWidth(logWrapWidth, true)
-        sceneState.inSceneLogRenderedWrapWidth = logWrapWidth
-      }
-      if (sceneState.inSceneLogRenderedFontSize !== this.currentLayout.smallFontSize) {
-        logText.setFontSize(this.currentLayout.smallFontSize)
-        sceneState.inSceneLogRenderedFontSize = this.currentLayout.smallFontSize
-      }
-      if (sceneState.inSceneLogRenderedText !== logDisplayText) {
-        logText.setText(logDisplayText)
-        sceneState.inSceneLogRenderedText = logDisplayText
-      }
-    }
-    if (!logContent.list.includes(logText)) {
-      logContent.add(logText)
-    }
+    const logText = this.add.text(0, 0, logDisplayText, {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.smallFontSize,
+      wordWrap: { width: logWrapWidth },
+    }).setOrigin(0, 0)
+    logContent.add(logText)
 
-    let logMask = sceneState.inSceneLogMaskGraphics
-    if (!logMask || !logMask.active) {
-      logMask = this.add.graphics()
-      logMask.setVisible(false)
-      sceneState.inSceneLogMaskGraphics = logMask
-      sceneState.inSceneLogMask = logMask.createGeometryMask()
-    } else {
-      logMask.clear()
-    }
+    const logMask = this.add.graphics()
+    logMask.setVisible(false)
     logMask.fillStyle(0xffffff)
     logMask.fillRect(viewportLeft, viewportTop, viewportWidth, viewportHeight)
     this.rootContainer?.add(logMask)
-    if (sceneState.inSceneLogMask) {
-      logContent.setMask(sceneState.inSceneLogMask)
-    }
+    logContent.setMask(logMask.createGeometryMask())
 
     const maxScroll = Math.max(0, logText.height + 12 - viewportHeight)
     let scrollOffset: number
@@ -1113,161 +1063,42 @@ class CardgameScene extends Phaser.Scene {
     })
 
     if (game.canInput && game.phase === 'plains_target') {
-      const promptText = this.add.text(
-        this.currentLayout.boardColumnLeft + RESPONSE_PROMPT_X_OFFSET,
-        this.currentLayout.activeInfoY + RESPONSE_PROMPT_Y_OFFSET,
-        `Choose target for reused ${game.pendingPlainsReuseName ?? 'land'}.`,
-        {
-          color: '#f0f4ff',
-          fontSize: this.currentLayout.bodyFontSize,
-          wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
-        },
-      )
-      const promptBottom = promptText.y + promptText.height + RESPONSE_PROMPT_BOTTOM_GAP
-      if (promptBottom <= this.currentLayout.activeInfoControlsTop) {
-        this.rootContainer?.add(promptText)
-      } else {
-        promptText.destroy()
-      }
-
-      const options = game.legal.plainsReuseOptions
-      const totalButtons = options.length
-      if (totalButtons > 0) {
-        const buttonWidth = Math.min(this.currentLayout.actionButtonWidth, Math.max(120, this.currentLayout.boardColumnWidth - 16))
-        const buttonHeight = Math.min(
-          this.currentLayout.actionButtonHeight + 4,
-          Math.max(20, this.currentLayout.activeInfoControlsHeight / Math.max(1, totalButtons)),
-        )
-        options.forEach((option, index) => {
-          const y = this.currentLayout.activeInfoControlsTop
-            + buttonHeight / 2
-            + index * Math.min(buttonHeight + 6, this.currentLayout.activeInfoControlsHeight / Math.max(1, totalButtons))
-          const x = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
-          this.rootContainer?.add(this.createButton(option.label, x, y, () => {
-            this.rendererRef.controller?.submitAction(option.action)
-          }, buttonWidth, buttonHeight))
-        })
+      if (!this.pendingTargetPicker) {
+        const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.plainsReuseOptions.map((option, index) => ({
+          effectTargetId: option.action.effectTargetId ?? `plains-option-${index}`,
+          label: option.label,
+          action: option.action,
+        }))
+        if (options.length > 0) {
+          this.showTargetPicker(
+            options.map((option) => ({ effectTargetId: option.effectTargetId, label: option.label })),
+            (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
+          )
+        }
       }
       return
     }
 
     if (game.canInput && game.phase === 'respond') {
-      const promptText = this.add.text(
-        this.currentLayout.boardColumnLeft + RESPONSE_PROMPT_X_OFFSET,
-        this.currentLayout.activeInfoY + RESPONSE_PROMPT_Y_OFFSET,
-        `Opponent played ${game.pendingLandName ?? 'a land'}.`,
-        {
-          color: '#f0f4ff',
-          fontSize: this.currentLayout.bodyFontSize,
-          wordWrap: { width: Math.max(MIN_WORD_WRAP_WIDTH, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING) },
-        },
-      )
-      const promptBottom = promptText.y + promptText.height + RESPONSE_PROMPT_BOTTOM_GAP
-      if (promptBottom <= this.currentLayout.activeInfoControlsTop) {
-        this.rootContainer?.add(promptText)
-      } else {
-        // On ultra-short split layouts there may be no vertical room between
-        // activeInfoY and controlsTop; drop the prompt to avoid overlap.
-        promptText.destroy()
-      }
-
-      // Response controls (counter options + Pass) must fit between the prompt
-      // line and the hand cards inside the active-info row's controls band
-      // (`activeInfoControlsHeight` already excludes the player-info text and
-      // the hand strip). On short viewports that band may be only ~40-60px
-      // tall. Try a single-column stack first, but if it would shrink each
-      // button below a usable click target (~28px tall), switch to a multi-
-      // column grid that fits all buttons at the minimum usable height
-      // without spilling into the hand strip.
-      const respondBandTop = this.currentLayout.activeInfoControlsTop
-      const respondBandHeight = this.currentLayout.activeInfoControlsHeight
-      const totalButtons = game.legal.counterOptions.length + (game.legal.canPassResponse ? 1 : 0)
-      const desiredButtonHeight = this.currentLayout.popupButtonHeight
-      const desiredGap = 8
-      const minUsableButtonHeight = 28
-      const availableWidth = Math.max(0, this.currentLayout.boardColumnWidth - CONTROLS_INNER_HORIZONTAL_PADDING)
-      const preferredButtonWidth = this.currentLayout.isCompact ? 400 : 440
-      const responseLabels = [
-        ...game.legal.counterOptions.map((option) => option.label),
-        ...(game.legal.canPassResponse ? ['Pass'] : []),
-      ]
-      const approxCharWidth = Math.max(MIN_APPROX_CHAR_WIDTH, parseFloat(this.currentLayout.bodyFontSize) * APPROX_CHAR_WIDTH_RATIO)
-      const longestLabelLength = responseLabels.reduce((max, label) => Math.max(max, label.length), 0)
-      const minReadableButtonWidth = Math.min(
-        preferredButtonWidth,
-        Math.max(MIN_RESPONSE_LABEL_BUTTON_WIDTH, longestLabelLength * approxCharWidth + BUTTON_TEXT_HORIZONTAL_PADDING),
-      )
-      const gridMetricsFor = (columnCount: number): { columnGap: number; cellWidth: number } => {
-        const columnGap = columnCount > 1 ? 8 : 0
-        const cellWidth = columnCount > 0 ? (availableWidth - columnGap * (columnCount - 1)) / columnCount : availableWidth
-        return { columnGap, cellWidth }
-      }
-      // Compute the smallest column count whose stacked rows fit at >= the
-      // minimum usable button height. The grid never exceeds totalButtons
-      // columns. This keeps every response action click-reachable on the
-      // short viewports the PR is targeting (e.g. 5 actions on 1024×480).
-      let columns = 1
-      let rows = totalButtons
-      let respondGap = totalButtons > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
-      let heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
-      let respondButtonHeight = totalButtons > 0
-        ? Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
-        : desiredButtonHeight
-      let { columnGap, cellWidth } = gridMetricsFor(columns)
-      while (totalButtons > 0 && columns < totalButtons) {
-        if (respondButtonHeight >= minUsableButtonHeight) {
-          break
+      if (!this.pendingTargetPicker) {
+        const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.counterOptions.map((option, index) => ({
+          effectTargetId: `respond-counter-${index}`,
+          label: option.label,
+          action: option.action,
+        }))
+        if (game.legal.canPassResponse) {
+          options.push({
+            effectTargetId: 'respond-pass',
+            label: 'Pass',
+            action: { type: 'pass_response', actor: game.actor },
+          })
         }
-        const nextColumns = columns + 1
-        const nextMetrics = gridMetricsFor(nextColumns)
-        // Do not take a widening step if it would make labels unreadably
-        // narrow. Keep the previous readable layout instead.
-        if (nextMetrics.cellWidth < minReadableButtonWidth) {
-          break
+        if (options.length > 0) {
+          this.showTargetPicker(
+            options.map((option) => ({ effectTargetId: option.effectTargetId, label: option.label })),
+            (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
+          )
         }
-        columns = nextColumns
-        rows = Math.ceil(totalButtons / columns)
-        respondGap = rows > 1 ? Math.min(desiredGap, Math.max(0, respondBandHeight * 0.05)) : 0
-        heightForButtons = Math.max(0, respondBandHeight - Math.max(0, rows - 1) * respondGap)
-        respondButtonHeight = Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows))
-        ;({ columnGap, cellWidth } = gridMetricsFor(columns))
-      }
-      // If even a maxed-out grid cannot reach the minimum height, accept the
-      // largest possible button height so they remain at least visible.
-      respondButtonHeight = Math.max(respondButtonHeight, Math.min(desiredButtonHeight, heightForButtons / Math.max(1, rows)))
-      ;({ columnGap, cellWidth } = gridMetricsFor(columns))
-      // Clamp button width so the assembled grid never exceeds availableWidth
-      // (the board column). On collapsed phone viewports (e.g. 320px) with
-      // many response actions the per-cell width can fall below the 28px
-      // minimum click target. Forcing a 60px floor here would push the
-      // rightmost buttons off-panel/off-screen, so we accept the small
-      // cellWidth instead and let the column-search above place buttons
-      // tightly inside the available width.
-      const buttonWidth = Math.min(preferredButtonWidth, Math.max(0, cellWidth))
-      const gridWidth = columns * buttonWidth + Math.max(0, columns - 1) * columnGap
-      const controlsX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
-      const gridLeft = controlsX - gridWidth / 2
-      const startY = respondBandTop + respondButtonHeight / 2
-      const positionFor = (index: number): { x: number; y: number } => {
-        const row = Math.floor(index / columns)
-        const column = index % columns
-        return {
-          x: gridLeft + buttonWidth / 2 + column * (buttonWidth + columnGap),
-          y: startY + row * (respondButtonHeight + respondGap),
-        }
-      }
-
-      game.legal.counterOptions.forEach((option, index) => {
-        const { x, y } = positionFor(index)
-        this.rootContainer?.add(this.createButton(option.label, x, y, () => {
-          this.rendererRef.controller?.submitAction(option.action)
-        }, buttonWidth, respondButtonHeight))
-      })
-      if (game.legal.canPassResponse) {
-        const { x, y } = positionFor(game.legal.counterOptions.length)
-        this.rootContainer?.add(this.createButton('Pass', x, y, () => {
-          this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor })
-        }, buttonWidth, respondButtonHeight))
       }
       return
     }
