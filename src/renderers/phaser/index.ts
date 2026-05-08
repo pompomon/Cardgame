@@ -985,6 +985,7 @@ class CardgameScene extends Phaser.Scene {
     const viewportLeft = x + padding
     const viewportWidth = width - padding * 2
     if (viewportHeight <= 0 || viewportWidth <= 0) {
+      panelBg.destroy()
       heading.destroy()
       return
     }
@@ -1443,10 +1444,6 @@ class CardgameScene extends Phaser.Scene {
         UI_THEME.viewportFill,
         this.currentLayout.popupViewportAlpha,
       ).setStrokeStyle(1, UI_THEME.buttonStroke)
-      logViewportBackground.setInteractive()
-      logViewportBackground.on('pointerdown', swallowPointerEvent)
-      logViewportBackground.on('pointerup', swallowPointerEvent)
-      logViewportBackground.on('pointermove', swallowPointerEvent)
       content.add(logViewportBackground)
       innerLogViewportBackground = logViewportBackground
 
@@ -1492,6 +1489,10 @@ class CardgameScene extends Phaser.Scene {
 
       if (maxScroll > 0) {
         isInnerLogViewportScrollable = true
+        logViewportBackground.setInteractive()
+        logViewportBackground.on('pointerdown', swallowPointerEvent)
+        logViewportBackground.on('pointerup', swallowPointerEvent)
+        logViewportBackground.on('pointermove', swallowPointerEvent)
         deferredMenuLogScrollSetup = () => {
           this.bindScrollableViewport(
             logViewportBackground,
