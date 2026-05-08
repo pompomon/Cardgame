@@ -1409,16 +1409,16 @@ class CardgameScene extends Phaser.Scene {
     const logTitleY = buttonStackBottomY + sectionGap + 14
     const logViewportTopWithHeading = logTitleY + 14 + sectionGap
     const logViewportWidth = fullButtonWidth
-    const popupBottomEdge = contentViewportHeight
-    const maxViewportHeightWithHeading = Math.max(0, popupBottomEdge - logViewportTopWithHeading)
+    const contentViewportVisibleHeight = contentViewportHeight
+    const maxViewportHeightWithHeading = Math.max(0, contentViewportVisibleHeight - logViewportTopWithHeading)
     // If the heading + viewport doesn't fit readably, drop the heading so the log section
     // still has somewhere to render. This preserves access to the replay log on short
     // viewports rather than removing it entirely.
     const showHeading = maxViewportHeightWithHeading >= MIN_READABLE_LOG_VIEWPORT_HEIGHT
     const logViewportTop = showHeading
       ? logViewportTopWithHeading
-      : Math.max(buttonStackBottomY + sectionGap, popupBottomEdge - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
-    const maxViewportHeight = Math.max(0, popupBottomEdge - logViewportTop)
+      : Math.max(buttonStackBottomY + sectionGap, contentViewportVisibleHeight - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
+    const maxViewportHeight = Math.max(0, contentViewportVisibleHeight - logViewportTop)
     let contentBottomY = buttonStackBottomY
     let deferredMenuLogScrollSetup: (() => void) | null = null
     if (maxViewportHeight > 0) {
