@@ -41,6 +41,8 @@
             return Promise.resolve('/')
           }
           return fetchManifest(candidates[candidateIndex]).then(function (exists) {
+            // Treat timeout sentinel (`null`) and fetch failures as "not found"
+            // so redirect probing continues toward a higher-level base path.
             if (exists) {
               return candidates[candidateIndex]
             }

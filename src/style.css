@@ -32,6 +32,7 @@ body {
   gap: 16px;
 }
 
+/* Use a valid `max()` expression in @supports so safe-area padding applies. */
 @supports (padding: max(0px, 1px)) {
   .app-shell {
     padding-top: max(var(--app-shell-padding), env(safe-area-inset-top, 0));
