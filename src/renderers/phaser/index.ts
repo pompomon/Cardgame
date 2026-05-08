@@ -1508,12 +1508,7 @@ class CardgameScene extends Phaser.Scene {
             return true
           }
           const logBounds = innerLogViewportBackground.getBounds()
-          return !(
-            pointer.worldX >= logBounds.left
-            && pointer.worldX <= logBounds.right
-            && pointer.worldY >= logBounds.top
-            && pointer.worldY <= logBounds.bottom
-          )
+          return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
         },
       )
     } else {
