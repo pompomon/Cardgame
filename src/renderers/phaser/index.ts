@@ -69,6 +69,12 @@ interface CardStyle {
   text: string
 }
 
+type TargetPickerConfig = {
+  title?: string
+  allowCancel?: boolean
+  onCancel?: () => void
+}
+
 function readStoredOrientationMode(): OrientationMode | null {
   try {
     const stored = localStorage.getItem(ORIENTATION_STORAGE_KEY)
@@ -1073,6 +1079,11 @@ class CardgameScene extends Phaser.Scene {
           this.showTargetPicker(
             options.map((option) => ({ effectTargetId: option.effectTargetId, label: option.label })),
             (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
+            false,
+            {
+              title: `Choose target for reused ${game.pendingPlainsReuseName ?? 'land'}`,
+              allowCancel: false,
+            },
           )
         }
       }
@@ -1097,6 +1108,11 @@ class CardgameScene extends Phaser.Scene {
           this.showTargetPicker(
             options.map((option) => ({ effectTargetId: option.effectTargetId, label: option.label })),
             (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
+            false,
+            {
+              title: 'Choose response',
+              allowCancel: false,
+            },
           )
         }
       }
@@ -1461,6 +1477,7 @@ class CardgameScene extends Phaser.Scene {
     options: Array<{ effectTargetId?: string; label: string }>,
     resolver: (effectTargetId?: string) => GameAction | null,
     showAllTargets = false,
+    config: TargetPickerConfig = {},
   ): void {
     if (this.menuOpen) {
       return
@@ -1469,6 +1486,7 @@ class CardgameScene extends Phaser.Scene {
 
     const optionCount = showAllTargets ? options.length : Math.min(DEFAULT_TARGET_OPTIONS, options.length)
     const hasHiddenOptions = options.length > DEFAULT_TARGET_OPTIONS
+    const allowCancel = config.allowCancel ?? true
     const popupPadding = this.currentLayout.menuPopupPadding
     const popupWidth = Math.max(0, this.currentLayout.popupMaxWidth)
     const buttonWidth = Math.max(0, popupWidth - popupPadding * 2)
@@ -1477,8 +1495,8 @@ class CardgameScene extends Phaser.Scene {
     const optionGap = this.currentLayout.popupButtonGap
     const cancelHeight = this.currentLayout.popupButtonHeight
     const showAllButtonHeight = hasHiddenOptions ? cancelHeight : 0
-    const footerGap = hasHiddenOptions ? this.currentLayout.popupButtonGap : 0
-    const footerHeight = cancelHeight + footerGap + showAllButtonHeight
+    const footerGap = hasHiddenOptions && allowCancel ? this.currentLayout.popupButtonGap : 0
+    const footerHeight = (allowCancel ? cancelHeight : 0) + footerGap + showAllButtonHeight
     const optionsHeightWanted = optionCount > 0
       ? optionCount * this.currentLayout.popupButtonHeight + Math.max(0, optionCount - 1) * optionGap
       : this.currentLayout.popupButtonHeight
@@ -1516,7 +1534,7 @@ class CardgameScene extends Phaser.Scene {
     backdrop.on('pointerup', swallowPointerEvent)
     backdrop.on('pointermove', swallowPointerEvent)
     overlay.add(backdrop)
-    overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + titleHeight / 2, 'Choose target', {
+    overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + titleHeight / 2, config.title ?? 'Choose target', {
       color: UI_THEME.primaryText,
       fontSize: this.currentLayout.popupTitleFontSize,
     }).setOrigin(0.5))
@@ -1619,22 +1637,27 @@ class CardgameScene extends Phaser.Scene {
     }
 
     const cancelY = footerTopY + cancelHeight / 2
-    const cancelWidth = this.popupActionWidth(
-      buttonWidth,
-      POPUP_CANCEL_BUTTON_WIDTH_RATIO,
-      POPUP_CANCEL_BUTTON_MIN_WIDTH,
-    )
-    const cancelButton = this.createButton('Cancel', 0, cancelY, () => {
-      overlay.destroy(true)
-    }, cancelWidth, cancelHeight, this.currentLayout.popupButtonFontSize)
-    overlay.add(cancelButton)
+    if (allowCancel) {
+      const cancelWidth = this.popupActionWidth(
+        buttonWidth,
+        POPUP_CANCEL_BUTTON_WIDTH_RATIO,
+        POPUP_CANCEL_BUTTON_MIN_WIDTH,
+      )
+      const cancelButton = this.createButton('Cancel', 0, cancelY, () => {
+        config.onCancel?.()
+        overlay.destroy(true)
+      }, cancelWidth, cancelHeight, this.currentLayout.popupButtonFontSize)
+      overlay.add(cancelButton)
+    }
 
     if (hasHiddenOptions) {
-      const showAllY = cancelY + cancelHeight / 2 + this.currentLayout.popupButtonGap + showAllButtonHeight / 2
+      const showAllY = allowCancel
+        ? cancelY + cancelHeight / 2 + this.currentLayout.popupButtonGap + showAllButtonHeight / 2
+        : footerTopY + showAllButtonHeight / 2
       const showAllLabel = showAllTargets ? `Show first ${DEFAULT_TARGET_OPTIONS}` : `Show all (${options.length})`
       const toggleShowAll = (): void => {
         overlay.destroy(true)
-        this.showTargetPicker(options, resolver, !showAllTargets)
+        this.showTargetPicker(options, resolver, !showAllTargets, config)
       }
       const toggleWidth = this.popupActionWidth(
         buttonWidth,
@@ -1658,11 +1681,16 @@ class CardgameScene extends Phaser.Scene {
       })
     }
 
-    this.pendingTargetPickerA11yEntries.push({
-      key: 'target:cancel',
-      label: 'Cancel Target Selection',
-      onSelect: () => overlay.destroy(true),
-    })
+    if (allowCancel) {
+      this.pendingTargetPickerA11yEntries.push({
+        key: 'target:cancel',
+        label: 'Cancel Target Selection',
+        onSelect: () => {
+          config.onCancel?.()
+          overlay.destroy(true)
+        },
+      })
+    }
 
     this.pendingTargetPicker = overlay
     this.rootContainer?.add(overlay)
