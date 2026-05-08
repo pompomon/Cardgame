@@ -1,5 +1,6 @@
 import type { ControllerApi } from '../app/controller'
 import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
+import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
@@ -22,6 +23,22 @@ function rendererSwitchLink(kind: RendererKind): string {
     : '<a href="?renderer=dom" class="renderer-link">Switch to DOM renderer</a>'
 }
 
+function renderInstallControls(): string {
+  const installState = getInstallUiState()
+  return `
+    <div class="controls install-controls">
+      <h3>Install</h3>
+      <p>${escapeHtml(installState.statusText)}</p>
+      ${installState.canPromptInstall
+        ? '<div class="action-row"><button data-action="install-app">Install App</button></div>'
+        : ''}
+      ${installState.showIosInstallHint
+        ? `<p class="install-hint">${escapeHtml(installState.iosInstructions)}</p>`
+        : ''}
+    </div>
+  `
+}
+
 function renderLobby(view: AppViewModel): string {
   const aiLevelOptions = AI_LEVEL_OPTIONS.map((option) => {
     const selected = option.value === view.aiLevel ? ' selected' : ''
@@ -33,6 +50,7 @@ function renderLobby(view: AppViewModel): string {
       <h1>Basic Land Game</h1>
       <p class="subtitle">Land-only 2-player game with local AI and optional P2P mode.</p>
       <p>${rendererSwitchLink(view.renderer)}</p>
+      ${renderInstallControls()}
       <div class="controls">
         <h3>AI Difficulty</h3>
         <label for="ai-level-select">AI Level</label>
@@ -187,9 +205,12 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
   const menuPanel = `
       <div class="menu-panel" id="menu-panel"${menuOpen ? '' : ' hidden'}>
         ${menuOpen
-          ? `<div class="menu-section">
+         ? `<div class="menu-section">
           <button id="back-to-lobby">Back to Lobby</button>
           <button id="rematch">Rematch</button>
+        </div>
+        <div class="menu-section">
+          ${renderInstallControls()}
         </div>
         <div class="menu-section">
           <h4>Recorder</h4>
@@ -359,6 +380,16 @@ export class DomRenderer implements AppRenderer {
 
     this.container.querySelector('#start-p2p-game')?.addEventListener('click', () => {
       this.controller?.startP2PGame()
+    })
+
+    this.container.querySelectorAll<HTMLButtonElement>('[data-action="install-app"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        void promptInstall().finally(() => {
+          if (this.view) {
+            this.render(this.view)
+          }
+        })
+      })
     })
 
     this.container.querySelector('#save-recording-download')?.addEventListener('click', () => {

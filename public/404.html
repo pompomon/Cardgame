@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cardgame</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (function () {
+        var segments = window.location.pathname.split('/').filter(Boolean)
+        // Project Pages assumption: app base is the first path segment ("/<repo>/").
+        // Root-hosted deployments fall back to "/".
+        var basePath = segments.length > 0 ? '/' + segments[0] + '/' : '/'
+        var relativePath = segments.length > 1 ? '/' + segments.slice(1).join('/') : '/'
+        var params = new URLSearchParams(window.location.search)
+        params.set('__gh_path', relativePath)
+        if (window.location.hash) {
+          params.set('__gh_hash', window.location.hash)
+        }
+        var target = window.location.origin + basePath + (params.toString() ? '?' + params.toString() : '')
+        window.location.replace(target)
+      })()
+    </script>
+  </head>
+  <body></body>
+</html>

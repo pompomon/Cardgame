@@ -31,6 +31,15 @@ body {
   gap: 16px;
 }
 
+@supports (padding: max(0px)) {
+  .app-shell {
+    padding-top: max(16px, env(safe-area-inset-top, 0));
+    padding-right: max(16px, env(safe-area-inset-right, 0));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0));
+    padding-left: max(16px, env(safe-area-inset-left, 0));
+  }
+}
+
 .panel {
   border: 1px solid #2a355f;
   border-radius: 12px;
@@ -207,6 +216,14 @@ textarea {
   color: #9ecbff;
 }
 
+.install-controls p {
+  margin: 6px 0;
+}
+
+.install-hint {
+  color: #9db0d9;
+}
+
 .phaser-host {
   width: min(100%, 1280px);
   margin: 16px auto;
@@ -251,10 +268,10 @@ textarea {
 .phaser-lobby-p2p-overlay {
   position: fixed;
   right: 18px;
-  top: 18px;
+  top: calc(18px + env(safe-area-inset-top, 0));
   z-index: 20;
   width: min(420px, calc(100vw - 36px));
-  max-height: calc(100dvh - 36px);
+  max-height: calc(100dvh - 36px - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
   overflow: auto;
 }
 
