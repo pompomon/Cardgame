@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildLayout } from '../renderers/phaser/layout'
+import {
+  buildLayout,
+  MENU_LOG_REMAINDER_RESERVE,
+  MENU_LOG_VIEWPORT_MIN_HEIGHT,
+} from '../renderers/phaser/layout'
 
 describe('phaser buildLayout', () => {
   const px = (value: string): number => Number.parseFloat(value)
@@ -183,10 +187,6 @@ describe('phaser buildLayout', () => {
 
   it('does not budget a menu log viewport larger than available replay-log remainder', () => {
     const layout = buildLayout(360, 640, 'vertical')
-    const minimumMenuLogViewport = 80
-    // Matches the static breathing-room reserve in buildLayout's menu
-    // replay-log remainder calculation.
-    const menuReplayRemainderReserve = 60
     const replayLogRemainder =
       layout.menuPopupHeight
       - (
@@ -194,9 +194,11 @@ describe('phaser buildLayout', () => {
         + layout.menuTitleHeight
         + layout.menuSectionGap * 4
         + layout.popupButtonHeight * 6
-        + menuReplayRemainderReserve
+        + MENU_LOG_REMAINDER_RESERVE
       )
-    expect(layout.menuLogViewportHeight).toBeLessThanOrEqual(Math.max(minimumMenuLogViewport, replayLogRemainder))
+    expect(layout.menuLogViewportHeight).toBeLessThanOrEqual(
+      Math.max(MENU_LOG_VIEWPORT_MIN_HEIGHT, replayLogRemainder),
+    )
   })
 
   it('derives button typography from button geometry across viewport sizes', () => {

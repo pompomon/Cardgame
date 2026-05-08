@@ -76,6 +76,8 @@ export interface SceneLayout {
 export const COMPACT_DIMENSION_THRESHOLD = 700
 export const RESPONSIVE_COLLAPSE_WIDTH = 720
 export const POPUP_MIN_WIDTH = 180
+export const MENU_LOG_VIEWPORT_MIN_HEIGHT = 80
+export const MENU_LOG_REMAINDER_RESERVE = 60
 const POPUP_SCRIM_ALPHA = 0.62
 const POPUP_OPAQUE_ALPHA = 1
 
@@ -331,13 +333,13 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     menuPopupMaxHeight,
   )
   const menuLogViewportHeight = Math.max(
-    80,
+    MENU_LOG_VIEWPORT_MIN_HEIGHT,
     menuPopupHeight - (
       menuPopupPadding * 2
       + menuTitleHeight
       + menuSectionGap * 4
       + popupButtonHeight * 6
-      + 60
+      + MENU_LOG_REMAINDER_RESERVE
     ),
   )
 
