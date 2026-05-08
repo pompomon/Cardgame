@@ -765,12 +765,25 @@ class CardgameScene extends Phaser.Scene {
       maxLines: 1,
     }).setOrigin(0, 0.5))
 
-    if (!this.menuOpen && !this.pendingTargetPicker) {
+    if (!this.menuOpen && !this.shouldSuppressInSceneLogForTargetPicker(game)) {
       this.renderInSceneLog(game.log)
     }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
     this.renderHandAndControls(game)
+  }
+
+  private shouldSuppressInSceneLogForTargetPicker(game: GameUiState): boolean {
+    if (!game.canInput) {
+      return false
+    }
+    if (game.phase === 'plains_target') {
+      return game.legal.plainsReuseOptions.length > 0
+    }
+    if (game.phase === 'respond') {
+      return game.legal.counterOptions.length > 0 || game.legal.canPassResponse
+    }
+    return false
   }
 
   private renderInfoPanel(
