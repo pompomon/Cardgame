@@ -1424,6 +1424,7 @@ class CardgameScene extends Phaser.Scene {
     let contentBottomY = buttonStackBottomY
     let deferredMenuLogScrollSetup: (() => void) | null = null
     let innerLogViewportBackground: Phaser.GameObjects.Rectangle | null = null
+    let isInnerLogViewportScrollable = false
     if (maxViewportHeight > 0) {
       if (showHeading) {
         content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
@@ -1490,6 +1491,7 @@ class CardgameScene extends Phaser.Scene {
       }
 
       if (maxScroll > 0) {
+        isInnerLogViewportScrollable = true
         deferredMenuLogScrollSetup = () => {
           this.bindScrollableViewport(
             logViewportBackground,
@@ -1517,7 +1519,7 @@ class CardgameScene extends Phaser.Scene {
         contentViewportBackground,
         applyContentScroll,
         (pointer): boolean => {
-          if (!innerLogViewportBackground) {
+          if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
             return true
           }
           const logBounds = innerLogViewportBackground.getBounds()
