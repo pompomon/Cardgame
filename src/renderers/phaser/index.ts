@@ -23,6 +23,7 @@ const MIN_BUTTON_FONT_PX = 12
 const MAX_BUTTON_FONT_PX = 20
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
+const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
 const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
@@ -407,6 +408,7 @@ class CardgameScene extends Phaser.Scene {
   private pendingTargetPickerA11yEntries: Array<{ key: string; label: string; onSelect: () => void }> = []
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
+  private menuContentScrollOffset: number | null = null
   private menuLogScrollOffset: number | null = null
   private menuLogPinnedToBottom = true
   private inSceneLogScrollOffset: number | null = null
@@ -664,16 +666,14 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private bindScrollableViewport(
-    overlay: Phaser.GameObjects.Container,
     viewportBackground: Phaser.GameObjects.Rectangle,
-    viewportBounds: { left: number; right: number; top: number; bottom: number },
     applyScroll: (deltaY: number) => void,
+    shouldHandleWheel?: (pointer: Phaser.Input.Pointer) => boolean,
   ): void {
     const isPointerWithinViewport = (pointer: Phaser.Input.Pointer): boolean => {
-      const localX = pointer.worldX - overlay.x
-      const localY = pointer.worldY - overlay.y
-      const withinX = localX >= viewportBounds.left && localX <= viewportBounds.right
-      const withinY = localY >= viewportBounds.top && localY <= viewportBounds.bottom
+      const bounds = viewportBackground.getBounds()
+      const withinX = pointer.worldX >= bounds.left && pointer.worldX <= bounds.right
+      const withinY = pointer.worldY >= bounds.top && pointer.worldY <= bounds.bottom
       return withinX && withinY
     }
 
@@ -683,6 +683,9 @@ class CardgameScene extends Phaser.Scene {
       _deltaX: number,
       deltaY: number,
     ): void => {
+      if (shouldHandleWheel && !shouldHandleWheel(pointer)) {
+        return
+      }
       if (isPointerWithinViewport(pointer)) {
         applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
       }
@@ -716,7 +719,7 @@ class CardgameScene extends Phaser.Scene {
     this.input.on('pointermove', handlePointerMove)
     this.input.on('pointerup', handlePointerUp)
     this.input.on('pointerupoutside', handlePointerUp)
-    overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
+    viewportBackground.once(Phaser.GameObjects.Events.DESTROY, () => {
       dragPointerId = null
       this.input.off('wheel', handleWheel)
       viewportBackground.off('pointerdown', handleViewportPointerDown)
@@ -762,12 +765,25 @@ class CardgameScene extends Phaser.Scene {
       maxLines: 1,
     }).setOrigin(0, 0.5))
 
-    if (!this.menuOpen) {
+    if (!this.menuOpen && !this.shouldSuppressInSceneLogForTargetPicker(game)) {
       this.renderInSceneLog(game.log)
     }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
     this.renderHandAndControls(game)
+  }
+
+  private shouldSuppressInSceneLogForTargetPicker(game: GameUiState): boolean {
+    if (!game.canInput) {
+      return false
+    }
+    if (game.phase === 'plains_target') {
+      return game.legal.plainsReuseOptions.length > 0
+    }
+    if (game.phase === 'respond') {
+      return game.legal.counterOptions.length > 0 || game.legal.canPassResponse
+    }
+    return false
   }
 
   private renderInfoPanel(
@@ -965,9 +981,14 @@ class CardgameScene extends Phaser.Scene {
 
     const viewportTop = heading.y + heading.height + 6
     const viewportBottom = y + height - padding
-    const viewportHeight = Math.max(40, viewportBottom - viewportTop)
+    const viewportHeight = viewportBottom - viewportTop
     const viewportLeft = x + padding
-    const viewportWidth = Math.max(40, width - padding * 2)
+    const viewportWidth = width - padding * 2
+    if (viewportHeight <= 0 || viewportWidth <= 0) {
+      panelBg.destroy()
+      heading.destroy()
+      return
+    }
 
     const viewportBg = this.add.rectangle(
       viewportLeft + viewportWidth / 2,
@@ -1017,20 +1038,8 @@ class CardgameScene extends Phaser.Scene {
         this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
         logContent.y = viewportTop + 6 - scrollOffset
       }
-      // The in-scene log lives directly on the root container (not on an
-      // overlay container offset from origin), so we use a thin proxy whose
-      // origin is (0,0) for bindScrollableViewport bounds math.
-      const proxyOverlay = this.add.container(0, 0)
-      this.rootContainer?.add(proxyOverlay)
       this.bindScrollableViewport(
-        proxyOverlay,
         viewportBg,
-        {
-          left: viewportLeft,
-          right: viewportLeft + viewportWidth,
-          top: viewportTop,
-          bottom: viewportTop + viewportHeight,
-        },
         applyScroll,
       )
     }
@@ -1139,6 +1148,7 @@ class CardgameScene extends Phaser.Scene {
     const overlay = this.menuOverlay
     this.menuOverlay = null
     this.menuOpen = false
+    this.menuContentScrollOffset = null
     this.menuLogScrollOffset = null
     this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
@@ -1253,15 +1263,44 @@ class CardgameScene extends Phaser.Scene {
     const fullButtonWidth = Math.max(1, popupWidth - popupPadding * 2)
     const halfButtonGap = this.currentLayout.popupButtonGap
     const halfButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap) / 2)
-    let cursorY = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
+    const contentViewportTop = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
+    const contentViewportBottom = popupHeight / 2 - popupPadding
+    const contentViewportHeight = Math.max(1, contentViewportBottom - contentViewportTop)
+    const contentViewportBackground = this.add.rectangle(
+      0,
+      contentViewportTop + contentViewportHeight / 2,
+      fullButtonWidth,
+      contentViewportHeight,
+      UI_THEME.backdropFill,
+      0,
+    )
+    contentViewportBackground.setInteractive()
+    overlay.add(contentViewportBackground)
+    const contentViewport = this.add.container(0, contentViewportTop)
+    const content = this.add.container(0, 0)
+    contentViewport.add(content)
+    overlay.add(contentViewport)
+
+    const contentMask = this.add.graphics()
+    contentMask.fillStyle(0xffffff)
+    contentMask.fillRect(
+      -fullButtonWidth / 2,
+      contentViewportTop,
+      fullButtonWidth,
+      contentViewportHeight,
+    )
+    contentMask.setVisible(false)
+    overlay.add(contentMask)
+    contentViewport.setMask(contentMask.createGeometryMask())
+    let cursorY = 0
 
     // Section 1: Back to Lobby + Rematch (mirrors DOM PR #13 menu-section 1).
     const section1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
+    content.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.backToLobby()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    overlay.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
+    content.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.rematch()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1269,7 +1308,7 @@ class CardgameScene extends Phaser.Scene {
 
     // Section 2: orientation toggle.
     const orientationY = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
+    content.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
       this.closeMenuOverlay()
       this.rendererRef.toggleOrientationMode()
     }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1281,28 +1320,28 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.smallFontSize,
       wordWrap: { width: fullButtonWidth },
     }).setOrigin(0, 0)
-    overlay.add(recorderHeading)
+    content.add(recorderHeading)
     // Use the rendered text height (which reflects wrapping at narrow widths)
     // instead of a fixed 18px so the next row never overlaps a wrapped heading.
     cursorY += Math.max(18, recorderHeading.height) + 4
 
     const recorderRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
+    content.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.handleDownloadRecording()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    overlay.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
+    content.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.saveRecordingToLocalStorage()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
     const recorderRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    overlay.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
+    content.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.controller?.loadRecordingFromLocalStorage()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    overlay.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
+    content.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
       this.closeMenuOverlay()
       this.rendererRef.openRecordingFilePicker()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1310,7 +1349,7 @@ class CardgameScene extends Phaser.Scene {
 
     if (!view.replay.active) {
       const startReplayY = cursorY + this.currentLayout.popupButtonHeight / 2
-      overlay.add(this.createButton('Start Replay', 0, startReplayY, () => {
+      content.add(this.createButton('Start Replay', 0, startReplayY, () => {
         this.closeMenuOverlay()
         this.rendererRef.controller?.startReplay()
       }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1326,31 +1365,31 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: fullButtonWidth },
       }).setOrigin(0, 0)
-      overlay.add(replayHeading)
+      content.add(replayHeading)
       cursorY += Math.max(18, replayHeading.height) + 4
 
       const replayRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
       const replayButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap * 2) / 3)
-      overlay.add(this.createButton(view.replay.isPlaying ? 'Pause' : 'Play', -replayButtonWidth - halfButtonGap, replayRow1Y, () => {
+      content.add(this.createButton(view.replay.isPlaying ? 'Pause' : 'Play', -replayButtonWidth - halfButtonGap, replayRow1Y, () => {
         if (view.replay.isPlaying) {
           this.rendererRef.controller?.pauseReplay()
         } else {
           this.rendererRef.controller?.startReplay()
         }
       }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      overlay.add(this.createButton('Previous', 0, replayRow1Y, () => {
+      content.add(this.createButton('Previous', 0, replayRow1Y, () => {
         this.rendererRef.controller?.stepReplay(-1)
       }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      overlay.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
+      content.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
         this.rendererRef.controller?.stepReplay(1)
       }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
       cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
 
       const replayRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
-      overlay.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
+      content.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
         this.rendererRef.controller?.jumpReplayToEnd()
       }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      overlay.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
+      content.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
         this.closeMenuOverlay()
         this.rendererRef.controller?.exitReplay()
       }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
@@ -1364,7 +1403,7 @@ class CardgameScene extends Phaser.Scene {
       POPUP_CLOSE_BUTTON_WIDTH_RATIO,
       POPUP_CLOSE_BUTTON_MIN_WIDTH,
     )
-    overlay.add(this.createButton('Close', 0, closeButtonY, () => {
+    content.add(this.createButton('Close', 0, closeButtonY, () => {
       this.closeMenuOverlay()
     }, closeButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
@@ -1373,19 +1412,23 @@ class CardgameScene extends Phaser.Scene {
     const logTitleY = buttonStackBottomY + sectionGap + 14
     const logViewportTopWithHeading = logTitleY + 14 + sectionGap
     const logViewportWidth = fullButtonWidth
-    const popupBottomEdge = popupHeight / 2 - popupPadding
-    const maxViewportHeightWithHeading = Math.max(0, popupBottomEdge - logViewportTopWithHeading)
+    const contentViewportVisibleHeight = contentViewportHeight
+    const maxViewportHeightWithHeading = Math.max(0, contentViewportVisibleHeight - logViewportTopWithHeading)
     // If the heading + viewport doesn't fit readably, drop the heading so the log section
     // still has somewhere to render. This preserves access to the replay log on short
     // viewports rather than removing it entirely.
     const showHeading = maxViewportHeightWithHeading >= MIN_READABLE_LOG_VIEWPORT_HEIGHT
     const logViewportTop = showHeading
       ? logViewportTopWithHeading
-      : Math.max(buttonStackBottomY + sectionGap, popupBottomEdge - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
-    const maxViewportHeight = Math.max(0, popupBottomEdge - logViewportTop)
+      : Math.max(buttonStackBottomY + sectionGap, contentViewportVisibleHeight - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
+    const maxViewportHeight = Math.max(0, contentViewportVisibleHeight - logViewportTop)
+    let contentBottomY = buttonStackBottomY
+    let deferredMenuLogScrollSetup: (() => void) | null = null
+    let innerLogViewportBackground: Phaser.GameObjects.Rectangle | null = null
+    let isInnerLogViewportScrollable = false
     if (maxViewportHeight > 0) {
       if (showHeading) {
-        overlay.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
+        content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
           color: UI_THEME.primaryText,
           fontSize: this.currentLayout.bodyFontSize,
         }).setOrigin(0, 0.5))
@@ -1401,19 +1444,16 @@ class CardgameScene extends Phaser.Scene {
         UI_THEME.viewportFill,
         this.currentLayout.popupViewportAlpha,
       ).setStrokeStyle(1, UI_THEME.buttonStroke)
-      logViewportBackground.setInteractive()
-      logViewportBackground.on('pointerdown', swallowPointerEvent)
-      logViewportBackground.on('pointerup', swallowPointerEvent)
-      logViewportBackground.on('pointermove', swallowPointerEvent)
-      overlay.add(logViewportBackground)
+      content.add(logViewportBackground)
+      innerLogViewportBackground = logViewportBackground
 
-      const logContent = this.add.container(-logViewportWidth / 2 + 10, logViewportTop + 8)
-      overlay.add(logContent)
+      const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
+      content.add(logContent)
       const lines = game.log
       const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: Math.max(40, logViewportWidth - 20) },
+        wordWrap: { width: Math.max(1, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2) },
       }).setOrigin(0, 0)
       logContent.add(logText)
 
@@ -1421,7 +1461,7 @@ class CardgameScene extends Phaser.Scene {
       logMask.fillStyle(0xffffff)
       logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
       logMask.setVisible(false)
-      overlay.add(logMask)
+      content.add(logMask)
       logContent.setMask(logMask.createGeometryMask())
 
       const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
@@ -1448,24 +1488,52 @@ class CardgameScene extends Phaser.Scene {
       }
 
       if (maxScroll > 0) {
-        this.bindScrollableViewport(
-          overlay,
-          logViewportBackground,
-          {
-            left: -logViewportWidth / 2,
-            right: logViewportWidth / 2,
-            top: logViewportTop,
-            bottom: logViewportTop + logViewportHeight,
-          },
-          applyScroll,
-        )
-
-        overlay.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-          color: UI_THEME.secondaryText,
-          fontSize: this.currentLayout.smallFontSize,
-        }).setOrigin(1, 0.5))
+        isInnerLogViewportScrollable = true
+        logViewportBackground.setInteractive()
+        logViewportBackground.on('pointerdown', swallowPointerEvent)
+        logViewportBackground.on('pointerup', swallowPointerEvent)
+        logViewportBackground.on('pointermove', swallowPointerEvent)
+        deferredMenuLogScrollSetup = () => {
+          this.bindScrollableViewport(
+            logViewportBackground,
+            applyScroll,
+          )
+          content.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
+            color: UI_THEME.secondaryText,
+            fontSize: this.currentLayout.smallFontSize,
+          }).setOrigin(1, 0.5))
+        }
       }
+      contentBottomY = Math.max(contentBottomY, logViewportTop + logViewportHeight)
     }
+
+    const contentMaxScroll = Math.max(0, contentBottomY - contentViewportHeight)
+    if (contentMaxScroll > 0) {
+      let contentScrollOffset = Phaser.Math.Clamp(this.menuContentScrollOffset ?? 0, 0, contentMaxScroll)
+      content.y = -contentScrollOffset
+      const applyContentScroll = (deltaY: number): void => {
+        contentScrollOffset = Phaser.Math.Clamp(contentScrollOffset + deltaY, 0, contentMaxScroll)
+        this.menuContentScrollOffset = contentScrollOffset
+        content.y = -contentScrollOffset
+      }
+      this.bindScrollableViewport(
+        contentViewportBackground,
+        applyContentScroll,
+        (pointer): boolean => {
+          if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
+            return true
+          }
+          const logBounds = innerLogViewportBackground.getBounds()
+          return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
+        },
+      )
+    } else {
+      this.menuContentScrollOffset = null
+    }
+
+    // Always bind the replay-log viewport as well so it remains scrollable
+    // when the outer menu content also needs scrolling on shorter layouts.
+    deferredMenuLogScrollSetup?.()
 
     this.menuOverlay = overlay
     this.rootContainer.add(overlay)
@@ -1612,14 +1680,7 @@ class CardgameScene extends Phaser.Scene {
 
     if (maxScroll > 0) {
       this.bindScrollableViewport(
-        overlay,
         optionsViewportBackground,
-        {
-          left: -buttonWidth / 2,
-          right: buttonWidth / 2,
-          top: optionsTopY,
-          bottom: optionsTopY + optionsAreaHeight,
-        },
         applyScroll,
       )
 

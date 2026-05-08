@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildLayout } from '../renderers/phaser/layout'
+import {
+  buildLayout,
+  MENU_LOG_REMAINDER_RESERVE,
+  MENU_LOG_VIEWPORT_MIN_HEIGHT,
+} from '../renderers/phaser/layout'
 
 describe('phaser buildLayout', () => {
   const px = (value: string): number => Number.parseFloat(value)
@@ -168,6 +172,32 @@ describe('phaser buildLayout', () => {
     expect(layout.popupViewportAlpha).toBe(1)
     expect(layout.popupScrimAlpha).toBeGreaterThan(0)
     expect(layout.popupScrimAlpha).toBeLessThan(1)
+  })
+
+  it('keeps menu content viewport inside popup bounds on short mobile heights', () => {
+    const layout = buildLayout(360, 420, 'vertical')
+    const contentViewportHeight =
+      layout.menuPopupHeight
+      - layout.menuPopupPadding * 2
+      - layout.menuTitleHeight
+      - layout.menuSectionGap
+    expect(contentViewportHeight).toBeGreaterThan(0)
+    expect(contentViewportHeight).toBeLessThanOrEqual(layout.menuPopupHeight)
+  })
+
+  it('uses full replay-log remainder when it exceeds the viewport minimum', () => {
+    const layout = buildLayout(1280, 900, 'horizontal')
+    const replayLogRemainder =
+      layout.menuPopupHeight
+      - (
+        layout.menuPopupPadding * 2
+        + layout.menuTitleHeight
+        + layout.menuSectionGap * 4
+        + layout.popupButtonHeight * 6
+        + MENU_LOG_REMAINDER_RESERVE
+      )
+    expect(replayLogRemainder).toBeGreaterThan(MENU_LOG_VIEWPORT_MIN_HEIGHT)
+    expect(layout.menuLogViewportHeight).toBe(replayLogRemainder)
   })
 
   it('derives button typography from button geometry across viewport sizes', () => {
