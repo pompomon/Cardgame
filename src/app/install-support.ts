@@ -102,13 +102,13 @@ export async function promptInstall(): Promise<boolean> {
   }
   deferredInstallPrompt = null
   notifyChange()
-  await promptEvent.prompt()
-  let accepted = false
   try {
+    await promptEvent.prompt()
     const choice = await promptEvent.userChoice
-    accepted = choice.outcome === 'accepted'
+    return choice.outcome === 'accepted'
+  } catch {
+    return false
   } finally {
     notifyChange()
   }
-  return accepted
 }
