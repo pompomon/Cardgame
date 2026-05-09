@@ -221,15 +221,16 @@ export function stylePreviewDataUrl(style: CardVisualStyle, targetSize: number):
     return cached
   }
   const lands: BasicLand[] = ['Forest', 'Mountain', 'Island']
-  const laneWidth = Math.floor(size / lands.length)
   const iconSize = Math.max(8, Math.floor(size * 0.7))
   const parts: string[] = []
   lands.forEach((land, index) => {
     const palette = cardVisualPaletteFor(land, style)
-    const laneX = index * laneWidth
-    parts.push(`<rect x="${laneX}" y="0" width="${laneWidth}" height="${size}" fill="${palette.cardFill}" />`)
+    const laneStart = Math.floor((index * size) / lands.length)
+    const laneEnd = Math.floor(((index + 1) * size) / lands.length)
+    const laneWidth = laneEnd - laneStart
+    parts.push(`<rect x="${laneStart}" y="0" width="${laneWidth}" height="${size}" fill="${palette.cardFill}" />`)
     const iconRects = landPixelRects(land, iconSize)
-    const xOffset = laneX + Math.floor((laneWidth - iconSize) / 2)
+    const xOffset = laneStart + Math.floor((laneWidth - iconSize) / 2)
     const yOffset = Math.floor((size - iconSize) / 2)
     for (const rect of iconRects) {
       const fill = rect.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary

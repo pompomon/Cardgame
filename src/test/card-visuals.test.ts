@@ -23,6 +23,12 @@ describe('card-visuals', () => {
     expect(preview.startsWith('data:image/svg+xml')).toBe(true)
   })
 
+  it('fills full preview width even when size is not evenly divisible by lane count', () => {
+    const preview = stylePreviewDataUrl('classic', 22)
+    const svg = decodeURIComponent(preview.split(',')[1] ?? '')
+    expect(svg).toContain('x="14" y="0" width="8"')
+  })
+
   it('exposes palette entries for card and icon rendering', () => {
     const palette = cardVisualPaletteFor('Island', 'classic')
     expect(palette.cardFill).toMatch(/^#/)

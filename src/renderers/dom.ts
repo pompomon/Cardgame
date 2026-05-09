@@ -4,7 +4,7 @@ import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual
 import { cardVisualPaletteFor, landIconDataUrl, stylePreviewDataUrl } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
-import type { BasicLand } from '../game/types'
+import { isBasicLand, type BasicLand } from '../game/types'
 import type { GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
@@ -120,13 +120,6 @@ function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: 
   `
 }
 
-function asBasicLand(name: string): BasicLand | null {
-  if (name === 'Forest' || name === 'Island' || name === 'Mountain' || name === 'Plains' || name === 'Swamp') {
-    return name
-  }
-  return null
-}
-
 function renderLandIcon(
   name: BasicLand,
   style: AppViewModel['cardVisualStyle'],
@@ -138,15 +131,14 @@ function renderLandIcon(
 }
 
 function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
-  const land = asBasicLand(name)
-  if (!land) {
+  if (!isBasicLand(name)) {
     return `<span>${escapeHtml(name)}</span>`
   }
-  const palette = cardVisualPaletteFor(land, style)
+  const palette = cardVisualPaletteFor(name, style)
   return `
     <span class="card-tile" style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}">
-      ${renderLandIcon(land, style, 22, 'card-tile-icon')}
-      <span>${escapeHtml(land)}</span>
+      ${renderLandIcon(name, style, 22, 'card-tile-icon')}
+      <span>${escapeHtml(name)}</span>
     </span>
   `
 }
@@ -175,8 +167,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
     const targetAttr = option.action.effectTargetId
       ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
       : ''
-    const land = asBasicLand(cardName)
-    const icon = land ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon') : ''
+    const icon = isBasicLand(cardName) ? renderLandIcon(cardName, view.cardVisualStyle, 16, 'action-icon') : ''
     return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${icon}${escapeHtml(option.label)}</button>`
   }
 
@@ -226,8 +217,8 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
             const targetAttr = option.action.effectTargetId
               ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
               : ''
-            const land = game.pendingPlainsReuseName ? asBasicLand(game.pendingPlainsReuseName) : null
-            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon') : ''}${escapeHtml(option.label)}</button>`
+            const land = game.pendingPlainsReuseName
+            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land && isBasicLand(land) ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon') : ''}${escapeHtml(option.label)}</button>`
           }).join('')}
         </div>
       </div>

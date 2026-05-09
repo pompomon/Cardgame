@@ -70,8 +70,8 @@ body {
 
 .action-icon {
   display: inline-block;
-  image-rendering: pixelated;
   image-rendering: crisp-edges;
+  image-rendering: pixelated;
   vertical-align: middle;
 }
 
@@ -146,8 +146,8 @@ textarea {
   width: 22px;
   height: 22px;
   display: inline-block;
-  image-rendering: pixelated;
   image-rendering: crisp-edges;
+  image-rendering: pixelated;
 }
 
 .battlefield-active {

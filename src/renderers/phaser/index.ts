@@ -12,8 +12,7 @@ import { cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
-import type { GameAction } from '../../game/types'
-import type { BasicLand } from '../../game/types'
+import { isBasicLand, type BasicLand, type GameAction } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { buildLayout, clamp, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
 
@@ -126,24 +125,16 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;')
 }
 
-function asBasicLand(name: string): BasicLand | null {
-  if (name === 'Forest' || name === 'Island' || name === 'Mountain' || name === 'Plains' || name === 'Swamp') {
-    return name
-  }
-  return null
-}
-
 function colorHexToNumber(hex: string): number {
   const parsed = Number.parseInt(hex.replace('#', ''), 16)
   return Number.isFinite(parsed) ? parsed : 0xffffff
 }
 
 function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualStyle']): CardStyle {
-  const land = asBasicLand(name)
-  if (!land) {
+  if (!isBasicLand(name)) {
     return { fill: 0x132652, stroke: 0x4f6caa, text: '#e5ecf5' }
   }
-  const palette = cardVisualPaletteFor(land, visualStyle)
+  const palette = cardVisualPaletteFor(name, visualStyle)
   return {
     fill: colorHexToNumber(palette.cardFill),
     stroke: colorHexToNumber(palette.cardStroke),
@@ -818,10 +809,9 @@ class CardgameScene extends Phaser.Scene {
       CARD_CHOICE_ICON_MIN_SIZE,
       Math.floor(Math.min(width * CARD_CHOICE_ICON_WIDTH_RATIO, height * CARD_CHOICE_ICON_HEIGHT_RATIO)),
     )
-    const land = asBasicLand(cardName)
-    if (land) {
+    if (isBasicLand(cardName)) {
       this.addPixelIconToContainer(
-        land,
+        cardName,
         visualStyle,
         -width / 2 + 12,
         -Math.floor(iconSize / 2),
@@ -847,15 +837,13 @@ class CardgameScene extends Phaser.Scene {
     const primary = colorHexToNumber(palette.iconPrimary)
     const secondary = colorHexToNumber(palette.iconSecondary)
     const rects = landPixelRects(land, size)
+    const icon = this.add.graphics()
+    icon.setPosition(left, top)
     for (const rect of rects) {
-      container.add(this.add.rectangle(
-        left + rect.x + rect.size / 2,
-        top + rect.y + rect.size / 2,
-        rect.size,
-        rect.size,
-        rect.tone === 'primary' ? primary : secondary,
-      ))
+      icon.fillStyle(rect.tone === 'primary' ? primary : secondary)
+      icon.fillRect(rect.x, rect.y, rect.size, rect.size)
     }
+    container.add(icon)
   }
 
   private syncPendingPlayLandTargetSelection(game: GameUiState): void {
@@ -1363,8 +1351,7 @@ class CardgameScene extends Phaser.Scene {
     const strokeColor = config.highlight ? 0xffe680 : style.stroke
     const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
     const card = this.add.container(x, y, [rect])
-    const land = asBasicLand(label)
-    if (land) {
+    if (isBasicLand(label)) {
       const iconSize = Math.max(
         CARD_FACE_ICON_MIN_SIZE,
         Math.floor(Math.min(
@@ -1373,7 +1360,7 @@ class CardgameScene extends Phaser.Scene {
         )),
       )
       this.addPixelIconToContainer(
-        land,
+        label,
         visualStyle,
         -Math.floor(iconSize / 2),
         -Math.floor(iconSize / 2) - 8,
