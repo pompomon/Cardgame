@@ -1400,7 +1400,7 @@ class CardgameScene extends Phaser.Scene {
       return
     }
 
-    if (game.canInput && game.legal.canEndTurn && game.phase === 'main') {
+    if (game.canInput && game.legal.canEndTurn && game.phase === 'main' && this.battlefieldTargetEntries.length === 0) {
       const endTurnWidth = Math.min(this.currentLayout.actionButtonWidth, Math.max(120, this.currentLayout.boardColumnWidth - 16))
       const endTurnX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - endTurnWidth / 2 - 4
       // Clamp End Turn button height so it never spills below the hand strip
@@ -1449,11 +1449,21 @@ class CardgameScene extends Phaser.Scene {
   }
 
   getBattlefieldTargetA11yEntries(): Array<{ key: string; label: string; onSelect: () => void }> {
-    return this.battlefieldTargetEntries.map((entry) => ({
-      key: `battlefield-target:${entry.owner}:${entry.effectTargetId}`,
-      label: `Target ${entry.cardName}`,
-      onSelect: entry.onSelect,
-    }))
+    const totalByName = new Map<string, number>()
+    for (const entry of this.battlefieldTargetEntries) {
+      totalByName.set(entry.cardName, (totalByName.get(entry.cardName) ?? 0) + 1)
+    }
+    const seenByName = new Map<string, number>()
+    return this.battlefieldTargetEntries.map((entry) => {
+      const seen = (seenByName.get(entry.cardName) ?? 0) + 1
+      seenByName.set(entry.cardName, seen)
+      const total = totalByName.get(entry.cardName) ?? 1
+      return {
+        key: `battlefield-target:${entry.owner}:${entry.effectTargetId}`,
+        label: total > 1 ? `Target ${entry.cardName} (${seen}/${total})` : `Target ${entry.cardName}`,
+        onSelect: entry.onSelect,
+      }
+    })
   }
 
   private openMenuOverlay(view: AppViewModel): void {
