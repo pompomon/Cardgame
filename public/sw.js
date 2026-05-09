@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v3'
+const CACHE_VERSION = 'v4'
 const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
 const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
 
@@ -14,8 +14,18 @@ const workerUrl = new URL(self.location.href)
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
-const CORE = [BASE_PATH, INDEX_URL]
-const STATIC_FILE_PATHS = new Set(['/icons.svg', '/favicon.svg'])
+const FALLBACK_URL = `${BASE_PATH}404.html`
+const CORE = [BASE_PATH, INDEX_URL, FALLBACK_URL]
+const STATIC_FILE_PATHS = new Set([
+  '/icons.svg',
+  '/favicon.svg',
+  '/manifest.webmanifest',
+  '/apple-touch-icon.png',
+  '/pwa-192.png',
+  '/pwa-512.png',
+  '/pwa-maskable-512.png',
+  '/404.html',
+])
 
 function toBaseRelativePath(pathname) {
   if (BASE_PATH === '/') {
@@ -64,10 +74,15 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
+    // Only treat the base / index.html navigations as the canonical SPA shell.
+    // Other navigations (e.g. ${BASE_PATH}404.html) must not overwrite the
+    // cached app shell under INDEX_URL, since 404.html performs a redirect
+    // and is not a valid offline fallback document.
+    const isIndexNavigation = relativePath === '/' || relativePath === '/index.html'
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok) {
+          if (response.ok && isIndexNavigation) {
             const clone = response.clone()
             void caches.open(APP_SHELL_CACHE).then((cache) => cache.put(INDEX_URL, clone))
           }

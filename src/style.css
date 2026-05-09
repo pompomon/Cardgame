@@ -2,6 +2,7 @@
   font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
   color: #e5ecf5;
   background: #0b1020;
+  --app-shell-padding: 16px;
 }
 
 * {
@@ -26,9 +27,19 @@ body {
 .app-shell {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 16px;
+  padding: var(--app-shell-padding);
   display: grid;
   gap: 16px;
+}
+
+/* Use a valid `max()` expression in @supports so safe-area padding applies. */
+@supports (padding: max(0px, 1px)) {
+  .app-shell {
+    padding-top: max(var(--app-shell-padding), env(safe-area-inset-top, 0));
+    padding-right: max(var(--app-shell-padding), env(safe-area-inset-right, 0));
+    padding-bottom: max(var(--app-shell-padding), env(safe-area-inset-bottom, 0));
+    padding-left: max(var(--app-shell-padding), env(safe-area-inset-left, 0));
+  }
 }
 
 .panel {
@@ -207,6 +218,14 @@ textarea {
   color: #9ecbff;
 }
 
+.install-controls p {
+  margin: 6px 0;
+}
+
+.install-hint {
+  color: #9db0d9;
+}
+
 .phaser-host {
   width: min(100%, 1280px);
   margin: 16px auto;
@@ -252,9 +271,11 @@ textarea {
   position: fixed;
   right: 18px;
   top: 18px;
+  top: calc(18px + env(safe-area-inset-top, 0));
   z-index: 20;
   width: min(420px, calc(100vw - 36px));
   max-height: calc(100dvh - 36px);
+  max-height: calc(100dvh - 36px - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
   overflow: auto;
 }
 
@@ -338,7 +359,7 @@ textarea {
 
 @media (max-width: 960px) {
   .app-shell {
-    padding: 12px;
+    --app-shell-padding: 12px;
   }
 
   .panel {
@@ -348,4 +369,5 @@ textarea {
   .phaser-host {
     margin: 8px auto;
   }
+
 }

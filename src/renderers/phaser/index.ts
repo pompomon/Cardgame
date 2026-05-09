@@ -5,6 +5,7 @@ import {
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import type { ControllerApi } from '../../app/controller'
+import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import type { AppRenderer } from '../types'
@@ -129,6 +130,41 @@ function recordingMetadataText(view: AppViewModel): string {
     return 'No recording loaded.'
   }
   return `Seed ${meta.seed} • ${meta.mode} • AI ${meta.aiLevel} • ${meta.controllers[0]}/${meta.controllers[1]} • Completed ${meta.completed ? 'Yes' : 'No'}`
+}
+
+type InstallButtonState = {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}
+
+function installButtonState(): InstallButtonState {
+  const installState = getInstallUiState()
+  if (installState.canPromptInstall) {
+    return {
+      label: 'Install App',
+      onClick: () => { void promptInstall() },
+    }
+  }
+  if (installState.showIosInstallHint) {
+    return {
+      label: 'iOS: Share → Add to Home Screen',
+      onClick: () => {},
+      disabled: true,
+    }
+  }
+  if (installState.isStandalone) {
+    return {
+      label: 'Installed app mode active',
+      onClick: () => {},
+      disabled: true,
+    }
+  }
+  return {
+    label: 'Install unavailable in this browser',
+    onClick: () => {},
+    disabled: true,
+  }
 }
 
 function buildButton(
@@ -278,9 +314,10 @@ class LobbyScene extends Phaser.Scene {
         onClick: () => { this.rendererRef.openRecordingFilePicker() },
       },
     ]
+    const installEntry = installButtonState()
 
     const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
-    // Lobby buttons (5 modes + 2 recorder + 1 renderer-switch) need to fit
+    // Lobby buttons (modes + AI levels + recorder + install + renderer-switch) need to fit
     // between the header/subtitle area and the status footer on every
     // viewport. Derive Y positions from the available body region
     // (compressing button height and gap if necessary) so options like P2P
@@ -292,7 +329,7 @@ class LobbyScene extends Phaser.Scene {
     const lobbyBodyBottom = this.currentLayout.height
       - this.currentLayout.statusBottomOffset - this.currentLayout.margin
     const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
-    const totalRows = modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length + 1
+    const totalRows = modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length + 2
     const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
     const desiredGap = this.currentLayout.isCompact ? 8 : 14
     const desiredRowHeight = desiredButtonHeight + desiredGap
@@ -369,11 +406,27 @@ class LobbyScene extends Phaser.Scene {
       this.rootContainer?.add(button)
     })
 
+    const installButton = buildButton(
+      this,
+      installEntry.label,
+      left + buttonWidth / 2,
+      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length) * rowHeight,
+      this.currentLayout.actionButtonFontSize,
+      buttonWidth,
+      buttonHeight,
+      installEntry.disabled ? () => {} : installEntry.onClick,
+    )
+    if (installEntry.disabled) {
+      installButton.setAlpha(0.4)
+      installButton.disableInteractive()
+    }
+    this.rootContainer?.add(installButton)
+
     this.rootContainer.add(buildButton(
       this,
       'Switch to DOM renderer',
       left + buttonWidth / 2,
-      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length) * rowHeight,
+      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length + 1) * rowHeight,
       this.currentLayout.actionButtonFontSize,
       buttonWidth,
       buttonHeight,
@@ -1181,6 +1234,7 @@ class CardgameScene extends Phaser.Scene {
     if (!game) {
       return
     }
+    const installEntry = installButtonState()
 
     this.pendingTargetPicker?.destroy(true)
     this.menuOpen = true
@@ -1314,7 +1368,30 @@ class CardgameScene extends Phaser.Scene {
     }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
-    // Section 3: Recorder.
+    // Section 3: Install.
+    const installY = cursorY + this.currentLayout.popupButtonHeight / 2
+    const installButton = this.createButton(
+      installEntry.label,
+      0,
+      installY,
+      installEntry.disabled
+        ? () => {}
+        : () => {
+            this.closeMenuOverlay()
+            installEntry.onClick()
+          },
+      fullButtonWidth,
+      this.currentLayout.popupButtonHeight,
+      this.currentLayout.popupButtonFontSize,
+    )
+    if (installEntry.disabled) {
+      installButton.setAlpha(0.4)
+      installButton.disableInteractive()
+    }
+    content.add(installButton)
+    cursorY += this.currentLayout.popupButtonHeight + sectionGap
+
+    // Section 4: Recorder.
     const recorderHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
       color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.smallFontSize,
@@ -1358,7 +1435,7 @@ class CardgameScene extends Phaser.Scene {
       cursorY += sectionGap
     }
 
-    // Section 4: Replay controls (only when replay is active).
+    // Section 5: Replay controls (only when replay is active).
     if (view.replay.active) {
       const replayHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
         color: UI_THEME.secondaryText,
@@ -2036,6 +2113,13 @@ export class PhaserRenderer implements AppRenderer {
         label: 'Load Recording from File',
         onClick: () => this.openRecordingFilePicker(),
       })
+      const installEntry = installButtonState()
+      entries.push({
+        key: 'lobby-install',
+        label: installEntry.label,
+        onClick: installEntry.onClick,
+        disabled: installEntry.disabled,
+      })
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
       const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
@@ -2089,6 +2173,16 @@ export class PhaserRenderer implements AppRenderer {
           closeSceneMenu()
           this.openRecordingFilePicker()
         } })
+        const installEntry = installButtonState()
+        entries.push({
+          key: 'install',
+          label: installEntry.label,
+          onClick: () => {
+            closeSceneMenu()
+            installEntry.onClick()
+          },
+          disabled: installEntry.disabled,
+        })
         if (view.replay.active) {
           entries.push({ key: 'replay-toggle', label: view.replay.isPlaying ? 'Pause Replay' : 'Play Replay', onClick: () => {
             if (view.replay.isPlaying) {

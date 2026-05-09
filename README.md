@@ -91,6 +91,40 @@ The workflow runs:
 - You can override the production base path with a repository variable named `VITE_BASE_PATH` (for forks/renamed repos).
 - Service worker registration uses the app base URL and passes it to the worker.
 - The worker caches and falls back to the base-aware index path, which avoids root-path (`/`) mismatches on project Pages hosting.
+- PWA install metadata (`manifest.webmanifest`, apple touch icon, launcher icons) is served from `public/` and must remain base-path-safe.
+
+## Install on Android / iOS
+
+### Android (Chrome)
+
+1. Open the deployed app URL.
+2. Use the in-app **Install App** button when shown (or browser install prompt).
+3. Confirm installation.
+4. Launch from home screen and verify it opens standalone.
+
+### iOS (Safari)
+
+1. Open the deployed app URL in Safari.
+2. Use **Share** → **Add to Home Screen**.
+3. Confirm icon/title and add.
+4. Launch from home screen and verify standalone behavior.
+
+## PWA runtime and offline expectations
+
+- First online load primes service-worker caches for app shell and install-critical assets.
+- After first successful load, navigation falls back to cached app shell when offline.
+- `public/404.html` redirects deep links back into the SPA entry so shared non-root paths keep working on GitHub Pages project hosting.
+- If users report stale content after deployment, bump `CACHE_VERSION` in `public/sw.js`, redeploy, then hard-refresh.
+
+## PWA assets and metadata maintenance
+
+- Keep these files in sync with branding/theme changes:
+  - `public/manifest.webmanifest`
+  - `public/apple-touch-icon.png`
+  - `public/pwa-192.png`
+  - `public/pwa-512.png`
+  - `public/pwa-maskable-512.png`
+- If icon names/paths change, update both `index.html` metadata links and `public/sw.js` static asset cache list.
 
 ## Post-deploy verification checklist
 

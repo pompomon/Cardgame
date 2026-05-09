@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cardgame</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (function () {
+        var pathname = window.location.pathname
+        var MANIFEST_FETCH_TIMEOUT_MS = 1200
+        var segments = pathname.split('/').filter(Boolean)
+        var candidates = []
+        for (var index = segments.length; index >= 0; index -= 1) {
+          var prefix = '/' + segments.slice(0, index).join('/')
+          if (prefix !== '/') {
+            prefix += '/'
+          }
+          candidates.push(prefix)
+        }
+
+        var withTimeout = function (promise, timeoutMs) {
+          return Promise.race([
+            promise,
+            new Promise(function (resolve) {
+              setTimeout(function () { resolve(null) }, timeoutMs)
+            }),
+          ])
+        }
+
+        var fetchManifest = function (candidate) {
+          return withTimeout(
+            fetch(candidate + 'manifest.webmanifest', { cache: 'no-store' })
+              .then(function (response) { return response.ok })
+              .catch(function () { return false }),
+            MANIFEST_FETCH_TIMEOUT_MS,
+          )
+        }
+
+        var findBasePath = function (candidateIndex) {
+          if (candidateIndex >= candidates.length) {
+            // All probes failed (network error or timeout). Prefer the
+            // first path segment as a non-network fallback so deep links
+            // under typical project sites (e.g. /<repo>/) still restore
+            // through the SPA index, instead of redirecting to '/'.
+            return Promise.resolve(segments.length > 0 ? '/' + segments[0] + '/' : '/')
+          }
+          return fetchManifest(candidates[candidateIndex]).then(function (exists) {
+            // Treat timeout sentinel (`null`) and fetch failures as "not found"
+            // so redirect probing continues toward a higher-level base path.
+            if (exists) {
+              return candidates[candidateIndex]
+            }
+            return findBasePath(candidateIndex + 1)
+          })
+        }
+
+        findBasePath(0).then(function (basePath) {
+          var relativePath = '/'
+          if (pathname.indexOf(basePath) === 0) {
+            var remainder = pathname.slice(basePath.length)
+            var normalizedRemainder = remainder.replace(/^\/+/, '')
+            relativePath = normalizedRemainder ? '/' + normalizedRemainder : '/'
+          }
+
+          var params = new URLSearchParams(window.location.search)
+          params.set('__gh_path', relativePath)
+          if (window.location.hash) {
+            params.set('__gh_hash', window.location.hash)
+          }
+
+          var target = window.location.origin + basePath + (params.toString() ? '?' + params.toString() : '')
+          window.location.replace(target)
+        })
+      })()
+    </script>
+  </head>
+  <body></body>
+</html>
