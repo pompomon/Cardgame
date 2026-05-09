@@ -226,7 +226,8 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
             const targetAttr = option.action.effectTargetId
               ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
               : ''
-            return `<button data-action="resolve_plains_reuse"${targetAttr}>${game.pendingPlainsReuseName ? renderLandIcon(game.pendingPlainsReuseName, view.cardVisualStyle, 16, 'action-icon') : ''}${escapeHtml(option.label)}</button>`
+            const land = game.pendingPlainsReuseName ? asBasicLand(game.pendingPlainsReuseName) : null
+            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon') : ''}${escapeHtml(option.label)}</button>`
           }).join('')}
         </div>
       </div>

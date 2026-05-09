@@ -46,6 +46,11 @@ const POPUP_CANCEL_BUTTON_WIDTH_RATIO = 0.62
 const POPUP_CANCEL_BUTTON_MIN_WIDTH = 180
 const POPUP_TOGGLE_BUTTON_WIDTH_RATIO = 0.72
 const POPUP_TOGGLE_BUTTON_MIN_WIDTH = 200
+const CARD_CHOICE_ICON_MIN_SIZE = 16
+const CARD_CHOICE_ICON_WIDTH_RATIO = 0.2
+const CARD_CHOICE_ICON_HEIGHT_RATIO = 0.8
+const CARD_FACE_ICON_MIN_SIZE = 22
+const CARD_FACE_ICON_SIZE_RATIO = 0.56
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -809,7 +814,10 @@ class CardgameScene extends Phaser.Scene {
       maxLines: BUTTON_TEXT_MAX_LINES,
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
-    const iconSize = Math.max(16, Math.floor(Math.min(width * 0.2, height * 0.8)))
+    const iconSize = Math.max(
+      CARD_CHOICE_ICON_MIN_SIZE,
+      Math.floor(Math.min(width * CARD_CHOICE_ICON_WIDTH_RATIO, height * CARD_CHOICE_ICON_HEIGHT_RATIO)),
+    )
     const land = asBasicLand(cardName)
     if (land) {
       this.addPixelIconToContainer(
@@ -1357,7 +1365,13 @@ class CardgameScene extends Phaser.Scene {
     const card = this.add.container(x, y, [rect])
     const land = asBasicLand(label)
     if (land) {
-      const iconSize = Math.max(22, Math.floor(Math.min(this.currentLayout.cardWidth * 0.56, this.currentLayout.cardHeight * 0.56)))
+      const iconSize = Math.max(
+        CARD_FACE_ICON_MIN_SIZE,
+        Math.floor(Math.min(
+          this.currentLayout.cardWidth * CARD_FACE_ICON_SIZE_RATIO,
+          this.currentLayout.cardHeight * CARD_FACE_ICON_SIZE_RATIO,
+        )),
+      )
       this.addPixelIconToContainer(
         land,
         visualStyle,
