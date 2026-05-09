@@ -38,7 +38,11 @@
 
         var findBasePath = function (candidateIndex) {
           if (candidateIndex >= candidates.length) {
-            return Promise.resolve('/')
+            // All probes failed (network error or timeout). Prefer the
+            // first path segment as a non-network fallback so deep links
+            // under typical project sites (e.g. /<repo>/) still restore
+            // through the SPA index, instead of redirecting to '/'.
+            return Promise.resolve(segments.length > 0 ? '/' + segments[0] + '/' : '/')
           }
           return fetchManifest(candidates[candidateIndex]).then(function (exists) {
             // Treat timeout sentinel (`null`) and fetch failures as "not found"

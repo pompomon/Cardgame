@@ -74,10 +74,15 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
+    // Only treat the base / index.html navigations as the canonical SPA shell.
+    // Other navigations (e.g. ${BASE_PATH}404.html) must not overwrite the
+    // cached app shell under INDEX_URL, since 404.html performs a redirect
+    // and is not a valid offline fallback document.
+    const isIndexNavigation = relativePath === '/' || relativePath === '/index.html'
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok) {
+          if (response.ok && isIndexNavigation) {
             const clone = response.clone()
             void caches.open(APP_SHELL_CACHE).then((cache) => cache.put(INDEX_URL, clone))
           }

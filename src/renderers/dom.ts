@@ -384,11 +384,9 @@ export class DomRenderer implements AppRenderer {
 
     this.container.querySelectorAll<HTMLButtonElement>('[data-action="install-app"]').forEach((button) => {
       button.addEventListener('click', () => {
-        void promptInstall().finally(() => {
-          if (this.view) {
-            this.render(this.view)
-          }
-        })
+        // install-support.promptInstall() calls notifyChange() and main.ts
+        // re-renders via subscribeInstallSupport(); no manual re-render here.
+        void promptInstall()
       })
     })
 

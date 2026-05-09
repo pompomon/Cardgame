@@ -270,9 +270,11 @@ textarea {
 .phaser-lobby-p2p-overlay {
   position: fixed;
   right: 18px;
+  top: 18px;
   top: calc(18px + env(safe-area-inset-top, 0));
   z-index: 20;
   width: min(420px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
   max-height: calc(100dvh - 36px - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
   overflow: auto;
 }
