@@ -2446,7 +2446,8 @@ export class PhaserRenderer implements AppRenderer {
         if (game && game.canInput && !menuModalOpen) {
           if (game.phase === 'main') {
             const battlefieldTargets = this.cardgameScene?.getBattlefieldTargetA11yEntries() ?? []
-            if (battlefieldTargets.length > 0) {
+            const hasBattlefieldTargets = battlefieldTargets.length > 0
+            if (hasBattlefieldTargets) {
               for (const target of battlefieldTargets) {
                 entries.push({
                   key: target.key,
@@ -2469,7 +2470,7 @@ export class PhaserRenderer implements AppRenderer {
                 }
               }
             }
-            if (game.legal.canEndTurn && battlefieldTargets.length === 0) {
+            if (game.legal.canEndTurn && !hasBattlefieldTargets) {
               entries.push({
                 key: 'end-turn',
                 label: 'End Turn',
