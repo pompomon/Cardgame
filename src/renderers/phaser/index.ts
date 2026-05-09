@@ -2516,13 +2516,24 @@ export class PhaserRenderer implements AppRenderer {
               })
             }
           } else if (game.phase === 'plains_target') {
-            game.legal.plainsReuseOptions.forEach((option, index) => {
-              entries.push({
-                key: `plains-reuse:${index}:${option.action.effectTargetId ?? 'default'}`,
-                label: option.label,
-                onClick: () => controller.submitAction(option.action),
+            const battlefieldTargets = this.cardgameScene?.getBattlefieldTargetA11yEntries() ?? []
+            if (battlefieldTargets.length > 0) {
+              for (const target of battlefieldTargets) {
+                entries.push({
+                  key: target.key,
+                  label: target.label,
+                  onClick: target.onSelect,
+                })
+              }
+            } else {
+              game.legal.plainsReuseOptions.forEach((option, index) => {
+                entries.push({
+                  key: `plains-reuse:${index}:${option.action.effectTargetId ?? 'default'}`,
+                  label: option.label,
+                  onClick: () => controller.submitAction(option.action),
+                })
               })
-            })
+            }
           }
         }
       }
