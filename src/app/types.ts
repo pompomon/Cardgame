@@ -58,6 +58,7 @@ export interface PlayerUiState {
   deckCount: number
   graveyardCount: number
   handCards: UiCard[]
+  graveyardCards: UiCard[]
   battlefield: UiBattlefieldCard[]
 }
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePlainsReuseAction, resolvePlayLandDrop, resolveTargetedPlayLandAction } from '../app/action-resolution'
+import {
+  groupCardTargetOptions,
+  resolvePlainsReuseAction,
+  resolvePlainsReuseTargetSelectionMode,
+  resolvePlayLandDrop,
+  resolvePlayLandTargetSelectionMode,
+  resolveTargetedPlayLandAction,
+} from '../app/action-resolution'
 import { buildViewModel } from '../app/view-model'
 import { createInitialGame } from '../game/engine'
 import type { AppState } from '../app/types'
@@ -62,6 +69,71 @@ describe('action-resolution', () => {
       const action = resolveTargetedPlayLandAction(game, 'forest-play', 'g-2')
       expect(action?.effectTargetId).toBe('g-2')
     }
+  })
+
+  it('groups duplicate popup target cards and keeps deterministic target mapping', () => {
+    const state = createState(54)
+    state.game!.players[1].hand = []
+    state.game!.players[0].graveyard = [
+      { id: 'g-1', name: 'Plains', type: 'land' },
+      { id: 'g-2', name: 'Plains', type: 'land' },
+      { id: 'g-3', name: 'Swamp', type: 'land' },
+    ]
+    state.game!.players[0].hand = [{ id: 'forest-play', name: 'Forest', type: 'land' }]
+
+    const vm = buildViewModel(state, false)
+    const game = vm.game!
+    const resolution = resolvePlayLandDrop(game, 'forest-play')
+    expect(resolution.kind).toBe('needs_target')
+    if (resolution.kind !== 'needs_target') {
+      return
+    }
+
+    const grouped = groupCardTargetOptions(game, { kind: 'play_land', cardId: 'forest-play' }, resolution.options)
+    expect(grouped.map((entry) => entry.label)).toEqual(['Plains X2', 'Swamp'])
+    expect(grouped[0]?.effectTargetId).toBe('g-1')
+    expect(grouped[1]?.effectTargetId).toBe('g-3')
+  })
+
+  it('routes target selection mode by effect context', () => {
+    const state = createState(55)
+    state.game!.players[0].hand = [{ id: 'mountain-play', name: 'Mountain', type: 'land' }]
+    state.game!.players[1].battlefield = [
+      { instanceId: 'bf-1', card: { id: 'x-1', name: 'Plains', type: 'land' } },
+      { instanceId: 'bf-2', card: { id: 'x-2', name: 'Forest', type: 'land' } },
+    ]
+
+    let vm = buildViewModel(state, false)
+    expect(resolvePlayLandTargetSelectionMode(vm.game!, 'mountain-play')).toBe('battlefield_highlight')
+
+    state.game!.players[0].hand = [{ id: 'forest-play', name: 'Forest', type: 'land' }]
+    state.game!.players[0].graveyard = [
+      { id: 'g-1', name: 'Plains', type: 'land' },
+      { id: 'g-2', name: 'Swamp', type: 'land' },
+    ]
+    vm = buildViewModel(state, false)
+    expect(resolvePlayLandTargetSelectionMode(vm.game!, 'forest-play')).toBe('popup_cards')
+
+    state.game!.phase = 'plains_target'
+    state.game!.pendingPlainsReuse = {
+      actor: 0,
+      reusedInstanceId: 'self-1',
+      reusedCardName: 'Mountain',
+    }
+    vm = buildViewModel(state, false)
+    expect(resolvePlainsReuseTargetSelectionMode(vm.game!)).toBe('battlefield_highlight')
+
+    state.game!.pendingPlainsReuse = {
+      actor: 0,
+      reusedInstanceId: 'self-2',
+      reusedCardName: 'Swamp',
+    }
+    state.game!.players[1].hand = [
+      { id: 'opp-1', name: 'Plains', type: 'land' },
+      { id: 'opp-2', name: 'Plains', type: 'land' },
+    ]
+    vm = buildViewModel(state, false)
+    expect(resolvePlainsReuseTargetSelectionMode(vm.game!)).toBe('popup_cards')
   })
 
   it('returns invalid for cards without legal play action', () => {
