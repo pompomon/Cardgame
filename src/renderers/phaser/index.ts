@@ -1335,10 +1335,10 @@ class CardgameScene extends Phaser.Scene {
           const [onlyOption] = options
           this.showTargetPicker(
             [{ effectTargetId: onlyOption.effectTargetId, label: onlyOption.label }],
-            (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
+            () => onlyOption.action,
             false,
             {
-              title: `Choose target for reused ${game.pendingPlainsReuseName ?? 'land'}`,
+              title: `Confirm target for reused ${game.pendingPlainsReuseName ?? 'land'}`,
               allowCancel: false,
             },
           )
