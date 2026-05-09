@@ -1,4 +1,9 @@
 export type BasicLand = 'Forest' | 'Island' | 'Mountain' | 'Plains' | 'Swamp'
+export const BASIC_LANDS: readonly BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
+
+export function isBasicLand(value: unknown): value is BasicLand {
+  return typeof value === 'string' && BASIC_LANDS.includes(value as BasicLand)
+}
 export type CardType = 'land'
 
 export interface Card {

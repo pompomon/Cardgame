@@ -17,6 +17,7 @@ function createState(seed: number): AppState {
     replay: null,
     hasSavedRecording: false,
     aiLevel: 'basic',
+    cardVisualStyle: 'classic',
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
@@ -34,6 +35,7 @@ describe('buildViewModel', () => {
     expect(vm.game?.log).toEqual(entries)
     expect(vm.game?.log.length).toBe(entries.length)
     expect(vm.aiLevel).toBe('basic')
+    expect(vm.cardVisualStyle).toBe('classic')
   })
 
   it('exposes plains reuse options and pending reused card name', () => {

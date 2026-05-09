@@ -1,8 +1,10 @@
 import type { ControllerApi } from '../app/controller'
 import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
+import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual-styles'
+import { cardVisualPaletteFor, landIconDataUrl } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
-import type { GameAction } from '../game/types'
+import { isBasicLand, type BasicLand, type GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
@@ -44,6 +46,10 @@ function renderLobby(view: AppViewModel): string {
     const selected = option.value === view.aiLevel ? ' selected' : ''
     return `<option value="${option.value}"${selected}>${option.label}</option>`
   }).join('')
+  const cardVisualStyleOptions = CARD_VISUAL_STYLE_OPTIONS.map((option) => {
+    const selected = option.value === view.cardVisualStyle ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
 
   return `
     <section class="panel">
@@ -55,6 +61,11 @@ function renderLobby(view: AppViewModel): string {
         <h3>AI Difficulty</h3>
         <label for="ai-level-select">AI Level</label>
         <select id="ai-level-select">${aiLevelOptions}</select>
+      </div>
+      <div class="controls">
+        <h3>Card Visual Style</h3>
+        <label for="card-visual-style-select">Style</label>
+        <select id="card-visual-style-select">${cardVisualStyleOptions}</select>
       </div>
       <div class="modes">
         <button data-mode="local-hvh">Local Human vs Human</button>
@@ -107,6 +118,24 @@ function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: 
   `
 }
 
+function renderLandIcon(
+  name: BasicLand,
+  style: AppViewModel['cardVisualStyle'],
+  size: number,
+  className: string,
+): string {
+  const src = landIconDataUrl(name, style, size)
+  return `<img class="${className}" src="${src}" alt="" role="presentation" width="${size}" height="${size}" />`
+}
+
+function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
+  if (!isBasicLand(name)) {
+    return `<span>${escapeHtml(name)}</span>`
+  }
+  const palette = cardVisualPaletteFor(name, style)
+  return `<span class="card-tile" style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}">${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${escapeHtml(name)}</span></span>`
+}
+
 function renderGame(view: AppViewModel, menuOpen: boolean): string {
   const game = view.game
   if (!game) {
@@ -127,11 +156,12 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
   const renderPlayLandButton = (option: {
     action: { cardId: string; effectTargetId?: string }
     label: string
-  }): string => {
+  }, cardName: string): string => {
     const targetAttr = option.action.effectTargetId
       ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
       : ''
-    return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${escapeHtml(option.label)}</button>`
+    const icon = isBasicLand(cardName) ? renderLandIcon(cardName, view.cardVisualStyle, 16, 'action-icon') : ''
+    return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${icon}${escapeHtml(option.label)}</button>`
   }
 
   const mainControls = game.canInput && game.phase === 'main'
@@ -144,7 +174,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
             if (!options || options.length === 0) {
               return ''
             }
-            return options.map((option) => renderPlayLandButton(option)).join('')
+            return options.map((option) => renderPlayLandButton(option, card.name)).join('')
           }).join('')}
         </div>
         ${game.legal.canEndTurn ? '<button data-action="end_turn">End Turn</button>' : ''}
@@ -162,7 +192,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
             const discardAttr = option.action.discardCardId
               ? ` data-discard-card-id="${escapeHtml(option.action.discardCardId)}"`
               : ''
-            return `<button data-action="counter_land"${discardAttr}>${escapeHtml(option.label)}</button>`
+            return `<button data-action="counter_land"${discardAttr}>${renderLandIcon('Island', view.cardVisualStyle, 16, 'action-icon')}${escapeHtml(option.label)}</button>`
           }).join('')}
           ${game.legal.canPassResponse ? '<button data-action="pass_response">Pass</button>' : ''}
         </div>
@@ -180,7 +210,8 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
             const targetAttr = option.action.effectTargetId
               ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
               : ''
-            return `<button data-action="resolve_plains_reuse"${targetAttr}>${escapeHtml(option.label)}</button>`
+            const land = game.pendingPlainsReuseName
+            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land && isBasicLand(land) ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon') : ''}${escapeHtml(option.label)}</button>`
           }).join('')}
         </div>
       </div>
@@ -191,14 +222,14 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
     <article class="player player-${kind}">
       <h3>Player ${playerIndex + 1} (${escapeHtml(view.controllers[playerIndex])})${kind === 'active' ? ' — Active' : ''}</h3>
       <p>Hand: ${player.handCount} • Deck: ${player.deckCount} • Graveyard: ${player.graveyardCount}</p>
-      <p>Hand cards: ${escapeHtml(player.handCards.map((card) => card.name).join(', ') || 'None')}</p>
+      <div class="card-tile-row">Hand cards: ${player.handCards.length > 0 ? player.handCards.map((card) => renderCardTile(card.name, view.cardVisualStyle)).join('') : '<span>None</span>'}</div>
     </article>
   `
 
   const renderBattlefield = (player: typeof p1, playerIndex: number, kind: 'active' | 'non-active'): string => `
     <article class="battlefield battlefield-${kind}">
       <h4>Player ${playerIndex + 1} Battlefield</h4>
-      <p>${escapeHtml(player.battlefield.map((entry) => entry.name).join(', ') || 'None')}</p>
+      <div class="card-tile-row">${player.battlefield.length > 0 ? player.battlefield.map((entry) => renderCardTile(entry.name, view.cardVisualStyle)).join('') : '<span>None</span>'}</div>
     </article>
   `
 
@@ -357,6 +388,13 @@ export class DomRenderer implements AppRenderer {
       const value = (event.target as HTMLSelectElement).value
       if (isAiLevel(value)) {
         this.controller?.setAiLevel(value)
+      }
+    })
+
+    this.container.querySelector<HTMLSelectElement>('#card-visual-style-select')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value
+      if (isCardVisualStyle(value)) {
+        this.controller?.setCardVisualStyle(value)
       }
     })
 
