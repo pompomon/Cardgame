@@ -4,8 +4,7 @@ import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual
 import { cardVisualPaletteFor, landIconDataUrl } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
-import { isBasicLand, type BasicLand } from '../game/types'
-import type { GameAction } from '../game/types'
+import { isBasicLand, type BasicLand, type GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
 const BLOB_URL_REVOCATION_DELAY_MS = 1000

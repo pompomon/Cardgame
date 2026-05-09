@@ -7,7 +7,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
+import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
@@ -315,7 +315,7 @@ class LobbyScene extends Phaser.Scene {
     const view = this.rendererRef.currentView
     const hasLocalSave = view?.recording?.hasLocalSave ?? false
     const selectedAiLevel = view?.aiLevel ?? 'basic'
-    const selectedCardVisualStyle = view?.cardVisualStyle ?? 'classic'
+    const selectedCardVisualStyle = view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     // Lobby recorder entry points so users can review or replay a saved match
     // without having to start a throwaway game first (mirrors the DOM lobby
     // and the previous Phaser overlay). The Browser entry is only enabled
@@ -794,7 +794,7 @@ class CardgameScene extends Phaser.Scene {
     height: number,
     fontSize = this.currentLayout.popupButtonFontSize,
   ): Phaser.GameObjects.Container {
-    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? 'classic'
+    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const style = cardStyleForLand(cardName, visualStyle)
     const background = this.add.rectangle(0, 0, width, height, style.fill).setStrokeStyle(2, style.stroke)
     const text = this.add.text(0, 0, label, {
@@ -1346,7 +1346,7 @@ class CardgameScene extends Phaser.Scene {
       highlight?: boolean
     } = {},
   ): Phaser.GameObjects.Container {
-    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? 'classic'
+    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
     const strokeColor = config.highlight ? 0xffe680 : style.stroke
