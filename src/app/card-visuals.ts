@@ -206,12 +206,15 @@ export function landIconDataUrl(land: BasicLand, style: CardVisualStyle, targetS
     return cached
   }
   const palette = cardVisualPaletteFor(land, style)
-  const rects = landPixelRects(land, size)
+  // Keep a minimum internal coordinate space so the fixed GRID_SIZE-based icon
+  // template remains fully visible even when the rendered output is smaller.
+  const internalSize = Math.max(size, GRID_SIZE)
+  const rects = landPixelRects(land, internalSize)
   const body = rects.map((rect) => {
     const fill = rect.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
     return `<rect x="${rect.x}" y="${rect.y}" width="${rect.size}" height="${rect.size}" fill="${fill}" />`
   }).join('')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges">${body}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${internalSize} ${internalSize}" shape-rendering="crispEdges">${body}</svg>`
   const dataUrl = encodeSvg(svg)
   iconDataUrlCache.set(cacheKey, dataUrl)
   return dataUrl
