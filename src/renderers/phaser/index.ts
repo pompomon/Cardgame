@@ -1331,6 +1331,19 @@ class CardgameScene extends Phaser.Scene {
           label: option.label,
           action: option.action,
         }))
+        if (options.length === 1) {
+          const [onlyOption] = options
+          this.showTargetPicker(
+            [{ effectTargetId: onlyOption.effectTargetId, label: onlyOption.label }],
+            (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
+            false,
+            {
+              title: `Choose target for reused ${game.pendingPlainsReuseName ?? 'land'}`,
+              allowCancel: false,
+            },
+          )
+          return
+        }
         const mode = resolvePlainsReuseTargetSelectionMode(game)
         if (mode === 'popup_cards' && options.length > 0) {
           const grouped = groupCardTargetOptions(
