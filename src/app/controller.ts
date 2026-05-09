@@ -323,7 +323,7 @@ export class AppController implements ControllerApi {
     }
   }
 
-  private onAdventureGameFinished(previousState: GameState, action: GameAction): void {
+  private onAdventureGameFinished(previousState: GameState): void {
     if (this.state.mode !== 'adventure-hvai' || !this.state.game || previousState.phase === 'gameOver' || this.state.game.phase !== 'gameOver') {
       return
     }
@@ -667,7 +667,7 @@ export class AppController implements ControllerApi {
     }
 
     this.appendRecordingStep(action, next, source)
-    this.onAdventureGameFinished(previous, action)
+    this.onAdventureGameFinished(previous)
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -776,7 +776,7 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
-    if (this.state.adventure.status === 'active' || this.state.mode === 'adventure-hvai') {
+    if (this.state.adventure.status === 'active') {
       this.setAdventureRun(null)
     }
 

@@ -833,7 +833,7 @@ describe('controller recording and replay', () => {
           currentOpponentIndex: number
         }
       }
-      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>, action: { type: 'end_turn'; actor: number }) => void
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
     }
     internals.state.mode = 'adventure-hvai'
     internals.state.adventure.winStreak = 2
@@ -844,7 +844,7 @@ describe('controller recording and replay', () => {
     internals.state.game.winner = 0
     internals.state.game.phase = 'gameOver'
 
-    internals.onAdventureGameFinished(previous, { type: 'end_turn', actor: 0 })
+    internals.onAdventureGameFinished(previous)
 
     const view = controller.getViewModel()
     expect(view.adventure.remainingChances).toBe(4)
@@ -867,7 +867,7 @@ describe('controller recording and replay', () => {
           status: 'active' | 'paused'
         }
       }
-      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>, action: { type: 'end_turn'; actor: number }) => void
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
     }
     internals.state.mode = 'adventure-hvai'
     internals.state.adventure.remainingChances = 1
@@ -879,7 +879,7 @@ describe('controller recording and replay', () => {
     internals.state.game.winner = 1
     internals.state.game.phase = 'gameOver'
 
-    internals.onAdventureGameFinished(previous, { type: 'end_turn', actor: 0 })
+    internals.onAdventureGameFinished(previous)
 
     const view = controller.getViewModel()
     expect(view.mode).toBeNull()
