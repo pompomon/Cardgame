@@ -588,8 +588,8 @@ class CardgameScene extends Phaser.Scene {
           cardId,
           options: resolution.options,
         }
-        this.setStatus('Choose a highlighted battlefield target.')
         this.renderView(this.rendererRef.currentView)
+        this.setStatus('Choose a highlighted battlefield target.')
         return
       }
       const groupedOptions = groupCardTargetOptions(game, { kind: 'play_land', cardId }, resolution.options)
