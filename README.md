@@ -22,6 +22,18 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Phaser renderer fills the full available viewport and continuously reflows on resize.
 - Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
 - Use the in-scene orientation button to manually switch between vertical and horizontal layout modes (saved in localStorage).
+- Card faces render pixel-art land icons (Forest/Island/Mountain/Plains/Swamp) plus text labels.
+
+## Card visual styles
+
+- Lobby includes a shared **Card Visual Style** selector for both renderers.
+- Available styles:
+  - **Classic**
+  - **Neon**
+  - **Monochrome**
+- Style selection is a client-side presentation preference persisted in browser local storage.
+- Pixel-art visuals are generated on the fly and cached by land/style/size bucket.
+- Core implementation lives in `src/app/card-visuals.ts` and style options in `src/app/card-visual-styles.ts`.
 
 ## AI levels
 

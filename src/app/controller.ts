@@ -3,6 +3,7 @@ import { applyAction, canAct, createInitialGame, getLegalActions } from '../game
 import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
+import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
 import {
   appendGameRecordStep,
   createGameRecord,
@@ -11,7 +12,7 @@ import {
   snapshotFromRecord,
 } from './game-recording'
 import { buildViewModel } from './view-model'
-import type { AiLevel, AppState, AppViewModel, Mode, RendererKind } from './types'
+import type { AiLevel, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
@@ -87,6 +88,7 @@ export interface ControllerApi {
   subscribe(listener: (view: AppViewModel) => void): () => void
   getViewModel(): AppViewModel
   setAiLevel(level: AiLevel): void
+  setCardVisualStyle(style: CardVisualStyle): void
   startGame(mode: Mode): void
   backToLobby(): void
   createOffer(): Promise<void>
@@ -128,6 +130,7 @@ export class AppController implements ControllerApi {
       replay: null,
       hasSavedRecording: this.hasSavedRecording(),
       aiLevel: 'basic',
+      cardVisualStyle: readStoredCardVisualStyle(),
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
@@ -474,6 +477,12 @@ export class AppController implements ControllerApi {
 
   setAiLevel(level: AiLevel): void {
     this.state.aiLevel = level
+    this.notify()
+  }
+
+  setCardVisualStyle(style: CardVisualStyle): void {
+    this.state.cardVisualStyle = style
+    persistCardVisualStyle(style)
     this.notify()
   }
 

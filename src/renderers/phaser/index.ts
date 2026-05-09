@@ -7,10 +7,13 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
+import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
+import { cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import type { GameAction } from '../../game/types'
+import type { BasicLand } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { buildLayout, clamp, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
 
@@ -118,21 +121,28 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;')
 }
 
-function cardStyleForLand(name: string): CardStyle {
-  const fallback: CardStyle = { fill: 0x132652, stroke: 0x4f6caa, text: '#e5ecf5' }
-  switch (name) {
-    case 'Forest':
-      return { fill: 0x19482c, stroke: 0x53a772, text: '#d6f9df' }
-    case 'Island':
-      return { fill: 0x173a66, stroke: 0x5f94d0, text: '#deebff' }
-    case 'Mountain':
-      return { fill: 0x5c2b1a, stroke: 0xbf6f4c, text: '#ffdfd1' }
-    case 'Plains':
-      return { fill: 0x695d31, stroke: 0xc8b872, text: '#fff8dd' }
-    case 'Swamp':
-      return { fill: 0x362148, stroke: 0x8a62af, text: '#f3e4ff' }
-    default:
-      return fallback
+function asBasicLand(name: string): BasicLand | null {
+  if (name === 'Forest' || name === 'Island' || name === 'Mountain' || name === 'Plains' || name === 'Swamp') {
+    return name
+  }
+  return null
+}
+
+function colorHexToNumber(hex: string): number {
+  const parsed = Number.parseInt(hex.replace('#', ''), 16)
+  return Number.isFinite(parsed) ? parsed : 0xffffff
+}
+
+function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualStyle']): CardStyle {
+  const land = asBasicLand(name)
+  if (!land) {
+    return { fill: 0x132652, stroke: 0x4f6caa, text: '#e5ecf5' }
+  }
+  const palette = cardVisualPaletteFor(land, visualStyle)
+  return {
+    fill: colorHexToNumber(palette.cardFill),
+    stroke: colorHexToNumber(palette.cardStroke),
+    text: palette.cardText,
   }
 }
 
@@ -309,6 +319,7 @@ class LobbyScene extends Phaser.Scene {
     const view = this.rendererRef.currentView
     const hasLocalSave = view?.recording?.hasLocalSave ?? false
     const selectedAiLevel = view?.aiLevel ?? 'basic'
+    const selectedCardVisualStyle = view?.cardVisualStyle ?? 'classic'
     // Lobby recorder entry points so users can review or replay a saved match
     // without having to start a throwaway game first (mirrors the DOM lobby
     // and the previous Phaser overlay). The Browser entry is only enabled
@@ -341,7 +352,7 @@ class LobbyScene extends Phaser.Scene {
     const lobbyBodyBottom = this.currentLayout.height
       - this.currentLayout.statusBottomOffset - this.currentLayout.margin
     const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
-    const totalRows = modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length + 2
+    const totalRows = modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + recorderEntries.length + 2
     const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
     const desiredGap = this.currentLayout.isCompact ? 8 : 14
     const desiredRowHeight = desiredButtonHeight + desiredGap
@@ -400,12 +411,29 @@ class LobbyScene extends Phaser.Scene {
       ))
     })
 
+    CARD_VISUAL_STYLE_OPTIONS.forEach((option, index) => {
+      const selected = option.value === selectedCardVisualStyle
+      const label = selected ? `Card Style: ${option.label} ✓` : `Card Style: ${option.label}`
+      this.rootContainer?.add(buildButton(
+        this,
+        label,
+        left + buttonWidth / 2,
+        modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + index) * rowHeight,
+        this.currentLayout.actionButtonFontSize,
+        buttonWidth,
+        buttonHeight,
+        () => {
+          this.rendererRef.controller?.setCardVisualStyle(option.value)
+        },
+      ))
+    })
+
     recorderEntries.forEach((entry, index) => {
       const button = buildButton(
         this,
         entry.label,
         left + buttonWidth / 2,
-        modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + index) * rowHeight,
+        modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + index) * rowHeight,
         this.currentLayout.actionButtonFontSize,
         buttonWidth,
         buttonHeight,
@@ -422,7 +450,7 @@ class LobbyScene extends Phaser.Scene {
       this,
       installEntry.label,
       left + buttonWidth / 2,
-      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length) * rowHeight,
+      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + recorderEntries.length) * rowHeight,
       this.currentLayout.actionButtonFontSize,
       buttonWidth,
       buttonHeight,
@@ -438,7 +466,7 @@ class LobbyScene extends Phaser.Scene {
       this,
       'Switch to DOM renderer',
       left + buttonWidth / 2,
-      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + recorderEntries.length + 1) * rowHeight,
+      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + recorderEntries.length + 1) * rowHeight,
       this.currentLayout.actionButtonFontSize,
       buttonWidth,
       buttonHeight,
@@ -770,7 +798,8 @@ class CardgameScene extends Phaser.Scene {
     height: number,
     fontSize = this.currentLayout.popupButtonFontSize,
   ): Phaser.GameObjects.Container {
-    const style = cardStyleForLand(cardName)
+    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? 'classic'
+    const style = cardStyleForLand(cardName, visualStyle)
     const background = this.add.rectangle(0, 0, width, height, style.fill).setStrokeStyle(2, style.stroke)
     const text = this.add.text(0, 0, label, {
       color: style.text,
@@ -780,10 +809,45 @@ class CardgameScene extends Phaser.Scene {
       maxLines: BUTTON_TEXT_MAX_LINES,
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
+    const iconSize = Math.max(16, Math.floor(Math.min(width * 0.2, height * 0.8)))
+    const land = asBasicLand(cardName)
+    if (land) {
+      this.addPixelIconToContainer(
+        land,
+        visualStyle,
+        -width / 2 + 12,
+        -Math.floor(iconSize / 2),
+        iconSize,
+        button,
+      )
+    }
     button.setSize(width, height)
     button.setInteractive({ useHandCursor: true })
     button.on('pointerup', onClick)
     return button
+  }
+
+  private addPixelIconToContainer(
+    land: BasicLand,
+    visualStyle: AppViewModel['cardVisualStyle'],
+    left: number,
+    top: number,
+    size: number,
+    container: Phaser.GameObjects.Container,
+  ): void {
+    const palette = cardVisualPaletteFor(land, visualStyle)
+    const primary = colorHexToNumber(palette.iconPrimary)
+    const secondary = colorHexToNumber(palette.iconSecondary)
+    const rects = landPixelRects(land, size)
+    for (const rect of rects) {
+      container.add(this.add.rectangle(
+        left + rect.x + rect.size / 2,
+        top + rect.y + rect.size / 2,
+        rect.size,
+        rect.size,
+        rect.tone === 'primary' ? primary : secondary,
+      ))
+    }
   }
 
   private syncPendingPlayLandTargetSelection(game: GameUiState): void {
@@ -1285,17 +1349,32 @@ class CardgameScene extends Phaser.Scene {
       highlight?: boolean
     } = {},
   ): Phaser.GameObjects.Container {
-    const style = cardStyleForLand(label)
+    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? 'classic'
+    const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
     const strokeColor = config.highlight ? 0xffe680 : style.stroke
     const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
+    const card = this.add.container(x, y, [rect])
+    const land = asBasicLand(label)
+    if (land) {
+      const iconSize = Math.max(22, Math.floor(Math.min(this.currentLayout.cardWidth * 0.56, this.currentLayout.cardHeight * 0.56)))
+      this.addPixelIconToContainer(
+        land,
+        visualStyle,
+        -Math.floor(iconSize / 2),
+        -Math.floor(iconSize / 2) - 8,
+        iconSize,
+        card,
+      )
+    }
     const text = this.add.text(0, 0, label, {
       color: style.text,
       fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
       wordWrap: { width: this.currentLayout.cardWidth - 12 },
-    }).setOrigin(0.5)
-    const card = this.add.container(x, y, [rect, text])
+    }).setOrigin(0.5, 0)
+    text.y = Math.max(8, this.currentLayout.cardHeight * 0.17)
+    card.add(text)
     if (config.onClick) {
       card.setSize(this.currentLayout.cardWidth, this.currentLayout.cardHeight)
       card.setInteractive({ useHandCursor: true })
@@ -2350,6 +2429,14 @@ export class PhaserRenderer implements AppRenderer {
           key: `ai-level:${option.value}`,
           label: `Set AI level: ${option.label}${selected}`,
           onClick: () => controller.setAiLevel(option.value),
+        })
+      }
+      for (const option of CARD_VISUAL_STYLE_OPTIONS) {
+        const selected = view.cardVisualStyle === option.value ? ' (selected)' : ''
+        entries.push({
+          key: `card-visual-style:${option.value}`,
+          label: `Set card visual style: ${option.label}${selected}`,
+          onClick: () => controller.setCardVisualStyle(option.value),
         })
       }
       // Mirror the lobby's recorder entry points for keyboard / screen-reader

@@ -25,6 +25,7 @@ function createState(seed: number): AppState {
     replay: null,
     hasSavedRecording: false,
     aiLevel: 'basic',
+    cardVisualStyle: 'classic',
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,

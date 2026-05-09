@@ -62,6 +62,19 @@ body {
   margin-top: 12px;
 }
 
+.action-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-icon {
+  display: inline-block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  vertical-align: middle;
+}
+
 button,
 select,
 textarea {
@@ -109,6 +122,32 @@ textarea {
 .battlefield h4 {
   margin: 0 0 6px;
   font-size: 0.95em;
+}
+
+.card-tile-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--tile-stroke, #2a355f);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: var(--tile-fill, #111c3d);
+  color: var(--tile-text, #e5ecf5);
+}
+
+.card-tile-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .battlefield-active {

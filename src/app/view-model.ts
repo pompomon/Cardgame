@@ -118,6 +118,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       seed: state.seed,
       controllers: state.controllers,
       aiLevel: state.aiLevel,
+      cardVisualStyle: state.cardVisualStyle,
       p2pConnected,
       p2pStarted,
       game: null,
@@ -179,6 +180,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     seed: state.seed,
     controllers: state.controllers,
     aiLevel: state.aiLevel,
+    cardVisualStyle: state.cardVisualStyle,
     p2pConnected,
     p2pStarted,
     game: {
