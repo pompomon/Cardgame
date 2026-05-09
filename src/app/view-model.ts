@@ -197,6 +197,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
           deckCount: game.players[0].deck.length,
           graveyardCount: game.players[0].graveyard.length,
           handCards: game.players[0].hand.map((card) => ({ id: card.id, name: card.name })),
+          graveyardCards: game.players[0].graveyard.map((card) => ({ id: card.id, name: card.name })),
           battlefield: game.players[0].battlefield.map((entry) => ({ instanceId: entry.instanceId, name: entry.card.name })),
         },
         {
@@ -205,6 +206,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
           deckCount: game.players[1].deck.length,
           graveyardCount: game.players[1].graveyard.length,
           handCards: game.players[1].hand.map((card) => ({ id: card.id, name: card.name })),
+          graveyardCards: game.players[1].graveyard.map((card) => ({ id: card.id, name: card.name })),
           battlefield: game.players[1].battlefield.map((entry) => ({ instanceId: entry.instanceId, name: entry.card.name })),
         },
       ],

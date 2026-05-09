@@ -1,6 +1,9 @@
 import Phaser from 'phaser'
 import {
+  groupCardTargetOptions,
   resolvePlayLandDrop,
+  resolvePlayLandTargetSelectionMode,
+  resolvePlainsReuseTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
@@ -75,6 +78,15 @@ type TargetPickerConfig = {
   title?: string
   allowCancel?: boolean
   onCancel?: () => void
+}
+
+type BattlefieldTargetOwner = 'active' | 'non-active'
+
+type BattlefieldTargetEntry = {
+  owner: BattlefieldTargetOwner
+  effectTargetId: string
+  cardName: string
+  onSelect: () => void
 }
 
 function readStoredOrientationMode(): OrientationMode | null {
@@ -459,6 +471,11 @@ class CardgameScene extends Phaser.Scene {
   private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private pendingTargetPicker: Phaser.GameObjects.Container | null = null
   private pendingTargetPickerA11yEntries: Array<{ key: string; label: string; onSelect: () => void }> = []
+  private pendingPlayLandTargetSelection: {
+    cardId: string
+    options: Array<{ effectTargetId?: string; label: string }>
+  } | null = null
+  private battlefieldTargetEntries: BattlefieldTargetEntry[] = []
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
   private menuContentScrollOffset: number | null = null
@@ -559,13 +576,30 @@ class CardgameScene extends Phaser.Scene {
       }
 
       if (resolution.kind === 'single') {
+        this.pendingPlayLandTargetSelection = null
         this.rendererRef.controller?.submitAction(resolution.action)
         return
       }
 
       this.snapCardToOrigin(card)
+      const mode = resolvePlayLandTargetSelectionMode(game, cardId)
+      if (mode === 'battlefield_highlight') {
+        this.pendingPlayLandTargetSelection = {
+          cardId,
+          options: resolution.options,
+        }
+        this.setStatus('Choose a highlighted battlefield target.')
+        this.renderView(this.rendererRef.currentView)
+        return
+      }
+      const groupedOptions = groupCardTargetOptions(game, { kind: 'play_land', cardId }, resolution.options)
+      this.pendingPlayLandTargetSelection = null
       this.showTargetPicker(
-        resolution.options,
+        groupedOptions.map((option) => ({
+          effectTargetId: option.effectTargetId,
+          label: option.label,
+          cardName: option.cardName,
+        })),
         (targetId) => resolveTargetedPlayLandAction(game, cardId, targetId),
       )
     }
@@ -614,7 +648,9 @@ class CardgameScene extends Phaser.Scene {
     this.menuOverlay = null
     this.rootContainer?.removeAll(true)
     this.pendingTargetPicker = null
+    this.pendingTargetPickerA11yEntries = []
     this.battlefieldDropZone = null
+    this.battlefieldTargetEntries = []
     this.menuOpen = wasMenuOpen
   }
 
@@ -667,6 +703,8 @@ class CardgameScene extends Phaser.Scene {
     }
     this.clearRoot()
     if (!view || !this.rootContainer) {
+      this.pendingPlayLandTargetSelection = null
+      this.battlefieldTargetEntries = []
       preservedOverlay?.destroy(true)
       this.lastMenuSignature = null
       return
@@ -675,12 +713,16 @@ class CardgameScene extends Phaser.Scene {
     this.setStatus(view.status)
 
     if (!view.game) {
+      this.pendingPlayLandTargetSelection = null
+      this.battlefieldTargetEntries = []
       preservedOverlay?.destroy(true)
       this.closeMenuOverlay()
       this.lastMenuSignature = null
       return
     }
 
+    this.syncPendingPlayLandTargetSelection(view.game)
+    this.battlefieldTargetEntries = this.currentBattlefieldTargetEntries(view.game)
     this.renderGame(view)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay
@@ -716,6 +758,124 @@ class CardgameScene extends Phaser.Scene {
 
   private popupActionWidth(maxWidth: number, ratio: number, minWidth: number): number {
     return Math.min(maxWidth, Math.max(minWidth, maxWidth * ratio))
+  }
+
+  private createCardChoiceButton(
+    label: string,
+    cardName: string,
+    x: number,
+    y: number,
+    onClick: () => void,
+    width: number,
+    height: number,
+    fontSize = this.currentLayout.popupButtonFontSize,
+  ): Phaser.GameObjects.Container {
+    const style = cardStyleForLand(cardName)
+    const background = this.add.rectangle(0, 0, width, height, style.fill).setStrokeStyle(2, style.stroke)
+    const text = this.add.text(0, 0, label, {
+      color: style.text,
+      fontSize,
+      align: 'center',
+      wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
+      maxLines: BUTTON_TEXT_MAX_LINES,
+    }).setOrigin(0.5)
+    const button = this.add.container(x, y, [background, text])
+    button.setSize(width, height)
+    button.setInteractive({ useHandCursor: true })
+    button.on('pointerup', onClick)
+    return button
+  }
+
+  private syncPendingPlayLandTargetSelection(game: GameUiState): void {
+    const pending = this.pendingPlayLandTargetSelection
+    if (!pending) {
+      return
+    }
+    if (!game.canInput || game.phase !== 'main') {
+      this.pendingPlayLandTargetSelection = null
+      return
+    }
+    const legalOptions = game.legal.playLandByCard[pending.cardId]
+    if (!legalOptions || legalOptions.length <= 1) {
+      this.pendingPlayLandTargetSelection = null
+      return
+    }
+    const legalTargetIds = new Set(legalOptions.map((option) => option.action.effectTargetId).filter((id): id is string => typeof id === 'string'))
+    const stillValid = pending.options.filter((option) => option.effectTargetId && legalTargetIds.has(option.effectTargetId))
+    if (stillValid.length === 0) {
+      this.pendingPlayLandTargetSelection = null
+      return
+    }
+    this.pendingPlayLandTargetSelection = {
+      ...pending,
+      options: stillValid,
+    }
+  }
+
+  private currentBattlefieldTargetEntries(game: GameUiState): BattlefieldTargetEntry[] {
+    const entries: BattlefieldTargetEntry[] = []
+    if (!game.canInput || this.menuOpen) {
+      return entries
+    }
+
+    if (game.phase === 'main' && this.pendingPlayLandTargetSelection) {
+      const { cardId, options } = this.pendingPlayLandTargetSelection
+      if (resolvePlayLandTargetSelectionMode(game, cardId) !== 'battlefield_highlight') {
+        return entries
+      }
+      const actor = game.actor
+      const enemy = actor === 0 ? 1 : 0
+      const sourceCard = game.players[actor].handCards.find((card) => card.id === cardId)
+      const owner: BattlefieldTargetOwner = sourceCard?.name === 'Mountain' ? 'non-active' : 'active'
+      const lookupPlayer = owner === 'active' ? actor : enemy
+      for (const option of options) {
+        if (!option.effectTargetId) {
+          continue
+        }
+        const action = resolveTargetedPlayLandAction(game, cardId, option.effectTargetId)
+        if (!action) {
+          continue
+        }
+        const targetName = game.players[lookupPlayer].battlefield.find((entry) => entry.instanceId === option.effectTargetId)?.name ?? 'Target'
+        entries.push({
+          owner,
+          effectTargetId: option.effectTargetId,
+          cardName: targetName,
+          onSelect: () => {
+            this.pendingPlayLandTargetSelection = null
+            this.rendererRef.controller?.submitAction(action)
+          },
+        })
+      }
+      return entries
+    }
+
+    if (game.phase === 'plains_target' && resolvePlainsReuseTargetSelectionMode(game) === 'battlefield_highlight') {
+      const owner: BattlefieldTargetOwner = game.pendingPlainsReuseName === 'Mountain' ? 'non-active' : 'active'
+      const actor = game.actor
+      const enemy = actor === 0 ? 1 : 0
+      const lookupPlayer = owner === 'active' ? actor : enemy
+      for (const option of game.legal.plainsReuseOptions) {
+        const targetId = option.action.effectTargetId
+        if (!targetId) {
+          continue
+        }
+        const targetName = game.players[lookupPlayer].battlefield.find((entry) => entry.instanceId === targetId)?.name ?? 'Target'
+        entries.push({
+          owner,
+          effectTargetId: targetId,
+          cardName: targetName,
+          onSelect: () => {
+            this.rendererRef.controller?.submitAction(option.action)
+          },
+        })
+      }
+    }
+    return entries
+  }
+
+  private findBattlefieldTargetEntry(owner: BattlefieldTargetOwner, effectTargetId: string): BattlefieldTargetEntry | null {
+    return this.battlefieldTargetEntries.find((entry) => entry.owner === owner && entry.effectTargetId === effectTargetId) ?? null
   }
 
   private bindScrollableViewport(
@@ -956,7 +1116,16 @@ class CardgameScene extends Phaser.Scene {
       + Math.max(0, this.currentLayout.nonActiveBattlefieldHeight - battlefieldHeaderBand) / 2
     for (let index = 0; index < nonActiveBattlefield.length; index += 1) {
       const card = nonActiveBattlefield[index]
-      this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, nonActiveBattlefield.length), nonActiveCardY, card.name))
+      const targetEntry = this.findBattlefieldTargetEntry('non-active', card.instanceId)
+      this.rootContainer?.add(this.renderStaticCard(
+        this.xForCardInBoardColumn(index, nonActiveBattlefield.length),
+        nonActiveCardY,
+        card.name,
+        {
+          highlight: targetEntry !== null,
+          onClick: targetEntry?.onSelect,
+        },
+      ))
     }
 
     // Active battlefield (below non-active, drop zone enabled, green tint).
@@ -1002,7 +1171,16 @@ class CardgameScene extends Phaser.Scene {
       + Math.max(0, this.currentLayout.activeBattlefieldHeight - activeHeaderBand) / 2
     for (let index = 0; index < activeBattlefield.length; index += 1) {
       const card = activeBattlefield[index]
-      this.rootContainer?.add(this.renderStaticCard(this.xForCardInBoardColumn(index, activeBattlefield.length), activeCardY, card.name))
+      const targetEntry = this.findBattlefieldTargetEntry('active', card.instanceId)
+      this.rootContainer?.add(this.renderStaticCard(
+        this.xForCardInBoardColumn(index, activeBattlefield.length),
+        activeCardY,
+        card.name,
+        {
+          highlight: targetEntry !== null,
+          onClick: targetEntry?.onSelect,
+        },
+      ))
     }
   }
 
@@ -1098,22 +1276,38 @@ class CardgameScene extends Phaser.Scene {
     }
   }
 
-  private renderStaticCard(x: number, y: number, label: string): Phaser.GameObjects.Container {
+  private renderStaticCard(
+    x: number,
+    y: number,
+    label: string,
+    config: {
+      onClick?: () => void
+      highlight?: boolean
+    } = {},
+  ): Phaser.GameObjects.Container {
     const style = cardStyleForLand(label)
-    const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(1, style.stroke)
+    const strokeWidth = config.highlight ? 3 : 1
+    const strokeColor = config.highlight ? 0xffe680 : style.stroke
+    const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
     const text = this.add.text(0, 0, label, {
       color: style.text,
       fontSize: this.currentLayout.bodyFontSize,
       align: 'center',
       wordWrap: { width: this.currentLayout.cardWidth - 12 },
     }).setOrigin(0.5)
-    return this.add.container(x, y, [rect, text])
+    const card = this.add.container(x, y, [rect, text])
+    if (config.onClick) {
+      card.setSize(this.currentLayout.cardWidth, this.currentLayout.cardHeight)
+      card.setInteractive({ useHandCursor: true })
+      card.on('pointerup', config.onClick)
+    }
+    return card
   }
 
   private renderHandAndControls(game: GameUiState): void {
     const actor = game.actor
     const actorCards = game.players[actor].handCards
-    const canDrag = game.canInput && game.phase === 'main'
+    const canDrag = game.canInput && game.phase === 'main' && this.pendingPlayLandTargetSelection === null
 
     actorCards.forEach((card, index) => {
       const x = this.xForCardInBoardColumn(index, actorCards.length)
@@ -1137,9 +1331,19 @@ class CardgameScene extends Phaser.Scene {
           label: option.label,
           action: option.action,
         }))
-        if (options.length > 0) {
-          this.showTargetPicker(
+        const mode = resolvePlainsReuseTargetSelectionMode(game)
+        if (mode === 'popup_cards' && options.length > 0) {
+          const grouped = groupCardTargetOptions(
+            game,
+            { kind: 'plains_reuse' },
             options.map((option) => ({ effectTargetId: option.effectTargetId, label: option.label })),
+          )
+          this.showTargetPicker(
+            grouped.map((option) => ({
+              effectTargetId: option.effectTargetId,
+              label: option.label,
+              cardName: option.cardName,
+            })),
             (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
             false,
             {
@@ -1147,6 +1351,8 @@ class CardgameScene extends Phaser.Scene {
               allowCancel: false,
             },
           )
+        } else if (mode === 'battlefield_highlight' && options.length > 0) {
+          this.setStatus('Choose a highlighted battlefield target.')
         }
       }
       return
@@ -1201,6 +1407,8 @@ class CardgameScene extends Phaser.Scene {
     const overlay = this.menuOverlay
     this.menuOverlay = null
     this.menuOpen = false
+    this.pendingPlayLandTargetSelection = null
+    this.battlefieldTargetEntries = []
     this.menuContentScrollOffset = null
     this.menuLogScrollOffset = null
     this.menuLogPinnedToBottom = true
@@ -1219,11 +1427,20 @@ class CardgameScene extends Phaser.Scene {
 
   closeTargetPickerOverlay(): void {
     this.pendingTargetPickerA11yEntries = []
+    this.pendingPlayLandTargetSelection = null
     this.pendingTargetPicker?.destroy(true)
   }
 
   getTargetPickerA11yEntries(): Array<{ key: string; label: string; onSelect: () => void }> {
     return this.pendingTargetPickerA11yEntries
+  }
+
+  getBattlefieldTargetA11yEntries(): Array<{ key: string; label: string; onSelect: () => void }> {
+    return this.battlefieldTargetEntries.map((entry) => ({
+      key: `battlefield-target:${entry.owner}:${entry.effectTargetId}`,
+      label: `Target ${entry.cardName}`,
+      onSelect: entry.onSelect,
+    }))
   }
 
   private openMenuOverlay(view: AppViewModel): void {
@@ -1237,6 +1454,8 @@ class CardgameScene extends Phaser.Scene {
     const installEntry = installButtonState()
 
     this.pendingTargetPicker?.destroy(true)
+    this.pendingPlayLandTargetSelection = null
+    this.battlefieldTargetEntries = []
     this.menuOpen = true
     this.statusText?.setVisible(false)
 
@@ -1619,7 +1838,7 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private showTargetPicker(
-    options: Array<{ effectTargetId?: string; label: string }>,
+    options: Array<{ effectTargetId?: string; label: string; cardName?: string }>,
     resolver: (effectTargetId?: string) => GameAction | null,
     showAllTargets = false,
     config: TargetPickerConfig = {},
@@ -1724,15 +1943,26 @@ class CardgameScene extends Phaser.Scene {
         overlay.destroy(true)
       }
       const buttonY = this.currentLayout.popupButtonHeight / 2 + index * (this.currentLayout.popupButtonHeight + optionGap)
-      const button = this.createButton(
-        option.label,
-        0,
-        buttonY,
-        selectOption,
-        buttonWidth,
-        this.currentLayout.popupButtonHeight,
-        this.currentLayout.popupButtonFontSize,
-      )
+      const button = option.cardName
+        ? this.createCardChoiceButton(
+          option.label,
+          option.cardName,
+          0,
+          buttonY,
+          selectOption,
+          buttonWidth,
+          this.currentLayout.popupButtonHeight,
+          this.currentLayout.popupButtonFontSize,
+        )
+        : this.createButton(
+          option.label,
+          0,
+          buttonY,
+          selectOption,
+          buttonWidth,
+          this.currentLayout.popupButtonHeight,
+          this.currentLayout.popupButtonFontSize,
+        )
       optionsList.add(button)
       this.pendingTargetPickerA11yEntries.push({
         key: `target:${option.effectTargetId ?? `fallback-index-${index}`}`,
@@ -2215,20 +2445,31 @@ export class PhaserRenderer implements AppRenderer {
         const game = view.game
         if (game && game.canInput && !menuModalOpen) {
           if (game.phase === 'main') {
-            for (const card of game.players[game.actor].handCards) {
-              const options = game.legal.playLandByCard[card.id]
-              if (!options) {
-                continue
-              }
-              for (const option of options) {
+            const battlefieldTargets = this.cardgameScene?.getBattlefieldTargetA11yEntries() ?? []
+            if (battlefieldTargets.length > 0) {
+              for (const target of battlefieldTargets) {
                 entries.push({
-                  key: `play:${card.id}:${option.label}`,
-                  label: `Play ${card.name}: ${option.label}`,
-                  onClick: () => controller.submitAction(option.action),
+                  key: target.key,
+                  label: target.label,
+                  onClick: target.onSelect,
                 })
               }
+            } else {
+              for (const card of game.players[game.actor].handCards) {
+                const options = game.legal.playLandByCard[card.id]
+                if (!options) {
+                  continue
+                }
+                for (const option of options) {
+                  entries.push({
+                    key: `play:${card.id}:${option.label}`,
+                    label: `Play ${card.name}: ${option.label}`,
+                    onClick: () => controller.submitAction(option.action),
+                  })
+                }
+              }
             }
-            if (game.legal.canEndTurn) {
+            if (game.legal.canEndTurn && battlefieldTargets.length === 0) {
               entries.push({
                 key: 'end-turn',
                 label: 'End Turn',
