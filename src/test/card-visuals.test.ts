@@ -28,16 +28,17 @@ describe('card-visuals', () => {
     const svg = decodeURIComponent(preview.split(',')[1] ?? '')
     // Outer SVG keeps the requested display size; viewBox is internally scaled.
     expect(svg).toContain('width="22" height="22"')
-    // Three lane background rects should sum to the internal viewBox width.
     const viewBoxMatch = svg.match(/viewBox="0 0 (\d+) \1"/)
     expect(viewBoxMatch).not.toBeNull()
     const internalSize = Number(viewBoxMatch?.[1])
-    const laneWidths = Array.from(svg.matchAll(/<rect x="(\d+)" y="0" width="(\d+)" height="\1"/g))
-    // Fall back to summing first three rects (the lane backgrounds) by index.
-    const laneRects = Array.from(svg.matchAll(/<rect x="(\d+)" y="0" width="(\d+)" height="(\d+)"/g)).slice(0, 3)
+    // The first three full-height rects are the lane backgrounds; their widths
+    // should sum to the internal viewBox size with no transparent gap.
+    const laneRects = Array.from(svg.matchAll(/<rect x="(\d+)" y="0" width="(\d+)" height="(\d+)"/g))
+      .filter((m) => Number(m[3]) === internalSize)
+      .slice(0, 3)
+    expect(laneRects).toHaveLength(3)
     const totalLaneWidth = laneRects.reduce((sum, m) => sum + Number(m[2]), 0)
     expect(totalLaneWidth).toBe(internalSize)
-    expect(laneWidths.length).toBeGreaterThanOrEqual(0)
   })
 
   it('keeps preview icons inside their lane for small previews', () => {
