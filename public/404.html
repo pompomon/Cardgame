@@ -54,7 +54,8 @@
           var relativePath = '/'
           if (pathname.indexOf(basePath) === 0) {
             var remainder = pathname.slice(basePath.length)
-            relativePath = remainder ? '/' + remainder : '/'
+            var normalizedRemainder = remainder.replace(/^\/+/, '')
+            relativePath = normalizedRemainder ? '/' + normalizedRemainder : '/'
           }
 
           var params = new URLSearchParams(window.location.search)

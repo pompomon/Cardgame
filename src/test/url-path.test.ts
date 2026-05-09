@@ -17,4 +17,9 @@ describe('joinBasePath', () => {
   it('keeps root relative path when both are root', () => {
     expect(joinBasePath('/', '/')).toBe('/')
   })
+
+  it('normalizes relative path with repeated leading slashes', () => {
+    expect(joinBasePath('/', '//evil')).toBe('/evil')
+    expect(joinBasePath('/Cardgame/', '//deep/link')).toBe('/Cardgame/deep/link')
+  })
 })

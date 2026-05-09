@@ -1,6 +1,7 @@
 export function joinBasePath(basePath: string, relativePath: string): string {
   const normalizedBase = basePath.endsWith('/') ? basePath : `${basePath}/`
-  const normalizedRelative = relativePath.startsWith('/') ? relativePath : `/${relativePath}`
+  const relativeWithoutLeadingSlashes = relativePath.replace(/^\/+/, '')
+  const normalizedRelative = relativeWithoutLeadingSlashes ? `/${relativeWithoutLeadingSlashes}` : '/'
   if (normalizedBase === '/') {
     return normalizedRelative
   }
