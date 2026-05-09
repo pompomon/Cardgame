@@ -135,12 +135,7 @@ function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): s
     return `<span>${escapeHtml(name)}</span>`
   }
   const palette = cardVisualPaletteFor(name, style)
-  return `
-    <span class="card-tile" style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}">
-      ${renderLandIcon(name, style, 22, 'card-tile-icon')}
-      <span>${escapeHtml(name)}</span>
-    </span>
-  `
+  return `<span class="card-tile" style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}">${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${escapeHtml(name)}</span></span>`
 }
 
 function renderGame(view: AppViewModel, menuOpen: boolean): string {
