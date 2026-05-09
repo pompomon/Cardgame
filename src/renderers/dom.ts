@@ -51,6 +51,10 @@ function renderLobby(view: AppViewModel): string {
     return `<option value="${option.value}"${selected}>${option.label}</option>`
   }).join('')
 
+  const adventure = view.adventure
+  const nextOpponent = adventure.opponentLineup[adventure.currentOpponentIndex]
+  const canResumeAdventure = adventure.hasSavedRun && (adventure.status === 'paused' || adventure.status === 'active')
+
   return `
     <section class="panel">
       <h1>Basic Land Game</h1>
@@ -71,8 +75,19 @@ function renderLobby(view: AppViewModel): string {
         <button data-mode="local-hvh">Local Human vs Human</button>
         <button data-mode="local-hvai">Local Human vs AI</button>
         <button data-mode="local-aivai">Local AI vs AI</button>
+        <button id="start-adventure">Start Adventure (Human vs AI)</button>
+        ${canResumeAdventure ? '<button id="resume-adventure">Resume Adventure</button>' : ''}
         <button data-mode="p2p-host">P2P Host</button>
         <button data-mode="p2p-join">P2P Join</button>
+      </div>
+      <div class="controls">
+        <h3>Adventure</h3>
+        <p>High Score: ${adventure.highScore}</p>
+        <p>Status: ${adventure.status}</p>
+        <p>Round: ${adventure.currentRound}/7 • Chances: ${adventure.remainingChances} • Win Streak: ${adventure.winStreak}</p>
+        <p>Total Rounds: ${adventure.totalRoundsPlayed} • Cards Played: ${adventure.totalCardsPlayed}</p>
+        <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
+        ${adventure.hasSavedRun ? '<button id="abandon-adventure">Reset Adventure Run</button>' : ''}
       </div>
       <div class="controls">
         <h3>Recording</h3>
@@ -237,8 +252,11 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
       <div class="menu-panel" id="menu-panel"${menuOpen ? '' : ' hidden'}>
         ${menuOpen
          ? `<div class="menu-section">
-          <button id="back-to-lobby">Back to Lobby</button>
-          <button id="rematch">Rematch</button>
+          ${view.mode === 'adventure-hvai'
+            ? `<button id="pause-adventure">Pause Adventure</button>
+               <button id="abandon-adventure">Reset Adventure Run</button>`
+            : `<button id="back-to-lobby">Back to Lobby</button>
+               <button id="rematch">Rematch</button>`}
         </div>
         <div class="menu-section">
           ${renderInstallControls()}
@@ -383,6 +401,17 @@ export class DomRenderer implements AppRenderer {
         this.controller?.startGame(mode)
       })
     })
+    this.container.querySelector('#start-adventure')?.addEventListener('click', () => {
+      this.controller?.startAdventure()
+    })
+    this.container.querySelector('#resume-adventure')?.addEventListener('click', () => {
+      this.controller?.resumeAdventure()
+    })
+    this.container.querySelectorAll('#abandon-adventure').forEach((element) => {
+      element.addEventListener('click', () => {
+        this.controller?.abandonAdventure()
+      })
+    })
 
     this.container.querySelector<HTMLSelectElement>('#ai-level-select')?.addEventListener('change', (event) => {
       const value = (event.target as HTMLSelectElement).value
@@ -400,6 +429,9 @@ export class DomRenderer implements AppRenderer {
 
     this.container.querySelector('#back-to-lobby')?.addEventListener('click', () => {
       this.controller?.backToLobby()
+    })
+    this.container.querySelector('#pause-adventure')?.addEventListener('click', () => {
+      this.controller?.pauseAdventure()
     })
 
     this.container.querySelector('#create-offer')?.addEventListener('click', () => {

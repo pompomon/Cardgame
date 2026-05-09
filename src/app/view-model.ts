@@ -121,6 +121,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       cardVisualStyle: state.cardVisualStyle,
       p2pConnected,
       p2pStarted,
+      adventure: state.adventure,
       game: null,
       recording: {
         canSave: state.recording !== null,
@@ -183,6 +184,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     cardVisualStyle: state.cardVisualStyle,
     p2pConnected,
     p2pStarted,
+    adventure: state.adventure,
     game: {
       turn: game.turn,
       phase: game.phase,

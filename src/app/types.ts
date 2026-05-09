@@ -1,11 +1,27 @@
 import type { BasicLand, GameAction, GamePhase, GameState } from '../game/types'
 import type { GameRecordFile } from './game-recording'
+import type { AdventureOpponentDeck, AdventureRunStatus } from './adventure'
 
-export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'p2p-host' | 'p2p-join'
+export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
 export type AiLevel = 'basic' | 'advanced' | 'hard'
 export type CardVisualStyle = 'classic' | 'neon' | 'monochrome'
+
+export interface AdventureState {
+  baseSeed: number
+  currentRound: number
+  remainingChances: number
+  winStreak: number
+  totalRoundsPlayed: number
+  totalCardsPlayed: number
+  opponentLineup: AdventureOpponentDeck[]
+  currentOpponentIndex: number
+  activeGameSeed: number | null
+  status: AdventureRunStatus | 'inactive'
+  highScore: number
+  hasSavedRun: boolean
+}
 
 export interface AppState {
   mode: Mode | null
@@ -36,6 +52,7 @@ export interface AppState {
   // initiated rematch (`p2p-host` or `p2p-join`); while set, local
   // seed/game/recording stay unchanged until matching `rematch-ack` arrives.
   pendingRematchSeed: number | null
+  adventure: AdventureState
 }
 
 export interface ReplaySessionState {
@@ -110,6 +127,7 @@ export interface AppViewModel {
   cardVisualStyle: CardVisualStyle
   p2pConnected: boolean
   p2pStarted: boolean
+  adventure: AdventureState
   game: GameUiState | null
   recording: {
     canSave: boolean

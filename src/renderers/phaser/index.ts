@@ -308,6 +308,7 @@ class LobbyScene extends Phaser.Scene {
       { mode: 'local-hvh', label: 'Local Human vs Human' },
       { mode: 'local-hvai', label: 'Local Human vs AI' },
       { mode: 'local-aivai', label: 'Local AI vs AI' },
+      { mode: 'adventure-hvai', label: 'Adventure (Human vs AI)' },
       { mode: 'p2p-host', label: 'P2P Host' },
       { mode: 'p2p-join', label: 'P2P Join' },
     ]
@@ -316,11 +317,35 @@ class LobbyScene extends Phaser.Scene {
     const hasLocalSave = view?.recording?.hasLocalSave ?? false
     const selectedAiLevel = view?.aiLevel ?? 'basic'
     const selectedCardVisualStyle = view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    const adventure = view?.adventure
+    const nextOpponent = adventure?.opponentLineup?.[adventure.currentOpponentIndex]
+    this.rootContainer.add(this.add.text(
+      left,
+      top + this.currentLayout.actionButtonHeight + 36,
+      `Adventure: ${adventure?.status ?? 'inactive'} • Round ${adventure?.currentRound ?? 0}/7 • Chances ${adventure?.remainingChances ?? 0} • High Score ${adventure?.highScore ?? 0}${nextOpponent ? ` • Next ${nextOpponent.label}` : ''}`,
+      {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
+      },
+    ))
     // Lobby recorder entry points so users can review or replay a saved match
     // without having to start a throwaway game first (mirrors the DOM lobby
     // and the previous Phaser overlay). The Browser entry is only enabled
     // when a saved recording actually exists.
     const recorderEntries: Array<{ key: string; label: string; disabled?: boolean; onClick: () => void }> = [
+      {
+        key: 'resume-adventure',
+        label: 'Resume Adventure',
+        disabled: !adventure?.hasSavedRun || (adventure.status !== 'paused' && adventure.status !== 'active'),
+        onClick: () => { this.rendererRef.controller?.resumeAdventure() },
+      },
+      {
+        key: 'reset-adventure',
+        label: 'Reset Adventure Run',
+        disabled: !adventure?.hasSavedRun,
+        onClick: () => { this.rendererRef.controller?.abandonAdventure() },
+      },
       {
         key: 'load-browser',
         label: 'Load Recording from Browser',
@@ -1671,14 +1696,23 @@ class CardgameScene extends Phaser.Scene {
     contentViewport.setMask(contentMask.createGeometryMask())
     let cursorY = 0
 
-    // Section 1: Back to Lobby + Rematch (mirrors DOM PR #13 menu-section 1).
+    const adventureMode = this.rendererRef.currentView?.mode === 'adventure-hvai'
+    // Section 1: Lobby/rematch or adventure controls.
     const section1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    content.add(this.createButton('Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
+    content.add(this.createButton(adventureMode ? 'Pause Adventure' : 'Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
+      if (adventureMode) {
+        this.rendererRef.controller?.pauseAdventure()
+        return
+      }
       this.rendererRef.controller?.backToLobby()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    content.add(this.createButton('Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
+    content.add(this.createButton(adventureMode ? 'Reset Adventure' : 'Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
       this.closeMenuOverlay()
+      if (adventureMode) {
+        this.rendererRef.controller?.abandonAdventure()
+        return
+      }
       this.rendererRef.controller?.rematch()
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + sectionGap
@@ -2419,6 +2453,7 @@ export class PhaserRenderer implements AppRenderer {
         { mode: 'local-hvh', label: 'Local Human vs Human' },
         { mode: 'local-hvai', label: 'Local Human vs AI' },
         { mode: 'local-aivai', label: 'Local AI vs AI' },
+        { mode: 'adventure-hvai', label: 'Adventure (Human vs AI)' },
         { mode: 'p2p-host', label: 'P2P Host' },
         { mode: 'p2p-join', label: 'P2P Join' },
       ]
@@ -2445,6 +2480,18 @@ export class PhaserRenderer implements AppRenderer {
       // users so they can load a saved match without first starting a
       // throwaway game (matches the new visible lobby buttons).
       entries.push({
+        key: 'resume-adventure',
+        label: 'Resume Adventure',
+        onClick: () => controller.resumeAdventure(),
+        disabled: !view.adventure.hasSavedRun || (view.adventure.status !== 'paused' && view.adventure.status !== 'active'),
+      })
+      entries.push({
+        key: 'reset-adventure',
+        label: 'Reset Adventure Run',
+        onClick: () => controller.abandonAdventure(),
+        disabled: !view.adventure.hasSavedRun,
+      })
+      entries.push({
         key: 'lobby-recorder-load-browser',
         label: 'Load Recording from Browser',
         onClick: () => controller.loadRecordingFromLocalStorage(),
@@ -2463,9 +2510,9 @@ export class PhaserRenderer implements AppRenderer {
         disabled: installEntry.disabled,
       })
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
-    } else {
-      const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
-      if (targetPickerOpen) {
+      } else {
+        const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
+        if (targetPickerOpen) {
         const targetPickerEntries = this.cardgameScene?.getTargetPickerA11yEntries() ?? []
         for (const entry of targetPickerEntries) {
           entries.push({
@@ -2475,14 +2522,25 @@ export class PhaserRenderer implements AppRenderer {
           })
         }
       } else {
-        entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
-          closeSceneMenu()
-          controller.backToLobby()
-        } })
-        entries.push({ key: 'rematch', label: 'Rematch', onClick: () => {
-          closeSceneMenu()
-          controller.rematch()
-        } })
+        if (view.mode === 'adventure-hvai') {
+          entries.push({ key: 'pause-adventure', label: 'Pause Adventure', onClick: () => {
+            closeSceneMenu()
+            controller.pauseAdventure()
+          } })
+          entries.push({ key: 'reset-adventure', label: 'Reset Adventure Run', onClick: () => {
+            closeSceneMenu()
+            controller.abandonAdventure()
+          } })
+        } else {
+          entries.push({ key: 'back-to-lobby', label: 'Back to Lobby', onClick: () => {
+            closeSceneMenu()
+            controller.backToLobby()
+          } })
+          entries.push({ key: 'rematch', label: 'Rematch', onClick: () => {
+            closeSceneMenu()
+            controller.rematch()
+          } })
+        }
       // Mirror the Phaser menu's recorder actions: close the menu overlay
       // before invoking the controller so the resulting status message (e.g.
       // "No saved recording found" or "Failed to read recording file") shows

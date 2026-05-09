@@ -3,6 +3,17 @@ import { applyAction, canAct, createInitialGame, getLegalActions } from '../game
 import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
+import {
+  clearStoredAdventureRun,
+  computeAdventureScore,
+  createAdventureRun,
+  deckPairForAdventureGame,
+  persistAdventureHighScore,
+  persistAdventureRun,
+  readStoredAdventureHighScore,
+  readStoredAdventureRun,
+  type AdventureRunState,
+} from './adventure'
 import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
 import {
   appendGameRecordStep,
@@ -81,7 +92,10 @@ function isP2PMode(mode: Mode): boolean {
 }
 
 function normalizeImportedMode(mode: Mode): Mode {
-  return isP2PMode(mode) ? 'local-hvh' : mode
+  if (isP2PMode(mode)) {
+    return 'local-hvh'
+  }
+  return mode === 'adventure-hvai' ? 'local-hvai' : mode
 }
 
 export interface ControllerApi {
@@ -90,6 +104,10 @@ export interface ControllerApi {
   setAiLevel(level: AiLevel): void
   setCardVisualStyle(style: CardVisualStyle): void
   startGame(mode: Mode): void
+  startAdventure(): void
+  resumeAdventure(): void
+  pauseAdventure(): void
+  abandonAdventure(): void
   backToLobby(): void
   createOffer(): Promise<void>
   acceptAnswer(answer: string): Promise<void>
@@ -134,7 +152,22 @@ export class AppController implements ControllerApi {
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
+      adventure: {
+        baseSeed: 0,
+        currentRound: 0,
+        remainingChances: 0,
+        winStreak: 0,
+        totalRoundsPlayed: 0,
+        totalCardsPlayed: 0,
+        opponentLineup: [],
+        currentOpponentIndex: 0,
+        activeGameSeed: null,
+        status: 'inactive',
+        highScore: readStoredAdventureHighScore(),
+        hasSavedRun: false,
+      },
     }
+    this.refreshAdventureFromStorage()
   }
 
   subscribe(listener: (view: AppViewModel) => void): () => void {
@@ -169,6 +202,20 @@ export class AppController implements ControllerApi {
     this.state.hasSavedRecording = this.hasSavedRecording()
   }
 
+  private refreshAdventureFromStorage(): void {
+    const run = readStoredAdventureRun()
+    this.state.adventure.highScore = readStoredAdventureHighScore()
+    this.state.adventure.hasSavedRun = run !== null
+    if (!run || this.state.mode === 'adventure-hvai') {
+      return
+    }
+    this.state.adventure = {
+      ...run,
+      highScore: this.state.adventure.highScore,
+      hasSavedRun: true,
+    }
+  }
+
   private stopReplayInterval(): void {
     if (!this.replayInterval) {
       return
@@ -192,6 +239,147 @@ export class AppController implements ControllerApi {
   private clearReplay(): void {
     this.stopReplayInterval()
     this.state.replay = null
+  }
+
+  private currentAdventureRun(): AdventureRunState | null {
+    if (this.state.adventure.status === 'inactive') {
+      return null
+    }
+    return {
+      baseSeed: this.state.adventure.baseSeed,
+      currentRound: this.state.adventure.currentRound,
+      remainingChances: this.state.adventure.remainingChances,
+      winStreak: this.state.adventure.winStreak,
+      totalRoundsPlayed: this.state.adventure.totalRoundsPlayed,
+      totalCardsPlayed: this.state.adventure.totalCardsPlayed,
+      currentOpponentIndex: this.state.adventure.currentOpponentIndex,
+      activeGameSeed: this.state.adventure.activeGameSeed,
+      status: this.state.adventure.status,
+      opponentLineup: this.state.adventure.opponentLineup,
+    }
+  }
+
+  private setAdventureRun(run: AdventureRunState | null, statusMessage?: string): void {
+    const highScore = this.state.adventure.highScore
+    if (!run) {
+      this.state.adventure = {
+        baseSeed: 0,
+        currentRound: 0,
+        remainingChances: 0,
+        winStreak: 0,
+        totalRoundsPlayed: 0,
+        totalCardsPlayed: 0,
+        opponentLineup: [],
+        currentOpponentIndex: 0,
+        activeGameSeed: null,
+        status: 'inactive',
+        highScore,
+        hasSavedRun: false,
+      }
+      clearStoredAdventureRun()
+      if (statusMessage) {
+        this.state.status = statusMessage
+      }
+      return
+    }
+    this.state.adventure = {
+      ...run,
+      highScore,
+      hasSavedRun: true,
+    }
+    persistAdventureRun(run)
+    if (statusMessage) {
+      this.state.status = statusMessage
+    }
+  }
+
+  private launchAdventureGameFromRun(run: AdventureRunState): void {
+    const seed = run.activeGameSeed ?? Date.now()
+    const [playerDeck, opponentDeck] = deckPairForAdventureGame(run, seed)
+    this.state.mode = 'adventure-hvai'
+    this.state.seed = seed
+    this.state.game = createInitialGame(seed, [playerDeck, opponentDeck])
+    this.state.controllers = ['human', 'ai']
+    this.state.offer = ''
+    this.state.answer = ''
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
+    this.initializeRecording('adventure-hvai')
+  }
+
+  private applyAdventureCompletion(run: AdventureRunState, message: string): void {
+    const score = computeAdventureScore(run)
+    const nextHighScore = Math.max(this.state.adventure.highScore, score)
+    this.state.adventure.highScore = nextHighScore
+    persistAdventureHighScore(nextHighScore)
+    this.setAdventureRun({ ...run, status: run.status }, `${message} Score: ${score}. High score: ${nextHighScore}.`)
+    if (run.status === 'completed' || run.status === 'failed') {
+      this.state.mode = null
+      this.state.game = null
+      this.state.controllers = ['human', 'human']
+      clearStoredAdventureRun()
+      this.state.adventure.hasSavedRun = false
+    }
+  }
+
+  private onAdventureGameFinished(previousState: GameState, action: GameAction): void {
+    if (this.state.mode !== 'adventure-hvai' || !this.state.game || previousState.phase === 'gameOver' || this.state.game.phase !== 'gameOver') {
+      return
+    }
+    const run = this.currentAdventureRun()
+    if (!run || run.status !== 'active') {
+      return
+    }
+
+    run.totalRoundsPlayed += 1
+    const winner = this.state.game.winner
+    if (winner === 0) {
+      run.winStreak += 1
+      if (run.winStreak > 0 && run.winStreak % 3 === 0) {
+        run.remainingChances += 1
+      }
+      if (run.currentRound >= 7) {
+        run.status = 'completed'
+        run.activeGameSeed = null
+        this.applyAdventureCompletion(run, 'Adventure completed!')
+        return
+      }
+      run.currentRound += 1
+      run.currentOpponentIndex = Math.min(run.currentOpponentIndex + 1, 6)
+      run.activeGameSeed = Date.now()
+      run.status = 'paused'
+      this.setAdventureRun(run, `Round won. Resume adventure for Round ${run.currentRound}.`)
+      this.state.mode = null
+      this.state.game = null
+      this.state.controllers = ['human', 'human']
+      return
+    }
+
+    if (winner === 1) {
+      run.remainingChances = Math.max(0, run.remainingChances - 1)
+      run.winStreak = 0
+      if (run.remainingChances <= 0) {
+        run.status = 'failed'
+        run.activeGameSeed = null
+        this.applyAdventureCompletion(run, 'Adventure failed.')
+        return
+      }
+      run.status = 'paused'
+      run.activeGameSeed = Date.now()
+      this.setAdventureRun(run, `Round lost. ${run.remainingChances} chances left. Resume adventure to retry Round ${run.currentRound}.`)
+      this.state.mode = null
+      this.state.game = null
+      this.state.controllers = ['human', 'human']
+      return
+    }
+
+    run.status = 'paused'
+    run.activeGameSeed = Date.now()
+    this.setAdventureRun(run, `Round ended in a draw. Resume adventure to replay Round ${run.currentRound}.`)
+    this.state.mode = null
+    this.state.game = null
+    this.state.controllers = ['human', 'human']
   }
 
   private initializeRecording(mode: Mode): void {
@@ -467,10 +655,19 @@ export class AppController implements ControllerApi {
       }
     }
 
-    const next = applyAction(this.state.game, action)
+    const previous = this.state.game
+    const next = applyAction(previous, action)
     this.state.game = next
+    if (this.state.mode === 'adventure-hvai' && action.type === 'play_land' && this.state.adventure.status === 'active') {
+      const run = this.currentAdventureRun()
+      if (run) {
+        run.totalCardsPlayed += 1
+        this.setAdventureRun(run)
+      }
+    }
 
     this.appendRecordingStep(action, next, source)
+    this.onAdventureGameFinished(previous, action)
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -486,7 +683,86 @@ export class AppController implements ControllerApi {
     this.notify()
   }
 
+  startAdventure(): void {
+    if (this.isReplayActive()) {
+      this.state.status = 'Adventure is unavailable during replay.'
+      this.notify()
+      return
+    }
+    this.stopReplayInterval()
+    this.clearAiTimeout()
+    this.p2p?.close()
+    this.p2p = null
+    this.state.replay = null
+    const run = createAdventureRun(Date.now())
+    this.setAdventureRun(run)
+    this.launchAdventureGameFromRun(run)
+    this.state.status = 'Adventure started. Round 1 begins.'
+    this.notify()
+    this.scheduleAiIfNeeded()
+  }
+
+  resumeAdventure(): void {
+    if (this.isReplayActive()) {
+      this.state.status = 'Adventure is unavailable during replay.'
+      this.notify()
+      return
+    }
+    const run = readStoredAdventureRun()
+    if (!run || (run.status !== 'paused' && run.status !== 'active')) {
+      this.state.status = 'No paused adventure run found.'
+      this.refreshAdventureFromStorage()
+      this.notify()
+      return
+    }
+    const resumed = {
+      ...run,
+      status: 'active' as const,
+      activeGameSeed: run.activeGameSeed ?? Date.now(),
+    }
+    this.setAdventureRun(resumed)
+    this.launchAdventureGameFromRun(resumed)
+    this.state.status = `Adventure resumed at Round ${resumed.currentRound}.`
+    this.notify()
+    this.scheduleAiIfNeeded()
+  }
+
+  pauseAdventure(): void {
+    if (this.state.mode !== 'adventure-hvai') {
+      return
+    }
+    if (!this.state.game || this.state.game.phase !== 'gameOver') {
+      this.state.status = 'Adventure can only be paused between games.'
+      this.notify()
+      return
+    }
+    const run = this.currentAdventureRun()
+    if (!run) {
+      return
+    }
+    run.status = 'paused'
+    run.activeGameSeed = Date.now()
+    this.setAdventureRun(run, `Adventure paused at Round ${run.currentRound}.`)
+    this.backToLobby()
+  }
+
+  abandonAdventure(): void {
+    const hadAdventure = this.state.adventure.status !== 'inactive' || this.state.adventure.hasSavedRun
+    this.setAdventureRun(null, hadAdventure ? 'Adventure run reset.' : '')
+    if (this.state.mode === 'adventure-hvai') {
+      this.backToLobby()
+      return
+    }
+    if (hadAdventure) {
+      this.notify()
+    }
+  }
+
   startGame(mode: Mode): void {
+    if (mode === 'adventure-hvai') {
+      this.startAdventure()
+      return
+    }
     this.stopReplayInterval()
     this.clearAiTimeout()
     this.state.replay = null
@@ -500,6 +776,9 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
+    if (this.state.adventure.status === 'active' || this.state.mode === 'adventure-hvai') {
+      this.setAdventureRun(null)
+    }
 
     if (mode === 'local-hvh') {
       this.state.controllers = ['human', 'human']
@@ -544,6 +823,16 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
+    if (this.state.adventure.status !== 'inactive' && this.state.adventure.status !== 'completed' && this.state.adventure.status !== 'failed') {
+      const run = this.currentAdventureRun()
+      if (run) {
+        run.status = 'paused'
+        run.activeGameSeed = run.activeGameSeed ?? Date.now()
+        this.setAdventureRun(run)
+      }
+    } else {
+      this.refreshAdventureFromStorage()
+    }
     this.notify()
   }
 
@@ -625,6 +914,11 @@ export class AppController implements ControllerApi {
 
   rematch(): void {
     if (!this.state.mode || this.isReplayActive()) {
+      return
+    }
+    if (this.state.mode === 'adventure-hvai') {
+      this.state.status = 'Use Resume Adventure from lobby to continue the run.'
+      this.notify()
       return
     }
     if (this.state.pendingRematchSeed !== null && isP2PMode(this.state.mode)) {
@@ -710,6 +1004,7 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
+    this.setAdventureRun(null)
     this.state.game = snapshotFromRecord(parsed.record, 0)
     this.state.status = 'Recording loaded. Use replay controls to play or jump to final state.'
     this.notify()
@@ -758,6 +1053,11 @@ export class AppController implements ControllerApi {
   }
 
   startReplay(): void {
+    if (this.state.adventure.status === 'active' || this.state.adventure.status === 'paused') {
+      this.state.status = 'Replay is unavailable while an adventure run exists.'
+      this.notify()
+      return
+    }
     if (this.state.mode !== null && isP2PMode(this.state.mode) && (this.p2p?.isConnected() ?? false)) {
       this.state.status = 'Replay is unavailable while connected to a peer game.'
       this.notify()

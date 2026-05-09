@@ -7,10 +7,10 @@ function cloneState(state: GameState): GameState {
   return structuredClone(state)
 }
 
-function createPlayer(id: number, seed: number): PlayerState {
+function createPlayer(id: number, seed: number, deckOverride?: Card[]): PlayerState {
   return {
     id,
-    deck: createStarterDeck(id, seed),
+    deck: deckOverride ? deckOverride.map((card) => ({ ...card })) : createStarterDeck(id, seed),
     hand: [],
     battlefield: [],
     graveyard: [],
@@ -240,9 +240,10 @@ function responseActorFor(state: GameState): number | null {
   return state.pendingLandPlay.actor === 0 ? 1 : 0
 }
 
-export function createInitialGame(seed = Date.now()): GameState {
+export function createInitialGame(seed = Date.now(), decks?: [Card[] | undefined, Card[] | undefined]): GameState {
+  const [player0Deck, player1Deck] = decks ?? [undefined, undefined]
   const state: GameState = {
-    players: [createPlayer(0, seed), createPlayer(1, seed + 1)],
+    players: [createPlayer(0, seed, player0Deck), createPlayer(1, seed + 1, player1Deck)],
     turn: 1,
     currentPlayer: 0,
     nextInstanceId: 1,

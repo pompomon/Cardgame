@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
+import { createInitialGame } from '../game/engine'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -793,5 +794,97 @@ describe('controller recording and replay', () => {
     } finally {
       restoreRtc()
     }
+  })
+
+  it('starts adventure run and exposes lobby resume state after pausing', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    let view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.currentRound).toBe(1)
+    expect(view.adventure.remainingChances).toBe(3)
+    expect(view.adventure.opponentLineup).toHaveLength(7)
+
+    const internals = controller as unknown as {
+      state: { game: { phase: string } | null }
+    }
+    if (internals.state.game) {
+      internals.state.game.phase = 'gameOver'
+    }
+    controller.pauseAdventure()
+    view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('paused')
+    expect(view.adventure.hasSavedRun).toBe(true)
+  })
+
+  it('awards an extra chance after third consecutive adventure win', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const internals = controller as unknown as {
+      state: {
+        mode: string | null
+        game: ReturnType<typeof createInitialGame> | null
+        adventure: {
+          winStreak: number
+          remainingChances: number
+          status: 'active' | 'paused'
+          currentRound: number
+          currentOpponentIndex: number
+        }
+      }
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>, action: { type: 'end_turn'; actor: number }) => void
+    }
+    internals.state.mode = 'adventure-hvai'
+    internals.state.adventure.winStreak = 2
+    internals.state.adventure.remainingChances = 3
+    internals.state.adventure.status = 'active'
+    internals.state.game = createInitialGame(100)
+    const previous = structuredClone(internals.state.game)
+    internals.state.game.winner = 0
+    internals.state.game.phase = 'gameOver'
+
+    internals.onAdventureGameFinished(previous, { type: 'end_turn', actor: 0 })
+
+    const view = controller.getViewModel()
+    expect(view.adventure.remainingChances).toBe(4)
+    expect(view.adventure.winStreak).toBe(3)
+    expect(view.adventure.currentRound).toBe(2)
+    expect(view.mode).toBeNull()
+  })
+
+  it('fails adventure when last chance is lost and persists high score', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const internals = controller as unknown as {
+      state: {
+        mode: string | null
+        game: ReturnType<typeof createInitialGame> | null
+        adventure: {
+          remainingChances: number
+          totalCardsPlayed: number
+          totalRoundsPlayed: number
+          status: 'active' | 'paused'
+        }
+      }
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>, action: { type: 'end_turn'; actor: number }) => void
+    }
+    internals.state.mode = 'adventure-hvai'
+    internals.state.adventure.remainingChances = 1
+    internals.state.adventure.totalCardsPlayed = 5
+    internals.state.adventure.totalRoundsPlayed = 2
+    internals.state.adventure.status = 'active'
+    internals.state.game = createInitialGame(200)
+    const previous = structuredClone(internals.state.game)
+    internals.state.game.winner = 1
+    internals.state.game.phase = 'gameOver'
+
+    internals.onAdventureGameFinished(previous, { type: 'end_turn', actor: 0 })
+
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('failed')
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(view.adventure.highScore).toBeGreaterThan(0)
   })
 })

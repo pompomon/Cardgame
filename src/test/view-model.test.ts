@@ -21,6 +21,20 @@ function createState(seed: number): AppState {
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
+    adventure: {
+      baseSeed: 0,
+      currentRound: 0,
+      remainingChances: 0,
+      winStreak: 0,
+      totalRoundsPlayed: 0,
+      totalCardsPlayed: 0,
+      opponentLineup: [],
+      currentOpponentIndex: 0,
+      activeGameSeed: null,
+      status: 'inactive',
+      highScore: 0,
+      hasSavedRun: false,
+    },
   }
 }
 
@@ -36,6 +50,7 @@ describe('buildViewModel', () => {
     expect(vm.game?.log.length).toBe(entries.length)
     expect(vm.aiLevel).toBe('basic')
     expect(vm.cardVisualStyle).toBe('classic')
+    expect(vm.adventure.status).toBe('inactive')
   })
 
   it('exposes plains reuse options and pending reused card name', () => {
