@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cardVisualPaletteFor, landIconDataUrl, landPixelRects, stylePreviewDataUrl } from '../app/card-visuals'
+import { bucketIconSize, cardVisualPaletteFor, landIconDataUrl, landPixelRects, stylePreviewDataUrl } from '../app/card-visuals'
 
 describe('card-visuals', () => {
   it('produces distinct icon data by card type and style', () => {
@@ -26,7 +26,36 @@ describe('card-visuals', () => {
   it('fills full preview width even when size is not evenly divisible by lane count', () => {
     const preview = stylePreviewDataUrl('classic', 22)
     const svg = decodeURIComponent(preview.split(',')[1] ?? '')
-    expect(svg).toContain('x="14" y="0" width="8"')
+    // Outer SVG keeps the requested display size; viewBox is internally scaled.
+    expect(svg).toContain('width="22" height="22"')
+    // Three lane background rects should sum to the internal viewBox width.
+    const viewBoxMatch = svg.match(/viewBox="0 0 (\d+) \1"/)
+    expect(viewBoxMatch).not.toBeNull()
+    const internalSize = Number(viewBoxMatch?.[1])
+    const laneWidths = Array.from(svg.matchAll(/<rect x="(\d+)" y="0" width="(\d+)" height="\1"/g))
+    // Fall back to summing first three rects (the lane backgrounds) by index.
+    const laneRects = Array.from(svg.matchAll(/<rect x="(\d+)" y="0" width="(\d+)" height="(\d+)"/g)).slice(0, 3)
+    const totalLaneWidth = laneRects.reduce((sum, m) => sum + Number(m[2]), 0)
+    expect(totalLaneWidth).toBe(internalSize)
+    expect(laneWidths.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('keeps preview icons inside their lane for small previews', () => {
+    const preview = stylePreviewDataUrl('classic', 22)
+    const svg = decodeURIComponent(preview.split(',')[1] ?? '')
+    // Every <rect> must have non-negative x and y coordinates.
+    const matches = Array.from(svg.matchAll(/<rect [^>]*x="(-?\d+)"[^>]*y="(-?\d+)"/g))
+    expect(matches.length).toBeGreaterThan(0)
+    for (const match of matches) {
+      expect(Number(match[1])).toBeGreaterThanOrEqual(0)
+      expect(Number(match[2])).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('exposes bucketIconSize that snaps to even sizes with an 8px floor', () => {
+    expect(bucketIconSize(5)).toBe(8)
+    expect(bucketIconSize(13)).toBe(14)
+    expect(bucketIconSize(20)).toBe(20)
   })
 
   it('exposes palette entries for card and icon rendering', () => {

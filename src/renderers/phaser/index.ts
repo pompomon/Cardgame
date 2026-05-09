@@ -8,7 +8,7 @@ import {
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import { cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
+import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
@@ -805,10 +805,10 @@ class CardgameScene extends Phaser.Scene {
       maxLines: BUTTON_TEXT_MAX_LINES,
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
-    const iconSize = Math.max(
+    const iconSize = bucketIconSize(Math.max(
       CARD_CHOICE_ICON_MIN_SIZE,
       Math.floor(Math.min(width * CARD_CHOICE_ICON_WIDTH_RATIO, height * CARD_CHOICE_ICON_HEIGHT_RATIO)),
-    )
+    ))
     if (isBasicLand(cardName)) {
       this.addPixelIconToContainer(
         cardName,
@@ -836,7 +836,8 @@ class CardgameScene extends Phaser.Scene {
     const palette = cardVisualPaletteFor(land, visualStyle)
     const primary = colorHexToNumber(palette.iconPrimary)
     const secondary = colorHexToNumber(palette.iconSecondary)
-    const rects = landPixelRects(land, size)
+    const effectiveSize = bucketIconSize(size)
+    const rects = landPixelRects(land, effectiveSize)
     const icon = this.add.graphics()
     icon.setPosition(left, top)
     for (const rect of rects) {
@@ -1352,13 +1353,13 @@ class CardgameScene extends Phaser.Scene {
     const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
     const card = this.add.container(x, y, [rect])
     if (isBasicLand(label)) {
-      const iconSize = Math.max(
+      const iconSize = bucketIconSize(Math.max(
         CARD_FACE_ICON_MIN_SIZE,
         Math.floor(Math.min(
           this.currentLayout.cardWidth * CARD_FACE_ICON_SIZE_RATIO,
           this.currentLayout.cardHeight * CARD_FACE_ICON_SIZE_RATIO,
         )),
-      )
+      ))
       this.addPixelIconToContainer(
         label,
         visualStyle,

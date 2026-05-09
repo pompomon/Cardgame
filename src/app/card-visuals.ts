@@ -150,6 +150,10 @@ function bucketSize(size: number): number {
   return Math.max(8, Math.round(size / 2) * 2)
 }
 
+export function bucketIconSize(size: number): number {
+  return bucketSize(size)
+}
+
 function encodeSvg(svg: string): string {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
@@ -221,23 +225,27 @@ export function stylePreviewDataUrl(style: CardVisualStyle, targetSize: number):
     return cached
   }
   const lands: BasicLand[] = ['Forest', 'Mountain', 'Island']
-  const iconSize = Math.max(8, Math.floor(size * 0.7))
+  // Use a large internal coordinate space so icons remain centered and fully
+  // visible inside their lanes regardless of the rendered display size; SVG
+  // scales the viewBox to the requested width/height.
+  const internalSize = Math.max(size, GRID_SIZE * lands.length * 2)
   const parts: string[] = []
   lands.forEach((land, index) => {
     const palette = cardVisualPaletteFor(land, style)
-    const laneStart = Math.floor((index * size) / lands.length)
-    const laneEnd = Math.floor(((index + 1) * size) / lands.length)
+    const laneStart = Math.floor((index * internalSize) / lands.length)
+    const laneEnd = Math.floor(((index + 1) * internalSize) / lands.length)
     const laneWidth = laneEnd - laneStart
-    parts.push(`<rect x="${laneStart}" y="0" width="${laneWidth}" height="${size}" fill="${palette.cardFill}" />`)
+    parts.push(`<rect x="${laneStart}" y="0" width="${laneWidth}" height="${internalSize}" fill="${palette.cardFill}" />`)
+    const iconSize = bucketSize(Math.max(GRID_SIZE, Math.floor(Math.min(laneWidth, internalSize) * 0.8)))
     const iconRects = landPixelRects(land, iconSize)
     const xOffset = laneStart + Math.floor((laneWidth - iconSize) / 2)
-    const yOffset = Math.floor((size - iconSize) / 2)
+    const yOffset = Math.floor((internalSize - iconSize) / 2)
     for (const rect of iconRects) {
       const fill = rect.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
       parts.push(`<rect x="${xOffset + rect.x}" y="${yOffset + rect.y}" width="${rect.size}" height="${rect.size}" fill="${fill}" />`)
     }
   })
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges">${parts.join('')}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${internalSize} ${internalSize}" shape-rendering="crispEdges">${parts.join('')}</svg>`
   const dataUrl = encodeSvg(svg)
   stylePreviewDataUrlCache.set(cacheKey, dataUrl)
   return dataUrl
