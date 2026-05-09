@@ -159,7 +159,7 @@ function encodeSvg(svg: string): string {
 }
 
 function templateRects(land: BasicLand, targetSize: number): ReadonlyArray<PixelRect> {
-  const size = bucketSize(targetSize)
+  const size = Math.max(bucketSize(targetSize), GRID_SIZE)
   const cacheKey = `${land}:${size}`
   const cached = rectCache.get(cacheKey)
   if (cached) {

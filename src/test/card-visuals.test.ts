@@ -23,6 +23,16 @@ describe('card-visuals', () => {
     expect(preview.startsWith('data:image/svg+xml')).toBe(true)
   })
 
+
+  it('returns non-negative rect coordinates for very small sizes', () => {
+    const rects = landPixelRects('Forest', 8)
+    expect(rects.length).toBeGreaterThan(0)
+    for (const rect of rects) {
+      expect(rect.x).toBeGreaterThanOrEqual(0)
+      expect(rect.y).toBeGreaterThanOrEqual(0)
+    }
+  })
+
   it('fills full preview width even when size is not evenly divisible by lane count', () => {
     const preview = stylePreviewDataUrl('classic', 22)
     const svg = decodeURIComponent(preview.split(',')[1] ?? '')

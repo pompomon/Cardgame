@@ -1,7 +1,7 @@
 import type { ControllerApi } from '../app/controller'
 import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
 import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual-styles'
-import { cardVisualPaletteFor, landIconDataUrl, stylePreviewDataUrl } from '../app/card-visuals'
+import { cardVisualPaletteFor, landIconDataUrl } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import { isBasicLand, type BasicLand } from '../game/types'
@@ -49,8 +49,7 @@ function renderLobby(view: AppViewModel): string {
   }).join('')
   const cardVisualStyleOptions = CARD_VISUAL_STYLE_OPTIONS.map((option) => {
     const selected = option.value === view.cardVisualStyle ? ' selected' : ''
-    const preview = stylePreviewDataUrl(option.value, 22)
-    return `<option value="${option.value}" data-preview="${preview}"${selected}>${option.label}</option>`
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
   }).join('')
 
   return `
