@@ -815,8 +815,9 @@ export class AppController implements ControllerApi {
     if (this.state.adventure.status === 'active') {
       const run = this.currentAdventureRun()
       if (run) {
+        // Preserve activeGameSeed as-is; resumeAdventure() supplies a fresh
+        // seed if needed when the run is later resumed.
         run.status = 'paused'
-        run.activeGameSeed = run.activeGameSeed ?? Date.now()
         this.setAdventureRun(run)
       }
     }
