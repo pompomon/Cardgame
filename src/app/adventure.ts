@@ -206,6 +206,7 @@ function isAdventureOpponentDeck(value: unknown): value is AdventureOpponentDeck
     && Array.isArray(entry.lands)
     && entry.lands.every((land) => isBasicLand(land))
     && Array.isArray(entry.deck)
+    && entry.deck.length === 50
     && entry.deck.every((card) => isCard(card))
 }
 

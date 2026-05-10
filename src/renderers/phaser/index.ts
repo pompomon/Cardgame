@@ -2510,9 +2510,9 @@ export class PhaserRenderer implements AppRenderer {
         disabled: installEntry.disabled,
       })
       entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
-      } else {
-        const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
-        if (targetPickerOpen) {
+    } else {
+      const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
+      if (targetPickerOpen) {
         const targetPickerEntries = this.cardgameScene?.getTargetPickerA11yEntries() ?? []
         for (const entry of targetPickerEntries) {
           entries.push({
@@ -2541,13 +2541,13 @@ export class PhaserRenderer implements AppRenderer {
             controller.rematch()
           } })
         }
-      // Mirror the Phaser menu's recorder actions: close the menu overlay
-      // before invoking the controller so the resulting status message (e.g.
-      // "No saved recording found" or "Failed to read recording file") shows
-      // up in the scene's status footer instead of being hidden behind the
-      // open modal. Without these closes, keyboard / screen-reader users who
-      // trigger Save/Load via the a11y nav while the menu is open get no
-      // visible feedback at all.
+        // Mirror the Phaser menu's recorder actions: close the menu overlay
+        // before invoking the controller so the resulting status message (e.g.
+        // "No saved recording found" or "Failed to read recording file") shows
+        // up in the scene's status footer instead of being hidden behind the
+        // open modal. Without these closes, keyboard / screen-reader users who
+        // trigger Save/Load via the a11y nav while the menu is open get no
+        // visible feedback at all.
         const menuModalOpen = this.cardgameScene?.isMenuOverlayOpen() ?? false
         if (menuModalOpen) {
           entries.push({ key: 'menu-close', label: 'Close Menu', onClick: () => closeSceneMenu() })

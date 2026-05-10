@@ -829,6 +829,54 @@ describe('controller recording and replay', () => {
     expect(view.status).toBe('Adventure run reset.')
   })
 
+  it('preserves saved adventure run when importing a recording', () => {
+    // Build a recording payload first, in isolation.
+    const recordingSource = new AppController('dom')
+    recordingSource.startGame('local-hvh')
+    const json = recordingSource.exportRecordingJson()
+    expect(json).toBeTruthy()
+
+    // Reset storage and start a fresh controller with an active adventure run.
+    installMemoryStorage()
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
+    const previousRun = localStorage.getItem('cardgame.adventure-run')
+    expect(previousRun).toBeTruthy()
+
+    controller.importRecordingJson(json ?? '')
+    expect(localStorage.getItem('cardgame.adventure-run')).toBe(previousRun)
+    expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
+  })
+
+  it('does not persist adventure run on every play_land action', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const baseline = localStorage.getItem('cardgame.adventure-run')
+    expect(baseline).toBeTruthy()
+
+    let writes = 0
+    const original = localStorage.setItem.bind(localStorage)
+    localStorage.setItem = ((key: string, value: string) => {
+      if (key === 'cardgame.adventure-run') {
+        writes += 1
+      }
+      return original(key, value)
+    }) as typeof localStorage.setItem
+    try {
+      const action = firstPlayableAction(controller)
+      expect(action).toBeTruthy()
+      if (action) {
+        controller.submitAction(action)
+      }
+      expect(writes).toBe(0)
+    } finally {
+      localStorage.setItem = original
+    }
+    // The in-memory counter should still advance even though we deferred persistence.
+    expect(controller.getViewModel().adventure.totalCardsPlayed).toBe(1)
+  })
+
   it('awards an extra chance after third consecutive adventure win', () => {
     const controller = new AppController('dom')
     controller.startAdventure()

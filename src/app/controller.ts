@@ -204,14 +204,34 @@ export class AppController implements ControllerApi {
 
   private refreshAdventureFromStorage(): void {
     const run = readStoredAdventureRun()
-    this.state.adventure.highScore = readStoredAdventureHighScore()
-    this.state.adventure.hasSavedRun = run !== null
-    if (!run || this.state.mode === 'adventure-hvai') {
+    const highScore = readStoredAdventureHighScore()
+    if (this.state.mode === 'adventure-hvai') {
+      this.state.adventure.highScore = highScore
+      this.state.adventure.hasSavedRun = run !== null
+      return
+    }
+    if (!run) {
+      // Reset adventure view-state to the inactive baseline so the lobby never
+      // shows stale round/lineup/status when storage is missing or corrupted.
+      this.state.adventure = {
+        baseSeed: 0,
+        currentRound: 0,
+        remainingChances: 0,
+        winStreak: 0,
+        totalRoundsPlayed: 0,
+        totalCardsPlayed: 0,
+        opponentLineup: [],
+        currentOpponentIndex: 0,
+        activeGameSeed: null,
+        status: 'inactive',
+        highScore,
+        hasSavedRun: false,
+      }
       return
     }
     this.state.adventure = {
       ...run,
-      highScore: this.state.adventure.highScore,
+      highScore,
       hasSavedRun: true,
     }
   }
@@ -659,11 +679,13 @@ export class AppController implements ControllerApi {
     const next = applyAction(previous, action)
     this.state.game = next
     if (this.state.mode === 'adventure-hvai' && action.type === 'play_land' && this.state.adventure.status === 'active') {
-      const run = this.currentAdventureRun()
-      if (run) {
-        run.totalCardsPlayed += 1
-        this.setAdventureRun(run)
-      }
+      // Update the in-memory counter only. setAdventureRun() would
+      // synchronously JSON-stringify and write the entire run (including the
+      // 7×50-card opponentLineup) to localStorage on every play_land, which
+      // can introduce main-thread jank during gameplay. Persistence happens
+      // at round boundaries via setAdventureRun() in onAdventureGameFinished()
+      // and on pause/resume/abandon, which already capture totalCardsPlayed.
+      this.state.adventure.totalCardsPlayed += 1
     }
 
     this.appendRecordingStep(action, next, source)
@@ -1005,7 +1027,11 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
-    this.setAdventureRun(null)
+    // Don't clear the persisted adventure run here: importing a recording
+    // shouldn't silently delete a user's saved adventure progress. Refresh
+    // the in-memory adventure view-state from storage instead so the user
+    // can resume the adventure run after exiting the replay.
+    this.refreshAdventureFromStorage()
     this.state.game = snapshotFromRecord(parsed.record, 0)
     this.state.status = 'Recording loaded. Use replay controls to play or jump to final state.'
     this.notify()

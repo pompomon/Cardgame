@@ -1,6 +1,43 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { BASIC_LANDS } from '../game/types'
-import { buildAdventureLineup, computeAdventureScore, createAdventureRun } from '../app/adventure'
+import {
+  ADVENTURE_RUN_STORAGE_KEY,
+  buildAdventureLineup,
+  computeAdventureScore,
+  createAdventureRun,
+  readStoredAdventureRun,
+} from '../app/adventure'
+
+interface StorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+  clear(): void
+}
+
+function installMemoryStorage(): void {
+  const map = new Map<string, string>()
+  const storage: StorageLike = {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => {
+      map.set(key, value)
+    },
+    removeItem: (key) => {
+      map.delete(key)
+    },
+    clear: () => {
+      map.clear()
+    },
+  }
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+}
+
+beforeEach(() => {
+  installMemoryStorage()
+})
 
 function countsByLand(deck: Array<{ name: string }>): Record<string, number> {
   const counts: Record<string, number> = {}
@@ -48,5 +85,17 @@ describe('adventure deck generation', () => {
     run.totalCardsPlayed = 17
     run.totalRoundsPlayed = 6
     expect(computeAdventureScore(run)).toBe(4 * 100 - 17 + 6 * 5)
+  })
+
+  it('rejects stored runs whose opponent decks are not exactly 50 cards', () => {
+    const run = createAdventureRun(42)
+    // Corrupt the first opponent's deck length
+    run.opponentLineup[0].deck = run.opponentLineup[0].deck.slice(0, 30)
+    localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(run))
+    try {
+      expect(readStoredAdventureRun()).toBeNull()
+    } finally {
+      localStorage.removeItem(ADVENTURE_RUN_STORAGE_KEY)
+    }
   })
 })
