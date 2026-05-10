@@ -108,7 +108,7 @@ export interface ControllerApi {
   resumeAdventure(): void
   pauseAdventure(): void
   abandonAdventure(): void
-  backToLobby(): void
+  backToLobby(statusMessage?: string): void
   createOffer(): Promise<void>
   acceptAnswer(answer: string): Promise<void>
   createAnswer(offer: string): Promise<void>
@@ -742,18 +742,19 @@ export class AppController implements ControllerApi {
     }
     run.status = 'paused'
     run.activeGameSeed = Date.now()
-    this.setAdventureRun(run, `Adventure paused at Round ${run.currentRound}.`)
-    this.backToLobby()
+    this.setAdventureRun(run)
+    this.backToLobby(`Adventure paused at Round ${run.currentRound}.`)
   }
 
   abandonAdventure(): void {
     const hadAdventure = this.state.adventure.status !== 'inactive' || this.state.adventure.hasSavedRun
-    this.setAdventureRun(null, hadAdventure ? 'Adventure run reset.' : '')
+    this.setAdventureRun(null)
     if (this.state.mode === 'adventure-hvai') {
-      this.backToLobby()
+      this.backToLobby(hadAdventure ? 'Adventure run reset.' : undefined)
       return
     }
     if (hadAdventure) {
+      this.state.status = 'Adventure run reset.'
       this.notify()
     }
   }
@@ -808,7 +809,7 @@ export class AppController implements ControllerApi {
     this.scheduleAiIfNeeded()
   }
 
-  backToLobby(): void {
+  backToLobby(statusMessage?: string): void {
     this.stopReplayInterval()
     this.clearAiTimeout()
     this.p2p?.close()
@@ -817,7 +818,7 @@ export class AppController implements ControllerApi {
     this.state.game = null
     this.state.replay = null
     this.state.recording = null
-    this.state.status = ''
+    this.state.status = statusMessage ?? ''
     this.state.offer = ''
     this.state.answer = ''
     this.state.p2pStarted = false

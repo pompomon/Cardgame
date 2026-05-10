@@ -87,7 +87,7 @@ function renderLobby(view: AppViewModel): string {
         <p>Round: ${adventure.currentRound}/7 • Chances: ${adventure.remainingChances} • Win Streak: ${adventure.winStreak}</p>
         <p>Total Rounds: ${adventure.totalRoundsPlayed} • Cards Played: ${adventure.totalCardsPlayed}</p>
         <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
-        ${adventure.hasSavedRun ? '<button id="abandon-adventure">Reset Adventure Run</button>' : ''}
+        ${adventure.hasSavedRun ? '<button data-action="abandon-adventure">Reset Adventure Run</button>' : ''}
       </div>
       <div class="controls">
         <h3>Recording</h3>
@@ -254,7 +254,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
          ? `<div class="menu-section">
           ${view.mode === 'adventure-hvai'
             ? `<button id="pause-adventure">Pause Adventure</button>
-               <button id="abandon-adventure">Reset Adventure Run</button>`
+               <button data-action="abandon-adventure">Reset Adventure Run</button>`
             : `<button id="back-to-lobby">Back to Lobby</button>
                <button id="rematch">Rematch</button>`}
         </div>
@@ -407,7 +407,7 @@ export class DomRenderer implements AppRenderer {
     this.container.querySelector('#resume-adventure')?.addEventListener('click', () => {
       this.controller?.resumeAdventure()
     })
-    this.container.querySelectorAll('#abandon-adventure').forEach((element) => {
+    this.container.querySelectorAll('[data-action="abandon-adventure"]').forEach((element) => {
       element.addEventListener('click', () => {
         this.controller?.abandonAdventure()
       })

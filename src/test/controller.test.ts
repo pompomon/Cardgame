@@ -816,6 +816,17 @@ describe('controller recording and replay', () => {
     expect(view.mode).toBeNull()
     expect(view.adventure.status).toBe('paused')
     expect(view.adventure.hasSavedRun).toBe(true)
+    expect(view.status).toBe('Adventure paused at Round 1.')
+  })
+
+  it('keeps reset status message when abandoning from active adventure game', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    controller.abandonAdventure()
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('inactive')
+    expect(view.status).toBe('Adventure run reset.')
   })
 
   it('awards an extra chance after third consecutive adventure win', () => {
