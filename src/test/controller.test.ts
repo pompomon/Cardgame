@@ -819,6 +819,54 @@ describe('controller recording and replay', () => {
     expect(view.status).toBe('Adventure paused at Round 1.')
   })
 
+  it('keeps storage-unavailable warning when starting adventure if persist fails', () => {
+    const controller = new AppController('dom')
+    const originalSetItem = localStorage.setItem.bind(localStorage)
+    localStorage.setItem = ((key: string, value: string) => {
+      if (key === 'cardgame.adventure-run') {
+        throw new Error('quota exceeded')
+      }
+      return originalSetItem(key, value)
+    }) as typeof localStorage.setItem
+    try {
+      controller.startAdventure()
+    } finally {
+      localStorage.setItem = originalSetItem
+    }
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
+  })
+
+  it('keeps storage-unavailable warning when resuming adventure if persist fails', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const stored = JSON.parse(localStorage.getItem('cardgame.adventure-run') ?? 'null')
+    expect(stored).toBeTruthy()
+    if (!stored) {
+      return
+    }
+    stored.status = 'paused'
+    localStorage.setItem('cardgame.adventure-run', JSON.stringify(stored))
+    const originalSetItem = localStorage.setItem.bind(localStorage)
+    localStorage.setItem = ((key: string, value: string) => {
+      if (key === 'cardgame.adventure-run') {
+        throw new Error('quota exceeded')
+      }
+      return originalSetItem(key, value)
+    }) as typeof localStorage.setItem
+    try {
+      controller.resumeAdventure()
+    } finally {
+      localStorage.setItem = originalSetItem
+    }
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.status).toBe('active')
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
+  })
+
   it('keeps reset status message when abandoning from active adventure game', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
@@ -929,6 +977,26 @@ describe('controller recording and replay', () => {
     expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
     // Run should be downgraded to paused so the user can resume.
     expect(JSON.parse(after ?? 'null').status).toBe('paused')
+  })
+
+  it('keeps storage-unavailable warning when demoting active adventure on mode switch', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const originalSetItem = localStorage.setItem.bind(localStorage)
+    localStorage.setItem = ((key: string, value: string) => {
+      if (key === 'cardgame.adventure-run') {
+        throw new Error('quota exceeded')
+      }
+      return originalSetItem(key, value)
+    }) as typeof localStorage.setItem
+    try {
+      controller.startGame('local-hvh')
+    } finally {
+      localStorage.setItem = originalSetItem
+    }
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('local-hvh')
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
   })
 
   it('allows replay while a paused adventure run is saved', () => {

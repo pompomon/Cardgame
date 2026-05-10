@@ -284,7 +284,7 @@ export class AppController implements ControllerApi {
     }
   }
 
-  private setAdventureRun(run: AdventureRunState | null, statusMessage?: string): void {
+  private setAdventureRun(run: AdventureRunState | null, statusMessage?: string): boolean {
     const highScore = this.state.adventure.highScore
     if (!run) {
       this.state.adventure = inactiveAdventureState(highScore)
@@ -292,7 +292,7 @@ export class AppController implements ControllerApi {
       if (statusMessage) {
         this.state.status = statusMessage
       }
-      return
+      return true
     }
     this.state.adventure = {
       ...run,
@@ -310,6 +310,7 @@ export class AppController implements ControllerApi {
     } else if (!persisted) {
       this.state.status = 'Adventure progress could not be saved (storage unavailable).'
     }
+    return persisted
   }
 
   private launchAdventureGameFromRun(run: AdventureRunState): void {
@@ -747,9 +748,11 @@ export class AppController implements ControllerApi {
     this.state.replay = null
     const run = createAdventureRun(Date.now())
     clearStoredAdventureGameSnapshot()
-    this.setAdventureRun(run)
+    const persisted = this.setAdventureRun(run)
     this.launchAdventureGameFromRun(run)
-    this.state.status = 'Adventure started. Round 1 begins.'
+    if (persisted) {
+      this.state.status = 'Adventure started. Round 1 begins.'
+    }
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -772,7 +775,7 @@ export class AppController implements ControllerApi {
       status: 'active' as const,
       activeGameSeed: run.activeGameSeed ?? Date.now(),
     }
-    this.setAdventureRun(resumed)
+    const persisted = this.setAdventureRun(resumed)
     // If a mid-round game snapshot was persisted on pause, restore it so the
     // player continues from the exact same board state. Otherwise launch a
     // fresh round deterministically from the run's activeGameSeed.
@@ -783,7 +786,9 @@ export class AppController implements ControllerApi {
     } else {
       this.launchAdventureGameFromRun(resumed)
     }
-    this.state.status = `Adventure resumed at Round ${resumed.currentRound}.`
+    if (persisted) {
+      this.state.status = `Adventure resumed at Round ${resumed.currentRound}.`
+    }
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -852,35 +857,46 @@ export class AppController implements ControllerApi {
     // a closed tab), demote it to 'paused' rather than clearing it. Starting
     // a non-adventure mode should never silently delete saved adventure
     // progress; the user can still resume the run from the lobby afterwards.
+    let adventurePersisted = true
     if (this.state.adventure.status === 'active') {
       const run = this.currentAdventureRun()
       if (run) {
         // Preserve activeGameSeed as-is; resumeAdventure() supplies a fresh
         // seed if needed when the run is later resumed.
         run.status = 'paused'
-        this.setAdventureRun(run)
+        adventurePersisted = this.setAdventureRun(run)
       }
     }
 
     if (mode === 'local-hvh') {
       this.state.controllers = ['human', 'human']
-      this.state.status = 'Local Human vs Human game started.'
+      if (adventurePersisted) {
+        this.state.status = 'Local Human vs Human game started.'
+      }
     } else if (mode === 'local-hvai') {
       this.state.controllers = ['human', 'ai']
-      this.state.status = 'Local Human vs AI game started.'
+      if (adventurePersisted) {
+        this.state.status = 'Local Human vs AI game started.'
+      }
     } else if (mode === 'local-aivai') {
       this.state.controllers = ['ai', 'ai']
-      this.state.status = 'Local AI vs AI simulation started.'
+      if (adventurePersisted) {
+        this.state.status = 'Local AI vs AI simulation started.'
+      }
     } else if (mode === 'p2p-host') {
       this.setupP2P()
       this.state.controllers = ['human', 'remote']
-      this.state.status = 'Host created. Exchange offer/answer to connect.'
+      if (adventurePersisted) {
+        this.state.status = 'Host created. Exchange offer/answer to connect.'
+      }
       this.state.offer = ''
       this.state.answer = ''
     } else {
       this.setupP2P()
       this.state.controllers = ['remote', 'human']
-      this.state.status = 'Joiner ready. Paste offer to generate answer.'
+      if (adventurePersisted) {
+        this.state.status = 'Joiner ready. Paste offer to generate answer.'
+      }
       this.state.offer = ''
       this.state.answer = ''
     }
