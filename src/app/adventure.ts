@@ -322,7 +322,7 @@ function isBattlefieldCard(value: unknown): value is { instanceId: string; card:
   return typeof entry.instanceId === 'string' && isCard(entry.card)
 }
 
-function isPlayerStateSnapshot(value: unknown): boolean {
+function isPlayerStateSnapshot(value: unknown, expectedId: 0 | 1): boolean {
   if (typeof value !== 'object' || value === null) {
     return false
   }
@@ -334,12 +334,13 @@ function isPlayerStateSnapshot(value: unknown): boolean {
     graveyard?: unknown
     landsPlayedThisTurn?: unknown
   }
-  return typeof player.id === 'number' && Number.isInteger(player.id)
+  return player.id === expectedId
     && Array.isArray(player.deck) && player.deck.every((entry) => isCard(entry))
     && Array.isArray(player.hand) && player.hand.every((entry) => isCard(entry))
     && Array.isArray(player.battlefield) && player.battlefield.every((entry) => isBattlefieldCard(entry))
     && Array.isArray(player.graveyard) && player.graveyard.every((entry) => isCard(entry))
-    && typeof player.landsPlayedThisTurn === 'number' && Number.isFinite(player.landsPlayedThisTurn)
+    && Number.isInteger(player.landsPlayedThisTurn)
+    && (player.landsPlayedThisTurn === 0 || player.landsPlayedThisTurn === 1)
 }
 
 function isPendingLandPlaySnapshot(value: unknown): boolean {
@@ -378,10 +379,11 @@ function isGameStateSnapshot(value: unknown): value is GameState {
     log?: unknown
   }
   if (!Array.isArray(candidate.players) || candidate.players.length !== 2) return false
-  if (!candidate.players.every((entry) => isPlayerStateSnapshot(entry))) return false
-  if (typeof candidate.turn !== 'number' || !Number.isFinite(candidate.turn)) return false
+  if (!isPlayerStateSnapshot(candidate.players[0], 0)) return false
+  if (!isPlayerStateSnapshot(candidate.players[1], 1)) return false
+  if (!Number.isInteger(candidate.turn) || (candidate.turn as number) < 1) return false
   if (candidate.currentPlayer !== 0 && candidate.currentPlayer !== 1) return false
-  if (typeof candidate.nextInstanceId !== 'number' || !Number.isFinite(candidate.nextInstanceId)) return false
+  if (!Number.isInteger(candidate.nextInstanceId) || (candidate.nextInstanceId as number) < 1) return false
   if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'gameOver') return false
   if (!isPendingLandPlaySnapshot(candidate.pendingLandPlay)) return false
   if (!isPendingPlainsReuseSnapshot(candidate.pendingPlainsReuse)) return false
