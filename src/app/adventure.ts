@@ -342,6 +342,26 @@ function isPlayerStateSnapshot(value: unknown): boolean {
     && typeof player.landsPlayedThisTurn === 'number' && Number.isFinite(player.landsPlayedThisTurn)
 }
 
+function isPendingLandPlaySnapshot(value: unknown): boolean {
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const pending = value as { actor?: unknown; card?: unknown; effectTargetId?: unknown }
+  if (pending.actor !== 0 && pending.actor !== 1) return false
+  if (!isCard(pending.card)) return false
+  if (pending.effectTargetId !== undefined && typeof pending.effectTargetId !== 'string') return false
+  return true
+}
+
+function isPendingPlainsReuseSnapshot(value: unknown): boolean {
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const pending = value as { actor?: unknown; reusedInstanceId?: unknown; reusedCardName?: unknown }
+  if (pending.actor !== 0 && pending.actor !== 1) return false
+  if (typeof pending.reusedInstanceId !== 'string') return false
+  if (!isBasicLand(pending.reusedCardName)) return false
+  return true
+}
+
 function isGameStateSnapshot(value: unknown): value is GameState {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -360,11 +380,11 @@ function isGameStateSnapshot(value: unknown): value is GameState {
   if (!Array.isArray(candidate.players) || candidate.players.length !== 2) return false
   if (!candidate.players.every((entry) => isPlayerStateSnapshot(entry))) return false
   if (typeof candidate.turn !== 'number' || !Number.isFinite(candidate.turn)) return false
-  if (typeof candidate.currentPlayer !== 'number' || (candidate.currentPlayer !== 0 && candidate.currentPlayer !== 1)) return false
+  if (candidate.currentPlayer !== 0 && candidate.currentPlayer !== 1) return false
   if (typeof candidate.nextInstanceId !== 'number' || !Number.isFinite(candidate.nextInstanceId)) return false
   if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'gameOver') return false
-  if (candidate.pendingLandPlay !== null && (typeof candidate.pendingLandPlay !== 'object')) return false
-  if (candidate.pendingPlainsReuse !== null && (typeof candidate.pendingPlainsReuse !== 'object')) return false
+  if (!isPendingLandPlaySnapshot(candidate.pendingLandPlay)) return false
+  if (!isPendingPlainsReuseSnapshot(candidate.pendingPlainsReuse)) return false
   if (candidate.winner !== null && candidate.winner !== 'draw' && candidate.winner !== 0 && candidate.winner !== 1) return false
   if (!Array.isArray(candidate.log) || !candidate.log.every((entry) => typeof entry === 'string')) return false
   return true
