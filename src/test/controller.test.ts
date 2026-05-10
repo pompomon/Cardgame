@@ -908,6 +908,24 @@ describe('controller recording and replay', () => {
     expect(localStorage.getItem('cardgame.adventure-game')).toBeNull()
   })
 
+  it('clears stored adventure snapshot when pause-run persistence fails', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    if (action) {
+      controller.submitAction(action)
+    }
+    withAdventureRunPersistFailure(() => {
+      controller.pauseAdventure()
+    })
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('paused')
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(localStorage.getItem('cardgame.adventure-game')).toBeNull()
+  })
+
   it('preserves saved adventure run when importing a recording', () => {
     // Build a recording payload first, in isolation.
     const recordingSource = new AppController('dom')

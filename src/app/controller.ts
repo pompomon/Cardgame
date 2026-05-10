@@ -926,7 +926,10 @@ export class AppController implements ControllerApi {
       if (run) {
         run.status = 'paused'
         run.activeGameSeed = run.activeGameSeed ?? Date.now()
-        this.setAdventureRun(run)
+        const persisted = this.setAdventureRun(run)
+        if (!persisted) {
+          clearStoredAdventureGameSnapshot()
+        }
       }
     } else {
       this.refreshAdventureFromStorage()
