@@ -314,15 +314,60 @@ export function clearStoredAdventureGameSnapshot(): void {
   }
 }
 
-function isPlausibleGameSnapshot(value: unknown): value is GameState {
+function isBattlefieldCard(value: unknown): value is { instanceId: string; card: Card } {
   if (typeof value !== 'object' || value === null) {
     return false
   }
-  const candidate = value as { players?: unknown; phase?: unknown; currentPlayer?: unknown }
-  return Array.isArray(candidate.players)
-    && candidate.players.length === 2
-    && typeof candidate.phase === 'string'
-    && typeof candidate.currentPlayer === 'number'
+  const entry = value as { instanceId?: unknown; card?: unknown }
+  return typeof entry.instanceId === 'string' && isCard(entry.card)
+}
+
+function isPlayerStateSnapshot(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const player = value as {
+    id?: unknown
+    deck?: unknown
+    hand?: unknown
+    battlefield?: unknown
+    graveyard?: unknown
+    landsPlayedThisTurn?: unknown
+  }
+  return typeof player.id === 'number' && Number.isInteger(player.id)
+    && Array.isArray(player.deck) && player.deck.every((entry) => isCard(entry))
+    && Array.isArray(player.hand) && player.hand.every((entry) => isCard(entry))
+    && Array.isArray(player.battlefield) && player.battlefield.every((entry) => isBattlefieldCard(entry))
+    && Array.isArray(player.graveyard) && player.graveyard.every((entry) => isCard(entry))
+    && typeof player.landsPlayedThisTurn === 'number' && Number.isFinite(player.landsPlayedThisTurn)
+}
+
+function isGameStateSnapshot(value: unknown): value is GameState {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as {
+    players?: unknown
+    turn?: unknown
+    currentPlayer?: unknown
+    nextInstanceId?: unknown
+    phase?: unknown
+    pendingLandPlay?: unknown
+    pendingPlainsReuse?: unknown
+    winner?: unknown
+    log?: unknown
+  }
+  if (!Array.isArray(candidate.players) || candidate.players.length !== 2) return false
+  if (!candidate.players.every((entry) => isPlayerStateSnapshot(entry))) return false
+  if (typeof candidate.turn !== 'number' || !Number.isFinite(candidate.turn)) return false
+  if (typeof candidate.currentPlayer !== 'number' || (candidate.currentPlayer !== 0 && candidate.currentPlayer !== 1)) return false
+  if (typeof candidate.nextInstanceId !== 'number' || !Number.isFinite(candidate.nextInstanceId)) return false
+  if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'gameOver') return false
+  if (candidate.pendingLandPlay !== null && (typeof candidate.pendingLandPlay !== 'object')) return false
+  if (candidate.pendingPlainsReuse !== null && (typeof candidate.pendingPlainsReuse !== 'object')) return false
+  if (candidate.winner !== null && candidate.winner !== 'draw' && candidate.winner !== 0 && candidate.winner !== 1) return false
+  if (!Array.isArray(candidate.log) || !candidate.log.every((entry) => typeof entry === 'string')) return false
+  return true
 }
 
 export function readStoredAdventureGameSnapshot(): GameState | null {
@@ -332,7 +377,7 @@ export function readStoredAdventureGameSnapshot(): GameState | null {
       return null
     }
     const parsed: unknown = JSON.parse(raw)
-    return isPlausibleGameSnapshot(parsed) ? parsed : null
+    return isGameStateSnapshot(parsed) ? parsed : null
   } catch {
     return null
   }
