@@ -98,4 +98,30 @@ describe('adventure deck generation', () => {
       localStorage.removeItem(ADVENTURE_RUN_STORAGE_KEY)
     }
   })
+
+  it('rejects stored runs with non-finite or out-of-range numeric fields', () => {
+    const baseRun = createAdventureRun(42)
+    const cases: Array<Partial<typeof baseRun>> = [
+      { currentRound: 0 },
+      { currentRound: 8 },
+      { remainingChances: -1 },
+      { winStreak: -3 },
+      { totalRoundsPlayed: -1 },
+      { totalCardsPlayed: -2 },
+      { currentOpponentIndex: -1 },
+      { currentOpponentIndex: 7 },
+    ]
+    for (const overrides of cases) {
+      const corrupted = { ...baseRun, ...overrides }
+      localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(corrupted))
+      expect(readStoredAdventureRun()).toBeNull()
+    }
+    // JSON.parse turns 1e309 into Infinity — must also be rejected.
+    localStorage.setItem(
+      ADVENTURE_RUN_STORAGE_KEY,
+      JSON.stringify({ ...baseRun, baseSeed: 'inf-marker' }).replace('"inf-marker"', '1e309'),
+    )
+    expect(readStoredAdventureRun()).toBeNull()
+    localStorage.removeItem(ADVENTURE_RUN_STORAGE_KEY)
+  })
 })

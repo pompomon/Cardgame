@@ -214,6 +214,10 @@ function isAdventureRunStatus(value: unknown): value is AdventureRunStatus {
   return value === 'active' || value === 'paused' || value === 'completed' || value === 'failed'
 }
 
+function isFiniteInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value)
+}
+
 function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -230,18 +234,17 @@ function isAdventureRunState(value: unknown): value is AdventureRunState {
     status?: unknown
     opponentLineup?: unknown
   }
-  return typeof run.baseSeed === 'number'
-    && typeof run.currentRound === 'number'
-    && typeof run.remainingChances === 'number'
-    && typeof run.winStreak === 'number'
-    && typeof run.totalRoundsPlayed === 'number'
-    && typeof run.totalCardsPlayed === 'number'
-    && typeof run.currentOpponentIndex === 'number'
-    && (run.activeGameSeed === null || typeof run.activeGameSeed === 'number')
-    && isAdventureRunStatus(run.status)
-    && Array.isArray(run.opponentLineup)
-    && run.opponentLineup.length === 7
-    && run.opponentLineup.every((entry) => isAdventureOpponentDeck(entry))
+  if (!isFiniteInteger(run.baseSeed)) return false
+  if (!isFiniteInteger(run.currentRound) || run.currentRound < 1 || run.currentRound > 7) return false
+  if (!isFiniteInteger(run.remainingChances) || run.remainingChances < 0) return false
+  if (!isFiniteInteger(run.winStreak) || run.winStreak < 0) return false
+  if (!isFiniteInteger(run.totalRoundsPlayed) || run.totalRoundsPlayed < 0) return false
+  if (!isFiniteInteger(run.totalCardsPlayed) || run.totalCardsPlayed < 0) return false
+  if (!isFiniteInteger(run.currentOpponentIndex) || run.currentOpponentIndex < 0 || run.currentOpponentIndex > 6) return false
+  if (run.activeGameSeed !== null && !isFiniteInteger(run.activeGameSeed)) return false
+  if (!isAdventureRunStatus(run.status)) return false
+  if (!Array.isArray(run.opponentLineup) || run.opponentLineup.length !== 7) return false
+  return run.opponentLineup.every((entry) => isAdventureOpponentDeck(entry))
 }
 
 export function persistAdventureRun(run: AdventureRunState): void {

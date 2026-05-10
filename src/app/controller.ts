@@ -229,8 +229,16 @@ export class AppController implements ControllerApi {
       }
       return
     }
+    // Normalize any stored 'active' run to 'paused' on load. A run can be
+    // persisted as 'active' if the user closed the tab mid-round; surfacing
+    // it in the lobby as 'paused' lets them resume cleanly without leaving
+    // the controller in a phantom-active state.
+    const normalized = run.status === 'active' ? { ...run, status: 'paused' as const } : run
+    if (normalized !== run) {
+      persistAdventureRun(normalized)
+    }
     this.state.adventure = {
-      ...run,
+      ...normalized,
       highScore,
       hasSavedRun: true,
     }
@@ -799,8 +807,18 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
+    // If there's an in-memory active adventure (e.g. user navigated back to
+    // the lobby with state still active, or storage held an 'active' run from
+    // a closed tab), demote it to 'paused' rather than clearing it. Starting
+    // a non-adventure mode should never silently delete saved adventure
+    // progress; the user can still resume the run from the lobby afterwards.
     if (this.state.adventure.status === 'active') {
-      this.setAdventureRun(null)
+      const run = this.currentAdventureRun()
+      if (run) {
+        run.status = 'paused'
+        run.activeGameSeed = run.activeGameSeed ?? Date.now()
+        this.setAdventureRun(run)
+      }
     }
 
     if (mode === 'local-hvh') {
@@ -1080,8 +1098,12 @@ export class AppController implements ControllerApi {
   }
 
   startReplay(): void {
-    if (this.state.adventure.status === 'active' || this.state.adventure.status === 'paused') {
-      this.state.status = 'Replay is unavailable while an adventure run exists.'
+    // Only block replay while an adventure match is actively in progress.
+    // A merely-saved (paused) run should not prevent users from playing
+    // recordings; their adventure progress is preserved in storage and can
+    // be resumed later from the lobby.
+    if (this.state.mode === 'adventure-hvai') {
+      this.state.status = 'Replay is unavailable while an adventure match is in progress.'
       this.notify()
       return
     }

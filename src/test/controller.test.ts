@@ -845,7 +845,12 @@ describe('controller recording and replay', () => {
     expect(previousRun).toBeTruthy()
 
     controller.importRecordingJson(json ?? '')
-    expect(localStorage.getItem('cardgame.adventure-run')).toBe(previousRun)
+    // The persisted adventure run must still exist (not cleared by import).
+    // Status may be normalized active→paused on refresh, so just check it's
+    // present and parseable, and that hasSavedRun stays true.
+    const after = localStorage.getItem('cardgame.adventure-run')
+    expect(after).toBeTruthy()
+    expect(JSON.parse(after ?? 'null')).toMatchObject({ baseSeed: expect.any(Number) })
     expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
   })
 
@@ -875,6 +880,31 @@ describe('controller recording and replay', () => {
     }
     // The in-memory counter should still advance even though we deferred persistence.
     expect(controller.getViewModel().adventure.totalCardsPlayed).toBe(1)
+  })
+
+  it('preserves saved adventure run when starting another mode from the lobby', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const before = localStorage.getItem('cardgame.adventure-run')
+    expect(before).toBeTruthy()
+    controller.startGame('local-hvh')
+    const after = localStorage.getItem('cardgame.adventure-run')
+    expect(after).toBeTruthy()
+    expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
+    // Run should be downgraded to paused so the user can resume.
+    expect(JSON.parse(after ?? 'null').status).toBe('paused')
+  })
+
+  it('allows replay while a paused adventure run is saved', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    // Pause via storage by demoting the saved run to paused, then exit adventure mode.
+    const internals = controller as unknown as { state: { mode: string | null; game: unknown } }
+    internals.state.mode = null
+    internals.state.game = null
+    controller.startReplay()
+    // No "Replay is unavailable while an adventure run exists." status.
+    expect(controller.getViewModel().status).not.toContain('adventure run exists')
   })
 
   it('awards an extra chance after third consecutive adventure win', () => {

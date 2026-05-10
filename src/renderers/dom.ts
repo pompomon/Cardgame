@@ -75,7 +75,7 @@ function renderLobby(view: AppViewModel): string {
         <button data-mode="local-hvh">Local Human vs Human</button>
         <button data-mode="local-hvai">Local Human vs AI</button>
         <button data-mode="local-aivai">Local AI vs AI</button>
-        <button id="start-adventure">Start Adventure (Human vs AI)</button>
+        <button data-mode="adventure-hvai">Start Adventure (Human vs AI)</button>
         ${canResumeAdventure ? '<button id="resume-adventure">Resume Adventure</button>' : ''}
         <button data-mode="p2p-host">P2P Host</button>
         <button data-mode="p2p-join">P2P Join</button>
@@ -400,9 +400,6 @@ export class DomRenderer implements AppRenderer {
         const mode = button.dataset.mode as Mode
         this.controller?.startGame(mode)
       })
-    })
-    this.container.querySelector('#start-adventure')?.addEventListener('click', () => {
-      this.controller?.startAdventure()
     })
     this.container.querySelector('#resume-adventure')?.addEventListener('click', () => {
       this.controller?.resumeAdventure()
