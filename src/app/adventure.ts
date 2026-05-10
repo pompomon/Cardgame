@@ -1,8 +1,9 @@
 import { createStarterDeck } from '../game/cards'
-import { BASIC_LANDS, isBasicLand, type BasicLand, type Card } from '../game/types'
+import { BASIC_LANDS, isBasicLand, type BasicLand, type Card, type GameState } from '../game/types'
 
 export const ADVENTURE_RUN_STORAGE_KEY = 'cardgame.adventure-run'
 export const ADVENTURE_HIGH_SCORE_STORAGE_KEY = 'cardgame.adventure-high-score'
+export const ADVENTURE_GAME_STORAGE_KEY = 'cardgame.adventure-game'
 
 export type AdventureOpponentKind = 'standard' | 'dual' | 'mono' | 'random'
 export type AdventureRunStatus = 'active' | 'paused' | 'completed' | 'failed'
@@ -294,5 +295,45 @@ export function persistAdventureHighScore(score: number): void {
     localStorage.setItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY, String(score))
   } catch {
     // Ignore storage failures.
+  }
+}
+
+export function persistAdventureGameSnapshot(game: GameState): void {
+  try {
+    localStorage.setItem(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(game))
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function clearStoredAdventureGameSnapshot(): void {
+  try {
+    localStorage.removeItem(ADVENTURE_GAME_STORAGE_KEY)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function isPlausibleGameSnapshot(value: unknown): value is GameState {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as { players?: unknown; phase?: unknown; currentPlayer?: unknown }
+  return Array.isArray(candidate.players)
+    && candidate.players.length === 2
+    && typeof candidate.phase === 'string'
+    && typeof candidate.currentPlayer === 'number'
+}
+
+export function readStoredAdventureGameSnapshot(): GameState | null {
+  try {
+    const raw = localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+    const parsed: unknown = JSON.parse(raw)
+    return isPlausibleGameSnapshot(parsed) ? parsed : null
+  } catch {
+    return null
   }
 }

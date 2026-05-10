@@ -4,12 +4,15 @@ import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
 import {
+  clearStoredAdventureGameSnapshot,
   clearStoredAdventureRun,
   computeAdventureScore,
   createAdventureRun,
   deckPairForAdventureGame,
+  persistAdventureGameSnapshot,
   persistAdventureHighScore,
   persistAdventureRun,
+  readStoredAdventureGameSnapshot,
   readStoredAdventureHighScore,
   readStoredAdventureRun,
   type AdventureRunState,
@@ -336,6 +339,20 @@ export class AppController implements ControllerApi {
     this.initializeRecording('adventure-hvai')
   }
 
+  private launchAdventureGameFromSnapshot(run: AdventureRunState, snapshot: GameState): void {
+    const seed = run.activeGameSeed ?? Date.now()
+    this.state.mode = 'adventure-hvai'
+    this.state.seed = seed
+    this.state.game = snapshot
+    this.state.controllers = ['human', 'ai']
+    this.state.offer = ''
+    this.state.answer = ''
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
+    this.initializeRecording('adventure-hvai')
+  }
+
   private applyAdventureCompletion(run: AdventureRunState, message: string): void {
     const score = computeAdventureScore(run)
     const nextHighScore = Math.max(this.state.adventure.highScore, score)
@@ -347,6 +364,7 @@ export class AppController implements ControllerApi {
       this.state.game = null
       this.state.controllers = ['human', 'human']
       clearStoredAdventureRun()
+      clearStoredAdventureGameSnapshot()
       this.state.adventure.hasSavedRun = false
     }
   }
@@ -359,6 +377,11 @@ export class AppController implements ControllerApi {
     if (!run || run.status !== 'active') {
       return
     }
+
+    // Any in-progress mid-round snapshot is no longer valid once a round
+    // resolves; clear it so a future resume starts a fresh round from the
+    // run state rather than restoring a stale finished board.
+    clearStoredAdventureGameSnapshot()
 
     run.totalRoundsPlayed += 1
     const winner = this.state.game.winner
@@ -725,6 +748,7 @@ export class AppController implements ControllerApi {
     this.p2p = null
     this.state.replay = null
     const run = createAdventureRun(Date.now())
+    clearStoredAdventureGameSnapshot()
     this.setAdventureRun(run)
     this.launchAdventureGameFromRun(run)
     this.state.status = 'Adventure started. Round 1 begins.'
@@ -751,7 +775,16 @@ export class AppController implements ControllerApi {
       activeGameSeed: run.activeGameSeed ?? Date.now(),
     }
     this.setAdventureRun(resumed)
-    this.launchAdventureGameFromRun(resumed)
+    // If a mid-round game snapshot was persisted on pause, restore it so the
+    // player continues from the exact same board state. Otherwise launch a
+    // fresh round deterministically from the run's activeGameSeed.
+    const snapshot = readStoredAdventureGameSnapshot()
+    if (snapshot) {
+      this.launchAdventureGameFromSnapshot(resumed, snapshot)
+      clearStoredAdventureGameSnapshot()
+    } else {
+      this.launchAdventureGameFromRun(resumed)
+    }
     this.state.status = `Adventure resumed at Round ${resumed.currentRound}.`
     this.notify()
     this.scheduleAiIfNeeded()
@@ -761,23 +794,30 @@ export class AppController implements ControllerApi {
     if (this.state.mode !== 'adventure-hvai') {
       return
     }
-    if (!this.state.game || this.state.game.phase !== 'gameOver') {
-      this.state.status = 'Adventure can only be paused between games.'
-      this.notify()
-      return
-    }
     const run = this.currentAdventureRun()
     if (!run) {
       return
     }
+    // Pausing mid-round: snapshot the live GameState so resuming continues
+    // exactly where the player left off. Pausing after the round ended
+    // (gameOver) is handled by onAdventureGameFinished, which already wrote
+    // a paused run to storage and sent us back to the lobby — no game
+    // snapshot is needed in that case.
+    if (this.state.game && this.state.game.phase !== 'gameOver') {
+      persistAdventureGameSnapshot(this.state.game)
+    } else {
+      clearStoredAdventureGameSnapshot()
+    }
+    this.clearAiTimeout()
     run.status = 'paused'
-    run.activeGameSeed = Date.now()
+    run.activeGameSeed = run.activeGameSeed ?? this.state.seed
     this.setAdventureRun(run)
     this.backToLobby(`Adventure paused at Round ${run.currentRound}.`)
   }
 
   abandonAdventure(): void {
     const hadAdventure = this.state.adventure.status !== 'inactive' || this.state.adventure.hasSavedRun
+    clearStoredAdventureGameSnapshot()
     this.setAdventureRun(null)
     if (this.state.mode === 'adventure-hvai') {
       this.backToLobby(hadAdventure ? 'Adventure run reset.' : undefined)

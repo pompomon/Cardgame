@@ -829,6 +829,42 @@ describe('controller recording and replay', () => {
     expect(view.status).toBe('Adventure run reset.')
   })
 
+  it('pauses an adventure mid-round and restores the live game state on resume', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    // Play one card so the live game state diverges from a freshly-launched round.
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    if (action) {
+      controller.submitAction(action)
+    }
+    const internals = controller as unknown as {
+      state: {
+        game: { phase: string; players: Array<{ hand: unknown[]; battlefield: unknown[] }> } | null
+      }
+    }
+    expect(internals.state.game?.phase).not.toBe('gameOver')
+    const handBefore = internals.state.game?.players[0].hand.length ?? -1
+    const battlefieldBefore = internals.state.game?.players[0].battlefield.length ?? -1
+
+    controller.pauseAdventure()
+    let view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('paused')
+    expect(view.adventure.hasSavedRun).toBe(true)
+    expect(view.status).toBe('Adventure paused at Round 1.')
+    expect(localStorage.getItem('cardgame.adventure-game')).toBeTruthy()
+
+    controller.resumeAdventure()
+    view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.status).toBe('active')
+    expect(internals.state.game?.players[0].hand.length).toBe(handBefore)
+    expect(internals.state.game?.players[0].battlefield.length).toBe(battlefieldBefore)
+    // Snapshot is consumed on resume; storage should be cleared.
+    expect(localStorage.getItem('cardgame.adventure-game')).toBeNull()
+  })
+
   it('preserves saved adventure run when importing a recording', () => {
     // Build a recording payload first, in isolation.
     const recordingSource = new AppController('dom')

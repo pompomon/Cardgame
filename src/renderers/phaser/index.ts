@@ -329,15 +329,17 @@ class LobbyScene extends Phaser.Scene {
         wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
       },
     ))
-    // Lobby recorder entry points so users can review or replay a saved match
-    // without having to start a throwaway game first (mirrors the DOM lobby
-    // and the previous Phaser overlay). The Browser entry is only enabled
-    // when a saved recording actually exists.
+    // Lobby entry points: adventure resume/reset (when a run is saved) and
+    // recording playback shortcuts so users can review or replay a saved
+    // match without having to start a throwaway game first (mirrors the DOM
+    // lobby and the previous Phaser overlay). Each entry's `disabled` flag
+    // hides actions that are not currently applicable (no saved run / no
+    // saved recording).
     const recorderEntries: Array<{ key: string; label: string; disabled?: boolean; onClick: () => void }> = [
       {
         key: 'resume-adventure',
         label: 'Resume Adventure',
-        disabled: !adventure?.hasSavedRun || (adventure.status !== 'paused' && adventure.status !== 'active'),
+        disabled: !adventure?.hasSavedRun || (adventure?.status !== 'paused' && adventure?.status !== 'active'),
         onClick: () => { this.rendererRef.controller?.resumeAdventure() },
       },
       {
