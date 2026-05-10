@@ -1,4 +1,4 @@
-import { createStarterDeck } from '../game/cards'
+import { createStarterDeck, lcg, shuffle } from '../game/cards'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card, type GameState } from '../game/types'
 
 export const ADVENTURE_RUN_STORAGE_KEY = 'cardgame.adventure-run'
@@ -27,24 +27,6 @@ export interface AdventureRunState {
   activeGameSeed: number | null
   status: AdventureRunStatus
   opponentLineup: AdventureOpponentDeck[]
-}
-
-function lcg(seed: number): () => number {
-  let value = seed >>> 0
-  return () => {
-    value = (value * 1664525 + 1013904223) >>> 0
-    return value / 4294967296
-  }
-}
-
-function shuffle<T>(items: T[], seed: number): T[] {
-  const random = lcg(seed)
-  const clone = [...items]
-  for (let index = clone.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1))
-    ;[clone[index], clone[swapIndex]] = [clone[swapIndex], clone[index]]
-  }
-  return clone
 }
 
 function cloneDeck(deck: Card[]): Card[] {

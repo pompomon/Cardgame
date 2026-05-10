@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  ADVENTURE_GAME_STORAGE_KEY,
+  ADVENTURE_RUN_STORAGE_KEY,
+} from '../app/adventure'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
@@ -58,7 +62,7 @@ function parseExported(controller: AppController) {
 function withAdventureRunPersistFailure(action: () => void): void {
   const originalSetItem = localStorage.setItem.bind(localStorage)
   localStorage.setItem = ((key: string, value: string) => {
-    if (key === 'cardgame.adventure-run') {
+    if (key === ADVENTURE_RUN_STORAGE_KEY) {
       throw new Error('quota exceeded')
     }
     return originalSetItem(key, value)
@@ -848,11 +852,11 @@ describe('controller recording and replay', () => {
   it('keeps storage-unavailable warning when resuming adventure if persist fails', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
-    const storedRaw = localStorage.getItem('cardgame.adventure-run')
+    const storedRaw = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(storedRaw).toBeTruthy()
     const stored = JSON.parse(storedRaw ?? 'null') as { status: string }
     stored.status = 'paused'
-    localStorage.setItem('cardgame.adventure-run', JSON.stringify(stored))
+    localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(stored))
     withAdventureRunPersistFailure(() => {
       controller.resumeAdventure()
     })
@@ -896,7 +900,7 @@ describe('controller recording and replay', () => {
     expect(view.adventure.status).toBe('paused')
     expect(view.adventure.hasSavedRun).toBe(true)
     expect(view.status).toBe('Adventure paused at Round 1.')
-    expect(localStorage.getItem('cardgame.adventure-game')).toBeTruthy()
+    expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeTruthy()
 
     controller.resumeAdventure()
     view = controller.getViewModel()
@@ -905,7 +909,7 @@ describe('controller recording and replay', () => {
     expect(internals.state.game?.players[0].hand.length).toBe(handBefore)
     expect(internals.state.game?.players[0].battlefield.length).toBe(battlefieldBefore)
     // Snapshot is consumed on resume; storage should be cleared.
-    expect(localStorage.getItem('cardgame.adventure-game')).toBeNull()
+    expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
   })
 
   it('clears stored adventure snapshot when pause-run persistence fails', () => {
@@ -923,7 +927,7 @@ describe('controller recording and replay', () => {
     expect(view.mode).toBeNull()
     expect(view.adventure.status).toBe('paused')
     expect(view.adventure.hasSavedRun).toBe(false)
-    expect(localStorage.getItem('cardgame.adventure-game')).toBeNull()
+    expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
   })
 
   it('preserves saved adventure run when importing a recording', () => {
@@ -938,14 +942,14 @@ describe('controller recording and replay', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
     expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
-    const previousRun = localStorage.getItem('cardgame.adventure-run')
+    const previousRun = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(previousRun).toBeTruthy()
 
     controller.importRecordingJson(json ?? '')
     // The persisted adventure run must still exist (not cleared by import).
     // Status may be normalized active→paused on refresh, so just check it's
     // present and parseable, and that hasSavedRun stays true.
-    const after = localStorage.getItem('cardgame.adventure-run')
+    const after = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(after).toBeTruthy()
     expect(JSON.parse(after ?? 'null')).toMatchObject({ baseSeed: expect.any(Number) })
     expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
@@ -954,13 +958,13 @@ describe('controller recording and replay', () => {
   it('does not persist adventure run on every play_land action', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
-    const baseline = localStorage.getItem('cardgame.adventure-run')
+    const baseline = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(baseline).toBeTruthy()
 
     let writes = 0
     const original = localStorage.setItem.bind(localStorage)
     localStorage.setItem = ((key: string, value: string) => {
-      if (key === 'cardgame.adventure-run') {
+      if (key === ADVENTURE_RUN_STORAGE_KEY) {
         writes += 1
       }
       return original(key, value)
@@ -982,10 +986,10 @@ describe('controller recording and replay', () => {
   it('preserves saved adventure run when starting another mode from the lobby', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
-    const before = localStorage.getItem('cardgame.adventure-run')
+    const before = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(before).toBeTruthy()
     controller.startGame('local-hvh')
-    const after = localStorage.getItem('cardgame.adventure-run')
+    const after = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(after).toBeTruthy()
     expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
     // Run should be downgraded to paused so the user can resume.

@@ -2,7 +2,7 @@ import type { BasicLand, Card } from './types'
 
 const BASIC_LANDS: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
 
-function lcg(seed: number): () => number {
+export function lcg(seed: number): () => number {
   let value = seed >>> 0
   return () => {
     value = (value * 1664525 + 1013904223) >>> 0
@@ -10,7 +10,7 @@ function lcg(seed: number): () => number {
   }
 }
 
-function shuffle<T>(items: T[], seed: number): T[] {
+export function shuffle<T>(items: T[], seed: number): T[] {
   const random = lcg(seed)
   const clone = [...items]
   for (let i = clone.length - 1; i > 0; i -= 1) {
