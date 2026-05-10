@@ -26,10 +26,30 @@ import {
   snapshotFromRecord,
 } from './game-recording'
 import { buildViewModel } from './view-model'
-import type { AiLevel, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
+import type { AdventureState, AiLevel, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
+
+// Factory for the "inactive" adventure baseline. Centralized so the
+// constructor, storage refresh, and reset paths cannot drift out of sync as
+// adventure state evolves.
+function inactiveAdventureState(highScore: number, hasSavedRun = false): AdventureState {
+  return {
+    baseSeed: 0,
+    currentRound: 0,
+    remainingChances: 0,
+    winStreak: 0,
+    totalRoundsPlayed: 0,
+    totalCardsPlayed: 0,
+    opponentLineup: [],
+    currentOpponentIndex: 0,
+    activeGameSeed: null,
+    status: 'inactive',
+    highScore,
+    hasSavedRun,
+  }
+}
 
 function isSeedPayload(payload: unknown): payload is { seed: number } {
   if (typeof payload !== 'object' || payload === null) {
@@ -155,20 +175,7 @@ export class AppController implements ControllerApi {
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
-      adventure: {
-        baseSeed: 0,
-        currentRound: 0,
-        remainingChances: 0,
-        winStreak: 0,
-        totalRoundsPlayed: 0,
-        totalCardsPlayed: 0,
-        opponentLineup: [],
-        currentOpponentIndex: 0,
-        activeGameSeed: null,
-        status: 'inactive',
-        highScore: readStoredAdventureHighScore(),
-        hasSavedRun: false,
-      },
+      adventure: inactiveAdventureState(readStoredAdventureHighScore()),
     }
     this.refreshAdventureFromStorage()
   }
@@ -216,20 +223,7 @@ export class AppController implements ControllerApi {
     if (!run) {
       // Reset adventure view-state to the inactive baseline so the lobby never
       // shows stale round/lineup/status when storage is missing or corrupted.
-      this.state.adventure = {
-        baseSeed: 0,
-        currentRound: 0,
-        remainingChances: 0,
-        winStreak: 0,
-        totalRoundsPlayed: 0,
-        totalCardsPlayed: 0,
-        opponentLineup: [],
-        currentOpponentIndex: 0,
-        activeGameSeed: null,
-        status: 'inactive',
-        highScore,
-        hasSavedRun: false,
-      }
+      this.state.adventure = inactiveAdventureState(highScore)
       return
     }
     // Normalize any stored 'active' run to 'paused' on load. A run can be
@@ -293,20 +287,7 @@ export class AppController implements ControllerApi {
   private setAdventureRun(run: AdventureRunState | null, statusMessage?: string): void {
     const highScore = this.state.adventure.highScore
     if (!run) {
-      this.state.adventure = {
-        baseSeed: 0,
-        currentRound: 0,
-        remainingChances: 0,
-        winStreak: 0,
-        totalRoundsPlayed: 0,
-        totalCardsPlayed: 0,
-        opponentLineup: [],
-        currentOpponentIndex: 0,
-        activeGameSeed: null,
-        status: 'inactive',
-        highScore,
-        hasSavedRun: false,
-      }
+      this.state.adventure = inactiveAdventureState(highScore)
       clearStoredAdventureRun()
       if (statusMessage) {
         this.state.status = statusMessage
@@ -358,15 +339,25 @@ export class AppController implements ControllerApi {
     const nextHighScore = Math.max(this.state.adventure.highScore, score)
     this.state.adventure.highScore = nextHighScore
     persistAdventureHighScore(nextHighScore)
-    this.setAdventureRun({ ...run, status: run.status }, `${message} Score: ${score}. High score: ${nextHighScore}.`)
+    const fullMessage = `${message} Score: ${score}. High score: ${nextHighScore}.`
     if (run.status === 'completed' || run.status === 'failed') {
+      // Terminal states: clear storage and surface the terminal status in
+      // memory without persisting the run only to remove it again. Avoids the
+      // redundant write+remove that going through setAdventureRun() caused.
+      clearStoredAdventureRun()
+      clearStoredAdventureGameSnapshot()
+      this.state.adventure = {
+        ...run,
+        highScore: nextHighScore,
+        hasSavedRun: false,
+      }
+      this.state.status = fullMessage
       this.state.mode = null
       this.state.game = null
       this.state.controllers = ['human', 'human']
-      clearStoredAdventureRun()
-      clearStoredAdventureGameSnapshot()
-      this.state.adventure.hasSavedRun = false
+      return
     }
+    this.setAdventureRun({ ...run, status: run.status }, fullMessage)
   }
 
   private onAdventureGameFinished(previousState: GameState): void {
@@ -809,9 +800,11 @@ export class AppController implements ControllerApi {
       clearStoredAdventureGameSnapshot()
     }
     this.clearAiTimeout()
-    run.status = 'paused'
-    run.activeGameSeed = run.activeGameSeed ?? this.state.seed
-    this.setAdventureRun(run)
+    // Mark in-memory state as paused; backToLobby() owns the single
+    // persistence write for the paused run, avoiding a redundant
+    // localStorage write here.
+    this.state.adventure.status = 'paused'
+    this.state.adventure.activeGameSeed = this.state.adventure.activeGameSeed ?? this.state.seed
     this.backToLobby(`Adventure paused at Round ${run.currentRound}.`)
   }
 
