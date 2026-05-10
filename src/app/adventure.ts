@@ -248,11 +248,13 @@ function isAdventureRunState(value: unknown): value is AdventureRunState {
   return run.opponentLineup.every((entry) => isAdventureOpponentDeck(entry))
 }
 
-export function persistAdventureRun(run: AdventureRunState): void {
+export function persistAdventureRun(run: AdventureRunState): boolean {
   try {
     localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(run))
+    return true
   } catch {
     // Ignore storage failures.
+    return false
   }
 }
 

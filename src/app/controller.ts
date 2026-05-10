@@ -297,11 +297,18 @@ export class AppController implements ControllerApi {
     this.state.adventure = {
       ...run,
       highScore,
-      hasSavedRun: true,
+      hasSavedRun: false,
     }
-    persistAdventureRun(run)
+    // Only mark hasSavedRun true if the write actually succeeded; otherwise
+    // resumeAdventure() would later fail to find anything in storage.
+    const persisted = persistAdventureRun(run)
+    if (persisted) {
+      this.state.adventure.hasSavedRun = true
+    }
     if (statusMessage) {
       this.state.status = statusMessage
+    } else if (!persisted) {
+      this.state.status = 'Adventure progress could not be saved (storage unavailable).'
     }
   }
 

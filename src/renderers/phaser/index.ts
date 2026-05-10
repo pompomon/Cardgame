@@ -319,16 +319,17 @@ class LobbyScene extends Phaser.Scene {
     const selectedCardVisualStyle = view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const adventure = view?.adventure
     const nextOpponent = adventure?.opponentLineup?.[adventure.currentOpponentIndex]
-    this.rootContainer.add(this.add.text(
+    const adventureStatusText = this.add.text(
       left,
-      top + this.currentLayout.actionButtonHeight + 36,
+      top + this.currentLayout.actionButtonHeight + 6 + Math.max(this.currentLayout.actionButtonHeight, 28),
       `Adventure: ${adventure?.status ?? 'inactive'} • Round ${adventure?.currentRound ?? 0}/7 • Chances ${adventure?.remainingChances ?? 0} • High Score ${adventure?.highScore ?? 0}${nextOpponent ? ` • Next ${nextOpponent.label}` : ''}`,
       {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
       },
-    ))
+    )
+    this.rootContainer.add(adventureStatusText)
     // Lobby entry points: adventure resume/reset (when a run is saved) and
     // recording playback shortcuts so users can review or replay a saved
     // match without having to start a throwaway game first (mirrors the DOM
@@ -371,6 +372,7 @@ class LobbyScene extends Phaser.Scene {
     // short landscape phone layouts.
     const subtitleBottom = top + this.currentLayout.actionButtonHeight + 6
       + Math.max(this.currentLayout.actionButtonHeight, 28)
+      + Math.max(0, adventureStatusText.height) + 8
     const lobbyBodyTop = subtitleBottom + 16
     const lobbyBodyBottom = this.currentLayout.height
       - this.currentLayout.statusBottomOffset - this.currentLayout.margin
