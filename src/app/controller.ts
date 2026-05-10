@@ -348,24 +348,20 @@ export class AppController implements ControllerApi {
     this.state.adventure.highScore = nextHighScore
     persistAdventureHighScore(nextHighScore)
     const fullMessage = `${message} Score: ${score}. High score: ${nextHighScore}.`
-    if (run.status === 'completed' || run.status === 'failed') {
-      // Terminal states: clear storage and surface the terminal status in
-      // memory without persisting the run only to remove it again. Avoids the
-      // redundant write+remove that going through setAdventureRun() caused.
-      clearStoredAdventureRun()
-      clearStoredAdventureGameSnapshot()
-      this.state.adventure = {
-        ...run,
-        highScore: nextHighScore,
-        hasSavedRun: false,
-      }
-      this.state.status = fullMessage
-      this.state.mode = null
-      this.state.game = null
-      this.state.controllers = ['human', 'human']
-      return
+    // This helper is terminal-only and is called after setting run.status to
+    // 'completed' or 'failed'. Clear stored run/snapshot and surface terminal
+    // status in memory without persisting and immediately removing the run.
+    clearStoredAdventureRun()
+    clearStoredAdventureGameSnapshot()
+    this.state.adventure = {
+      ...run,
+      highScore: nextHighScore,
+      hasSavedRun: false,
     }
-    this.setAdventureRun({ ...run, status: run.status }, fullMessage)
+    this.state.status = fullMessage
+    this.state.mode = null
+    this.state.game = null
+    this.state.controllers = ['human', 'human']
   }
 
   private onAdventureGameFinished(previousState: GameState): void {
