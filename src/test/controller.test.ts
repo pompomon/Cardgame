@@ -55,6 +55,21 @@ function parseExported(controller: AppController) {
   return parsed.record
 }
 
+function withAdventureRunPersistFailure(action: () => void): void {
+  const originalSetItem = localStorage.setItem.bind(localStorage)
+  localStorage.setItem = ((key: string, value: string) => {
+    if (key === 'cardgame.adventure-run') {
+      throw new Error('quota exceeded')
+    }
+    return originalSetItem(key, value)
+  }) as typeof localStorage.setItem
+  try {
+    action()
+  } finally {
+    localStorage.setItem = originalSetItem
+  }
+}
+
 type RemoteActionApplier = {
   applyRecordedAction: (action: unknown, source: 'remote', broadcast: boolean) => void
 }
@@ -821,18 +836,9 @@ describe('controller recording and replay', () => {
 
   it('keeps storage-unavailable warning when starting adventure if persist fails', () => {
     const controller = new AppController('dom')
-    const originalSetItem = localStorage.setItem.bind(localStorage)
-    localStorage.setItem = ((key: string, value: string) => {
-      if (key === 'cardgame.adventure-run') {
-        throw new Error('quota exceeded')
-      }
-      return originalSetItem(key, value)
-    }) as typeof localStorage.setItem
-    try {
+    withAdventureRunPersistFailure(() => {
       controller.startAdventure()
-    } finally {
-      localStorage.setItem = originalSetItem
-    }
+    })
     const view = controller.getViewModel()
     expect(view.mode).toBe('adventure-hvai')
     expect(view.adventure.hasSavedRun).toBe(false)
@@ -842,25 +848,14 @@ describe('controller recording and replay', () => {
   it('keeps storage-unavailable warning when resuming adventure if persist fails', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
-    const stored = JSON.parse(localStorage.getItem('cardgame.adventure-run') ?? 'null')
-    expect(stored).toBeTruthy()
-    if (!stored) {
-      return
-    }
+    const storedRaw = localStorage.getItem('cardgame.adventure-run')
+    expect(storedRaw).toBeTruthy()
+    const stored = JSON.parse(storedRaw ?? 'null') as { status: string }
     stored.status = 'paused'
     localStorage.setItem('cardgame.adventure-run', JSON.stringify(stored))
-    const originalSetItem = localStorage.setItem.bind(localStorage)
-    localStorage.setItem = ((key: string, value: string) => {
-      if (key === 'cardgame.adventure-run') {
-        throw new Error('quota exceeded')
-      }
-      return originalSetItem(key, value)
-    }) as typeof localStorage.setItem
-    try {
+    withAdventureRunPersistFailure(() => {
       controller.resumeAdventure()
-    } finally {
-      localStorage.setItem = originalSetItem
-    }
+    })
     const view = controller.getViewModel()
     expect(view.mode).toBe('adventure-hvai')
     expect(view.adventure.status).toBe('active')
@@ -982,18 +977,9 @@ describe('controller recording and replay', () => {
   it('keeps storage-unavailable warning when demoting active adventure on mode switch', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
-    const originalSetItem = localStorage.setItem.bind(localStorage)
-    localStorage.setItem = ((key: string, value: string) => {
-      if (key === 'cardgame.adventure-run') {
-        throw new Error('quota exceeded')
-      }
-      return originalSetItem(key, value)
-    }) as typeof localStorage.setItem
-    try {
+    withAdventureRunPersistFailure(() => {
       controller.startGame('local-hvh')
-    } finally {
-      localStorage.setItem = originalSetItem
-    }
+    })
     const view = controller.getViewModel()
     expect(view.mode).toBe('local-hvh')
     expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
