@@ -1,8 +1,5 @@
-import type { GameUiState } from '../../app/types'
-
 export type InSceneReplayLogContext = {
   menuOpen: boolean
-  game: Pick<GameUiState, 'phase' | 'canInput'>
 }
 
 export function shouldRenderInSceneReplayLog(context: InSceneReplayLogContext): boolean {

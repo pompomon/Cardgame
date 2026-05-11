@@ -1073,7 +1073,7 @@ class CardgameScene extends Phaser.Scene {
       maxLines: 1,
     }).setOrigin(0, 0.5))
 
-    if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen, game })) {
+    if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen })) {
       this.renderInSceneLog(game.log)
     }
     this.renderBattlefields(game)
@@ -1946,23 +1946,18 @@ class CardgameScene extends Phaser.Scene {
         this.menuContentScrollOffset = contentScrollOffset
         content.y = -contentScrollOffset
       }
+      const shouldHandleOuterContentScroll = (pointer: Phaser.Input.Pointer): boolean => {
+        if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
+          return true
+        }
+        const logBounds = innerLogViewportBackground.getBounds()
+        return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
+      }
       this.bindScrollableViewport(
         contentViewportBackground,
         applyContentScroll,
-        (pointer): boolean => {
-          if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
-            return true
-          }
-          const logBounds = innerLogViewportBackground.getBounds()
-          return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
-        },
-        (pointer): boolean => {
-          if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
-            return true
-          }
-          const logBounds = innerLogViewportBackground.getBounds()
-          return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
-        },
+        shouldHandleOuterContentScroll,
+        shouldHandleOuterContentScroll,
       )
     } else {
       this.menuContentScrollOffset = null
