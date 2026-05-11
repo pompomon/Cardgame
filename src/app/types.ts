@@ -1,11 +1,55 @@
 import type { BasicLand, GameAction, GamePhase, GameState } from '../game/types'
 import type { GameRecordFile } from './game-recording'
+import type { AdventureOpponentDeck, AdventureOpponentKind, AdventureRunStatus } from './adventure'
 
-export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'p2p-host' | 'p2p-join'
+export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
 export type AiLevel = 'basic' | 'advanced' | 'hard'
 export type CardVisualStyle = 'classic' | 'neon' | 'monochrome'
+
+export interface AdventureState {
+  baseSeed: number
+  currentRound: number
+  remainingChances: number
+  winStreak: number
+  totalRoundsPlayed: number
+  totalCardsPlayed: number
+  opponentLineup: AdventureOpponentDeck[]
+  currentOpponentIndex: number
+  activeGameSeed: number | null
+  status: AdventureRunStatus | 'inactive'
+  highScore: number
+  hasSavedRun: boolean
+}
+
+// UI-facing summary of an adventure opponent. Excludes the heavy `deck`
+// payload from `AdventureOpponentDeck` so the view model does not leak full
+// 50-card decks to renderers (they only need labels/lands).
+export interface AdventureOpponentSummary {
+  readonly id: string
+  readonly label: string
+  readonly kind: AdventureOpponentKind
+  readonly lands: readonly BasicLand[]
+}
+
+// Read-only projection of `AdventureState` exposed via the view model. Keeps
+// renderers/tests from accidentally mutating controller state by holding a
+// reference to the live `AppState.adventure` object.
+export interface AdventureUiState {
+  readonly baseSeed: number
+  readonly currentRound: number
+  readonly remainingChances: number
+  readonly winStreak: number
+  readonly totalRoundsPlayed: number
+  readonly totalCardsPlayed: number
+  readonly opponentLineup: readonly AdventureOpponentSummary[]
+  readonly currentOpponentIndex: number
+  readonly activeGameSeed: number | null
+  readonly status: AdventureRunStatus | 'inactive'
+  readonly highScore: number
+  readonly hasSavedRun: boolean
+}
 
 export interface AppState {
   mode: Mode | null
@@ -36,6 +80,7 @@ export interface AppState {
   // initiated rematch (`p2p-host` or `p2p-join`); while set, local
   // seed/game/recording stay unchanged until matching `rematch-ack` arrives.
   pendingRematchSeed: number | null
+  adventure: AdventureState
 }
 
 export interface ReplaySessionState {
@@ -110,6 +155,7 @@ export interface AppViewModel {
   cardVisualStyle: CardVisualStyle
   p2pConnected: boolean
   p2pStarted: boolean
+  adventure: AdventureUiState
   game: GameUiState | null
   recording: {
     canSave: boolean

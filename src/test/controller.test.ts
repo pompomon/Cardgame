@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  ADVENTURE_GAME_STORAGE_KEY,
+  ADVENTURE_RUN_STORAGE_KEY,
+} from '../app/adventure'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
+import { createInitialGame } from '../game/engine'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -52,6 +57,21 @@ function parseExported(controller: AppController) {
     throw new Error('Expected valid recording parse.')
   }
   return parsed.record
+}
+
+function withAdventureRunPersistFailure(action: () => void): void {
+  const originalSetItem = localStorage.setItem.bind(localStorage)
+  localStorage.setItem = ((key: string, value: string) => {
+    if (key === ADVENTURE_RUN_STORAGE_KEY) {
+      throw new Error('quota exceeded')
+    }
+    return originalSetItem(key, value)
+  }) as typeof localStorage.setItem
+  try {
+    action()
+  } finally {
+    localStorage.setItem = originalSetItem
+  }
 }
 
 type RemoteActionApplier = {
@@ -793,5 +813,279 @@ describe('controller recording and replay', () => {
     } finally {
       restoreRtc()
     }
+  })
+
+  it('starts adventure run and exposes lobby resume state after pausing', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    let view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.currentRound).toBe(1)
+    expect(view.adventure.remainingChances).toBe(3)
+    expect(view.adventure.opponentLineup).toHaveLength(7)
+
+    const internals = controller as unknown as {
+      state: { game: { phase: string } | null }
+    }
+    if (internals.state.game) {
+      internals.state.game.phase = 'gameOver'
+    }
+    controller.pauseAdventure()
+    view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('paused')
+    expect(view.adventure.hasSavedRun).toBe(true)
+    expect(view.status).toBe('Adventure paused at Round 1.')
+  })
+
+  it('keeps storage-unavailable warning when starting adventure if persist fails', () => {
+    const controller = new AppController('dom')
+    withAdventureRunPersistFailure(() => {
+      controller.startAdventure()
+    })
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
+  })
+
+  it('keeps storage-unavailable warning when resuming adventure if persist fails', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const storedRaw = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
+    expect(storedRaw).toBeTruthy()
+    const stored = JSON.parse(storedRaw ?? 'null') as { status: string }
+    stored.status = 'paused'
+    localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(stored))
+    withAdventureRunPersistFailure(() => {
+      controller.resumeAdventure()
+    })
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.status).toBe('active')
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
+  })
+
+  it('keeps reset status message when abandoning from active adventure game', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    controller.abandonAdventure()
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('inactive')
+    expect(view.status).toBe('Adventure run reset.')
+  })
+
+  it('pauses an adventure mid-round and restores the live game state on resume', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    // Play one card so the live game state diverges from a freshly-launched round.
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    if (action) {
+      controller.submitAction(action)
+    }
+    const internals = controller as unknown as {
+      state: {
+        game: { phase: string; players: Array<{ hand: unknown[]; battlefield: unknown[] }> } | null
+      }
+    }
+    expect(internals.state.game?.phase).not.toBe('gameOver')
+    const handBefore = internals.state.game?.players[0].hand.length ?? -1
+    const battlefieldBefore = internals.state.game?.players[0].battlefield.length ?? -1
+
+    controller.pauseAdventure()
+    let view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('paused')
+    expect(view.adventure.hasSavedRun).toBe(true)
+    expect(view.status).toBe('Adventure paused at Round 1.')
+    expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeTruthy()
+
+    controller.resumeAdventure()
+    view = controller.getViewModel()
+    expect(view.mode).toBe('adventure-hvai')
+    expect(view.adventure.status).toBe('active')
+    expect(internals.state.game?.players[0].hand.length).toBe(handBefore)
+    expect(internals.state.game?.players[0].battlefield.length).toBe(battlefieldBefore)
+    // Snapshot is consumed on resume; storage should be cleared.
+    expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
+  })
+
+  it('clears stored adventure snapshot when pause-run persistence fails', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    if (action) {
+      controller.submitAction(action)
+    }
+    withAdventureRunPersistFailure(() => {
+      controller.pauseAdventure()
+    })
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('paused')
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
+  })
+
+  it('preserves saved adventure run when importing a recording', () => {
+    // Build a recording payload first, in isolation.
+    const recordingSource = new AppController('dom')
+    recordingSource.startGame('local-hvh')
+    const json = recordingSource.exportRecordingJson()
+    expect(json).toBeTruthy()
+
+    // Reset storage and start a fresh controller with an active adventure run.
+    installMemoryStorage()
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
+    const previousRun = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
+    expect(previousRun).toBeTruthy()
+
+    controller.importRecordingJson(json ?? '')
+    // The persisted adventure run must still exist (not cleared by import).
+    // Status may be normalized active→paused on refresh, so just check it's
+    // present and parseable, and that hasSavedRun stays true.
+    const after = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
+    expect(after).toBeTruthy()
+    expect(JSON.parse(after ?? 'null')).toMatchObject({ baseSeed: expect.any(Number) })
+    expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
+  })
+
+  it('does not persist adventure run on every play_land action', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const baseline = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
+    expect(baseline).toBeTruthy()
+
+    let writes = 0
+    const original = localStorage.setItem.bind(localStorage)
+    localStorage.setItem = ((key: string, value: string) => {
+      if (key === ADVENTURE_RUN_STORAGE_KEY) {
+        writes += 1
+      }
+      return original(key, value)
+    }) as typeof localStorage.setItem
+    try {
+      const action = firstPlayableAction(controller)
+      expect(action).toBeTruthy()
+      if (action) {
+        controller.submitAction(action)
+      }
+      expect(writes).toBe(0)
+    } finally {
+      localStorage.setItem = original
+    }
+    // The in-memory counter should still advance even though we deferred persistence.
+    expect(controller.getViewModel().adventure.totalCardsPlayed).toBe(1)
+  })
+
+  it('preserves saved adventure run when starting another mode from the lobby', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const before = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
+    expect(before).toBeTruthy()
+    controller.startGame('local-hvh')
+    const after = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
+    expect(after).toBeTruthy()
+    expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
+    // Run should be downgraded to paused so the user can resume.
+    expect(JSON.parse(after ?? 'null').status).toBe('paused')
+  })
+
+  it('keeps storage-unavailable warning when demoting active adventure on mode switch', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    withAdventureRunPersistFailure(() => {
+      controller.startGame('local-hvh')
+    })
+    const view = controller.getViewModel()
+    expect(view.mode).toBe('local-hvh')
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
+  })
+
+  it('allows replay while a paused adventure run is saved', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    // Pause via storage by demoting the saved run to paused, then exit adventure mode.
+    const internals = controller as unknown as { state: { mode: string | null; game: unknown } }
+    internals.state.mode = null
+    internals.state.game = null
+    controller.startReplay()
+    // No "Replay is unavailable while an adventure run exists." status.
+    expect(controller.getViewModel().status).not.toContain('adventure run exists')
+  })
+
+  it('awards an extra chance after third consecutive adventure win', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const internals = controller as unknown as {
+      state: {
+        mode: string | null
+        game: ReturnType<typeof createInitialGame> | null
+        adventure: {
+          winStreak: number
+          remainingChances: number
+          status: 'active' | 'paused'
+          currentRound: number
+          currentOpponentIndex: number
+        }
+      }
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
+    }
+    internals.state.mode = 'adventure-hvai'
+    internals.state.adventure.winStreak = 2
+    internals.state.adventure.remainingChances = 3
+    internals.state.adventure.status = 'active'
+    internals.state.game = createInitialGame(100)
+    const previous = structuredClone(internals.state.game)
+    internals.state.game.winner = 0
+    internals.state.game.phase = 'gameOver'
+
+    internals.onAdventureGameFinished(previous)
+
+    const view = controller.getViewModel()
+    expect(view.adventure.remainingChances).toBe(4)
+    expect(view.adventure.winStreak).toBe(3)
+    expect(view.adventure.currentRound).toBe(2)
+    expect(view.mode).toBeNull()
+  })
+
+  it('fails adventure when last chance is lost and persists high score', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const internals = controller as unknown as {
+      state: {
+        mode: string | null
+        game: ReturnType<typeof createInitialGame> | null
+        adventure: {
+          remainingChances: number
+          totalCardsPlayed: number
+          totalRoundsPlayed: number
+          status: 'active' | 'paused'
+        }
+      }
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
+    }
+    internals.state.mode = 'adventure-hvai'
+    internals.state.adventure.remainingChances = 1
+    internals.state.adventure.totalCardsPlayed = 5
+    internals.state.adventure.totalRoundsPlayed = 2
+    internals.state.adventure.status = 'active'
+    internals.state.game = createInitialGame(200)
+    const previous = structuredClone(internals.state.game)
+    internals.state.game.winner = 1
+    internals.state.game.phase = 'gameOver'
+
+    internals.onAdventureGameFinished(previous)
+
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.status).toBe('failed')
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(view.adventure.highScore).toBeGreaterThan(0)
   })
 })

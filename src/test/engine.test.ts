@@ -62,6 +62,24 @@ describe('engine', () => {
     expect(first.players[0].battlefield[0]?.instanceId).toBe(second.players[0].battlefield[0]?.instanceId)
   })
 
+  it('uses explicit deck overrides when provided', () => {
+    const playerDeck = Array.from({ length: 50 }, (_, index) => ({
+      id: `player-forest-${index}`,
+      name: 'Forest' as const,
+      type: 'land' as const,
+    }))
+    const opponentDeck = Array.from({ length: 50 }, (_, index) => ({
+      id: `opponent-swamp-${index}`,
+      name: 'Swamp' as const,
+      type: 'land' as const,
+    }))
+    const state = createInitialGame(456, [playerDeck, opponentDeck])
+    const p0All = [...state.players[0].deck, ...state.players[0].hand]
+    const p1All = [...state.players[1].deck, ...state.players[1].hand]
+    expect(p0All.every((card) => card.name === 'Forest')).toBe(true)
+    expect(p1All.every((card) => card.name === 'Swamp')).toBe(true)
+  })
+
   it('rejects invalid actors during response phase', () => {
     let state = createInitialGame(99)
     state.players[1].hand = [

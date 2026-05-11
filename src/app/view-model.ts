@@ -1,7 +1,30 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
 import { activeActor } from './active-actor'
-import type { AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
+import type { AdventureUiState, AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
+
+function projectAdventureUiState(state: AppState): AdventureUiState {
+  const adventure = state.adventure
+  return Object.freeze({
+    baseSeed: adventure.baseSeed,
+    currentRound: adventure.currentRound,
+    remainingChances: adventure.remainingChances,
+    winStreak: adventure.winStreak,
+    totalRoundsPlayed: adventure.totalRoundsPlayed,
+    totalCardsPlayed: adventure.totalCardsPlayed,
+    opponentLineup: Object.freeze(adventure.opponentLineup.map((entry) => Object.freeze({
+      id: entry.id,
+      label: entry.label,
+      kind: entry.kind,
+      lands: Object.freeze([...entry.lands]),
+    }))),
+    currentOpponentIndex: adventure.currentOpponentIndex,
+    activeGameSeed: adventure.activeGameSeed,
+    status: adventure.status,
+    highScore: adventure.highScore,
+    hasSavedRun: adventure.hasSavedRun,
+  })
+}
 
 function winnerTextFor(game: GameState): string {
   if (game.winner === null) {
@@ -121,6 +144,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       cardVisualStyle: state.cardVisualStyle,
       p2pConnected,
       p2pStarted,
+      adventure: projectAdventureUiState(state),
       game: null,
       recording: {
         canSave: state.recording !== null,
@@ -183,6 +207,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     cardVisualStyle: state.cardVisualStyle,
     p2pConnected,
     p2pStarted,
+    adventure: projectAdventureUiState(state),
     game: {
       turn: game.turn,
       phase: game.phase,

@@ -305,6 +305,7 @@ function isMode(value: unknown): value is Mode {
   return value === 'local-hvh'
     || value === 'local-hvai'
     || value === 'local-aivai'
+    || value === 'adventure-hvai'
     || value === 'p2p-host'
     || value === 'p2p-join'
 }
