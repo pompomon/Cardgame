@@ -320,12 +320,18 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const recorderHeadingHeight = 22
   const fixedButtonRows = 6 // back/rematch + orientation + 2 recorder rows + start-replay/end-section + close
   const replayControlsRows = 2 // worst case when replay is active
+  // Wrapped text in recorder/replay headings is measured at runtime by the
+  // renderer, but the layout still needs a conservative reserve so narrow
+  // portrait menus don't under-budget the fixed control stack.
+  const wrappedHeadingLineHeight = Math.round(clamp(popupButtonHeight * 0.42, 12, 18))
+  const wrappedHeadingOverflowReserve = wrappedHeadingLineHeight * 3 + menuSectionGap
   const requiredMenuContentHeight =
     menuPopupPadding * 2
     + menuTitleHeight
     + recorderHeadingHeight * 2
     + popupButtonHeight * (fixedButtonRows + replayControlsRows)
     + menuSectionGap * 6
+    + wrappedHeadingOverflowReserve
     + 24 // breathing room
   const menuPopupHeight = clamp(
     safeHeight * (orientation === 'vertical' ? 0.84 : 0.82),
