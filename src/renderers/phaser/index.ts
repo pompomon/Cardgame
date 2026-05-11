@@ -14,6 +14,7 @@ import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction } from '../../game/types'
 import type { AppRenderer } from '../types'
+import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
 
 const BASE_WIDTH = 1280
@@ -972,6 +973,7 @@ class CardgameScene extends Phaser.Scene {
     viewportBackground: Phaser.GameObjects.Rectangle,
     applyScroll: (deltaY: number) => void,
     shouldHandleWheel?: (pointer: Phaser.Input.Pointer) => boolean,
+    shouldStartDrag?: (pointer: Phaser.Input.Pointer) => boolean,
   ): void {
     const isPointerWithinViewport = (pointer: Phaser.Input.Pointer): boolean => {
       const bounds = viewportBackground.getBounds()
@@ -998,6 +1000,9 @@ class CardgameScene extends Phaser.Scene {
     let lastDragY = 0
     const handleViewportPointerDown = (pointer: Phaser.Input.Pointer): void => {
       if (!isPointerWithinViewport(pointer)) {
+        return
+      }
+      if (shouldStartDrag && !shouldStartDrag(pointer)) {
         return
       }
       dragPointerId = pointer.id
@@ -1068,25 +1073,12 @@ class CardgameScene extends Phaser.Scene {
       maxLines: 1,
     }).setOrigin(0, 0.5))
 
-    if (!this.menuOpen && !this.shouldSuppressInSceneLogForTargetPicker(game)) {
+    if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen, game })) {
       this.renderInSceneLog(game.log)
     }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
     this.renderHandAndControls(game)
-  }
-
-  private shouldSuppressInSceneLogForTargetPicker(game: GameUiState): boolean {
-    if (!game.canInput) {
-      return false
-    }
-    if (game.phase === 'plains_target') {
-      return game.legal.plainsReuseOptions.length > 0
-    }
-    if (game.phase === 'respond') {
-      return game.legal.counterOptions.length > 0 || game.legal.canPassResponse
-    }
-    return false
   }
 
   private renderInfoPanel(
@@ -1957,6 +1949,13 @@ class CardgameScene extends Phaser.Scene {
       this.bindScrollableViewport(
         contentViewportBackground,
         applyContentScroll,
+        (pointer): boolean => {
+          if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
+            return true
+          }
+          const logBounds = innerLogViewportBackground.getBounds()
+          return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
+        },
         (pointer): boolean => {
           if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
             return true

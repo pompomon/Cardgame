@@ -95,6 +95,23 @@ describe('phaser buildLayout', () => {
     expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(worstCaseContent, viewportHeight - layout.margin * 2))
   })
 
+  it('adds extra menu height reserve for wrapped recorder/replay heading text on narrow portrait', () => {
+    const viewportHeight = 740
+    const layout = buildLayout(320, viewportHeight, 'vertical')
+    const headingHeight = 22
+    const wrappedHeadingLineHeight = Math.round(Math.min(18, Math.max(12, layout.popupButtonHeight * 0.42)))
+    const wrappedHeadingOverflowReserve = wrappedHeadingLineHeight * 3 + layout.menuSectionGap
+    const worstCaseWrappedContent =
+      layout.menuPopupPadding * 2
+      + layout.menuTitleHeight
+      + headingHeight * 2
+      + layout.popupButtonHeight * (6 + 2)
+      + layout.menuSectionGap * 6
+      + wrappedHeadingOverflowReserve
+      + 24
+    expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(worstCaseWrappedContent, viewportHeight - layout.margin * 2))
+  })
+
   it('reserves the active-info controls band below the player-info text and above the hand strip', () => {
     // On a short landscape viewport the renderer must place End Turn / response
     // controls in a band that does not overlap the 2-line player info text at
@@ -183,6 +200,17 @@ describe('phaser buildLayout', () => {
       - layout.menuSectionGap
     expect(contentViewportHeight).toBeGreaterThan(0)
     expect(contentViewportHeight).toBeLessThanOrEqual(layout.menuPopupHeight)
+  })
+
+  it('keeps menu replay-log viewport bounded within the menu content viewport on narrow portrait', () => {
+    const layout = buildLayout(320, 740, 'vertical')
+    const contentViewportHeight =
+      layout.menuPopupHeight
+      - layout.menuPopupPadding * 2
+      - layout.menuTitleHeight
+      - layout.menuSectionGap
+    expect(contentViewportHeight).toBeGreaterThan(0)
+    expect(layout.menuLogViewportHeight).toBeLessThanOrEqual(contentViewportHeight)
   })
 
   it('uses full replay-log remainder when it exceeds the viewport minimum', () => {
