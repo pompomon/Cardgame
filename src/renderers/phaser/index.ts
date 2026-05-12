@@ -2384,6 +2384,7 @@ export class PhaserRenderer implements AppRenderer {
       const submenu = lobbyScene?.getActiveSubmenu() ?? 'root'
       const aiOptionsOpen = lobbyScene?.isAiLevelOptionsOpen() ?? false
       const selectedAiLevelLabel = AI_LEVEL_OPTIONS.find((option) => option.value === view.aiLevel)?.label ?? 'Basic'
+      const canResumeAdventure = view.adventure.hasSavedRun && (view.adventure.status === 'paused' || view.adventure.status === 'active')
       if (submenu === 'root') {
         for (const entry of modes) {
           entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
@@ -2398,18 +2399,20 @@ export class PhaserRenderer implements AppRenderer {
           label: 'Open Recording',
           onClick: () => lobbyScene?.showRecordingMenu(),
         })
-        entries.push({
-          key: 'resume-adventure',
-          label: 'Resume Adventure',
-          onClick: () => controller.resumeAdventure(),
-          disabled: !view.adventure.hasSavedRun || (view.adventure.status !== 'paused' && view.adventure.status !== 'active'),
-        })
-        entries.push({
-          key: 'reset-adventure',
-          label: 'Reset Adventure Run',
-          onClick: () => controller.abandonAdventure(),
-          disabled: !view.adventure.hasSavedRun,
-        })
+        if (canResumeAdventure) {
+          entries.push({
+            key: 'resume-adventure',
+            label: 'Resume Adventure',
+            onClick: () => controller.resumeAdventure(),
+          })
+        }
+        if (view.adventure.hasSavedRun) {
+          entries.push({
+            key: 'reset-adventure',
+            label: 'Reset Adventure Run',
+            onClick: () => controller.abandonAdventure(),
+          })
+        }
         const installEntry = installButtonState()
         entries.push({
           key: 'lobby-install',
