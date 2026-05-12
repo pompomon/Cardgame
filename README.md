@@ -21,12 +21,12 @@ The selected renderer is also stored in `localStorage` for later visits.
 - In response phase, use explicit response buttons (counter/pass).
 - Phaser renderer fills the full available viewport and continuously reflows on resize.
 - Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
-- Use the in-scene orientation button to manually switch between vertical and horizontal layout modes (saved in localStorage).
+- Phaser lobby groups controls into top-level actions plus **Settings** and **Recording** submenus.
 - Card faces render pixel-art land icons (Forest/Island/Mountain/Plains/Swamp) plus text labels.
 
 ## Card visual styles
 
-- Lobby includes a shared **Card Visual Style** selector for both renderers.
+- Lobby includes a shared **Card Visual Style** selector for both renderers (under **Settings** in Phaser).
 - Available styles:
   - **Classic**
   - **Neon**
@@ -37,7 +37,7 @@ The selected renderer is also stored in `localStorage` for later visits.
 
 ## AI levels
 
-- Lobby now includes a shared AI level selector for all AI matches.
+- Lobby now includes a shared AI level selector for all AI matches (under **Settings** in Phaser).
 - Available levels:
   - **Basic**: plays the first legal action.
   - **Advanced**: prioritizes winning progress and disruption when the opponent is near-win.

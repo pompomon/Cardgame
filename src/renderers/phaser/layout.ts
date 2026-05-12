@@ -313,12 +313,12 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   )
   const menuPopupMaxHeight = Math.max(1, safeHeight - margin * 2)
   // The menu modal must always fit its fixed controls (Back/Rematch row,
-  // orientation toggle, recorder heading + two recorder rows, start-replay or
+  // Install row, recorder heading + two recorder rows, start-replay or
   // replay-controls, close button). Compute a worst-case content height so the
   // popup is at least tall enough to keep every action reachable on short
   // phone-sized viewports — replay-log space comes from whatever is left over.
   const recorderHeadingHeight = 22
-  const fixedButtonRows = 6 // back/rematch + orientation + 2 recorder rows + start-replay/end-section + close
+  const fixedButtonRows = 5 // back/rematch + install + 2 recorder rows + close (replay rows handled separately)
   const replayControlsRows = 2 // worst case when replay is active
   // Wrapped text in recorder/replay headings is measured at runtime by the
   // renderer, but the layout still needs a conservative reserve so narrow
@@ -344,7 +344,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
       menuPopupPadding * 2
       + menuTitleHeight
       + menuSectionGap * 4
-      + popupButtonHeight * 6
+      + popupButtonHeight * 5
       + MENU_LOG_REMAINDER_RESERVE
     ),
   )
