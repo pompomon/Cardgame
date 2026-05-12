@@ -2384,10 +2384,10 @@ export class PhaserRenderer implements AppRenderer {
       const submenu = lobbyScene?.getActiveSubmenu() ?? 'root'
       const aiOptionsOpen = lobbyScene?.isAiLevelOptionsOpen() ?? false
       const selectedAiLevelLabel = AI_LEVEL_OPTIONS.find((option) => option.value === view.aiLevel)?.label ?? 'Basic'
-      for (const entry of modes) {
-        entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
-      }
       if (submenu === 'root') {
+        for (const entry of modes) {
+          entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
+        }
         entries.push({
           key: 'lobby-open-settings',
           label: 'Open Settings',
