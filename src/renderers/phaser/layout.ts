@@ -318,7 +318,9 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   // popup is at least tall enough to keep every action reachable on short
   // phone-sized viewports — replay-log space comes from whatever is left over.
   const recorderHeadingHeight = 22
-  const fixedButtonRows = 5 // rows: back/rematch (1) + install (1) + recorder rows (2) + close (1)
+  // Fixed in-game menu modal rows: back/rematch (1), install (1), recorder
+  // rows in the menu modal (2), and close (1). Lobby submenu rows are separate.
+  const fixedButtonRows = 5
   const replayControlsRows = 2 // worst case when replay is active
   // Wrapped text in recorder/replay headings is measured at runtime by the
   // renderer, but the layout still needs a conservative reserve so narrow
