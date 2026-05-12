@@ -76,21 +76,21 @@ describe('phaser buildLayout', () => {
   })
 
   it('makes the menu popup tall enough to fit all worst-case control rows (replay + recorder)', () => {
-    // The previous test only covered a 6-row baseline. The replay-active menu
+    // The previous test only covered a 5-row baseline. The replay-active menu
     // additionally renders a "Replay Controls" heading and two extra control
     // rows (Play/Pause + Prev/Next + Jump to End / Exit Replay), and the
     // recorder section adds its own heading. The popup must be tall enough to
     // hold all of those plus the fixed buttons on phone-sized viewports.
     const viewportHeight = 640
     const layout = buildLayout(360, viewportHeight, 'vertical')
-    // Worst case: 6 fixed button rows + 2 replay-control rows + recorder
+    // Worst case: 5 fixed button rows + 2 replay-control rows + recorder
     // heading + replay heading + section gaps + padding + title.
     const headingHeight = 22
     const worstCaseContent =
       layout.menuPopupPadding * 2
       + layout.menuTitleHeight
       + headingHeight * 2
-      + layout.popupButtonHeight * (6 + 2)
+      + layout.popupButtonHeight * (5 + 2)
       + layout.menuSectionGap * 6
     expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(worstCaseContent, viewportHeight - layout.margin * 2))
   })
@@ -105,7 +105,7 @@ describe('phaser buildLayout', () => {
       layout.menuPopupPadding * 2
       + layout.menuTitleHeight
       + headingHeight * 2
-      + layout.popupButtonHeight * (6 + 2)
+      + layout.popupButtonHeight * (5 + 2)
       + layout.menuSectionGap * 6
       + wrappedHeadingOverflowReserve
       + 24
@@ -221,7 +221,7 @@ describe('phaser buildLayout', () => {
         layout.menuPopupPadding * 2
         + layout.menuTitleHeight
         + layout.menuSectionGap * 4
-        + layout.popupButtonHeight * 6
+        + layout.popupButtonHeight * 5
         + MENU_LOG_REMAINDER_RESERVE
       )
     expect(replayLogRemainder).toBeGreaterThan(MENU_LOG_VIEWPORT_MIN_HEIGHT)

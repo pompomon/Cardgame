@@ -15,7 +15,7 @@ import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
-import { buildLayout, clamp, orientationFromViewport, type OrientationMode, type SceneLayout } from './layout'
+import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -31,7 +31,6 @@ const MAX_BUTTON_FONT_PX = 20
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
-const ORIENTATION_STORAGE_KEY = 'cardgame.phaser.orientation'
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const LOBBY_SCENE_KEY = 'cardgame-lobby'
@@ -97,25 +96,7 @@ type BattlefieldTargetEntry = {
   onSelect: () => void
 }
 
-function readStoredOrientationMode(): OrientationMode | null {
-  try {
-    const stored = localStorage.getItem(ORIENTATION_STORAGE_KEY)
-    if (stored === 'vertical' || stored === 'horizontal') {
-      return stored
-    }
-  } catch {
-    // Ignore storage access errors (for example private mode restrictions).
-  }
-  return null
-}
-
-function persistOrientationMode(mode: OrientationMode): void {
-  try {
-    localStorage.setItem(ORIENTATION_STORAGE_KEY, mode)
-  } catch {
-    // Ignore storage access errors.
-  }
-}
+type LobbySubmenu = 'root' | 'settings' | 'recording'
 
 function escapeHtml(value: string): string {
   return value
@@ -224,18 +205,61 @@ class LobbyScene extends Phaser.Scene {
   private rootContainer: Phaser.GameObjects.Container | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
+  private activeSubmenu: LobbySubmenu = 'root'
+  private aiLevelOptionsOpen = false
 
   constructor(rendererRef: PhaserRenderer) {
     super(LOBBY_SCENE_KEY)
     this.rendererRef = rendererRef
   }
 
-  handleOrientationChange(): void {
+  getActiveSubmenu(): LobbySubmenu {
+    return this.activeSubmenu
+  }
+
+  isAiLevelOptionsOpen(): boolean {
+    return this.aiLevelOptionsOpen
+  }
+
+  showRootMenu(): void {
+    this.activeSubmenu = 'root'
+    this.aiLevelOptionsOpen = false
+    this.renderView(this.rendererRef.currentView)
+  }
+
+  showSettingsMenu(): void {
+    this.activeSubmenu = 'settings'
+    this.renderView(this.rendererRef.currentView)
+  }
+
+  showRecordingMenu(): void {
+    this.activeSubmenu = 'recording'
+    this.renderView(this.rendererRef.currentView)
+  }
+
+  toggleAiLevelOptions(): void {
+    if (this.activeSubmenu !== 'settings') {
+      return
+    }
+    this.aiLevelOptionsOpen = !this.aiLevelOptionsOpen
+    this.renderView(this.rendererRef.currentView)
+  }
+
+  closeAiLevelOptions(): void {
+    if (!this.aiLevelOptionsOpen) {
+      return
+    }
+    this.aiLevelOptionsOpen = false
     this.renderView(this.rendererRef.currentView)
   }
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
+    // Phaser reuses the same LobbyScene instance across stop/start cycles, so
+    // reset submenu UI state here to avoid carrying an old submenu forward
+    // when returning from an in-progress match back to the lobby.
+    this.activeSubmenu = 'root'
+    this.aiLevelOptionsOpen = false
     this.updateLayout()
 
     // Save the resize listener so we can detach it on scene shutdown. Without
@@ -258,18 +282,12 @@ class LobbyScene extends Phaser.Scene {
   private updateLayout(): boolean {
     const width = this.scale.gameSize.width ?? this.scale.width ?? BASE_WIDTH
     const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
-    const orientation = this.rendererRef.orientationMode
+    const orientation = orientationFromViewport(width, height)
     this.currentLayout = buildLayout(width, height, orientation)
     const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
     const changed = signature !== this.lastLayoutSignature
     this.lastLayoutSignature = signature
     return changed
-  }
-
-  private orientationButtonLabel(): string {
-    return this.rendererRef.orientationMode === 'vertical'
-      ? 'Switch to landscape'
-      : 'Switch to portrait'
   }
 
   renderView(_view: AppViewModel | null): void {
@@ -281,7 +299,6 @@ class LobbyScene extends Phaser.Scene {
 
     const left = this.currentLayout.margin
     const top = this.currentLayout.headerTop
-    const headerRight = this.currentLayout.width - this.currentLayout.margin - this.currentLayout.actionButtonWidth / 2
 
     this.rootContainer.add(this.add.text(left, top, 'Basic Land Game (Phaser Renderer)', {
       color: '#e5ecf5',
@@ -292,18 +309,6 @@ class LobbyScene extends Phaser.Scene {
       fontSize: this.currentLayout.subtitleFontSize,
       wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
     }))
-    this.rootContainer.add(buildButton(
-      this,
-      this.orientationButtonLabel(),
-      headerRight,
-      top + this.currentLayout.actionButtonHeight / 2,
-      this.currentLayout.bodyFontSize,
-      this.currentLayout.actionButtonWidth,
-      this.currentLayout.actionButtonHeight,
-      () => {
-        this.rendererRef.toggleOrientationMode()
-      },
-    ))
 
     const modes: Array<{ mode: Mode; label: string }> = [
       { mode: 'local-hvh', label: 'Local Human vs Human' },
@@ -317,6 +322,7 @@ class LobbyScene extends Phaser.Scene {
     const view = this.rendererRef.currentView
     const hasLocalSave = view?.recording?.hasLocalSave ?? false
     const selectedAiLevel = view?.aiLevel ?? 'basic'
+    const selectedAiLevelLabel = AI_LEVEL_OPTIONS.find((option) => option.value === selectedAiLevel)?.label ?? 'Basic'
     const selectedCardVisualStyle = view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const adventure = view?.adventure
     const nextOpponent = adventure?.opponentLineup?.[adventure.currentOpponentIndex]
@@ -331,66 +337,101 @@ class LobbyScene extends Phaser.Scene {
       },
     )
     this.rootContainer.add(adventureStatusText)
-    // Lobby entry points: adventure resume/reset (when a run is saved) and
-    // recording playback shortcuts so users can review or replay a saved
-    // match without having to start a throwaway game first (mirrors the DOM
-    // lobby and the previous Phaser overlay). Each entry's `disabled` flag
-    // hides actions that are not currently applicable (no saved run / no
-    // saved recording).
-    const recorderEntries: Array<{ key: string; label: string; disabled?: boolean; onClick: () => void }> = [
-      {
-        key: 'resume-adventure',
-        label: 'Resume Adventure',
-        disabled: !adventure?.hasSavedRun || (adventure?.status !== 'paused' && adventure?.status !== 'active'),
-        onClick: () => { this.rendererRef.controller?.resumeAdventure() },
-      },
-      {
-        key: 'reset-adventure',
-        label: 'Reset Adventure Run',
-        disabled: !adventure?.hasSavedRun,
-        onClick: () => { this.rendererRef.controller?.abandonAdventure() },
-      },
-      {
-        key: 'load-browser',
+
+    type LobbyRow = { label: string; disabled?: boolean; onClick: () => void }
+    const rows: LobbyRow[] = []
+    const installEntry = installButtonState()
+    const canResumeAdventure = !!adventure?.hasSavedRun && (adventure.status === 'paused' || adventure.status === 'active')
+    if (this.activeSubmenu === 'root') {
+      modes.forEach((entry) => {
+        rows.push({
+          label: entry.label,
+          onClick: () => { this.rendererRef.controller?.startGame(entry.mode) },
+        })
+      })
+      rows.push({ label: 'Settings', onClick: () => { this.showSettingsMenu() } })
+      rows.push({ label: 'Recording', onClick: () => { this.showRecordingMenu() } })
+      if (canResumeAdventure) {
+        rows.push({ label: 'Resume Adventure', onClick: () => { this.rendererRef.controller?.resumeAdventure() } })
+      }
+      if (adventure?.hasSavedRun) {
+        rows.push({ label: 'Reset Adventure Run', onClick: () => { this.rendererRef.controller?.abandonAdventure() } })
+      }
+      rows.push({
+        label: installEntry.label,
+        disabled: installEntry.disabled,
+        onClick: installEntry.onClick,
+      })
+      rows.push({
+        label: 'Switch to DOM renderer',
+        onClick: () => { window.location.search = '?renderer=dom' },
+      })
+    } else if (this.activeSubmenu === 'settings') {
+      rows.push({ label: 'Back', onClick: () => { this.showRootMenu() } })
+      rows.push({
+        label: `AI Difficulty: ${selectedAiLevelLabel}${this.aiLevelOptionsOpen ? ' ▲' : ' ▼'}`,
+        onClick: () => { this.toggleAiLevelOptions() },
+      })
+      if (this.aiLevelOptionsOpen) {
+        AI_LEVEL_OPTIONS.forEach((option) => {
+          const selected = option.value === selectedAiLevel
+          rows.push({
+            label: selected ? `Set AI: ${option.label} ✓` : `Set AI: ${option.label}`,
+            onClick: () => {
+              this.rendererRef.controller?.setAiLevel(option.value)
+              this.closeAiLevelOptions()
+            },
+          })
+        })
+      }
+      CARD_VISUAL_STYLE_OPTIONS.forEach((option) => {
+        const selected = option.value === selectedCardVisualStyle
+        rows.push({
+          label: selected ? `Card Style: ${option.label} ✓` : `Card Style: ${option.label}`,
+          onClick: () => { this.rendererRef.controller?.setCardVisualStyle(option.value) },
+        })
+      })
+    } else {
+      rows.push({ label: 'Back', onClick: () => { this.showRootMenu() } })
+      rows.push({
         label: 'Load Recording from Browser',
         disabled: !hasLocalSave,
         onClick: () => { this.rendererRef.controller?.loadRecordingFromLocalStorage() },
-      },
-      {
-        key: 'load-file',
+      })
+      rows.push({
         label: 'Load Recording from File',
         onClick: () => { this.rendererRef.openRecordingFilePicker() },
-      },
-    ]
-    const installEntry = installButtonState()
+      })
+    }
 
     const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
-    // Lobby buttons (modes + AI levels + recorder + install + renderer-switch) need to fit
-    // between the header/subtitle area and the status footer on every
-    // viewport. Derive Y positions from the available body region
-    // (compressing button height and gap if necessary) so options like P2P
-    // Join, recorder loads, and the renderer switch stay on-screen even in
-    // short landscape phone layouts.
     const subtitleBottom = top + this.currentLayout.actionButtonHeight + 6
       + Math.max(this.currentLayout.actionButtonHeight, 28)
       + Math.max(0, adventureStatusText.height) + 8
     const lobbyBodyTop = subtitleBottom + 16
     const lobbyBodyBottom = this.currentLayout.height
       - this.currentLayout.statusBottomOffset - this.currentLayout.margin
-    const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - lobbyBodyTop)
-    const totalRows = modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + recorderEntries.length + 2
+    let rowsTop = lobbyBodyTop
+    if (this.activeSubmenu !== 'root') {
+      const submenuLabel = this.activeSubmenu === 'settings' ? 'Settings' : 'Recording'
+      const heading = this.add.text(left, rowsTop, submenuLabel, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.bodyFontSize,
+      })
+      this.rootContainer.add(heading)
+      rowsTop += Math.max(18, heading.height) + 8
+    }
+    const lobbyBodyHeight = Math.max(80, lobbyBodyBottom - rowsTop)
+    const totalRows = rows.length
     const desiredButtonHeight = this.currentLayout.isCompact ? 38 : 44
     const desiredGap = this.currentLayout.isCompact ? 8 : 14
     const desiredRowHeight = desiredButtonHeight + desiredGap
-    // Keep row spacing and button height synchronized so short lobbies never
-    // overlap adjacent rows. A fixed minimum button height larger than the
-    // scaled row height can cause stacked mode/recorder actions to collide.
     const rowScale = Math.min(1, lobbyBodyHeight / Math.max(1, totalRows * desiredRowHeight))
     const rowHeight = desiredRowHeight * rowScale
     if (rowHeight < MIN_LOBBY_ROW_HEIGHT) {
       this.rootContainer?.add(this.add.text(
         left,
-        lobbyBodyTop,
+        rowsTop,
         'Viewport too short to show lobby actions. Increase window height.',
         {
           color: '#9db0d9',
@@ -398,68 +439,17 @@ class LobbyScene extends Phaser.Scene {
           wordWrap: { width: buttonWidth },
         },
       ))
+      this.rendererRef.refreshA11yNavForCurrentView()
       return
     }
-    // Keep button height at or below the row step so vertically adjacent lobby
-    // buttons never overlap when the available body space is heavily compressed.
     const buttonHeight = Math.min(desiredButtonHeight, rowHeight)
-    const modeStartY = lobbyBodyTop + buttonHeight / 2
-
-    modes.forEach((entry, index) => {
-      this.rootContainer?.add(buildButton(
-        this,
-        entry.label,
-        left + buttonWidth / 2,
-        modeStartY + index * rowHeight,
-        this.currentLayout.actionButtonFontSize,
-        buttonWidth,
-        buttonHeight,
-        () => {
-          this.rendererRef.controller?.startGame(entry.mode)
-        },
-      ))
-    })
-
-    AI_LEVEL_OPTIONS.forEach((option, index) => {
-      const selected = option.value === selectedAiLevel
-      const label = selected ? `AI Level: ${option.label} ✓` : `AI Level: ${option.label}`
-      this.rootContainer?.add(buildButton(
-        this,
-        label,
-        left + buttonWidth / 2,
-        modeStartY + (modes.length + index) * rowHeight,
-        this.currentLayout.actionButtonFontSize,
-        buttonWidth,
-        buttonHeight,
-        () => {
-          this.rendererRef.controller?.setAiLevel(option.value)
-        },
-      ))
-    })
-
-    CARD_VISUAL_STYLE_OPTIONS.forEach((option, index) => {
-      const selected = option.value === selectedCardVisualStyle
-      const label = selected ? `Card Style: ${option.label} ✓` : `Card Style: ${option.label}`
-      this.rootContainer?.add(buildButton(
-        this,
-        label,
-        left + buttonWidth / 2,
-        modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + index) * rowHeight,
-        this.currentLayout.actionButtonFontSize,
-        buttonWidth,
-        buttonHeight,
-        () => {
-          this.rendererRef.controller?.setCardVisualStyle(option.value)
-        },
-      ))
-    })
-
-    recorderEntries.forEach((entry, index) => {
+    const modeStartY = rowsTop + buttonHeight / 2
+    rows.forEach((entry, index) => {
       const button = buildButton(
         this,
         entry.label,
         left + buttonWidth / 2,
-        modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + index) * rowHeight,
+        modeStartY + index * rowHeight,
         this.currentLayout.actionButtonFontSize,
         buttonWidth,
         buttonHeight,
@@ -471,35 +461,6 @@ class LobbyScene extends Phaser.Scene {
       }
       this.rootContainer?.add(button)
     })
-
-    const installButton = buildButton(
-      this,
-      installEntry.label,
-      left + buttonWidth / 2,
-      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + recorderEntries.length) * rowHeight,
-      this.currentLayout.actionButtonFontSize,
-      buttonWidth,
-      buttonHeight,
-      installEntry.disabled ? () => {} : installEntry.onClick,
-    )
-    if (installEntry.disabled) {
-      installButton.setAlpha(0.4)
-      installButton.disableInteractive()
-    }
-    this.rootContainer?.add(installButton)
-
-    this.rootContainer.add(buildButton(
-      this,
-      'Switch to DOM renderer',
-      left + buttonWidth / 2,
-      modeStartY + (modes.length + AI_LEVEL_OPTIONS.length + CARD_VISUAL_STYLE_OPTIONS.length + recorderEntries.length + 1) * rowHeight,
-      this.currentLayout.actionButtonFontSize,
-      buttonWidth,
-      buttonHeight,
-      () => {
-        window.location.search = '?renderer=dom'
-      },
-    ))
 
     // Status footer (renders any controller status strings such as P2P signaling errors).
     const status = this.rendererRef.currentView?.status ?? ''
@@ -515,6 +476,7 @@ class LobbyScene extends Phaser.Scene {
         },
       ))
     }
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 }
 
@@ -558,16 +520,6 @@ class CardgameScene extends Phaser.Scene {
   constructor(rendererRef: PhaserRenderer) {
     super(CARDGAME_SCENE_KEY)
     this.rendererRef = rendererRef
-  }
-
-  handleOrientationChange(): void {
-    this.renderView(this.rendererRef.currentView)
-  }
-
-  private orientationButtonLabel(): string {
-    return this.rendererRef.orientationMode === 'vertical'
-      ? 'Switch to landscape'
-      : 'Switch to portrait'
   }
 
   create(): void {
@@ -681,7 +633,7 @@ class CardgameScene extends Phaser.Scene {
   private updateLayout(): boolean {
     const width = this.scale.gameSize.width ?? this.scale.width ?? BASE_WIDTH
     const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
-    const orientation = this.rendererRef.orientationMode
+    const orientation = orientationFromViewport(width, height)
     this.currentLayout = buildLayout(width, height, orientation)
     const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}:${this.currentLayout.isCollapsed ? 'collapsed' : 'split'}`
     const changed = signature !== this.lastLayoutSignature
@@ -1713,15 +1665,7 @@ class CardgameScene extends Phaser.Scene {
     }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
     cursorY += this.currentLayout.popupButtonHeight + sectionGap
 
-    // Section 2: orientation toggle.
-    const orientationY = cursorY + this.currentLayout.popupButtonHeight / 2
-    content.add(this.createButton(this.orientationButtonLabel(), 0, orientationY, () => {
-      this.closeMenuOverlay()
-      this.rendererRef.toggleOrientationMode()
-    }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    cursorY += this.currentLayout.popupButtonHeight + sectionGap
-
-    // Section 3: Install.
+    // Section 2: Install.
     const installY = cursorY + this.currentLayout.popupButtonHeight / 2
     const installButton = this.createButton(
       installEntry.label,
@@ -2216,24 +2160,10 @@ export class PhaserRenderer implements AppRenderer {
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
   currentView: AppViewModel | null = null
-  private _orientationMode: OrientationMode = 'horizontal'
-
-  get orientationMode(): OrientationMode {
-    return this._orientationMode
-  }
-
-  toggleOrientationMode(): void {
-    this._orientationMode = this._orientationMode === 'vertical' ? 'horizontal' : 'vertical'
-    persistOrientationMode(this._orientationMode)
-    this.cardgameScene?.handleOrientationChange()
-    this.lobbyScene?.handleOrientationChange()
-  }
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
     this.controller = controller
-    this._orientationMode = readStoredOrientationMode()
-      ?? orientationFromViewport(window.innerWidth, window.innerHeight)
     container.classList.add('phaser-root')
 
     const canvasHost = document.createElement('div')
@@ -2241,9 +2171,8 @@ export class PhaserRenderer implements AppRenderer {
     container.innerHTML = ''
     container.appendChild(canvasHost)
 
-    // Hidden file input for "Load from File" recorder action. The Menu modal
-    // triggers it via openRecordingFilePicker(); no other DOM overlays remain
-    // (recorder/P2P controls are now exclusively under the Menu).
+    // Hidden file input for "Load from File" recorder action. Phaser lobby and
+    // menu entry points both trigger it via openRecordingFilePicker().
     const fileInput = document.createElement('input')
     fileInput.type = 'file'
     fileInput.accept = 'application/json,.json'
@@ -2284,7 +2213,7 @@ export class PhaserRenderer implements AppRenderer {
     // native <button> elements whose contents are kept in sync with the view
     // model so assistive tech has full coverage of every Phaser control that
     // used to be a native HTML button (Recorder, Replay, Rematch, Back to
-    // Lobby, orientation toggle, mode buttons, etc.).
+    // Lobby, mode buttons, etc.).
     const a11yNav = document.createElement('nav')
     a11yNav.className = 'phaser-a11y-nav'
     a11yNav.setAttribute('aria-label', 'Cardgame controls')
@@ -2441,10 +2370,6 @@ export class PhaserRenderer implements AppRenderer {
     type NavEntry = { key: string; label: string; onClick: () => void; disabled?: boolean }
     const entries: NavEntry[] = []
     const targetPickerOpen = !lobbyActive && (this.cardgameScene?.isTargetPickerOpen() ?? false)
-    if (!targetPickerOpen) {
-      const orientationLabel = this.orientationMode === 'vertical' ? 'Switch to landscape' : 'Switch to portrait'
-      entries.push({ key: 'orientation', label: orientationLabel, onClick: () => this.toggleOrientationMode() })
-    }
 
     if (lobbyActive) {
       const modes: Array<{ mode: Mode; label: string }> = [
@@ -2455,59 +2380,101 @@ export class PhaserRenderer implements AppRenderer {
         { mode: 'p2p-host', label: 'P2P Host' },
         { mode: 'p2p-join', label: 'P2P Join' },
       ]
-      for (const entry of modes) {
-        entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
-      }
-      for (const option of AI_LEVEL_OPTIONS) {
-        const selected = view.aiLevel === option.value ? ' (selected)' : ''
+      const lobbyScene = this.lobbyScene
+      const submenu = lobbyScene?.getActiveSubmenu() ?? 'root'
+      const aiOptionsOpen = lobbyScene?.isAiLevelOptionsOpen() ?? false
+      const selectedAiLevelLabel = AI_LEVEL_OPTIONS.find((option) => option.value === view.aiLevel)?.label ?? 'Basic'
+      const canResumeAdventure = view.adventure.hasSavedRun && (view.adventure.status === 'paused' || view.adventure.status === 'active')
+      if (submenu === 'root') {
+        for (const entry of modes) {
+          entries.push({ key: `start:${entry.mode}`, label: `Start ${entry.label}`, onClick: () => controller.startGame(entry.mode) })
+        }
         entries.push({
-          key: `ai-level:${option.value}`,
-          label: `Set AI level: ${option.label}${selected}`,
-          onClick: () => controller.setAiLevel(option.value),
+          key: 'lobby-open-settings',
+          label: 'Open Settings',
+          onClick: () => lobbyScene?.showSettingsMenu(),
+        })
+        entries.push({
+          key: 'lobby-open-recording',
+          label: 'Open Recording',
+          onClick: () => lobbyScene?.showRecordingMenu(),
+        })
+        if (canResumeAdventure) {
+          entries.push({
+            key: 'resume-adventure',
+            label: 'Resume Adventure',
+            onClick: () => controller.resumeAdventure(),
+          })
+        }
+        if (view.adventure.hasSavedRun) {
+          entries.push({
+            key: 'reset-adventure',
+            label: 'Reset Adventure Run',
+            onClick: () => controller.abandonAdventure(),
+          })
+        }
+        const installEntry = installButtonState()
+        entries.push({
+          key: 'lobby-install',
+          label: installEntry.label,
+          onClick: installEntry.onClick,
+          disabled: installEntry.disabled,
+        })
+        entries.push({
+          key: 'switch-renderer',
+          label: 'Switch to DOM renderer',
+          onClick: () => { window.location.search = '?renderer=dom' },
+        })
+      } else if (submenu === 'settings') {
+        entries.push({
+          key: 'settings-back',
+          label: 'Back to Lobby',
+          onClick: () => lobbyScene?.showRootMenu(),
+        })
+        entries.push({
+          key: 'settings-ai-toggle',
+          label: `${aiOptionsOpen ? 'Collapse' : 'Expand'} AI Difficulty Selector (current: ${selectedAiLevelLabel})`,
+          onClick: () => lobbyScene?.toggleAiLevelOptions(),
+        })
+        if (aiOptionsOpen) {
+          for (const option of AI_LEVEL_OPTIONS) {
+            const selected = view.aiLevel === option.value ? ' (selected)' : ''
+            entries.push({
+              key: `settings-ai-level:${option.value}`,
+              label: `Set AI level: ${option.label}${selected}`,
+              onClick: () => {
+                controller.setAiLevel(option.value)
+                lobbyScene?.closeAiLevelOptions()
+              },
+            })
+          }
+        }
+        for (const option of CARD_VISUAL_STYLE_OPTIONS) {
+          const selected = view.cardVisualStyle === option.value ? ' (selected)' : ''
+          entries.push({
+            key: `settings-card-visual-style:${option.value}`,
+            label: `Set card visual style: ${option.label}${selected}`,
+            onClick: () => controller.setCardVisualStyle(option.value),
+          })
+        }
+      } else {
+        entries.push({
+          key: 'recording-back',
+          label: 'Back to Lobby',
+          onClick: () => lobbyScene?.showRootMenu(),
+        })
+        entries.push({
+          key: 'lobby-recorder-load-browser',
+          label: 'Load Recording from Browser',
+          onClick: () => controller.loadRecordingFromLocalStorage(),
+          disabled: !view.recording.hasLocalSave,
+        })
+        entries.push({
+          key: 'lobby-recorder-load-file',
+          label: 'Load Recording from File',
+          onClick: () => this.openRecordingFilePicker(),
         })
       }
-      for (const option of CARD_VISUAL_STYLE_OPTIONS) {
-        const selected = view.cardVisualStyle === option.value ? ' (selected)' : ''
-        entries.push({
-          key: `card-visual-style:${option.value}`,
-          label: `Set card visual style: ${option.label}${selected}`,
-          onClick: () => controller.setCardVisualStyle(option.value),
-        })
-      }
-      // Mirror the lobby's recorder entry points for keyboard / screen-reader
-      // users so they can load a saved match without first starting a
-      // throwaway game (matches the new visible lobby buttons).
-      entries.push({
-        key: 'resume-adventure',
-        label: 'Resume Adventure',
-        onClick: () => controller.resumeAdventure(),
-        disabled: !view.adventure.hasSavedRun || (view.adventure.status !== 'paused' && view.adventure.status !== 'active'),
-      })
-      entries.push({
-        key: 'reset-adventure',
-        label: 'Reset Adventure Run',
-        onClick: () => controller.abandonAdventure(),
-        disabled: !view.adventure.hasSavedRun,
-      })
-      entries.push({
-        key: 'lobby-recorder-load-browser',
-        label: 'Load Recording from Browser',
-        onClick: () => controller.loadRecordingFromLocalStorage(),
-        disabled: !view.recording.hasLocalSave,
-      })
-      entries.push({
-        key: 'lobby-recorder-load-file',
-        label: 'Load Recording from File',
-        onClick: () => this.openRecordingFilePicker(),
-      })
-      const installEntry = installButtonState()
-      entries.push({
-        key: 'lobby-install',
-        label: installEntry.label,
-        onClick: installEntry.onClick,
-        disabled: installEntry.disabled,
-      })
-      entries.push({ key: 'switch-renderer', label: 'Switch to DOM renderer', onClick: () => { window.location.search = '?renderer=dom' } })
     } else {
       const closeSceneMenu = (): void => { this.cardgameScene?.closeMenuOverlay() }
       if (targetPickerOpen) {

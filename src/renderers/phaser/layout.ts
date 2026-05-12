@@ -312,14 +312,16 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     menuPopupMaxWidth,
   )
   const menuPopupMaxHeight = Math.max(1, safeHeight - margin * 2)
-  // The menu modal must always fit its fixed controls (Back/Rematch row,
-  // orientation toggle, recorder heading + two recorder rows, start-replay or
-  // replay-controls, close button). Compute a worst-case content height so the
-  // popup is at least tall enough to keep every action reachable on short
-  // phone-sized viewports — replay-log space comes from whatever is left over.
+  // The menu modal must always fit its fixed controls and worst-case replay
+  // controls. Compute a worst-case content height so the popup is at least tall
+  // enough to keep every action reachable on short phone-sized viewports —
+  // replay-log space comes from whatever is left over.
   const recorderHeadingHeight = 22
-  const fixedButtonRows = 6 // back/rematch + orientation + 2 recorder rows + start-replay/end-section + close
-  const replayControlsRows = 2 // worst case when replay is active
+  // Fixed in-game menu modal rows: back/rematch (1), install (1), recorder rows
+  // in the menu modal (2), and close (1). Lobby submenu rows are separate.
+  const baseMenuButtonRows = 5
+  const maxReplayControlRows = 2 // worst case when replay is active
+  const worstCaseMenuButtonRows = baseMenuButtonRows + maxReplayControlRows
   // Wrapped text in recorder/replay headings is measured at runtime by the
   // renderer, but the layout still needs a conservative reserve so narrow
   // portrait menus don't under-budget the fixed control stack.
@@ -329,7 +331,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     menuPopupPadding * 2
     + menuTitleHeight
     + recorderHeadingHeight * 2
-    + popupButtonHeight * (fixedButtonRows + replayControlsRows)
+    + popupButtonHeight * worstCaseMenuButtonRows
     + menuSectionGap * 6
     + wrappedHeadingOverflowReserve
     + 24 // breathing room
@@ -344,7 +346,7 @@ export function buildLayout(width: number, height: number, orientation: Orientat
       menuPopupPadding * 2
       + menuTitleHeight
       + menuSectionGap * 4
-      + popupButtonHeight * 6
+      + popupButtonHeight * baseMenuButtonRows
       + MENU_LOG_REMAINDER_RESERVE
     ),
   )
