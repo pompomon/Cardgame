@@ -255,6 +255,9 @@ class LobbyScene extends Phaser.Scene {
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
+    // Phaser reuses the same LobbyScene instance across stop/start cycles, so
+    // reset submenu UI state here to avoid carrying an old submenu forward
+    // when returning from an in-progress match back to the lobby.
     this.activeSubmenu = 'root'
     this.aiLevelOptionsOpen = false
     this.updateLayout()
@@ -436,6 +439,7 @@ class LobbyScene extends Phaser.Scene {
           wordWrap: { width: buttonWidth },
         },
       ))
+      this.rendererRef.refreshA11yNavForCurrentView()
       return
     }
     const buttonHeight = Math.min(desiredButtonHeight, rowHeight)
