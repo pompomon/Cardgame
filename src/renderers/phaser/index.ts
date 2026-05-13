@@ -13,10 +13,11 @@ import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
-import { isBasicLand, type BasicLand, type GameAction } from '../../game/types'
+import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
+import { formatLogEventText, formatLogEventTile } from './log-events'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -1079,7 +1080,7 @@ class CardgameScene extends Phaser.Scene {
     }).setOrigin(0, 0.5))
 
     if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen })) {
-      this.renderInSceneLog(game.log)
+      this.renderInSceneLog(game.events)
     }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
@@ -1271,7 +1272,85 @@ class CardgameScene extends Phaser.Scene {
     }
   }
 
-  private renderInSceneLog(lines: string[]): void {
+  // Builds a vertical column of structured log "tiles" (actor pill + glyph or
+  // land card art + label) inside a container positioned at (0, 0). Returns
+  // the total content height in pixels so callers can drive scrolling.
+  private buildLogTilesContent(
+    events: readonly LogEvent[],
+    contentWidth: number,
+    visualStyle: AppViewModel['cardVisualStyle'],
+  ): { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number } {
+    const container = this.add.container(0, 0)
+    const fontSize = parseFloat(this.currentLayout.smallFontSize) || 12
+    const tileSpacing = 4
+    const tilePadding = 4
+    const iconSize = Math.max(14, Math.round(fontSize * 1.4))
+    const pillWidth = Math.max(22, Math.round(fontSize * 2.2))
+    const tileHeight = Math.max(iconSize + tilePadding * 2, Math.round(fontSize * 2))
+
+    if (events.length === 0) {
+      const empty = this.add.text(0, 0, 'No log entries yet.', {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: Math.max(40, contentWidth) },
+      }).setOrigin(0, 0)
+      container.add(empty)
+      return { container, contentHeight: empty.height, tileCount: 0 }
+    }
+
+    let cursorY = 0
+    for (const event of events) {
+      const tile = formatLogEventTile(event)
+      const row = this.add.container(0, cursorY)
+
+      let contentX = 0
+      // Actor pill (P1/P2) — game-wide events skip this and start with the icon.
+      if (tile.actor !== null) {
+        const fill = tile.actor === 0 ? COLOR_PLAYER_ACTIVE_FILL : COLOR_PLAYER_NON_ACTIVE_FILL
+        const pillBg = this.add.rectangle(0, 0, pillWidth, tileHeight - 2, fill, 0.85)
+          .setStrokeStyle(1, COLOR_PANEL_STROKE)
+          .setOrigin(0, 0)
+        const pillText = this.add.text(pillWidth / 2, (tileHeight - 2) / 2, `P${tile.actor + 1}`, {
+          color: '#e5ecf5',
+          fontSize: this.currentLayout.smallFontSize,
+        }).setOrigin(0.5, 0.5)
+        row.add(pillBg)
+        row.add(pillText)
+        contentX += pillWidth + 6
+      }
+
+      // Icon: card art for land-related events, glyph text otherwise.
+      const iconCenterY = (tileHeight - 2) / 2
+      if (tile.cardName !== null && isBasicLand(tile.cardName)) {
+        this.addCardArtToContainer(tile.cardName, visualStyle, contentX + iconSize / 2, iconCenterY, iconSize, row)
+      } else {
+        const glyph = this.add.text(contentX + iconSize / 2, iconCenterY, tile.glyph, {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+        }).setOrigin(0.5, 0.5)
+        row.add(glyph)
+      }
+      contentX += iconSize + 6
+
+      const labelWidth = Math.max(20, contentWidth - contentX)
+      const labelText = this.add.text(contentX, iconCenterY, tile.label, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: labelWidth },
+        maxLines: 2,
+      }).setOrigin(0, 0.5)
+      row.add(labelText)
+
+      // Row height grows when label wraps to two lines; keep tileHeight as a floor.
+      const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
+      container.add(row)
+      cursorY += rowHeight + tileSpacing
+    }
+    const contentHeight = Math.max(0, cursorY - tileSpacing)
+    return { container, contentHeight, tileCount: events.length }
+  }
+
+  private renderInSceneLog(events: readonly LogEvent[]): void {
     const x = this.currentLayout.logColumnLeft
     const y = this.currentLayout.logColumnTop
     const width = this.currentLayout.logColumnWidth
@@ -1297,6 +1376,17 @@ class CardgameScene extends Phaser.Scene {
     })
     this.rootContainer?.add(heading)
 
+    // Hidden screen-reader / accessibility mirror: keep a flat text version of
+    // the log so any tooling that scans Phaser text still sees the same
+    // information that the DOM renderer's <ul>-based log shows.
+    const a11yLines = events.length > 0 ? events.map((event) => formatLogEventText(event)) : ['No log entries yet.']
+    const a11yMirror = this.add.text(x + padding, headingTop, a11yLines.join('\n'), {
+      color: '#000000',
+      fontSize: this.currentLayout.smallFontSize,
+    }).setVisible(false)
+    a11yMirror.setData('log-a11y-mirror', true)
+    this.rootContainer?.add(a11yMirror)
+
     const viewportTop = heading.y + heading.height + 6
     const viewportBottom = y + height - padding
     const viewportHeight = viewportBottom - viewportTop
@@ -1305,6 +1395,7 @@ class CardgameScene extends Phaser.Scene {
     if (viewportHeight <= 0 || viewportWidth <= 0) {
       panelBg.destroy()
       heading.destroy()
+      a11yMirror.destroy()
       return
     }
 
@@ -1319,17 +1410,11 @@ class CardgameScene extends Phaser.Scene {
     viewportBg.setInteractive()
     this.rootContainer?.add(viewportBg)
 
-    const logDisplayText = lines.length > 0 ? lines.join('\n') : 'No log entries yet.'
-    const logWrapWidth = Math.max(40, viewportWidth - 12)
-    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
+    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    const tileColumnWidth = Math.max(40, viewportWidth - 12)
+    const { container: tilesColumn, contentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle)
+    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6, [tilesColumn])
     this.rootContainer?.add(logContent)
-
-    const logText = this.add.text(0, 0, logDisplayText, {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.smallFontSize,
-      wordWrap: { width: logWrapWidth },
-    }).setOrigin(0, 0)
-    logContent.add(logText)
 
     const logMask = this.add.graphics()
     logMask.setVisible(false)
@@ -1338,7 +1423,7 @@ class CardgameScene extends Phaser.Scene {
     this.rootContainer?.add(logMask)
     logContent.setMask(logMask.createGeometryMask())
 
-    const maxScroll = Math.max(0, logText.height + 12 - viewportHeight)
+    const maxScroll = Math.max(0, contentHeight + 12 - viewportHeight)
     let scrollOffset: number
     if (this.inSceneLogScrollOffset === null || this.inSceneLogPinnedToBottom) {
       scrollOffset = maxScroll
@@ -1872,13 +1957,11 @@ class CardgameScene extends Phaser.Scene {
 
       const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
       content.add(logContent)
-      const lines = game.log
-      const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
-        color: '#9db0d9',
-        fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: Math.max(1, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2) },
-      }).setOrigin(0, 0)
-      logContent.add(logText)
+      const events = game.events
+      const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+      const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
+      const { container: tilesColumn, contentHeight: logContentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle)
+      logContent.add(tilesColumn)
 
       const logMask = this.add.graphics()
       logMask.fillStyle(0xffffff)
@@ -1887,7 +1970,7 @@ class CardgameScene extends Phaser.Scene {
       content.add(logMask)
       logContent.setMask(logMask.createGeometryMask())
 
-      const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
+      const maxScroll = Math.max(0, logContentHeight + 16 - logViewportHeight)
       // Preserve "stick to bottom" intent across rebuilds: if the user was previously
       // pinned to the newest entry, snap to the new max so fresh log lines remain visible
       // when AI/replay ticks rebuild the menu while it stays open.

@@ -52,7 +52,26 @@ export interface GameState {
   pendingPlainsReuse: PendingPlainsReuse | null
   winner: Winner
   log: string[]
+  events: LogEvent[]
 }
+
+// Structured log event stream emitted in lock-step with `log: string[]`.
+// Renderers (Phaser visual log, future translations, ability animation queue)
+// consume this without parsing free-form strings.
+export type LogEvent =
+  | { kind: 'game_started' }
+  | { kind: 'game_start_skip_draw'; actor: number }
+  | { kind: 'turn_start'; turn: number; actor: number }
+  | { kind: 'draw'; actor: number; cardName: BasicLand }
+  | { kind: 'play_land'; actor: number; cardName: BasicLand }
+  | { kind: 'ability_forest_return'; actor: number; cardName: BasicLand }
+  | { kind: 'ability_swamp_discard'; actor: number; target: number; cardName: BasicLand }
+  | { kind: 'ability_mountain_destroy'; actor: number; target: number; cardName: BasicLand }
+  | { kind: 'ability_plains_reuse'; actor: number; reusedName: BasicLand }
+  | { kind: 'counter_offered'; responder: number; cardName: BasicLand }
+  | { kind: 'counter_resolved'; actor: number; cardName: BasicLand }
+  | { kind: 'deck_empty_loss'; actor: number }
+  | { kind: 'game_end'; winner: Winner }
 
 export type GameAction =
   | { type: 'play_land'; actor: number; cardId: string; effectTargetId?: string }

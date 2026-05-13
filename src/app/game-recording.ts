@@ -189,9 +189,15 @@ function isGameActionLike(payload: unknown): payload is GameAction {
 }
 
 function normalizeStateSchema(state: GameState): GameState {
+  // Older recordings (pre-LogEvent) didn't persist a structured event stream.
+  // Default it to an empty array so legacy snapshots still load and
+  // type-check; renderers should treat the structured stream as best-effort
+  // and fall back to `log` strings for back-filled records.
+  const rawEvents = (state as { events?: unknown }).events
   return {
     ...state,
     pendingPlainsReuse: state.pendingPlainsReuse ?? null,
+    events: Array.isArray(rawEvents) ? state.events : [],
   }
 }
 

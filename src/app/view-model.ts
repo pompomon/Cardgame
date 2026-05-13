@@ -245,6 +245,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),
       },
       log: game.log,
+      events: game.events,
       isReplay: replayActive,
     },
     recording: {

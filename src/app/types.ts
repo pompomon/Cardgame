@@ -1,4 +1,4 @@
-import type { BasicLand, GameAction, GamePhase, GameState } from '../game/types'
+import type { BasicLand, GameAction, GamePhase, GameState, LogEvent } from '../game/types'
 import type { GameRecordFile } from './game-recording'
 import type { AdventureOpponentDeck, AdventureOpponentKind, AdventureRunStatus } from './adventure'
 
@@ -140,6 +140,7 @@ export interface GameUiState {
     canPassResponse: boolean
   }
   log: string[]
+  events: readonly LogEvent[]
   isReplay: boolean
 }
 

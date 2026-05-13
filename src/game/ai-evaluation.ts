@@ -109,6 +109,7 @@ function toEvaluationState(state: GameState): GameState {
   return {
     ...state,
     log: [],
+    events: [],
     players: [
       {
         ...state.players[0],
