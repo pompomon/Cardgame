@@ -119,9 +119,14 @@ export function enqueueEffect(state: EffectQueueState, descriptor: EffectDescrip
   }
 }
 
+// Drops every pending descriptor but intentionally leaves `playing` alone:
+// if a tween is currently in flight, its `done` callback (set up by
+// `pumpEffectQueue` / `playAbilityEffect`) will eventually flip `playing`
+// back to `false`. Resetting it here would let a follow-up `pumpEffectQueue`
+// start a new effect concurrently with the still-running tween, which can
+// double up rings on screen.
 export function clearEffectQueue(state: EffectQueueState): void {
   state.queue.length = 0
-  state.playing = false
 }
 
 export interface PumpEffectQueueOptions {

@@ -88,12 +88,30 @@ describe('phaser effects queue', () => {
     expect(queue.queue).toHaveLength(MAX_QUEUED_EFFECTS)
   })
 
-  it('clears state via clearEffectQueue', () => {
+  it('clears pending entries via clearEffectQueue but leaves an in-flight effect alone', () => {
     const queue = createEffectQueue()
     enqueueEffect(queue, descriptor('forest_return'))
     queue.playing = true
     clearEffectQueue(queue)
     expect(queue.queue).toHaveLength(0)
-    expect(queue.playing).toBe(false)
+    // `playing` must stay true so a follow-up pump can't start a second
+    // effect concurrently with a tween that is still in flight.
+    expect(queue.playing).toBe(true)
+  })
+
+  it('does not start a new effect after clearEffectQueue while one is in flight', () => {
+    const queue = createEffectQueue()
+    enqueueEffect(queue, descriptor('forest_return'))
+    queue.playing = true
+    clearEffectQueue(queue)
+    enqueueEffect(queue, descriptor('mountain_destroy'))
+    let runs = 0
+    pumpEffectQueue(queue, {
+      animationSpeed: 'normal',
+      durationMs: 50,
+      run: () => { runs += 1 },
+    })
+    expect(runs).toBe(0)
+    expect(queue.queue).toHaveLength(1)
   })
 })

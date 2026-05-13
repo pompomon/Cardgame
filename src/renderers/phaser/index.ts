@@ -134,13 +134,29 @@ function preloadCardArt(scene: Phaser.Scene): void {
     }
     scene.load.image(entry.key, entry.url)
   }
-  scene.load.once(Phaser.Loader.Events.FILE_LOAD_ERROR, (file: { key?: string; src?: string }) => {
+  // Phaser scenes can be stopped/started repeatedly (e.g. lobby ↔ game).
+  // `scene.load.once` only detaches when the event actually fires, so on
+  // successful loads the FILE_LOAD_ERROR handler would accumulate across
+  // repeated preload cycles. Detach on COMPLETE as well, and skip
+  // re-attaching when a handler is already pending on the loader.
+  const loader = scene.load as Phaser.Loader.LoaderPlugin & {
+    listenerCount?: (event: string | symbol) => number
+  }
+  const errorEvent = Phaser.Loader.Events.FILE_LOAD_ERROR
+  if (typeof loader.listenerCount === 'function' && loader.listenerCount(errorEvent) > 0) {
+    return
+  }
+  const onError = (file: { key?: string; src?: string }): void => {
     if (cardArtLoadErrorReported) {
       return
     }
     cardArtLoadErrorReported = true
     // eslint-disable-next-line no-console
     console.warn('[phaser] failed to load card art', file?.key ?? '<unknown>', file?.src ?? '')
+  }
+  scene.load.once(errorEvent, onError)
+  scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
+    scene.load.off(errorEvent, onError)
   })
 }
 
