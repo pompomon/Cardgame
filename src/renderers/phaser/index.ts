@@ -556,7 +556,6 @@ class CardgameScene extends Phaser.Scene {
   // MAX_QUEUED_EFFECTS to prevent backlog during AI-vs-AI sessions.
   private effectQueue: EffectQueueState = createEffectQueue()
   private lastAnimatedEventCount = 0
-  private effectsLayer: Phaser.GameObjects.Container | null = null
 
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
@@ -910,10 +909,14 @@ class CardgameScene extends Phaser.Scene {
       container.add(image)
       return
     }
-    // Fallback: keep the original pixel-rect icon path so cards remain visible.
-    const left = centerX - Math.floor(size / 2)
-    const top = centerY - Math.floor(size / 2)
-    this.addPixelIconToContainer(land, visualStyle, left, top, size, container)
+    // Fallback: keep the original pixel-rect icon path so cards remain
+    // visible. Bucket the size to match what `addPixelIconToContainer` will
+    // use internally so positioning stays centered (otherwise the icon can
+    // be off-by-one when `bucketIconSize(size) !== size`).
+    const effectiveSize = bucketIconSize(size)
+    const left = centerX - Math.floor(effectiveSize / 2)
+    const top = centerY - Math.floor(effectiveSize / 2)
+    this.addPixelIconToContainer(land, visualStyle, left, top, effectiveSize, container)
   }
 
   private syncPendingPlayLandTargetSelection(game: GameUiState): void {
@@ -1105,16 +1108,6 @@ class CardgameScene extends Phaser.Scene {
     }
     this.lastAnimatedEventCount = events.length
 
-    // Re-create a top layer for visual flourishes so they sit above cards.
-    if (this.effectsLayer) {
-      this.effectsLayer.destroy(true)
-      this.effectsLayer = null
-    }
-    if (this.rootContainer) {
-      this.effectsLayer = this.add.container(0, 0)
-      this.rootContainer.add(this.effectsLayer)
-    }
-
     pumpEffectQueue(this.effectQueue, {
       animationSpeed: view.animationSpeed,
       durationMs: durationMsForSpeed(view.animationSpeed),
@@ -1140,11 +1133,12 @@ class CardgameScene extends Phaser.Scene {
       ? descriptor.actor === activeIndex
       : descriptor.actor === nonActiveIndex
     const x = layout.boardColumnLeft + layout.boardColumnWidth / 2
+    const rowHeight = useNonActive ? layout.nonActiveBattlefieldHeight : layout.activeBattlefieldHeight
     const y = useNonActive
       ? layout.nonActiveBattlefieldY + layout.nonActiveBattlefieldHeight / 2
       : layout.activeBattlefieldY + layout.activeBattlefieldHeight / 2
     const width = Math.max(80, Math.min(layout.boardColumnWidth - 24, layout.cardWidth * 2.4))
-    const height = Math.max(60, Math.min(layout.activeBattlefieldHeight - 12, layout.cardHeight + 16))
+    const height = Math.max(60, Math.min(rowHeight - 12, layout.cardHeight + 16))
     return { x, y, width, height }
   }
 
@@ -1185,7 +1179,7 @@ class CardgameScene extends Phaser.Scene {
     }).setOrigin(0, 0.5))
 
     if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen })) {
-      this.renderInSceneLog(game.events)
+      this.renderInSceneLog(game.events, game.log, game.actor)
     }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
@@ -1380,10 +1374,14 @@ class CardgameScene extends Phaser.Scene {
   // Builds a vertical column of structured log "tiles" (actor pill + glyph or
   // land card art + label) inside a container positioned at (0, 0). Returns
   // the total content height in pixels so callers can drive scrolling.
+  // When `events` is empty but `legacyLog` has content (e.g. a back-filled
+  // legacy recording), each log string is rendered as a plain text tile so
+  // the panel still shows the historical play log instead of an empty state.
   private buildLogTilesContent(
     events: readonly LogEvent[],
     contentWidth: number,
     visualStyle: AppViewModel['cardVisualStyle'],
+    options: { activeActor?: number; legacyLog?: readonly string[] } = {},
   ): { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number } {
     const container = this.add.container(0, 0)
     const fontSize = parseFloat(this.currentLayout.smallFontSize) || 12
@@ -1392,6 +1390,29 @@ class CardgameScene extends Phaser.Scene {
     const iconSize = Math.max(14, Math.round(fontSize * 1.4))
     const pillWidth = Math.max(22, Math.round(fontSize * 2.2))
     const tileHeight = Math.max(iconSize + tilePadding * 2, Math.round(fontSize * 2))
+    const activeActor = options.activeActor ?? 0
+
+    // Legacy fallback: when the structured event stream is missing (e.g.
+    // back-filled to [] for a pre-LogEvent recording) but we still have raw
+    // log strings, render each string as a plain text row so users don't see
+    // an empty panel for content that does exist.
+    if (events.length === 0 && options.legacyLog && options.legacyLog.length > 0) {
+      let cursorY = 0
+      for (const line of options.legacyLog) {
+        const labelText = this.add.text(0, 0, line, {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+          wordWrap: { width: Math.max(20, contentWidth) },
+          maxLines: 3,
+        }).setOrigin(0, 0)
+        labelText.y = cursorY + tilePadding
+        container.add(labelText)
+        const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
+        cursorY += rowHeight + tileSpacing
+      }
+      const contentHeight = Math.max(0, cursorY - tileSpacing)
+      return { container, contentHeight, tileCount: options.legacyLog.length }
+    }
 
     if (events.length === 0) {
       const empty = this.add.text(0, 0, 'No log entries yet.', {
@@ -1406,48 +1427,63 @@ class CardgameScene extends Phaser.Scene {
     let cursorY = 0
     for (const event of events) {
       const tile = formatLogEventTile(event)
+
+      // Layout strategy: create the label first (it's the variable-height
+      // element due to word-wrap), measure it, then derive `rowHeight` so
+      // pill / icon / label can all be vertically centered against the same
+      // axis. This avoids the previous overlap where a wrapped label could
+      // extend above the row baseline and clip into the previous tile.
+      let contentX = 0
+      const hasPill = tile.actor !== null
+      if (hasPill) {
+        contentX += pillWidth + 6
+      }
+      contentX += iconSize + 6
+      const labelWidth = Math.max(20, contentWidth - contentX)
+      const labelText = this.add.text(0, 0, tile.label, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: labelWidth },
+        maxLines: 2,
+      }).setOrigin(0, 0)
+
+      const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
+      const verticalCenter = rowHeight / 2
       const row = this.add.container(0, cursorY)
 
-      let contentX = 0
-      // Actor pill (P1/P2) — game-wide events skip this and start with the icon.
-      if (tile.actor !== null) {
-        const fill = tile.actor === 0 ? COLOR_PLAYER_ACTIVE_FILL : COLOR_PLAYER_NON_ACTIVE_FILL
-        const pillBg = this.add.rectangle(0, 0, pillWidth, tileHeight - 2, fill, 0.85)
+      if (hasPill && tile.actor !== null) {
+        // Active vs non-active palette colors track the actor flagged as
+        // currently acting, not a fixed P1/P2 mapping. This matches the
+        // player info panels at COLOR_PLAYER_(NON_)ACTIVE_FILL usages.
+        const isActive = tile.actor === activeActor
+        const fill = isActive ? COLOR_PLAYER_ACTIVE_FILL : COLOR_PLAYER_NON_ACTIVE_FILL
+        const pillBg = this.add.rectangle(0, verticalCenter, pillWidth, tileHeight - 2, fill, 0.85)
           .setStrokeStyle(1, COLOR_PANEL_STROKE)
-          .setOrigin(0, 0)
-        const pillText = this.add.text(pillWidth / 2, (tileHeight - 2) / 2, `P${tile.actor + 1}`, {
+          .setOrigin(0, 0.5)
+        const pillText = this.add.text(pillWidth / 2, verticalCenter, `P${tile.actor + 1}`, {
           color: '#e5ecf5',
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(0.5, 0.5)
         row.add(pillBg)
         row.add(pillText)
-        contentX += pillWidth + 6
       }
 
-      // Icon: card art for land-related events, glyph text otherwise.
-      const iconCenterY = (tileHeight - 2) / 2
+      const iconX = (hasPill ? pillWidth + 6 : 0) + iconSize / 2
       if (tile.cardName !== null && isBasicLand(tile.cardName)) {
-        this.addCardArtToContainer(tile.cardName, visualStyle, contentX + iconSize / 2, iconCenterY, iconSize, row)
+        this.addCardArtToContainer(tile.cardName, visualStyle, iconX, verticalCenter, iconSize, row)
       } else {
-        const glyph = this.add.text(contentX + iconSize / 2, iconCenterY, tile.glyph, {
+        const glyph = this.add.text(iconX, verticalCenter, tile.glyph, {
           color: '#9db0d9',
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(0.5, 0.5)
         row.add(glyph)
       }
-      contentX += iconSize + 6
 
-      const labelWidth = Math.max(20, contentWidth - contentX)
-      const labelText = this.add.text(contentX, iconCenterY, tile.label, {
-        color: '#9db0d9',
-        fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: labelWidth },
-        maxLines: 2,
-      }).setOrigin(0, 0.5)
+      labelText.x = contentX
+      labelText.y = verticalCenter
+      labelText.setOrigin(0, 0.5)
       row.add(labelText)
 
-      // Row height grows when label wraps to two lines; keep tileHeight as a floor.
-      const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
       container.add(row)
       cursorY += rowHeight + tileSpacing
     }
@@ -1455,7 +1491,7 @@ class CardgameScene extends Phaser.Scene {
     return { container, contentHeight, tileCount: events.length }
   }
 
-  private renderInSceneLog(events: readonly LogEvent[]): void {
+  private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[] = [], activeActor = 0): void {
     const x = this.currentLayout.logColumnLeft
     const y = this.currentLayout.logColumnTop
     const width = this.currentLayout.logColumnWidth
@@ -1483,8 +1519,12 @@ class CardgameScene extends Phaser.Scene {
 
     // Hidden screen-reader / accessibility mirror: keep a flat text version of
     // the log so any tooling that scans Phaser text still sees the same
-    // information that the DOM renderer's <ul>-based log shows.
-    const a11yLines = events.length > 0 ? events.map((event) => formatLogEventText(event)) : ['No log entries yet.']
+    // information that the DOM renderer's <ul>-based log shows. When the
+    // structured stream is empty (legacy back-fill) fall back to the raw log
+    // strings so a11y output never goes blank for content that does exist.
+    const a11yLines = events.length > 0
+      ? events.map((event) => formatLogEventText(event))
+      : (legacyLog.length > 0 ? Array.from(legacyLog) : ['No log entries yet.'])
     const a11yMirror = this.add.text(x + padding, headingTop, a11yLines.join('\n'), {
       color: '#000000',
       fontSize: this.currentLayout.smallFontSize,
@@ -1517,7 +1557,7 @@ class CardgameScene extends Phaser.Scene {
 
     const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const tileColumnWidth = Math.max(40, viewportWidth - 12)
-    const { container: tilesColumn, contentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle)
+    const { container: tilesColumn, contentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle, { activeActor, legacyLog })
     const logContent = this.add.container(viewportLeft + 6, viewportTop + 6, [tilesColumn])
     this.rootContainer?.add(logContent)
 
@@ -2065,7 +2105,12 @@ class CardgameScene extends Phaser.Scene {
       const events = game.events
       const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
       const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
-      const { container: tilesColumn, contentHeight: logContentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle)
+      const { container: tilesColumn, contentHeight: logContentHeight } = this.buildLogTilesContent(
+        events,
+        tileColumnWidth,
+        visualStyle,
+        { activeActor: game.actor, legacyLog: game.log },
+      )
       logContent.add(tilesColumn)
 
       const logMask = this.add.graphics()
