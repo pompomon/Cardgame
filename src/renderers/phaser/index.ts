@@ -1381,7 +1381,7 @@ class CardgameScene extends Phaser.Scene {
     events: readonly LogEvent[],
     contentWidth: number,
     visualStyle: AppViewModel['cardVisualStyle'],
-    options: { activeActor?: number; legacyLog?: readonly string[] } = {},
+    options: { activeActor: number; legacyLog?: readonly string[] },
   ): { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number } {
     const container = this.add.container(0, 0)
     const fontSize = parseFloat(this.currentLayout.smallFontSize) || 12
@@ -1390,7 +1390,7 @@ class CardgameScene extends Phaser.Scene {
     const iconSize = Math.max(14, Math.round(fontSize * 1.4))
     const pillWidth = Math.max(22, Math.round(fontSize * 2.2))
     const tileHeight = Math.max(iconSize + tilePadding * 2, Math.round(fontSize * 2))
-    const activeActor = options.activeActor ?? 0
+    const activeActor = options.activeActor
 
     // Legacy fallback: when the structured event stream is missing (e.g.
     // back-filled to [] for a pre-LogEvent recording) but we still have raw
@@ -1403,7 +1403,7 @@ class CardgameScene extends Phaser.Scene {
           color: '#9db0d9',
           fontSize: this.currentLayout.smallFontSize,
           wordWrap: { width: Math.max(20, contentWidth) },
-          maxLines: 3,
+          maxLines: 2,
         }).setOrigin(0, 0)
         labelText.y = cursorY + tilePadding
         container.add(labelText)
@@ -1491,7 +1491,7 @@ class CardgameScene extends Phaser.Scene {
     return { container, contentHeight, tileCount: events.length }
   }
 
-  private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[] = [], activeActor = 0): void {
+  private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[], activeActor: number): void {
     const x = this.currentLayout.logColumnLeft
     const y = this.currentLayout.logColumnTop
     const width = this.currentLayout.logColumnWidth
