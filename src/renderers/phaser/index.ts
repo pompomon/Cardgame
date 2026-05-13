@@ -7,6 +7,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
+import { ALL_CARD_ART, cardArtKey } from '../../app/card-art'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
@@ -49,7 +50,6 @@ const CARD_CHOICE_ICON_MIN_SIZE = 16
 const CARD_CHOICE_ICON_WIDTH_RATIO = 0.2
 const CARD_CHOICE_ICON_HEIGHT_RATIO = 0.8
 const CARD_FACE_ICON_MIN_SIZE = 22
-const CARD_FACE_ICON_SIZE_RATIO = 0.56
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -110,6 +110,25 @@ function escapeHtml(value: string): string {
 function colorHexToNumber(hex: string): number {
   const parsed = Number.parseInt(hex.replace('#', ''), 16)
   return Number.isFinite(parsed) ? parsed : 0xffffff
+}
+
+let cardArtLoadErrorReported = false
+
+function preloadCardArt(scene: Phaser.Scene): void {
+  for (const entry of ALL_CARD_ART) {
+    if (scene.textures.exists(entry.key)) {
+      continue
+    }
+    scene.load.image(entry.key, entry.url)
+  }
+  scene.load.once(Phaser.Loader.Events.FILE_LOAD_ERROR, (file: { key?: string; src?: string }) => {
+    if (cardArtLoadErrorReported) {
+      return
+    }
+    cardArtLoadErrorReported = true
+    // eslint-disable-next-line no-console
+    console.warn('[phaser] failed to load card art', file?.key ?? '<unknown>', file?.src ?? '')
+  })
 }
 
 function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualStyle']): CardStyle {
@@ -251,6 +270,10 @@ class LobbyScene extends Phaser.Scene {
     }
     this.aiLevelOptionsOpen = false
     this.renderView(this.rendererRef.currentView)
+  }
+
+  preload(): void {
+    preloadCardArt(this)
   }
 
   create(): void {
@@ -522,6 +545,10 @@ class CardgameScene extends Phaser.Scene {
     this.rendererRef = rendererRef
   }
 
+  preload(): void {
+    preloadCardArt(this)
+  }
+
   create(): void {
     this.rootContainer = this.add.container(0, 0)
     // Reset per-match scroll state. The Phaser game keeps a single
@@ -787,16 +814,16 @@ class CardgameScene extends Phaser.Scene {
       maxLines: BUTTON_TEXT_MAX_LINES,
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
-    const iconSize = bucketIconSize(Math.max(
+    const iconSize = Math.max(
       CARD_CHOICE_ICON_MIN_SIZE,
       Math.floor(Math.min(width * CARD_CHOICE_ICON_WIDTH_RATIO, height * CARD_CHOICE_ICON_HEIGHT_RATIO)),
-    ))
+    )
     if (isBasicLand(cardName)) {
-      this.addPixelIconToContainer(
+      this.addCardArtToContainer(
         cardName,
         visualStyle,
-        -width / 2 + 12,
-        -Math.floor(iconSize / 2),
+        -width / 2 + 12 + Math.floor(iconSize / 2),
+        0,
         iconSize,
         button,
       )
@@ -827,6 +854,32 @@ class CardgameScene extends Phaser.Scene {
       icon.fillRect(rect.x, rect.y, rect.size, rect.size)
     }
     container.add(icon)
+  }
+
+  // Renders the card art image centered at (centerX, centerY) inside `container`.
+  // Falls back to the procedural pixel icon when the texture is not yet
+  // available (e.g. during preload, missing asset, or in unit tests with no
+  // loader).
+  private addCardArtToContainer(
+    land: BasicLand,
+    visualStyle: AppViewModel['cardVisualStyle'],
+    centerX: number,
+    centerY: number,
+    size: number,
+    container: Phaser.GameObjects.Container,
+  ): void {
+    const key = cardArtKey(land, visualStyle)
+    if (this.textures && this.textures.exists(key)) {
+      const image = this.add.image(centerX, centerY, key)
+      image.setDisplaySize(size, size)
+      image.setOrigin(0.5, 0.5)
+      container.add(image)
+      return
+    }
+    // Fallback: keep the original pixel-rect icon path so cards remain visible.
+    const left = centerX - Math.floor(size / 2)
+    const top = centerY - Math.floor(size / 2)
+    this.addPixelIconToContainer(land, visualStyle, left, top, size, container)
   }
 
   private syncPendingPlayLandTargetSelection(game: GameUiState): void {
@@ -1326,21 +1379,17 @@ class CardgameScene extends Phaser.Scene {
     const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
     const card = this.add.container(x, y, [rect])
     if (isBasicLand(label)) {
-      const iconSize = bucketIconSize(Math.max(
+      // Image card art occupies ~60% of the card face. Falls back to the
+      // procedural pixel icon if the texture is not in cache (e.g. asset
+      // failed to load).
+      const artSize = Math.max(
         CARD_FACE_ICON_MIN_SIZE,
         Math.floor(Math.min(
-          this.currentLayout.cardWidth * CARD_FACE_ICON_SIZE_RATIO,
-          this.currentLayout.cardHeight * CARD_FACE_ICON_SIZE_RATIO,
+          this.currentLayout.cardWidth * 0.66,
+          this.currentLayout.cardHeight * 0.6,
         )),
-      ))
-      this.addPixelIconToContainer(
-        label,
-        visualStyle,
-        -Math.floor(iconSize / 2),
-        -Math.floor(iconSize / 2) - 8,
-        iconSize,
-        card,
       )
+      this.addCardArtToContainer(label, visualStyle, 0, -8, artSize, card)
     }
     const text = this.add.text(0, 0, label, {
       color: style.text,
