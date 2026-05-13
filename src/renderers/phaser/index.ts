@@ -8,6 +8,7 @@ import {
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ALL_CARD_ART, cardArtKey } from '../../app/card-art'
+import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
@@ -18,6 +19,17 @@ import type { AppRenderer } from '../types'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
+import {
+  clearEffectQueue,
+  createEffectQueue,
+  effectDescriptorForEvent,
+  enqueueEffect,
+  playAbilityEffect,
+  pumpEffectQueue,
+  type EffectAnchor,
+  type EffectDescriptor,
+  type EffectQueueState,
+} from './effects'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -415,6 +427,14 @@ class LobbyScene extends Phaser.Scene {
           onClick: () => { this.rendererRef.controller?.setCardVisualStyle(option.value) },
         })
       })
+      const selectedAnimationSpeed = view?.animationSpeed ?? 'normal'
+      ANIMATION_SPEED_OPTIONS.forEach((option) => {
+        const selected = option.value === selectedAnimationSpeed
+        rows.push({
+          label: selected ? `Animations: ${option.label} ✓` : `Animations: ${option.label}`,
+          onClick: () => { this.rendererRef.controller?.setAnimationSpeed(option.value) },
+        })
+      })
     } else {
       rows.push({ label: 'Back', onClick: () => { this.showRootMenu() } })
       rows.push({
@@ -531,6 +551,12 @@ class CardgameScene extends Phaser.Scene {
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
+  // Visual ability-resolution effects pipeline. Each render diff appends new
+  // ability events to the queue; the pump plays one at a time, capped by
+  // MAX_QUEUED_EFFECTS to prevent backlog during AI-vs-AI sessions.
+  private effectQueue: EffectQueueState = createEffectQueue()
+  private lastAnimatedEventCount = 0
+  private effectsLayer: Phaser.GameObjects.Container | null = null
 
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
@@ -718,10 +744,16 @@ class CardgameScene extends Phaser.Scene {
       if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
         this.inSceneLogScrollOffset = null
         this.inSceneLogPinnedToBottom = true
+        // Reset ability-effect bookkeeping so a fresh game doesn't replay
+        // animations queued from a previous match.
+        clearEffectQueue(this.effectQueue)
+        this.lastAnimatedEventCount = 0
       }
       this.lastRenderedSeed = currentSeed
     } else {
       this.lastRenderedSeed = null
+      clearEffectQueue(this.effectQueue)
+      this.lastAnimatedEventCount = 0
     }
     const currentMenuSignature = this.menuOpen && view && game
       ? this.computeMenuSignature(view)
@@ -758,6 +790,7 @@ class CardgameScene extends Phaser.Scene {
     this.syncPendingPlayLandTargetSelection(view.game)
     this.battlefieldTargetEntries = this.currentBattlefieldTargetEntries(view.game)
     this.renderGame(view)
+    this.processAbilityEffects(view)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay
       this.rootContainer.add(preservedOverlay)
@@ -1041,6 +1074,78 @@ class CardgameScene extends Phaser.Scene {
       this.input.off('pointerup', handlePointerUp)
       this.input.off('pointerupoutside', handlePointerUp)
     })
+  }
+
+  private processAbilityEffects(view: AppViewModel): void {
+    const game = view.game
+    if (!game) {
+      return
+    }
+    const events = game.events
+    if (this.lastAnimatedEventCount > events.length) {
+      // Engine state went backwards (e.g. replay rewind). Reset and wait
+      // for renderView to seed `lastAnimatedEventCount = events.length`.
+      clearEffectQueue(this.effectQueue)
+      this.lastAnimatedEventCount = events.length
+      return
+    }
+    if (view.animationSpeed === 'off') {
+      // Drop any pending visuals immediately and snap the marker forward so
+      // toggling the setting on later doesn't replay backlog.
+      clearEffectQueue(this.effectQueue)
+      this.lastAnimatedEventCount = events.length
+      return
+    }
+    const visualStyle = view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    for (let index = this.lastAnimatedEventCount; index < events.length; index += 1) {
+      const descriptor = effectDescriptorForEvent(events[index], visualStyle)
+      if (descriptor) {
+        enqueueEffect(this.effectQueue, descriptor)
+      }
+    }
+    this.lastAnimatedEventCount = events.length
+
+    // Re-create a top layer for visual flourishes so they sit above cards.
+    if (this.effectsLayer) {
+      this.effectsLayer.destroy(true)
+      this.effectsLayer = null
+    }
+    if (this.rootContainer) {
+      this.effectsLayer = this.add.container(0, 0)
+      this.rootContainer.add(this.effectsLayer)
+    }
+
+    pumpEffectQueue(this.effectQueue, {
+      animationSpeed: view.animationSpeed,
+      durationMs: durationMsForSpeed(view.animationSpeed),
+      run: (descriptor, durationMs, done) => {
+        const anchor = this.computeEffectAnchor(view, descriptor)
+        playAbilityEffect(this, anchor, descriptor, durationMs, done)
+      },
+    })
+  }
+
+  private computeEffectAnchor(view: AppViewModel, descriptor: EffectDescriptor): EffectAnchor {
+    // Anchor effects to the relevant battlefield row (active vs non-active)
+    // so flourishes appear near the affected cards, not in dead screen
+    // space. The descriptor `actor` is the actor that initiated the effect.
+    const game = view.game
+    const layout = this.currentLayout
+    const activeIndex = game?.actor ?? 0
+    const nonActiveIndex = activeIndex === 0 ? 1 : 0
+    const targetsNonActive = descriptor.kind === 'mountain_destroy'
+      || descriptor.kind === 'swamp_discard'
+      || descriptor.kind === 'counter_resolved'
+    const useNonActive = targetsNonActive
+      ? descriptor.actor === activeIndex
+      : descriptor.actor === nonActiveIndex
+    const x = layout.boardColumnLeft + layout.boardColumnWidth / 2
+    const y = useNonActive
+      ? layout.nonActiveBattlefieldY + layout.nonActiveBattlefieldHeight / 2
+      : layout.activeBattlefieldY + layout.activeBattlefieldHeight / 2
+    const width = Math.max(80, Math.min(layout.boardColumnWidth - 24, layout.cardWidth * 2.4))
+    const height = Math.max(60, Math.min(layout.activeBattlefieldHeight - 12, layout.cardHeight + 16))
+    return { x, y, width, height }
   }
 
   private renderGame(view: AppViewModel): void {
@@ -2587,6 +2692,14 @@ export class PhaserRenderer implements AppRenderer {
             key: `settings-card-visual-style:${option.value}`,
             label: `Set card visual style: ${option.label}${selected}`,
             onClick: () => controller.setCardVisualStyle(option.value),
+          })
+        }
+        for (const option of ANIMATION_SPEED_OPTIONS) {
+          const selected = view.animationSpeed === option.value ? ' (selected)' : ''
+          entries.push({
+            key: `settings-animation-speed:${option.value}`,
+            label: `Set animation speed: ${option.label}${selected}`,
+            onClick: () => controller.setAnimationSpeed(option.value),
           })
         }
       } else {

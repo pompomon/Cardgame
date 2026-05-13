@@ -1,5 +1,6 @@
 import type { ControllerApi } from '../app/controller'
 import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
+import { ANIMATION_SPEED_OPTIONS, isAnimationSpeed } from '../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual-styles'
 import { cardVisualPaletteFor, landIconDataUrl } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
@@ -50,6 +51,10 @@ function renderLobby(view: AppViewModel): string {
     const selected = option.value === view.cardVisualStyle ? ' selected' : ''
     return `<option value="${option.value}"${selected}>${option.label}</option>`
   }).join('')
+  const animationSpeedOptions = ANIMATION_SPEED_OPTIONS.map((option) => {
+    const selected = option.value === view.animationSpeed ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
 
   const adventure = view.adventure
   const nextOpponent = adventure.opponentLineup[adventure.currentOpponentIndex]
@@ -70,6 +75,12 @@ function renderLobby(view: AppViewModel): string {
         <h3>Card Visual Style</h3>
         <label for="card-visual-style-select">Style</label>
         <select id="card-visual-style-select">${cardVisualStyleOptions}</select>
+      </div>
+      <div class="controls">
+        <h3>Animations</h3>
+        <label for="animation-speed-select">Speed</label>
+        <select id="animation-speed-select">${animationSpeedOptions}</select>
+        <p class="install-hint">Default follows system reduced-motion preference.</p>
       </div>
       <div class="modes">
         <button data-mode="local-hvh">Local Human vs Human</button>
@@ -421,6 +432,13 @@ export class DomRenderer implements AppRenderer {
       const value = (event.target as HTMLSelectElement).value
       if (isCardVisualStyle(value)) {
         this.controller?.setCardVisualStyle(value)
+      }
+    })
+
+    this.container.querySelector<HTMLSelectElement>('#animation-speed-select')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value
+      if (isAnimationSpeed(value)) {
+        this.controller?.setAnimationSpeed(value)
       }
     })
 

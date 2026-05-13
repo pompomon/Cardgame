@@ -7,6 +7,7 @@ export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
 export type AiLevel = 'basic' | 'advanced' | 'hard'
 export type CardVisualStyle = 'classic' | 'neon' | 'monochrome'
+export type AnimationSpeed = 'off' | 'fast' | 'normal' | 'slow'
 
 export interface AdventureState {
   baseSeed: number
@@ -65,6 +66,7 @@ export interface AppState {
   hasSavedRecording: boolean
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
+  animationSpeed: AnimationSpeed
   // True once a P2P game's `start` packet has been acknowledged by the
   // peer (host receives `start-ack`) or applied by the joiner (joiner
   // received the `start` packet and acknowledged it). Used by renderers
@@ -154,6 +156,7 @@ export interface AppViewModel {
   controllers: [ControllerKind, ControllerKind]
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
+  animationSpeed: AnimationSpeed
   p2pConnected: boolean
   p2pStarted: boolean
   adventure: AdventureUiState

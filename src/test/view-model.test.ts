@@ -18,6 +18,7 @@ function createState(seed: number): AppState {
     hasSavedRecording: false,
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
+    animationSpeed: 'normal',
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,

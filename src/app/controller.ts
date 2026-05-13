@@ -17,6 +17,7 @@ import {
   readStoredAdventureRun,
   type AdventureRunState,
 } from './adventure'
+import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
 import {
   appendGameRecordStep,
@@ -26,7 +27,7 @@ import {
   snapshotFromRecord,
 } from './game-recording'
 import { buildViewModel } from './view-model'
-import type { AdventureState, AiLevel, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
+import type { AdventureState, AiLevel, AnimationSpeed, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
@@ -126,6 +127,7 @@ export interface ControllerApi {
   getViewModel(): AppViewModel
   setAiLevel(level: AiLevel): void
   setCardVisualStyle(style: CardVisualStyle): void
+  setAnimationSpeed(speed: AnimationSpeed): void
   startGame(mode: Mode): void
   startAdventure(): void
   resumeAdventure(): void
@@ -172,6 +174,7 @@ export class AppController implements ControllerApi {
       hasSavedRecording: this.hasSavedRecording(),
       aiLevel: 'basic',
       cardVisualStyle: readStoredCardVisualStyle(),
+      animationSpeed: resolveInitialAnimationSpeed(),
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
@@ -728,6 +731,12 @@ export class AppController implements ControllerApi {
   setCardVisualStyle(style: CardVisualStyle): void {
     this.state.cardVisualStyle = style
     persistCardVisualStyle(style)
+    this.notify()
+  }
+
+  setAnimationSpeed(speed: AnimationSpeed): void {
+    this.state.animationSpeed = speed
+    persistAnimationSpeed(speed)
     this.notify()
   }
 
