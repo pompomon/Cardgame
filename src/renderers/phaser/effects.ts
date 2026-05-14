@@ -138,7 +138,17 @@ export interface PumpEffectQueueOptions {
   run: (descriptor: EffectDescriptor, durationMs: number, done: () => void) => void
 }
 
-export function pumpEffectQueue(state: EffectQueueState, options: PumpEffectQueueOptions): void {
+// `getOptions` is invoked every time the queue advances (initial pump and
+// each subsequent drain after `done`). This way, a setting change mid-queue
+// (e.g. user toggles animationSpeed from "normal" to "off" or "fast" while
+// a queued effect is still pending) is reflected on the very next entry,
+// instead of the queue draining with the speed/duration captured when the
+// first effect started.
+export function pumpEffectQueue(
+  state: EffectQueueState,
+  getOptions: () => PumpEffectQueueOptions,
+): void {
+  const options = getOptions()
   if (options.animationSpeed === 'off') {
     clearEffectQueue(state)
     return
@@ -153,6 +163,6 @@ export function pumpEffectQueue(state: EffectQueueState, options: PumpEffectQueu
   state.playing = true
   options.run(next, options.durationMs, () => {
     state.playing = false
-    pumpEffectQueue(state, options)
+    pumpEffectQueue(state, getOptions)
   })
 }

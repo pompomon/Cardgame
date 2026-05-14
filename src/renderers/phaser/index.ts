@@ -1124,13 +1124,21 @@ class CardgameScene extends Phaser.Scene {
     }
     this.lastAnimatedEventCount = events.length
 
-    pumpEffectQueue(this.effectQueue, {
-      animationSpeed: view.animationSpeed,
-      durationMs: durationMsForSpeed(view.animationSpeed),
-      run: (descriptor, durationMs, done) => {
-        const anchor = this.computeEffectAnchor(view, descriptor)
-        playAbilityEffect(this, anchor, descriptor, durationMs, done)
-      },
+    // `pumpEffectQueue` re-invokes this options getter for every drain, so
+    // a mid-queue animationSpeed/durationMs change takes effect on the very
+    // next pending entry instead of riding out the queue with stale values
+    // captured when the first effect started.
+    pumpEffectQueue(this.effectQueue, () => {
+      const latest = this.rendererRef.currentView ?? view
+      const speed = latest.animationSpeed
+      return {
+        animationSpeed: speed,
+        durationMs: durationMsForSpeed(speed),
+        run: (descriptor, durationMs, done) => {
+          const anchor = this.computeEffectAnchor(latest, descriptor)
+          playAbilityEffect(this, anchor, descriptor, durationMs, done)
+        },
+      }
     })
   }
 

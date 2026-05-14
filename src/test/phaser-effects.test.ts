@@ -37,11 +37,11 @@ describe('phaser effects queue', () => {
     const queue = createEffectQueue()
     enqueueEffect(queue, descriptor('forest_return'))
     let runs = 0
-    pumpEffectQueue(queue, {
+    pumpEffectQueue(queue, () => ({
       animationSpeed: 'off',
       durationMs: 0,
       run: () => { runs += 1 },
-    })
+    }))
     expect(runs).toBe(0)
     expect(queue.queue).toHaveLength(0)
     expect(queue.playing).toBe(false)
@@ -52,14 +52,14 @@ describe('phaser effects queue', () => {
     enqueueEffect(queue, descriptor('forest_return', 0))
     enqueueEffect(queue, descriptor('mountain_destroy', 1))
     const runOrder: EffectDescriptor['kind'][] = []
-    pumpEffectQueue(queue, {
+    pumpEffectQueue(queue, () => ({
       animationSpeed: 'normal',
       durationMs: 50,
       run: (desc, _ms, done) => {
         runOrder.push(desc.kind)
         done()
       },
-    })
+    }))
     expect(runOrder).toEqual(['forest_return', 'mountain_destroy'])
     expect(queue.queue).toHaveLength(0)
     expect(queue.playing).toBe(false)
@@ -69,11 +69,11 @@ describe('phaser effects queue', () => {
     const queue = createEffectQueue()
     enqueueEffect(queue, descriptor('forest_return'))
     let captured: (() => void) | null = null
-    pumpEffectQueue(queue, {
+    pumpEffectQueue(queue, () => ({
       animationSpeed: 'normal',
       durationMs: 50,
       run: (_desc, _ms, done) => { captured = done },
-    })
+    }))
     expect(queue.playing).toBe(true)
     expect(typeof captured).toBe('function')
     captured!()
@@ -106,12 +106,58 @@ describe('phaser effects queue', () => {
     clearEffectQueue(queue)
     enqueueEffect(queue, descriptor('mountain_destroy'))
     let runs = 0
-    pumpEffectQueue(queue, {
+    pumpEffectQueue(queue, () => ({
       animationSpeed: 'normal',
       durationMs: 50,
       run: () => { runs += 1 },
-    })
+    }))
     expect(runs).toBe(0)
     expect(queue.queue).toHaveLength(1)
+  })
+
+  it('reads fresh animationSpeed/duration from the options getter on every drain', () => {
+    const queue = createEffectQueue()
+    enqueueEffect(queue, descriptor('forest_return'))
+    enqueueEffect(queue, descriptor('mountain_destroy'))
+    enqueueEffect(queue, descriptor('plains_reuse'))
+    const seen: Array<{ speed: string; ms: number }> = []
+    let speed: 'normal' | 'fast' | 'off' = 'normal'
+    let ms = 100
+    pumpEffectQueue(queue, () => ({
+      animationSpeed: speed,
+      durationMs: ms,
+      run: (_desc, durationMs, done) => {
+        seen.push({ speed, ms: durationMs })
+        // Mid-queue: tighten the animation speed before draining the next one.
+        speed = 'fast'
+        ms = 25
+        done()
+      },
+    }))
+    expect(seen).toEqual([
+      { speed: 'normal', ms: 100 },
+      { speed: 'fast', ms: 25 },
+      { speed: 'fast', ms: 25 },
+    ])
+  })
+
+  it('aborts mid-drain when the options getter switches to "off"', () => {
+    const queue = createEffectQueue()
+    enqueueEffect(queue, descriptor('forest_return'))
+    enqueueEffect(queue, descriptor('mountain_destroy'))
+    enqueueEffect(queue, descriptor('plains_reuse'))
+    let speed: 'normal' | 'off' = 'normal'
+    let runs = 0
+    pumpEffectQueue(queue, () => ({
+      animationSpeed: speed,
+      durationMs: 50,
+      run: (_desc, _ms, done) => {
+        runs += 1
+        speed = 'off'
+        done()
+      },
+    }))
+    expect(runs).toBe(1)
+    expect(queue.queue).toHaveLength(0)
   })
 })
