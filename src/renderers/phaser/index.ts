@@ -46,6 +46,13 @@ const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
+// Cap how many log tiles we materialize per render. Long replays / imported
+// recordings (or malicious JSON) can carry thousands of entries, and creating
+// multiple Phaser GameObjects per entry on every render quickly becomes a
+// freeze. When exceeded, we render only the most recent
+// MAX_RENDERED_LOG_TILES entries with a leading "older entries omitted" row
+// so the rest of the panel still functions.
+const MAX_RENDERED_LOG_TILES = 200
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const LOBBY_SCENE_KEY = 'cardgame-lobby'
 const CARDGAME_SCENE_KEY = 'cardgame-main'
@@ -1422,7 +1429,21 @@ class CardgameScene extends Phaser.Scene {
     // an empty panel for content that does exist.
     if (events.length === 0 && options.legacyLog && options.legacyLog.length > 0) {
       let cursorY = 0
-      for (const line of options.legacyLog) {
+      const totalLines = options.legacyLog.length
+      const visibleLines = totalLines > MAX_RENDERED_LOG_TILES
+        ? options.legacyLog.slice(totalLines - MAX_RENDERED_LOG_TILES)
+        : options.legacyLog
+      if (totalLines > MAX_RENDERED_LOG_TILES) {
+        const omittedCount = totalLines - visibleLines.length
+        const note = this.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+          wordWrap: { width: Math.max(20, contentWidth) },
+        }).setOrigin(0, 0)
+        container.add(note)
+        cursorY += Math.max(tileHeight, note.height + tilePadding * 2) + tileSpacing
+      }
+      for (const line of visibleLines) {
         const labelText = this.add.text(0, 0, line, {
           color: '#9db0d9',
           fontSize: this.currentLayout.smallFontSize,
@@ -1435,7 +1456,7 @@ class CardgameScene extends Phaser.Scene {
         cursorY += rowHeight + tileSpacing
       }
       const contentHeight = Math.max(0, cursorY - tileSpacing)
-      return { container, contentHeight, tileCount: options.legacyLog.length }
+      return { container, contentHeight, tileCount: visibleLines.length }
     }
 
     if (events.length === 0) {
@@ -1449,7 +1470,25 @@ class CardgameScene extends Phaser.Scene {
     }
 
     let cursorY = 0
-    for (const event of events) {
+    // Cap the number of materialized tiles regardless of `events.length` so a
+    // long replay or imported recording doesn't freeze the renderer with
+    // thousands of GameObjects. Render the most recent slice and prepend a
+    // single notice row indicating how many older entries were omitted.
+    const totalEvents = events.length
+    const visibleEvents = totalEvents > MAX_RENDERED_LOG_TILES
+      ? events.slice(totalEvents - MAX_RENDERED_LOG_TILES)
+      : events
+    if (totalEvents > MAX_RENDERED_LOG_TILES) {
+      const omittedCount = totalEvents - visibleEvents.length
+      const note = this.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: Math.max(20, contentWidth) },
+      }).setOrigin(0, 0)
+      container.add(note)
+      cursorY += Math.max(tileHeight, note.height + tilePadding * 2) + tileSpacing
+    }
+    for (const event of visibleEvents) {
       const tile = formatLogEventTile(event)
 
       // Layout strategy: create the label first (it's the variable-height
@@ -1512,7 +1551,7 @@ class CardgameScene extends Phaser.Scene {
       cursorY += rowHeight + tileSpacing
     }
     const contentHeight = Math.max(0, cursorY - tileSpacing)
-    return { container, contentHeight, tileCount: events.length }
+    return { container, contentHeight, tileCount: visibleEvents.length }
   }
 
   private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[], activeActor: number): void {

@@ -247,7 +247,11 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),
       },
       log: game.log,
-      events: game.events,
+      // Older persisted snapshots (e.g. Adventure mid-round saves written before
+      // LogEvent existed) may not carry an `events` array. Defend against that
+      // here so renderers iterating `events` can't crash on legacy data even if
+      // the snapshot loader missed back-filling.
+      events: game.events ?? [],
       isReplay: replayActive,
     },
     recording: {

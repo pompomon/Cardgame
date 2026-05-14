@@ -383,7 +383,17 @@ export function readStoredAdventureGameSnapshot(): GameState | null {
       return null
     }
     const parsed: unknown = JSON.parse(raw)
-    return isGameStateSnapshot(parsed) ? parsed : null
+    if (!isGameStateSnapshot(parsed)) {
+      return null
+    }
+    // Back-fill `events: []` for snapshots persisted before LogEvent existed
+    // so renderers iterating `events` don't crash on legacy saves. Keep the
+    // raw `log` strings so the legacy fallback path can still render them.
+    const snapshot = parsed as GameState & { events?: unknown }
+    if (!Array.isArray(snapshot.events)) {
+      return { ...snapshot, events: [] }
+    }
+    return snapshot
   } catch {
     return null
   }
