@@ -55,6 +55,11 @@ export function formatLogEventTile(event: LogEvent): LogEventTile {
       }
       return { actor: event.winner, label: 'wins the game', cardName: null, glyph: '🏁' }
   }
+  // Defensive fallback for unknown / corrupted event shapes (e.g. user-edited
+  // localStorage or recording JSON whose `kind` doesn't match the discriminated
+  // union). Returning a safe tile keeps callers like `formatLogEventText` and
+  // `buildLogTilesContent` from crashing on bad input.
+  return { actor: null, label: 'Unknown event', cardName: null, glyph: '?' }
 }
 
 // Plain-text rendering used by accessibility mirrors and tests so the visual

@@ -102,7 +102,7 @@ function isLogEventLike(value: unknown): value is LogEvent {
   }
 }
 
-function sanitizeLogEvents(raw: unknown): LogEvent[] {
+export function sanitizeLogEvents(raw: unknown): LogEvent[] {
   if (!Array.isArray(raw)) {
     return []
   }

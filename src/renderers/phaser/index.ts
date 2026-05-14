@@ -1585,9 +1585,34 @@ class CardgameScene extends Phaser.Scene {
     // information that the DOM renderer's <ul>-based log shows. When the
     // structured stream is empty (legacy back-fill) fall back to the raw log
     // strings so a11y output never goes blank for content that does exist.
-    const a11yLines = events.length > 0
-      ? events.map((event) => formatLogEventText(event))
-      : (legacyLog.length > 0 ? Array.from(legacyLog) : ['No log entries yet.'])
+    // Apply the same cap as the visual tiles so a large/corrupted recording
+    // can't allocate/format thousands of mirror lines and freeze the renderer.
+    const a11yLines: string[] = []
+    if (events.length > 0) {
+      const totalEvents = events.length
+      const visibleEvents = totalEvents > MAX_RENDERED_LOG_TILES
+        ? events.slice(totalEvents - MAX_RENDERED_LOG_TILES)
+        : events
+      if (totalEvents > MAX_RENDERED_LOG_TILES) {
+        a11yLines.push(`… ${totalEvents - visibleEvents.length} older entries omitted`)
+      }
+      for (const event of visibleEvents) {
+        a11yLines.push(formatLogEventText(event))
+      }
+    } else if (legacyLog.length > 0) {
+      const totalLines = legacyLog.length
+      const visibleLines = totalLines > MAX_RENDERED_LOG_TILES
+        ? legacyLog.slice(totalLines - MAX_RENDERED_LOG_TILES)
+        : legacyLog
+      if (totalLines > MAX_RENDERED_LOG_TILES) {
+        a11yLines.push(`… ${totalLines - visibleLines.length} older entries omitted`)
+      }
+      for (const line of visibleLines) {
+        a11yLines.push(line)
+      }
+    } else {
+      a11yLines.push('No log entries yet.')
+    }
     const a11yMirror = this.add.text(x + padding, headingTop, a11yLines.join('\n'), {
       color: '#000000',
       fontSize: this.currentLayout.smallFontSize,
