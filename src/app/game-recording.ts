@@ -106,7 +106,9 @@ export function sanitizeLogEvents(raw: unknown): LogEvent[] {
   if (!Array.isArray(raw)) {
     return []
   }
-  const limited = raw.length > MAX_PARSED_LOG_EVENTS ? raw.slice(0, MAX_PARSED_LOG_EVENTS) : raw
+  // Keep the tail (most recent events) when capping so legitimate long
+  // recordings preserve the latest gameplay rather than discarding it.
+  const limited = raw.length > MAX_PARSED_LOG_EVENTS ? raw.slice(raw.length - MAX_PARSED_LOG_EVENTS) : raw
   const out: LogEvent[] = []
   for (const entry of limited) {
     if (isLogEventLike(entry)) {
