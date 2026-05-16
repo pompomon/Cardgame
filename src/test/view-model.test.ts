@@ -18,6 +18,7 @@ function createState(seed: number): AppState {
     hasSavedRecording: false,
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
+    animationSpeed: 'normal',
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
@@ -51,6 +52,10 @@ describe('buildViewModel', () => {
     expect(vm.aiLevel).toBe('basic')
     expect(vm.cardVisualStyle).toBe('classic')
     expect(vm.adventure.status).toBe('inactive')
+    // The structured event stream is exposed alongside the log strings so
+    // renderers (Phaser visual log, ability animations) can consume it.
+    expect(Array.isArray(vm.game?.events)).toBe(true)
+    expect(vm.game?.events[0]).toEqual({ kind: 'game_started' })
   })
 
   it('exposes plains reuse options and pending reused card name', () => {

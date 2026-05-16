@@ -1,10 +1,15 @@
 import { createStarterDeck } from './cards'
-import type { BattlefieldCard, Card, GameAction, GameState, PlayerState, Winner } from './types'
+import type { BattlefieldCard, Card, GameAction, GameState, LogEvent, PlayerState, Winner } from './types'
 
 const STARTING_HAND = 5
 
 function cloneState(state: GameState): GameState {
   return structuredClone(state)
+}
+
+function pushLog(state: GameState, message: string, event: LogEvent): void {
+  state.log.push(message)
+  state.events.push(event)
 }
 
 function createPlayer(id: number, seed: number, deckOverride?: Card[]): PlayerState {
@@ -26,11 +31,11 @@ function drawCard(state: GameState, playerId: number): void {
     state.phase = 'gameOver'
     state.pendingLandPlay = null
     state.pendingPlainsReuse = null
-    state.log.push(`Player ${playerId + 1} loses by drawing from empty deck.`)
+    pushLog(state, `Player ${playerId + 1} loses by drawing from empty deck.`, { kind: 'deck_empty_loss', actor: playerId })
     return
   }
   player.hand.push(next)
-  state.log.push(`Player ${playerId + 1} draws ${next.name}.`)
+  pushLog(state, `Player ${playerId + 1} draws ${next.name}.`, { kind: 'draw', actor: playerId, cardName: next.name })
 }
 
 function beginTurn(state: GameState): void {
@@ -39,7 +44,7 @@ function beginTurn(state: GameState): void {
   drawCard(state, state.currentPlayer)
   if (state.phase !== 'gameOver') {
     state.phase = 'main'
-    state.log.push(`Turn ${state.turn}: Player ${state.currentPlayer + 1} main phase.`)
+    pushLog(state, `Turn ${state.turn}: Player ${state.currentPlayer + 1} main phase.`, { kind: 'turn_start', turn: state.turn, actor: state.currentPlayer })
   }
 }
 
@@ -110,7 +115,11 @@ function finalizeWinnerIfAny(state: GameState): void {
   state.phase = 'gameOver'
   state.pendingLandPlay = null
   state.pendingPlainsReuse = null
-  state.log.push(winner === 'draw' ? 'Game ends in a draw.' : `Player ${winner + 1} wins.`)
+  pushLog(
+    state,
+    winner === 'draw' ? 'Game ends in a draw.' : `Player ${winner + 1} wins.`,
+    { kind: 'game_end', winner },
+  )
 }
 
 function opponentCanCounterWithIsland(player: PlayerState): boolean {
@@ -165,7 +174,7 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     const target = targetIndex >= 0 ? me.graveyard.splice(targetIndex, 1)[0] : undefined
     if (target) {
       me.hand.push(target)
-      state.log.push(`Forest returns ${target.name} from graveyard to hand.`)
+      pushLog(state, `Forest returns ${target.name} from graveyard to hand.`, { kind: 'ability_forest_return', actor, cardName: target.name })
     }
     return
   }
@@ -175,7 +184,7 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     if (target) {
       removeFromHand(enemy, target.id)
       enemy.graveyard.push(target)
-      state.log.push(`Swamp makes Player ${enemy.id + 1} discard ${target.name}.`)
+      pushLog(state, `Swamp makes Player ${enemy.id + 1} discard ${target.name}.`, { kind: 'ability_swamp_discard', actor, target: enemy.id, cardName: target.name })
     }
     return
   }
@@ -186,7 +195,7 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
       : enemy.battlefield[0]
     if (target) {
       moveBattlefieldCardToGraveyard(enemy, target.instanceId)
-      state.log.push(`Mountain destroys Player ${enemy.id + 1}'s ${target.card.name}.`)
+      pushLog(state, `Mountain destroys Player ${enemy.id + 1}'s ${target.card.name}.`, { kind: 'ability_mountain_destroy', actor, target: enemy.id, cardName: target.card.name })
     }
     return
   }
@@ -205,7 +214,7 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
 
   const nestedTargets = enumerateEffectTargetIds(state, actor, target.card.name)
   if (target.card.name === 'Island' || nestedTargets.length === 0) {
-    state.log.push(`Plains reuses ${target.card.name}.`)
+    pushLog(state, `Plains reuses ${target.card.name}.`, { kind: 'ability_plains_reuse', actor, reusedName: target.card.name })
     applyLandEffect(state, actor, target.card)
     return
   }
@@ -225,7 +234,7 @@ function resolvePendingLandPlay(state: GameState): void {
   }
   const me = state.players[pending.actor]
   addToBattlefield(state, me, pending.card)
-  state.log.push(`Player ${pending.actor + 1} plays ${pending.card.name}.`)
+  pushLog(state, `Player ${pending.actor + 1} plays ${pending.card.name}.`, { kind: 'play_land', actor: pending.actor, cardName: pending.card.name })
   state.pendingLandPlay = null
   applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
   if (state.phase === 'main') {
@@ -252,6 +261,7 @@ export function createInitialGame(seed = Date.now(), decks?: [Card[] | undefined
     pendingPlainsReuse: null,
     winner: null,
     log: ['Game started.'],
+    events: [{ kind: 'game_started' }],
   }
 
   for (let index = 0; index < STARTING_HAND; index += 1) {
@@ -259,7 +269,7 @@ export function createInitialGame(seed = Date.now(), decks?: [Card[] | undefined
     drawCard(state, 1)
   }
 
-  state.log.push('Player 1 starts and skips first draw step.')
+  pushLog(state, 'Player 1 starts and skips first draw step.', { kind: 'game_start_skip_draw', actor: 0 })
   return state
 }
 
@@ -374,7 +384,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     const responder = state.players[action.actor === 0 ? 1 : 0]
     if (opponentCanCounterWithIsland(responder)) {
       state.phase = 'respond'
-      state.log.push(`Player ${responder.id + 1} may counter ${card.name} with Island.`)
+      pushLog(state, `Player ${responder.id + 1} may counter ${card.name} with Island.`, { kind: 'counter_offered', responder: responder.id, cardName: card.name })
       return state
     }
 
@@ -387,7 +397,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     if (pendingReuse.actor !== action.actor) {
       return state
     }
-    state.log.push(`Plains reuses ${pendingReuse.reusedCardName}.`)
+    pushLog(state, `Plains reuses ${pendingReuse.reusedCardName}.`, { kind: 'ability_plains_reuse', actor: action.actor, reusedName: pendingReuse.reusedCardName })
     const reusedCard: Card = {
       id: `reused-${pendingReuse.reusedInstanceId}`,
       name: pendingReuse.reusedCardName,
@@ -411,7 +421,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     const pending = state.pendingLandPlay
     const caster = state.players[pending.actor]
     caster.graveyard.push(pending.card)
-    state.log.push(`Player ${action.actor + 1} counters ${pending.card.name}.`)
+    pushLog(state, `Player ${action.actor + 1} counters ${pending.card.name}.`, { kind: 'counter_resolved', actor: action.actor, cardName: pending.card.name })
     state.pendingLandPlay = null
     state.pendingPlainsReuse = null
     state.phase = 'main'

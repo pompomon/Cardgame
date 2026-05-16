@@ -1,5 +1,6 @@
 import { createStarterDeck, lcg, shuffle } from '../game/cards'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card, type GameState } from '../game/types'
+import { sanitizeLogEvents } from './game-recording'
 
 export const ADVENTURE_RUN_STORAGE_KEY = 'cardgame.adventure-run'
 export const ADVENTURE_HIGH_SCORE_STORAGE_KEY = 'cardgame.adventure-high-score'
@@ -383,7 +384,17 @@ export function readStoredAdventureGameSnapshot(): GameState | null {
       return null
     }
     const parsed: unknown = JSON.parse(raw)
-    return isGameStateSnapshot(parsed) ? parsed : null
+    if (!isGameStateSnapshot(parsed)) {
+      return null
+    }
+    // Back-fill / sanitize `events` for snapshots persisted before LogEvent
+    // existed and for any user-edited localStorage payload. Use the same
+    // shape-check + cap as the recording loader so malformed/huge events
+    // arrays can't reach the renderers and crash `formatLogEventTile` or
+    // freeze the visual log on iteration. Keep raw `log` strings so the
+    // legacy fallback path can still render them.
+    const snapshot = parsed as GameState & { events?: unknown }
+    return { ...snapshot, events: sanitizeLogEvents(snapshot.events) }
   } catch {
     return null
   }

@@ -1,5 +1,5 @@
 import type { AiLevel, ControllerKind, Mode } from './types'
-import type { BasicLand, GameAction, GamePhase, GameState, Winner } from '../game/types'
+import type { BasicLand, GameAction, GamePhase, GameState, LogEvent, Winner } from '../game/types'
 import { isAiLevel } from './ai-levels'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
@@ -49,6 +49,73 @@ const BASIC_LANDS: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swa
 
 function isRecordObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function isBasicLandName(value: unknown): value is BasicLand {
+  return typeof value === 'string' && BASIC_LANDS.includes(value as BasicLand)
+}
+
+function isActorIndex(value: unknown): value is 0 | 1 {
+  return value === 0 || value === 1
+}
+
+// Cap defends against malicious recordings inflating the structured stream
+// (renderers iterate the whole array on every frame for the visual log /
+// effect queue).
+const MAX_PARSED_LOG_EVENTS = 10000
+
+function isLogEventLike(value: unknown): value is LogEvent {
+  if (!isRecordObject(value)) {
+    return false
+  }
+  const kind = value.kind
+  if (typeof kind !== 'string') {
+    return false
+  }
+  switch (kind) {
+    case 'game_started':
+      return true
+    case 'game_start_skip_draw':
+      return isActorIndex(value.actor)
+    case 'turn_start':
+      return typeof value.turn === 'number' && isActorIndex(value.actor)
+    case 'draw':
+    case 'play_land':
+    case 'ability_forest_return':
+    case 'counter_resolved':
+      return isActorIndex(value.actor) && isBasicLandName(value.cardName)
+    case 'ability_swamp_discard':
+    case 'ability_mountain_destroy':
+      return isActorIndex(value.actor) && isActorIndex(value.target) && isBasicLandName(value.cardName)
+    case 'ability_plains_reuse':
+      return isActorIndex(value.actor) && isBasicLandName(value.reusedName)
+    case 'counter_offered':
+      return isActorIndex(value.responder) && isBasicLandName(value.cardName)
+    case 'deck_empty_loss':
+      return isActorIndex(value.actor)
+    case 'game_end':
+      return value.winner === null
+        || value.winner === 'draw'
+        || isActorIndex(value.winner)
+    default:
+      return false
+  }
+}
+
+export function sanitizeLogEvents(raw: unknown): LogEvent[] {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  // Keep the tail (most recent events) when capping so legitimate long
+  // recordings preserve the latest gameplay rather than discarding it.
+  const limited = raw.length > MAX_PARSED_LOG_EVENTS ? raw.slice(raw.length - MAX_PARSED_LOG_EVENTS) : raw
+  const out: LogEvent[] = []
+  for (const entry of limited) {
+    if (isLogEventLike(entry)) {
+      out.push(entry)
+    }
+  }
+  return out
 }
 
 function isCardLike(value: unknown): boolean {
@@ -189,9 +256,17 @@ function isGameActionLike(payload: unknown): payload is GameAction {
 }
 
 function normalizeStateSchema(state: GameState): GameState {
+  // Older recordings (pre-LogEvent) didn't persist a structured event stream.
+  // Default it to an empty array so legacy snapshots still load and
+  // type-check; renderers should treat the structured stream as best-effort
+  // and fall back to `log` strings for back-filled records. Untrusted JSON
+  // can also smuggle malformed entries here, so each entry is shape-checked
+  // and the array is capped to keep renderers safe.
+  const rawEvents = (state as { events?: unknown }).events
   return {
     ...state,
     pendingPlainsReuse: state.pendingPlainsReuse ?? null,
+    events: sanitizeLogEvents(rawEvents),
   }
 }
 

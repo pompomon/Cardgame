@@ -35,6 +35,27 @@ describe('game-recording', () => {
     }
   })
 
+  it('back-fills missing events array when loading legacy recordings', () => {
+    const initial = createInitialGame(42)
+    const record = createGameRecord(42, 'local-hvh', ['human', 'human'], 'basic', initial, 1000)
+    // Simulate an old-format recording on disk: serialize, then strip the
+    // structured `events` field from initial state and timeline snapshots.
+    const payload = JSON.parse(serializeGameRecord(record)) as Record<string, unknown>
+    const initialState = payload.initialState as Record<string, unknown>
+    delete initialState.events
+    for (const step of payload.timeline as Array<Record<string, unknown>>) {
+      const stepState = step.state as Record<string, unknown>
+      delete stepState.events
+    }
+    const parsed = parseGameRecordJson(JSON.stringify(payload))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.record.initialState.events).toEqual([])
+      // Pre-existing log strings remain untouched.
+      expect(parsed.record.initialState.log.length).toBeGreaterThan(0)
+    }
+  })
+
   it('rejects unsupported versions', () => {
     const payload = JSON.stringify({
       kind: 'cardgame.recording',

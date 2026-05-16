@@ -7,15 +7,29 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
+import { ALL_CARD_ART, cardArtKey } from '../../app/card-art'
+import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
-import { isBasicLand, type BasicLand, type GameAction } from '../../game/types'
+import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
+import { formatLogEventText, formatLogEventTile } from './log-events'
+import {
+  clearEffectQueue,
+  createEffectQueue,
+  effectDescriptorForEvent,
+  enqueueEffect,
+  playAbilityEffect,
+  pumpEffectQueue,
+  type EffectAnchor,
+  type EffectDescriptor,
+  type EffectQueueState,
+} from './effects'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -32,6 +46,13 @@ const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
 const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
+// Cap how many log tiles we materialize per render. Long replays / imported
+// recordings (or malicious JSON) can carry thousands of entries, and creating
+// multiple Phaser GameObjects per entry on every render quickly becomes a
+// freeze. When exceeded, we render only the most recent
+// MAX_RENDERED_LOG_TILES entries with a leading "older entries omitted" row
+// so the rest of the panel still functions.
+const MAX_RENDERED_LOG_TILES = 200
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const LOBBY_SCENE_KEY = 'cardgame-lobby'
 const CARDGAME_SCENE_KEY = 'cardgame-main'
@@ -49,7 +70,6 @@ const CARD_CHOICE_ICON_MIN_SIZE = 16
 const CARD_CHOICE_ICON_WIDTH_RATIO = 0.2
 const CARD_CHOICE_ICON_HEIGHT_RATIO = 0.8
 const CARD_FACE_ICON_MIN_SIZE = 22
-const CARD_FACE_ICON_SIZE_RATIO = 0.56
 
 // Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
 // .player-active / .player-non-active / .log) so both renderers feel consistent.
@@ -110,6 +130,41 @@ function escapeHtml(value: string): string {
 function colorHexToNumber(hex: string): number {
   const parsed = Number.parseInt(hex.replace('#', ''), 16)
   return Number.isFinite(parsed) ? parsed : 0xffffff
+}
+
+let cardArtLoadErrorReported = false
+
+function preloadCardArt(scene: Phaser.Scene): void {
+  for (const entry of ALL_CARD_ART) {
+    if (scene.textures.exists(entry.key)) {
+      continue
+    }
+    scene.load.image(entry.key, entry.url)
+  }
+  // Phaser scenes can be stopped/started repeatedly (e.g. lobby ↔ game).
+  // `scene.load.once` only detaches when the event actually fires, so on
+  // successful loads the FILE_LOAD_ERROR handler would accumulate across
+  // repeated preload cycles. Detach on COMPLETE as well, and skip
+  // re-attaching when a handler is already pending on the loader.
+  const loader = scene.load as Phaser.Loader.LoaderPlugin & {
+    listenerCount?: (event: string | symbol) => number
+  }
+  const errorEvent = Phaser.Loader.Events.FILE_LOAD_ERROR
+  if (typeof loader.listenerCount === 'function' && loader.listenerCount(errorEvent) > 0) {
+    return
+  }
+  const onError = (file: { key?: string; src?: string }): void => {
+    if (cardArtLoadErrorReported) {
+      return
+    }
+    cardArtLoadErrorReported = true
+    // eslint-disable-next-line no-console
+    console.warn('[phaser] failed to load card art', file?.key ?? '<unknown>', file?.src ?? '')
+  }
+  scene.load.once(errorEvent, onError)
+  scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
+    scene.load.off(errorEvent, onError)
+  })
 }
 
 function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualStyle']): CardStyle {
@@ -253,6 +308,10 @@ class LobbyScene extends Phaser.Scene {
     this.renderView(this.rendererRef.currentView)
   }
 
+  preload(): void {
+    preloadCardArt(this)
+  }
+
   create(): void {
     this.rootContainer = this.add.container(0, 0)
     // Phaser reuses the same LobbyScene instance across stop/start cycles, so
@@ -391,6 +450,14 @@ class LobbyScene extends Phaser.Scene {
           onClick: () => { this.rendererRef.controller?.setCardVisualStyle(option.value) },
         })
       })
+      const selectedAnimationSpeed = view?.animationSpeed ?? 'normal'
+      ANIMATION_SPEED_OPTIONS.forEach((option) => {
+        const selected = option.value === selectedAnimationSpeed
+        rows.push({
+          label: selected ? `Animations: ${option.label} ✓` : `Animations: ${option.label}`,
+          onClick: () => { this.rendererRef.controller?.setAnimationSpeed(option.value) },
+        })
+      })
     } else {
       rows.push({ label: 'Back', onClick: () => { this.showRootMenu() } })
       rows.push({
@@ -507,6 +574,11 @@ class CardgameScene extends Phaser.Scene {
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
+  // Visual ability-resolution effects pipeline. Each render diff appends new
+  // ability events to the queue; the pump plays one at a time, capped by
+  // MAX_QUEUED_EFFECTS to prevent backlog during AI-vs-AI sessions.
+  private effectQueue: EffectQueueState = createEffectQueue()
+  private lastAnimatedEventCount = 0
 
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
@@ -520,6 +592,10 @@ class CardgameScene extends Phaser.Scene {
   constructor(rendererRef: PhaserRenderer) {
     super(CARDGAME_SCENE_KEY)
     this.rendererRef = rendererRef
+  }
+
+  preload(): void {
+    preloadCardArt(this)
   }
 
   create(): void {
@@ -690,10 +766,16 @@ class CardgameScene extends Phaser.Scene {
       if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
         this.inSceneLogScrollOffset = null
         this.inSceneLogPinnedToBottom = true
+        // Reset ability-effect bookkeeping so a fresh game doesn't replay
+        // animations queued from a previous match.
+        clearEffectQueue(this.effectQueue)
+        this.lastAnimatedEventCount = 0
       }
       this.lastRenderedSeed = currentSeed
     } else {
       this.lastRenderedSeed = null
+      clearEffectQueue(this.effectQueue)
+      this.lastAnimatedEventCount = 0
     }
     const currentMenuSignature = this.menuOpen && view && game
       ? this.computeMenuSignature(view)
@@ -730,6 +812,7 @@ class CardgameScene extends Phaser.Scene {
     this.syncPendingPlayLandTargetSelection(view.game)
     this.battlefieldTargetEntries = this.currentBattlefieldTargetEntries(view.game)
     this.renderGame(view)
+    this.processAbilityEffects(view)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay
       this.rootContainer.add(preservedOverlay)
@@ -787,16 +870,16 @@ class CardgameScene extends Phaser.Scene {
       maxLines: BUTTON_TEXT_MAX_LINES,
     }).setOrigin(0.5)
     const button = this.add.container(x, y, [background, text])
-    const iconSize = bucketIconSize(Math.max(
+    const iconSize = Math.max(
       CARD_CHOICE_ICON_MIN_SIZE,
       Math.floor(Math.min(width * CARD_CHOICE_ICON_WIDTH_RATIO, height * CARD_CHOICE_ICON_HEIGHT_RATIO)),
-    ))
+    )
     if (isBasicLand(cardName)) {
-      this.addPixelIconToContainer(
+      this.addCardArtToContainer(
         cardName,
         visualStyle,
-        -width / 2 + 12,
-        -Math.floor(iconSize / 2),
+        -width / 2 + 12 + Math.floor(iconSize / 2),
+        0,
         iconSize,
         button,
       )
@@ -827,6 +910,36 @@ class CardgameScene extends Phaser.Scene {
       icon.fillRect(rect.x, rect.y, rect.size, rect.size)
     }
     container.add(icon)
+  }
+
+  // Renders the card art image centered at (centerX, centerY) inside `container`.
+  // Falls back to the procedural pixel icon when the texture is not yet
+  // available (e.g. during preload, missing asset, or in unit tests with no
+  // loader).
+  private addCardArtToContainer(
+    land: BasicLand,
+    visualStyle: AppViewModel['cardVisualStyle'],
+    centerX: number,
+    centerY: number,
+    size: number,
+    container: Phaser.GameObjects.Container,
+  ): void {
+    const key = cardArtKey(land, visualStyle)
+    if (this.textures && this.textures.exists(key)) {
+      const image = this.add.image(centerX, centerY, key)
+      image.setDisplaySize(size, size)
+      image.setOrigin(0.5, 0.5)
+      container.add(image)
+      return
+    }
+    // Fallback: keep the original pixel-rect icon path so cards remain
+    // visible. Bucket the size to match what `addPixelIconToContainer` will
+    // use internally so positioning stays centered (otherwise the icon can
+    // be off-by-one when `bucketIconSize(size) !== size`).
+    const effectiveSize = bucketIconSize(size)
+    const left = centerX - Math.floor(effectiveSize / 2)
+    const top = centerY - Math.floor(effectiveSize / 2)
+    this.addPixelIconToContainer(land, visualStyle, left, top, effectiveSize, container)
   }
 
   private syncPendingPlayLandTargetSelection(game: GameUiState): void {
@@ -989,6 +1102,77 @@ class CardgameScene extends Phaser.Scene {
     })
   }
 
+  private processAbilityEffects(view: AppViewModel): void {
+    const game = view.game
+    if (!game) {
+      return
+    }
+    const events = game.events
+    if (this.lastAnimatedEventCount > events.length) {
+      // Engine state went backwards (e.g. replay rewind). Reset and wait
+      // for renderView to seed `lastAnimatedEventCount = events.length`.
+      clearEffectQueue(this.effectQueue)
+      this.lastAnimatedEventCount = events.length
+      return
+    }
+    if (view.animationSpeed === 'off') {
+      // Drop any pending visuals immediately and snap the marker forward so
+      // toggling the setting on later doesn't replay backlog.
+      clearEffectQueue(this.effectQueue)
+      this.lastAnimatedEventCount = events.length
+      return
+    }
+    const visualStyle = view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    for (let index = this.lastAnimatedEventCount; index < events.length; index += 1) {
+      const descriptor = effectDescriptorForEvent(events[index], visualStyle)
+      if (descriptor) {
+        enqueueEffect(this.effectQueue, descriptor)
+      }
+    }
+    this.lastAnimatedEventCount = events.length
+
+    // `pumpEffectQueue` re-invokes this options getter for every drain, so
+    // a mid-queue animationSpeed/durationMs change takes effect on the very
+    // next pending entry instead of riding out the queue with stale values
+    // captured when the first effect started.
+    pumpEffectQueue(this.effectQueue, () => {
+      const latest = this.rendererRef.currentView ?? view
+      const speed = latest.animationSpeed
+      return {
+        animationSpeed: speed,
+        durationMs: durationMsForSpeed(speed),
+        run: (descriptor, durationMs, done) => {
+          const anchor = this.computeEffectAnchor(latest, descriptor)
+          playAbilityEffect(this, anchor, descriptor, durationMs, done)
+        },
+      }
+    })
+  }
+
+  private computeEffectAnchor(view: AppViewModel, descriptor: EffectDescriptor): EffectAnchor {
+    // Anchor effects to the relevant battlefield row (active vs non-active)
+    // so flourishes appear near the affected cards, not in dead screen
+    // space. The descriptor `actor` is the actor that initiated the effect.
+    const game = view.game
+    const layout = this.currentLayout
+    const activeIndex = game?.actor ?? 0
+    const nonActiveIndex = activeIndex === 0 ? 1 : 0
+    const targetsNonActive = descriptor.kind === 'mountain_destroy'
+      || descriptor.kind === 'swamp_discard'
+      || descriptor.kind === 'counter_resolved'
+    const useNonActive = targetsNonActive
+      ? descriptor.actor === activeIndex
+      : descriptor.actor === nonActiveIndex
+    const x = layout.boardColumnLeft + layout.boardColumnWidth / 2
+    const rowHeight = useNonActive ? layout.nonActiveBattlefieldHeight : layout.activeBattlefieldHeight
+    const y = useNonActive
+      ? layout.nonActiveBattlefieldY + layout.nonActiveBattlefieldHeight / 2
+      : layout.activeBattlefieldY + layout.activeBattlefieldHeight / 2
+    const width = Math.max(80, Math.min(layout.boardColumnWidth - 24, layout.cardWidth * 2.4))
+    const height = Math.max(60, Math.min(rowHeight - 12, layout.cardHeight + 16))
+    return { x, y, width, height }
+  }
+
   private renderGame(view: AppViewModel): void {
     const game = view.game
     if (!game) {
@@ -1026,7 +1210,7 @@ class CardgameScene extends Phaser.Scene {
     }).setOrigin(0, 0.5))
 
     if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen })) {
-      this.renderInSceneLog(game.log)
+      this.renderInSceneLog(game.events, game.log, game.actor)
     }
     this.renderBattlefields(game)
     this.renderPlayerInfoBlocks(view)
@@ -1218,7 +1402,159 @@ class CardgameScene extends Phaser.Scene {
     }
   }
 
-  private renderInSceneLog(lines: string[]): void {
+  // Builds a vertical column of structured log "tiles" (actor pill + glyph or
+  // land card art + label) inside a container positioned at (0, 0). Returns
+  // the total content height in pixels so callers can drive scrolling.
+  // When `events` is empty but `legacyLog` has content (e.g. a back-filled
+  // legacy recording), each log string is rendered as a plain text tile so
+  // the panel still shows the historical play log instead of an empty state.
+  private buildLogTilesContent(
+    events: readonly LogEvent[],
+    contentWidth: number,
+    visualStyle: AppViewModel['cardVisualStyle'],
+    options: { activeActor: number; legacyLog?: readonly string[] },
+  ): { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number } {
+    const container = this.add.container(0, 0)
+    const fontSize = parseFloat(this.currentLayout.smallFontSize) || 12
+    const tileSpacing = 4
+    const tilePadding = 4
+    const iconSize = Math.max(14, Math.round(fontSize * 1.4))
+    const pillWidth = Math.max(22, Math.round(fontSize * 2.2))
+    const tileHeight = Math.max(iconSize + tilePadding * 2, Math.round(fontSize * 2))
+    const activeActor = options.activeActor
+
+    // Legacy fallback: when the structured event stream is missing (e.g.
+    // back-filled to [] for a pre-LogEvent recording) but we still have raw
+    // log strings, render each string as a plain text row so users don't see
+    // an empty panel for content that does exist.
+    if (events.length === 0 && options.legacyLog && options.legacyLog.length > 0) {
+      let cursorY = 0
+      const totalLines = options.legacyLog.length
+      const visibleLines = totalLines > MAX_RENDERED_LOG_TILES
+        ? options.legacyLog.slice(totalLines - MAX_RENDERED_LOG_TILES)
+        : options.legacyLog
+      if (totalLines > MAX_RENDERED_LOG_TILES) {
+        const omittedCount = totalLines - visibleLines.length
+        const note = this.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+          wordWrap: { width: Math.max(20, contentWidth) },
+        }).setOrigin(0, 0)
+        container.add(note)
+        cursorY += Math.max(tileHeight, note.height + tilePadding * 2) + tileSpacing
+      }
+      for (const line of visibleLines) {
+        const labelText = this.add.text(0, 0, line, {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+          wordWrap: { width: Math.max(20, contentWidth) },
+          maxLines: 2,
+        }).setOrigin(0, 0)
+        labelText.y = cursorY + tilePadding
+        container.add(labelText)
+        const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
+        cursorY += rowHeight + tileSpacing
+      }
+      const contentHeight = Math.max(0, cursorY - tileSpacing)
+      return { container, contentHeight, tileCount: visibleLines.length }
+    }
+
+    if (events.length === 0) {
+      const empty = this.add.text(0, 0, 'No log entries yet.', {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: Math.max(40, contentWidth) },
+      }).setOrigin(0, 0)
+      container.add(empty)
+      return { container, contentHeight: empty.height, tileCount: 0 }
+    }
+
+    let cursorY = 0
+    // Cap the number of materialized tiles regardless of `events.length` so a
+    // long replay or imported recording doesn't freeze the renderer with
+    // thousands of GameObjects. Render the most recent slice and prepend a
+    // single notice row indicating how many older entries were omitted.
+    const totalEvents = events.length
+    const visibleEvents = totalEvents > MAX_RENDERED_LOG_TILES
+      ? events.slice(totalEvents - MAX_RENDERED_LOG_TILES)
+      : events
+    if (totalEvents > MAX_RENDERED_LOG_TILES) {
+      const omittedCount = totalEvents - visibleEvents.length
+      const note = this.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: Math.max(20, contentWidth) },
+      }).setOrigin(0, 0)
+      container.add(note)
+      cursorY += Math.max(tileHeight, note.height + tilePadding * 2) + tileSpacing
+    }
+    for (const event of visibleEvents) {
+      const tile = formatLogEventTile(event)
+
+      // Layout strategy: create the label first (it's the variable-height
+      // element due to word-wrap), measure it, then derive `rowHeight` so
+      // pill / icon / label can all be vertically centered against the same
+      // axis. This avoids the previous overlap where a wrapped label could
+      // extend above the row baseline and clip into the previous tile.
+      let contentX = 0
+      const hasPill = tile.actor !== null
+      if (hasPill) {
+        contentX += pillWidth + 6
+      }
+      contentX += iconSize + 6
+      const labelWidth = Math.max(20, contentWidth - contentX)
+      const labelText = this.add.text(0, 0, tile.label, {
+        color: '#9db0d9',
+        fontSize: this.currentLayout.smallFontSize,
+        wordWrap: { width: labelWidth },
+        maxLines: 2,
+      }).setOrigin(0, 0)
+
+      const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
+      const verticalCenter = rowHeight / 2
+      const row = this.add.container(0, cursorY)
+
+      if (hasPill && tile.actor !== null) {
+        // Active vs non-active palette colors track the actor flagged as
+        // currently acting, not a fixed P1/P2 mapping. This matches the
+        // player info panels at COLOR_PLAYER_(NON_)ACTIVE_FILL usages.
+        const isActive = tile.actor === activeActor
+        const fill = isActive ? COLOR_PLAYER_ACTIVE_FILL : COLOR_PLAYER_NON_ACTIVE_FILL
+        const pillBg = this.add.rectangle(0, verticalCenter, pillWidth, tileHeight - 2, fill, 0.85)
+          .setStrokeStyle(1, COLOR_PANEL_STROKE)
+          .setOrigin(0, 0.5)
+        const pillText = this.add.text(pillWidth / 2, verticalCenter, `P${tile.actor + 1}`, {
+          color: '#e5ecf5',
+          fontSize: this.currentLayout.smallFontSize,
+        }).setOrigin(0.5, 0.5)
+        row.add(pillBg)
+        row.add(pillText)
+      }
+
+      const iconX = (hasPill ? pillWidth + 6 : 0) + iconSize / 2
+      if (tile.cardName !== null && isBasicLand(tile.cardName)) {
+        this.addCardArtToContainer(tile.cardName, visualStyle, iconX, verticalCenter, iconSize, row)
+      } else {
+        const glyph = this.add.text(iconX, verticalCenter, tile.glyph, {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+        }).setOrigin(0.5, 0.5)
+        row.add(glyph)
+      }
+
+      labelText.x = contentX
+      labelText.y = verticalCenter
+      labelText.setOrigin(0, 0.5)
+      row.add(labelText)
+
+      container.add(row)
+      cursorY += rowHeight + tileSpacing
+    }
+    const contentHeight = Math.max(0, cursorY - tileSpacing)
+    return { container, contentHeight, tileCount: visibleEvents.length }
+  }
+
+  private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[], activeActor: number): void {
     const x = this.currentLayout.logColumnLeft
     const y = this.currentLayout.logColumnTop
     const width = this.currentLayout.logColumnWidth
@@ -1244,6 +1580,46 @@ class CardgameScene extends Phaser.Scene {
     })
     this.rootContainer?.add(heading)
 
+    // Hidden screen-reader / accessibility mirror: keep a flat text version of
+    // the log so any tooling that scans Phaser text still sees the same
+    // information that the DOM renderer's <ul>-based log shows. When the
+    // structured stream is empty (legacy back-fill) fall back to the raw log
+    // strings so a11y output never goes blank for content that does exist.
+    // Apply the same cap as the visual tiles so a large/corrupted recording
+    // can't allocate/format thousands of mirror lines and freeze the renderer.
+    const a11yLines: string[] = []
+    if (events.length > 0) {
+      const totalEvents = events.length
+      const visibleEvents = totalEvents > MAX_RENDERED_LOG_TILES
+        ? events.slice(totalEvents - MAX_RENDERED_LOG_TILES)
+        : events
+      if (totalEvents > MAX_RENDERED_LOG_TILES) {
+        a11yLines.push(`… ${totalEvents - visibleEvents.length} older entries omitted`)
+      }
+      for (const event of visibleEvents) {
+        a11yLines.push(formatLogEventText(event))
+      }
+    } else if (legacyLog.length > 0) {
+      const totalLines = legacyLog.length
+      const visibleLines = totalLines > MAX_RENDERED_LOG_TILES
+        ? legacyLog.slice(totalLines - MAX_RENDERED_LOG_TILES)
+        : legacyLog
+      if (totalLines > MAX_RENDERED_LOG_TILES) {
+        a11yLines.push(`… ${totalLines - visibleLines.length} older entries omitted`)
+      }
+      for (const line of visibleLines) {
+        a11yLines.push(line)
+      }
+    } else {
+      a11yLines.push('No log entries yet.')
+    }
+    const a11yMirror = this.add.text(x + padding, headingTop, a11yLines.join('\n'), {
+      color: '#000000',
+      fontSize: this.currentLayout.smallFontSize,
+    }).setVisible(false)
+    a11yMirror.setData('log-a11y-mirror', true)
+    this.rootContainer?.add(a11yMirror)
+
     const viewportTop = heading.y + heading.height + 6
     const viewportBottom = y + height - padding
     const viewportHeight = viewportBottom - viewportTop
@@ -1252,6 +1628,7 @@ class CardgameScene extends Phaser.Scene {
     if (viewportHeight <= 0 || viewportWidth <= 0) {
       panelBg.destroy()
       heading.destroy()
+      a11yMirror.destroy()
       return
     }
 
@@ -1266,17 +1643,11 @@ class CardgameScene extends Phaser.Scene {
     viewportBg.setInteractive()
     this.rootContainer?.add(viewportBg)
 
-    const logDisplayText = lines.length > 0 ? lines.join('\n') : 'No log entries yet.'
-    const logWrapWidth = Math.max(40, viewportWidth - 12)
-    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6)
+    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    const tileColumnWidth = Math.max(40, viewportWidth - 12)
+    const { container: tilesColumn, contentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle, { activeActor, legacyLog })
+    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6, [tilesColumn])
     this.rootContainer?.add(logContent)
-
-    const logText = this.add.text(0, 0, logDisplayText, {
-      color: '#9db0d9',
-      fontSize: this.currentLayout.smallFontSize,
-      wordWrap: { width: logWrapWidth },
-    }).setOrigin(0, 0)
-    logContent.add(logText)
 
     const logMask = this.add.graphics()
     logMask.setVisible(false)
@@ -1285,7 +1656,7 @@ class CardgameScene extends Phaser.Scene {
     this.rootContainer?.add(logMask)
     logContent.setMask(logMask.createGeometryMask())
 
-    const maxScroll = Math.max(0, logText.height + 12 - viewportHeight)
+    const maxScroll = Math.max(0, contentHeight + 12 - viewportHeight)
     let scrollOffset: number
     if (this.inSceneLogScrollOffset === null || this.inSceneLogPinnedToBottom) {
       scrollOffset = maxScroll
@@ -1326,21 +1697,17 @@ class CardgameScene extends Phaser.Scene {
     const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
     const card = this.add.container(x, y, [rect])
     if (isBasicLand(label)) {
-      const iconSize = bucketIconSize(Math.max(
+      // Image card art occupies ~60% of the card face. Falls back to the
+      // procedural pixel icon if the texture is not in cache (e.g. asset
+      // failed to load).
+      const artSize = Math.max(
         CARD_FACE_ICON_MIN_SIZE,
         Math.floor(Math.min(
-          this.currentLayout.cardWidth * CARD_FACE_ICON_SIZE_RATIO,
-          this.currentLayout.cardHeight * CARD_FACE_ICON_SIZE_RATIO,
+          this.currentLayout.cardWidth * 0.66,
+          this.currentLayout.cardHeight * 0.6,
         )),
-      ))
-      this.addPixelIconToContainer(
-        label,
-        visualStyle,
-        -Math.floor(iconSize / 2),
-        -Math.floor(iconSize / 2) - 8,
-        iconSize,
-        card,
       )
+      this.addCardArtToContainer(label, visualStyle, 0, -8, artSize, card)
     }
     const text = this.add.text(0, 0, label, {
       color: style.text,
@@ -1823,13 +2190,16 @@ class CardgameScene extends Phaser.Scene {
 
       const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
       content.add(logContent)
-      const lines = game.log
-      const logText = this.add.text(0, 0, lines.length > 0 ? lines.join('\n') : 'No log entries yet.', {
-        color: '#9db0d9',
-        fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: Math.max(1, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2) },
-      }).setOrigin(0, 0)
-      logContent.add(logText)
+      const events = game.events
+      const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+      const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
+      const { container: tilesColumn, contentHeight: logContentHeight } = this.buildLogTilesContent(
+        events,
+        tileColumnWidth,
+        visualStyle,
+        { activeActor: game.actor, legacyLog: game.log },
+      )
+      logContent.add(tilesColumn)
 
       const logMask = this.add.graphics()
       logMask.fillStyle(0xffffff)
@@ -1838,7 +2208,7 @@ class CardgameScene extends Phaser.Scene {
       content.add(logMask)
       logContent.setMask(logMask.createGeometryMask())
 
-      const maxScroll = Math.max(0, logText.height + 16 - logViewportHeight)
+      const maxScroll = Math.max(0, logContentHeight + 16 - logViewportHeight)
       // Preserve "stick to bottom" intent across rebuilds: if the user was previously
       // pinned to the newest entry, snap to the new max so fresh log lines remain visible
       // when AI/replay ticks rebuild the menu while it stays open.
@@ -2455,6 +2825,14 @@ export class PhaserRenderer implements AppRenderer {
             key: `settings-card-visual-style:${option.value}`,
             label: `Set card visual style: ${option.label}${selected}`,
             onClick: () => controller.setCardVisualStyle(option.value),
+          })
+        }
+        for (const option of ANIMATION_SPEED_OPTIONS) {
+          const selected = view.animationSpeed === option.value ? ' (selected)' : ''
+          entries.push({
+            key: `settings-animation-speed:${option.value}`,
+            label: `Set animation speed: ${option.label}${selected}`,
+            onClick: () => controller.setAnimationSpeed(option.value),
           })
         }
       } else {
