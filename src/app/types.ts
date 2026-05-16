@@ -6,7 +6,7 @@ export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
 export type AiLevel = 'basic' | 'advanced' | 'hard'
-export type CardVisualStyle = 'classic' | 'neon' | 'monochrome'
+export type CardVisualStyle = 'classic' | 'hd' | 'monochrome'
 export type AnimationSpeed = 'off' | 'fast' | 'normal' | 'slow'
 
 export interface AdventureState {

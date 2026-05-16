@@ -5,9 +5,9 @@ describe('card-visuals', () => {
   it('produces distinct icon data by card type and style', () => {
     const forestClassic = landIconDataUrl('Forest', 'classic', 32)
     const mountainClassic = landIconDataUrl('Mountain', 'classic', 32)
-    const forestNeon = landIconDataUrl('Forest', 'neon', 32)
+    const forestHd = landIconDataUrl('Forest', 'hd', 32)
     expect(forestClassic).not.toBe(mountainClassic)
-    expect(forestClassic).not.toBe(forestNeon)
+    expect(forestClassic).not.toBe(forestHd)
   })
 
   it('reuses cached icon outputs for equal style-land-size buckets', () => {
