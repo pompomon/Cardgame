@@ -2125,7 +2125,7 @@ class CardgameScene extends Phaser.Scene {
     )
     contentMask.setVisible(false)
     overlay.add(contentMask)
-      contentViewport.setMask(contentMask.createGeometryMask())
+    contentViewport.setMask(contentMask.createGeometryMask())
     let cursorY = 0
 
     const adventureMode = this.rendererRef.currentView?.mode === 'adventure-hvai'
