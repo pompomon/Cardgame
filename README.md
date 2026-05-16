@@ -29,10 +29,10 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Lobby includes a shared **Card Visual Style** selector for both renderers (under **Settings** in Phaser).
 - Available styles:
   - **Classic**
-  - **Neon**
+  - **HD**
   - **Monochrome**
 - Style selection is a client-side presentation preference persisted in browser local storage.
-- Pixel-art visuals are generated on the fly and cached by land/style/size bucket.
+- Classic/Monochrome pixel-art visuals are generated on the fly and cached by land/style/size bucket.
 - Core implementation lives in `src/app/card-visuals.ts` and style options in `src/app/card-visual-styles.ts`.
 
 ## AI levels
