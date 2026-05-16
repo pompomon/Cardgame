@@ -3,16 +3,22 @@
 // the clamping/pin-to-bottom behavior is unit-testable without spinning up
 // Phaser or JSDOM.
 //
-// Inputs describe a vertical scrollable strip:
-//   - `contentTopY`: world Y where the content origin sits when scrollOffset is 0.
-//   - `viewportTopY` / `viewportBottomY`: world bounds of the visible strip.
+// Inputs describe a vertical scrollable strip. All Y coordinates are in the
+// coordinate space of the scroll container's parent (i.e. whatever space
+// `content.y` is interpreted in). For the in-scene log this is the scene's
+// world space; for the menu-overlay log this is the overlay `content`
+// container's local space. The helper itself is space-agnostic — it only
+// requires that all inputs (`contentTopY`, `viewportTopY`, `viewportBottomY`)
+// and the returned `contentY` share one consistent space.
+//   - `contentTopY`: Y where the content origin sits when scrollOffset is 0.
+//   - `viewportTopY` / `viewportBottomY`: bounds of the visible strip.
 //   - `contentHeight`: total height of the rendered tile column.
 //   - `requestedOffset`: caller's desired scroll offset; clamped to [0, maxScroll].
 //   - `pinnedToBottom`: when true (or when requestedOffset is null), snap to
 //     the most-recent entries so a freshly-appended log line is visible.
 //
-// Outputs a clamped offset plus the resulting `contentY` world position. The
-// returned `contentY` is guaranteed to satisfy:
+// Outputs a clamped offset plus the resulting `contentY` position (in the
+// same parent space). The returned `contentY` is guaranteed to satisfy:
 //   contentTopY - maxScroll <= contentY <= contentTopY
 // (i.e. the content top is never above its baseline `contentTopY` and never
 // scrolled past `maxScroll` below it). Callers typically set
@@ -46,7 +52,8 @@ export interface LogScrollInput {
 export interface LogScrollResult {
   // Clamped scroll offset in [0, maxScroll].
   scrollOffset: number
-  // World Y to assign to the content container so it scrolls correctly.
+  // Y in the parent coordinate space to assign to the content container so
+  // it scrolls correctly (see module docstring for which space that is).
   contentY: number
   // Maximum scroll distance allowed; 0 when content fits in the viewport.
   maxScroll: number

@@ -83,18 +83,24 @@ const COLOR_PLAYER_NON_ACTIVE_FILL = 0x2a1233
 const COLOR_PANEL_STROKE = 0x2a355f
 const COLOR_LOG_PANEL_FILL = 0x0d162e
 const COLOR_LOG_VIEWPORT_FILL = 0x091227
-// Scene depth layering for the in-scene game view. The replay log must
-// always paint below the header strip (so even if a regression breaks the
-// log's clipping mask, the ☰ Menu button / Turn label / Winner banner stay
-// readable on top). Player-info panels are explicitly raised to Z_BOARD so
-// any minor overshoot from the log is hidden by them instead of stacking
-// visibly on top. Battlefield rectangles/text/cards keep the scene default
-// depth — they're added to the scene after the log container (so they
-// already paint above it under Phaser's draw order) but are not pinned to
-// Z_BOARD; if you ever reorder rendering so battlefields are added before
-// the log, call setDepth(Z_BOARD) on them too to preserve this guarantee.
-const Z_LOG = 0
-const Z_BOARD = 5
+// Scene depth layering for the in-scene game view. Layering is anchored at
+// the scene default depth (0), where gameplay UI (hand cards, End Turn /
+// response buttons, battlefield rectangles & text) lives:
+//
+//   Z_LOG    = -10  // replay log container (panel bg, viewport, tile column)
+//   Z_BOARD  = -5   // player-info panel bg + text (above log, below cards)
+//   default  =  0   // cards, action buttons, battlefields — unchanged
+//   Z_HEADER =  10  // ☰ Menu button, Turn/Phase label, Winner banner, header strip
+//
+// The replay log is pinned BELOW gameplay UI so even if its per-row culling
+// regresses (Phaser 4's GeometryMask is documented as Canvas-only), any
+// overshoot is occluded by either the player-info panels or the header
+// strip instead of drawing over the ☰ Menu / Winner banner / cards. We
+// deliberately keep Z_BOARD < 0 so panels never sit *above* gameplay UI —
+// that way panel bg can't accidentally hide hand cards or buttons if a
+// future layout change makes them overlap.
+const Z_LOG = -10
+const Z_BOARD = -5
 const Z_HEADER = 10
 
 const UI_THEME = {
