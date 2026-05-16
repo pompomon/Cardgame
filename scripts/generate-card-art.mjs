@@ -529,46 +529,173 @@ function paintPlains(buf) {
 }
 
 function paintSwamp(buf) {
-  fillBackgroundGradient(buf, hexToRgb('#1f1430'), hexToRgb('#070210'))
-  addRadialGlow(buf, 360, 320, 240, hexToRgb('#d6b3f5', 150))
-  fillDisc(buf, 360, 320, 80, hexToRgb('#efe0ff', 230))
+  // Near-black sky with a sickly bruise-purple cast fading into pitch-dark
+  // marsh. No bright moon — just an oppressive void.
+  fillBackgroundGradient(buf, hexToRgb('#0b0612'), hexToRgb('#020106'))
 
-  fillRect(buf, 0, 600, 1024, 200, hexToRgb('#0a0414', 200))
+  // Distant, sickly green miasma glow on the horizon (low and ominous,
+  // not warm/inviting).
+  addRadialGlow(buf, 512, 720, 520, hexToRgb('#1f3a25', 140))
+  addRadialGlow(buf, 200, 760, 280, hexToRgb('#2a1f3a', 110))
+  addRadialGlow(buf, 820, 740, 260, hexToRgb('#2a1f3a', 110))
 
+  // Crescent moon — bone-white, partially eclipsed by a dark cloud-bite so
+  // it reads as a sliver rather than a full disc.
+  const moonCx = 760
+  const moonCy = 260
+  fillDisc(buf, moonCx, moonCy, 70, hexToRgb('#c9c4b8', 200))
+  // Carve a bite out of the moon to form the crescent.
+  fillDisc(buf, moonCx + 28, moonCy - 10, 64, hexToRgb('#020106', 255))
+  // Faint diffuse halo around the moon (not warm).
+  addRadialGlow(buf, moonCx, moonCy, 180, hexToRgb('#9aa3b0', 60))
+
+  // Drifting clouds across the moon.
+  fillRect(buf, 640, 250, 220, 10, hexToRgb('#050309', 220))
+  fillRect(buf, 600, 280, 320, 6, hexToRgb('#050309', 200))
+  fillRect(buf, 700, 310, 260, 8, hexToRgb('#050309', 210))
+
+  // A few distant bats — small angular silhouettes.
+  function drawBat(cx, cy, scale) {
+    const s = scale
+    fillPolygon(
+      buf,
+      [
+        [cx, cy],
+        [cx - 6 * s, cy - 3 * s],
+        [cx - 14 * s, cy - 6 * s],
+        [cx - 10 * s, cy], [cx - 14 * s, cy + 3 * s],
+        [cx - 6 * s, cy + 1 * s],
+        [cx, cy + 3 * s],
+        [cx + 6 * s, cy + 1 * s],
+        [cx + 14 * s, cy + 3 * s], [cx + 10 * s, cy],
+        [cx + 14 * s, cy - 6 * s],
+        [cx + 6 * s, cy - 3 * s],
+      ],
+      hexToRgb('#020106'),
+    )
+  }
+  drawBat(560, 180, 1.6)
+  drawBat(440, 220, 1.0)
+  drawBat(360, 150, 1.2)
+  drawBat(880, 200, 0.8)
+  drawBat(180, 280, 0.9)
+
+  // Distant tangled silhouette band — pure black, oppressive.
+  fillRect(buf, 0, 620, 1024, 220, hexToRgb('#020106', 230))
+  // Jagged dead-treeline silhouette across the band.
+  const treelineRand = mulberry32(123)
+  for (let x = 0; x < 1024; x += 22) {
+    const h = 18 + treelineRand() * 60
+    fillPolygon(
+      buf,
+      [
+        [x, 640],
+        [x + 11, 640 - h],
+        [x + 22, 640],
+      ],
+      hexToRgb('#020106'),
+    )
+  }
+
+  // Heavy low-lying fog layers (cool sickly green-grey).
+  for (let i = 0; i < 10; i += 1) {
+    const y = 680 + i * 28
+    const alpha = 50 + i * 8
+    fillRect(buf, 0, y, 1024, 6, hexToRgb('#3a4a3a', alpha))
+    fillRect(buf, 0, y + 10, 1024, 2, hexToRgb('#2a3a2a', Math.floor(alpha * 0.6)))
+  }
+  // Patchy fog blobs.
+  const fogRand = mulberry32(31)
+  for (let i = 0; i < 18; i += 1) {
+    const cx = fogRand() * 1024
+    const cy = 700 + fogRand() * 220
+    const r = 50 + fogRand() * 90
+    addRadialGlow(buf, cx, cy, r, hexToRgb('#4a5a4a', 70))
+  }
+
+  // Gnarled, skeletal dead trees — leaning, with reaching, claw-like branches.
+  function drawDeadTree(cx, baseY, height, lean, color) {
+    const topX = cx + lean
+    const topY = baseY - height
+    // Main trunk, slightly thicker at base.
+    drawLine(buf, cx, baseY, cx + lean * 0.4, baseY - height * 0.45, 11, color)
+    drawLine(buf, cx + lean * 0.4, baseY - height * 0.45, topX, topY, 8, color)
+
+    // Left branches (twisted, descending then reaching up like claws).
+    drawLine(buf, cx - 2, baseY - height * 0.5, cx - 70, baseY - height * 0.62, 6, color)
+    drawLine(buf, cx - 70, baseY - height * 0.62, cx - 130, baseY - height * 0.55, 5, color)
+    drawLine(buf, cx - 130, baseY - height * 0.55, cx - 150, baseY - height * 0.72, 4, color)
+    drawLine(buf, cx - 130, baseY - height * 0.55, cx - 170, baseY - height * 0.46, 3, color)
+    drawLine(buf, cx - 150, baseY - height * 0.72, cx - 160, baseY - height * 0.86, 3, color)
+
+    // Right branches.
+    drawLine(buf, cx + 2, baseY - height * 0.62, cx + 90, baseY - height * 0.5, 6, color)
+    drawLine(buf, cx + 90, baseY - height * 0.5, cx + 150, baseY - height * 0.58, 5, color)
+    drawLine(buf, cx + 150, baseY - height * 0.58, cx + 180, baseY - height * 0.74, 4, color)
+    drawLine(buf, cx + 150, baseY - height * 0.58, cx + 200, baseY - height * 0.46, 3, color)
+    drawLine(buf, cx + 180, baseY - height * 0.74, cx + 196, baseY - height * 0.9, 3, color)
+
+    // Upper claw fingers near the top.
+    drawLine(buf, topX, topY + 4, topX - 26, topY - 30, 4, color)
+    drawLine(buf, topX - 26, topY - 30, topX - 36, topY - 56, 3, color)
+    drawLine(buf, topX, topY + 4, topX + 22, topY - 36, 4, color)
+    drawLine(buf, topX + 22, topY - 36, topX + 30, topY - 60, 3, color)
+    drawLine(buf, topX, topY + 4, topX + 2, topY - 50, 3, color)
+  }
+  const treeColor = hexToRgb('#020106')
+  drawDeadTree(180, 940, 600, -20, treeColor)
+  drawDeadTree(860, 950, 580, 24, treeColor)
+  drawDeadTree(520, 980, 700, -8, hexToRgb('#010104'))
+  // A short, hunched stump-tree in mid-ground.
+  drawDeadTree(380, 960, 320, 30, treeColor)
+  drawDeadTree(700, 965, 300, -28, treeColor)
+
+  // A leaning tombstone silhouette on the left bank.
+  fillPolygon(
+    buf,
+    [
+      [80, 940],
+      [82, 880],
+      [96, 858],
+      [126, 854],
+      [142, 872],
+      [144, 940],
+    ],
+    hexToRgb('#1a1620'),
+  )
+  // Cross etched on the tombstone (slightly lighter for readability).
+  fillRect(buf, 108, 882, 6, 36, hexToRgb('#2a2630'))
+  fillRect(buf, 100, 894, 22, 6, hexToRgb('#2a2630'))
+
+  // Foreground swamp water — almost black, with faint cold reflections.
+  fillRect(buf, 0, 920, 1024, 104, hexToRgb('#03020a'))
+  // Subtle reflective ripples in cold green-grey, not vibrant purple.
+  for (let i = 0; i < 16; i += 1) {
+    const y = 944 + i * 7
+    fillRect(buf, 60 + (i * 41) % 700, y, 40 + (i * 19) % 70, 2, hexToRgb('#3a4a3a', 70))
+  }
+  // Moon's pale broken reflection on the water.
   for (let i = 0; i < 8; i += 1) {
-    const y = 720 + i * 24
-    fillRect(buf, 0, y, 1024, 3, hexToRgb('#b075d8', 60))
+    const y = 940 + i * 10
+    const w = 90 - i * 8
+    fillRect(buf, moonCx - w / 2, y, w, 3, hexToRgb('#9aa3b0', 70 - i * 6))
   }
 
-  function drawDeadTree(cx, baseY, height, color) {
-    drawLine(buf, cx, baseY, cx + (cx > 512 ? -10 : 10), baseY - height, 9, color)
-    drawLine(buf, cx - 4, baseY - height * 0.55, cx - 60, baseY - height * 0.78, 5, color)
-    drawLine(buf, cx - 60, baseY - height * 0.78, cx - 100, baseY - height * 0.72, 4, color)
-    drawLine(buf, cx + 4, baseY - height * 0.4, cx + 80, baseY - height * 0.62, 5, color)
-    drawLine(buf, cx + 80, baseY - height * 0.62, cx + 130, baseY - height * 0.7, 4, color)
-    drawLine(buf, cx + 80, baseY - height * 0.62, cx + 110, baseY - height * 0.5, 3, color)
-    drawLine(buf, cx - 6, baseY - height * 0.85, cx - 30, baseY - height * 0.98, 4, color)
-    drawLine(buf, cx + 6, baseY - height * 0.88, cx + 36, baseY - height * 0.99, 4, color)
-  }
-  const treeColor = hexToRgb('#0a0414')
-  drawDeadTree(220, 940, 540, treeColor)
-  drawDeadTree(780, 950, 520, treeColor)
-  drawDeadTree(520, 980, 620, hexToRgb('#04020c'))
-
-  fillRect(buf, 0, 920, 1024, 104, hexToRgb('#08041a'))
+  // Sparse, dim, sickly-green will-o-the-wisps drifting low over the water
+  // (fewer + dimmer than the previous lavender fireflies).
+  const wispRand = mulberry32(99)
   for (let i = 0; i < 14; i += 1) {
-    const y = 950 + i * 8
-    fillRect(buf, 200 + (i * 23) % 600, y, 60 + (i * 17) % 80, 2, hexToRgb('#b075d8', 90))
+    const x = wispRand() * 1024
+    const y = 720 + wispRand() * 220
+    const a = 110 + Math.floor(wispRand() * 60)
+    addRadialGlow(buf, x, y, 22, hexToRgb('#6fa56b', Math.floor(a / 3)))
+    fillDisc(buf, x, y, 2 + wispRand() * 1.5, hexToRgb('#b8d8a8', a))
   }
 
-  const rand = mulberry32(99)
-  for (let i = 0; i < 40; i += 1) {
-    const x = rand() * 1024
-    const y = 400 + rand() * 500
-    const a = 160 + Math.floor(rand() * 80)
-    addRadialGlow(buf, x, y, 16, hexToRgb('#d6b3f5', Math.floor(a / 3)))
-    fillDisc(buf, x, y, 3 + rand() * 1.5, hexToRgb('#f1e3ff', a))
-  }
+  // A pair of glowing eyes peering out from the deep treeline.
+  fillDisc(buf, 612, 760, 3.5, hexToRgb('#c9342a', 230))
+  fillDisc(buf, 624, 760, 3.5, hexToRgb('#c9342a', 230))
+  addRadialGlow(buf, 618, 760, 18, hexToRgb('#c9342a', 60))
 }
 
 // ---------------------------------------------------------------------------
