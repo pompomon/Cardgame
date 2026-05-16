@@ -1620,14 +1620,16 @@ class CardgameScene extends Phaser.Scene {
   // Turn label / Winner banner) or the player-info container below, even
   // on WebGL where GeometryMask is documented to be a no-op (Phaser 4
   // ships only GeometryMask, which clips only in the Canvas renderer).
-  // Rows whose bounding box partially overlaps the viewport stay visible —
-  // the geometry mask still clips them correctly in Canvas, and a partial
-  // WebGL overshoot is hidden by the Z_HEADER strip painted above the log.
+  // By default, rows whose bounding box partially overlaps the viewport stay
+  // visible (Canvas GeometryMask clips them). Callers can opt into strict
+  // "fully contained only" visibility for overlays where even partial
+  // WebGL spillover is undesirable.
   private cullLogRowsToViewport(
     tilesColumn: Phaser.GameObjects.Container,
     columnOriginY: number,
     viewportTopY: number,
     viewportBottomY: number,
+    fullyContainedOnly = false,
   ): void {
     for (const child of tilesColumn.list) {
       const obj = child as Phaser.GameObjects.GameObject & {
@@ -1643,7 +1645,9 @@ class CardgameScene extends Phaser.Scene {
       const rowHeight = (obj.getData('rowHeight') as number | undefined) ?? (obj.height ?? 0)
       const rowParentTop = columnOriginY + rowTop
       const rowParentBottom = rowParentTop + rowHeight
-      const visible = rowParentBottom > viewportTopY && rowParentTop < viewportBottomY
+      const visible = fullyContainedOnly
+        ? rowParentTop >= viewportTopY && rowParentBottom <= viewportBottomY
+        : rowParentBottom > viewportTopY && rowParentTop < viewportBottomY
       obj.setVisible(visible)
     }
   }
@@ -2362,7 +2366,7 @@ class CardgameScene extends Phaser.Scene {
       this.menuLogScrollOffset = scrollOffset
       this.menuLogPinnedToBottom = initialScroll.pinnedToBottom
       logContent.y = initialScroll.contentY
-      this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom)
+      this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
       const applyScroll = (deltaY: number): void => {
         if (maxScroll <= 0) {
           return
@@ -2380,7 +2384,7 @@ class CardgameScene extends Phaser.Scene {
         this.menuLogScrollOffset = scrollOffset
         this.menuLogPinnedToBottom = next.pinnedToBottom
         logContent.y = next.contentY
-        this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom)
+        this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
       }
 
       if (maxScroll > 0) {
