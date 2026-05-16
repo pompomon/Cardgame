@@ -1,5 +1,5 @@
 // Deterministic generator for the HD card-art assets shipped under
-// public/cards/hd/ (plus an upgraded public/cards/card-back.png).
+// public/cards/hd/.
 //
 // Run with:
 //   npm run generate:card-art
@@ -696,48 +696,6 @@ function paintSwamp(buf) {
   fillDisc(buf, 612, 760, 3.5, hexToRgb('#c9342a', 230))
   fillDisc(buf, 624, 760, 3.5, hexToRgb('#c9342a', 230))
   addRadialGlow(buf, 618, 760, 18, hexToRgb('#c9342a', 60))
-}
-
-// ---------------------------------------------------------------------------
-// Card back: shared back image used by all visual styles.
-// ---------------------------------------------------------------------------
-
-function paintCardBack(buf) {
-  fillBackgroundGradient(buf, hexToRgb('#1a1230'), hexToRgb('#06030f'))
-  addRadialGlow(buf, 512, 512, 460, hexToRgb('#8a6bd6', 140))
-
-  const accent = hexToRgb('#c8a8ff', 70)
-  for (let y = 80; y < 944; y += 64) {
-    for (let x = 80; x < 944; x += 64) {
-      drawLine(buf, x, y, x + 32, y - 32, 2, accent)
-      drawLine(buf, x + 32, y - 32, x + 64, y, 2, accent)
-      drawLine(buf, x + 64, y, x + 32, y + 32, 2, accent)
-      drawLine(buf, x + 32, y + 32, x, y, 2, accent)
-    }
-  }
-
-  const center = 512
-  fillRing(buf, center, center, 200, 220, hexToRgb('#c8a8ff', 220))
-  fillRing(buf, center, center, 160, 168, hexToRgb('#c8a8ff', 200))
-  fillRing(buf, center, center, 110, 118, hexToRgb('#c8a8ff', 180))
-
-  fillPolygon(
-    buf,
-    [[center, center - 100], [center + 70, center], [center, center + 100], [center - 70, center]],
-    hexToRgb('#f1e3ff', 230),
-  )
-  fillPolygon(
-    buf,
-    [[center, center - 60], [center + 42, center], [center, center + 60], [center - 42, center]],
-    hexToRgb('#6b3fb0'),
-  )
-  fillPolygon(
-    buf,
-    [[center, center - 28], [center + 20, center], [center, center + 28], [center - 20, center]],
-    hexToRgb('#f1e3ff', 230),
-  )
-
-  drawFrame(buf, hexToRgb('#c8a8ff'))
 }
 
 // ---------------------------------------------------------------------------

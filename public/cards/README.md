@@ -6,7 +6,7 @@ Card images served as static assets to the Phaser renderer.
 
 ```
 public/cards/
-├─ card-back.png            # Shared card back used by every style
+├─ card-back.png            # Shared card-back asset (not currently used by Phaser renderer)
 ├─ classic/
 │  ├─ Forest.png
 │  ├─ Island.png
@@ -19,7 +19,7 @@ public/cards/
    └─ ...
 ```
 
-- One PNG per `(cardVisualStyle, BasicLand)` pair (3 styles × 5 lands = 15 files), plus a single shared `card-back.png`.
+- One PNG per `(cardVisualStyle, BasicLand)` pair (3 styles × 5 lands = 15 files), plus a single shared `card-back.png` asset.
 - The `classic/` and `monochrome/` PNGs are 256×256 placeholder swatches generated from each style's palette in `src/app/card-visuals.ts`.
 - The `hd/` PNGs are finished 1024×1024 art produced by `scripts/generate-card-art.mjs`. The Phaser renderer scales them down to the current card slot, so any square art at this size or larger works.
 - The naming convention is enforced by `src/app/card-art.ts` (`cardArtKey` / `cardArtUrl`). Replacing artwork is a drop-in: ship a new PNG at the same path; no code changes are needed.
@@ -51,4 +51,3 @@ The current visual style slots, mirrored from `src/app/card-visual-styles.ts`:
 - `monochrome` — palette-driven grayscale swatches (placeholder).
 
 Users who had previously selected `neon` are migrated to `hd` on first read (`src/app/card-visual-style-selection.ts`).
-
