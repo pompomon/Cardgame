@@ -182,6 +182,56 @@ describe('phaser buildLayout', () => {
     expect(layout.logColumnTop).toBeGreaterThanOrEqual(headerBottom)
   })
 
+  it('inserts a visible gutter between the header and the log panel on every viewport size', () => {
+    // Even with masking working correctly, the renderer relies on a small
+    // gutter between the header strip (☰ Menu button + Turn/phase text) and
+    // the top of the log panel, so any pixel overflow can't reach the menu
+    // button. The gutter is computed from minDimension so phones and desktop
+    // both get a sensible value.
+    const viewports: Array<[number, number, 'vertical' | 'horizontal']> = [
+      [320, 640, 'vertical'],
+      [414, 896, 'vertical'],
+      [720, 1280, 'vertical'],
+      [1280, 800, 'horizontal'],
+      [1920, 1080, 'horizontal'],
+    ]
+    for (const [width, height, orientation] of viewports) {
+      const layout = buildLayout(width, height, orientation)
+      const headerBottom = layout.headerTop + layout.headerHeight
+      // bodyTop already includes the gap between header and body; the log
+      // column must sit at or below that, plus an additional logColumnGapTop.
+      expect(layout.logColumnTop).toBeGreaterThan(headerBottom)
+      expect(layout.logColumnTop).toBeGreaterThan(layout.bodyTop)
+    }
+  })
+
+  it('keeps the log panel fully above the board on collapsed (single-column) viewports', () => {
+    // The collapsed layout stacks log on top, board below. The log bottom
+    // must finish before the board starts, with a non-zero gutter so a tile
+    // can't visually touch the player-info container directly below.
+    const viewports: Array<[number, number]> = [
+      [320, 640],
+      [414, 896],
+      [600, 900],
+    ]
+    for (const [width, height] of viewports) {
+      const layout = buildLayout(width, height, 'vertical')
+      expect(layout.isCollapsed).toBe(true)
+      const logBottom = layout.logColumnTop + layout.logColumnHeight
+      expect(logBottom).toBeLessThan(layout.boardColumnTop)
+    }
+  })
+
+  it('gives the collapsed log panel a usable minimum height on mobile portrait', () => {
+    // Regression: the previous layout could shrink the log panel to ~80px on
+    // tight viewports, leaving room for only one tile and making scrollback
+    // confusing. The new minimum keeps the panel large enough to host the
+    // heading + 2-3 tile rows.
+    const layout = buildLayout(360, 720, 'vertical')
+    expect(layout.isCollapsed).toBe(true)
+    expect(layout.logColumnHeight).toBeGreaterThanOrEqual(88)
+  })
+
   it('uses opaque popup layers while keeping scrim dimming configurable', () => {
     const layout = buildLayout(1024, 480, 'horizontal')
     expect(layout.popupPanelAlpha).toBe(1)
