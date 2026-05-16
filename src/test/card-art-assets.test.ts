@@ -55,6 +55,7 @@ describe('card art asset files', () => {
       const { width, height } = readImageSize(path)
       expect(width, `${entry.url} width`).toBeGreaterThanOrEqual(256)
       expect(height, `${entry.url} height`).toBeGreaterThanOrEqual(256)
+      expect(width, `${entry.url} must be square`).toBe(height)
     }
   })
 
@@ -63,5 +64,6 @@ describe('card art asset files', () => {
     const { width, height } = readImageSize(path)
     expect(width).toBeGreaterThanOrEqual(256)
     expect(height).toBeGreaterThanOrEqual(256)
+    expect(width).toBe(height)
   })
 })

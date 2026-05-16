@@ -276,19 +276,6 @@ function mulberry32(seed) {
   }
 }
 
-function addNoise(buf, seed, amount) {
-  const rand = mulberry32(seed)
-  for (let y = 0; y < buf.height; y += 1) {
-    for (let x = 0; x < buf.width; x += 1) {
-      const i = (y * buf.width + x) * 4
-      const n = (rand() - 0.5) * amount
-      buf.data[i] = Math.max(0, Math.min(255, buf.data[i] + n))
-      buf.data[i + 1] = Math.max(0, Math.min(255, buf.data[i + 1] + n))
-      buf.data[i + 2] = Math.max(0, Math.min(255, buf.data[i + 2] + n))
-    }
-  }
-}
-
 function rgb(r, g, b, a = 255) {
   return { r, g, b, a }
 }
@@ -703,11 +690,11 @@ function paintSwamp(buf) {
 // ---------------------------------------------------------------------------
 
 const LAND_RECIPES = {
-  Forest: { paint: paintForest, accent: hexToRgb('#5ed59a'), seed: 1 },
-  Island: { paint: paintIsland, accent: hexToRgb('#5fb6ff'), seed: 2 },
-  Mountain: { paint: paintMountain, accent: hexToRgb('#ff8b62'), seed: 3 },
-  Plains: { paint: paintPlains, accent: hexToRgb('#f4d35e'), seed: 4 },
-  Swamp: { paint: paintSwamp, accent: hexToRgb('#b075d8'), seed: 5 },
+  Forest: { paint: paintForest, accent: hexToRgb('#5ed59a') },
+  Island: { paint: paintIsland, accent: hexToRgb('#5fb6ff') },
+  Mountain: { paint: paintMountain, accent: hexToRgb('#ff8b62') },
+  Plains: { paint: paintPlains, accent: hexToRgb('#f4d35e') },
+  Swamp: { paint: paintSwamp, accent: hexToRgb('#b075d8') },
 }
 
 function renderCard(land) {
