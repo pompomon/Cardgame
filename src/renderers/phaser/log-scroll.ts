@@ -41,9 +41,9 @@ export interface LogScrollInput {
   viewportTopY: number
   viewportBottomY: number
   contentHeight: number
-  // Optional extra padding subtracted from the bottom of the visible strip,
-  // matching the existing renderer convention of a small bottom inset so
-  // tiles don't sit flush against the panel border.
+  // Optional extra padding appended after content. This increases effective
+  // scrollable content height (and therefore `maxScroll`) so the last tile
+  // can sit slightly above the panel border instead of flush against it.
   bottomPadding?: number
   requestedOffset: number | null
   pinnedToBottom: boolean

@@ -141,8 +141,8 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const logColumnGapTop = clamp(minDimension * 0.012, 6, 12)
   const logColumnGapBottom = clamp(minDimension * 0.012, 6, 12)
   // Collapsed (mobile portrait) viewports need a usable minimum that still
-  // fits ~2-3 tile rows; this also guarantees the bitmap mask viewport has a
-  // non-degenerate area to clip against.
+  // fits ~2-3 tile rows; this also guarantees the replay-log viewport region
+  // used by GeometryMask + per-row culling remains non-degenerate.
   const collapsedLogMinHeight = 88
 
   let logColumnLeft: number
