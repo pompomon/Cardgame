@@ -2325,29 +2325,45 @@ class CardgameScene extends Phaser.Scene {
       content.add(logMask)
       logContent.setMask(logMask.createGeometryMask())
 
-      const maxScroll = Math.max(0, logContentHeight + 16 - logViewportHeight)
+      const logContentTopY = logViewportTop + 8
       const logViewportBottom = logViewportTop + logViewportHeight
-      // Preserve "stick to bottom" intent across rebuilds: if the user was previously
-      // pinned to the newest entry, snap to the new max so fresh log lines remain visible
-      // when AI/replay ticks rebuild the menu while it stays open.
-      let scrollOffset: number
-      if (this.menuLogScrollOffset === null || this.menuLogPinnedToBottom) {
-        scrollOffset = maxScroll
-      } else {
-        scrollOffset = Phaser.Math.Clamp(this.menuLogScrollOffset, 0, maxScroll)
-      }
+      // Use the shared scroll helper so the menu log clamps + pin-to-bottom
+      // semantics stay in lock-step with the in-scene log (and remain
+      // covered by the helper's unit tests). bottomPadding=16 matches the
+      // legacy `+ 16` term — 8px top inset above the tile column plus 8px
+      // breathing room below the last tile.
+      const initialScroll = computeLogScrollLayout({
+        contentTopY: logContentTopY,
+        viewportTopY: logViewportTop,
+        viewportBottomY: logViewportBottom,
+        contentHeight: logContentHeight,
+        bottomPadding: 16,
+        requestedOffset: this.menuLogScrollOffset,
+        pinnedToBottom: this.menuLogPinnedToBottom,
+      })
+      const maxScroll = initialScroll.maxScroll
+      let scrollOffset = initialScroll.scrollOffset
       this.menuLogScrollOffset = scrollOffset
-      this.menuLogPinnedToBottom = scrollOffset >= maxScroll
-      logContent.y = logViewportTop + 8 - scrollOffset
+      this.menuLogPinnedToBottom = initialScroll.pinnedToBottom
+      logContent.y = initialScroll.contentY
       this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom)
       const applyScroll = (deltaY: number): void => {
         if (maxScroll <= 0) {
           return
         }
-        scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
+        const next = computeLogScrollLayout({
+          contentTopY: logContentTopY,
+          viewportTopY: logViewportTop,
+          viewportBottomY: logViewportBottom,
+          contentHeight: logContentHeight,
+          bottomPadding: 16,
+          requestedOffset: scrollOffset + deltaY,
+          pinnedToBottom: false,
+        })
+        scrollOffset = next.scrollOffset
         this.menuLogScrollOffset = scrollOffset
-        this.menuLogPinnedToBottom = scrollOffset >= maxScroll
-        logContent.y = logViewportTop + 8 - scrollOffset
+        this.menuLogPinnedToBottom = next.pinnedToBottom
+        logContent.y = next.contentY
         this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom)
       }
 

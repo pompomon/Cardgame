@@ -13,8 +13,15 @@
 //
 // Outputs a clamped offset plus the resulting `contentY` world position. The
 // returned `contentY` is guaranteed to satisfy:
-//   viewportTopY - maxScroll <= contentY <= viewportTopY
-// so that:
+//   contentTopY - maxScroll <= contentY <= contentTopY
+// (i.e. the content top is never above its baseline `contentTopY` and never
+// scrolled past `maxScroll` below it). Callers typically set
+// `contentTopY = viewportTopY + topInset` so this also keeps the rendered
+// content from drifting above the viewport's interior, but the exact bounds
+// are expressed relative to `contentTopY` because the helper does not assume
+// the content origin equals the viewport top.
+//
+// The scroll behavior guarantees:
 //   - tiles never drift above the viewport top when the content is shorter
 //     than the viewport (`contentHeight <= viewportHeight` -> offset = 0),
 //   - tiles never expose blank space below the viewport bottom (offset is

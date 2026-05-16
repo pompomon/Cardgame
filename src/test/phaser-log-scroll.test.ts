@@ -85,7 +85,7 @@ describe('computeLogScrollLayout', () => {
     expect(result.scrollOffset).toBe(12)
   })
 
-  it('preserves the invariant: contentY in [viewportTopY - maxScroll, viewportTopY] for arbitrary offsets', () => {
+  it('preserves the invariant: contentY in [contentTopY - maxScroll, contentTopY] for arbitrary offsets', () => {
     const cases = [
       { contentHeight: 0, requested: null },
       { contentHeight: 50, requested: null },
@@ -115,6 +115,45 @@ describe('computeLogScrollLayout', () => {
         expect(effectiveBottom).toBeGreaterThanOrEqual(400 - 0.5)
       }
     }
+  })
+
+  it('respects a contentTopY that differs from viewportTopY (top inset)', () => {
+    // The Phaser renderer offsets the tile column 6-8px below the viewport
+    // top so tiles don't sit flush against the panel border. The helper
+    // expresses its bounds relative to `contentTopY` (not `viewportTopY`),
+    // so the rendered content top stays at or below contentTopY = 208 here.
+    const contentTopY = 208
+    const viewportTopY = 200
+    const viewportBottomY = 400
+    const overflowing = computeLogScrollLayout({
+      contentTopY,
+      viewportTopY,
+      viewportBottomY,
+      contentHeight: 500,
+      bottomPadding: 12,
+      requestedOffset: null,
+      pinnedToBottom: true,
+    })
+    // Effective content (500 + 12) overflows viewport (200) by 312.
+    expect(overflowing.maxScroll).toBe(312)
+    expect(overflowing.contentY).toBe(contentTopY - 312)
+    expect(overflowing.contentY).toBeLessThanOrEqual(contentTopY)
+    expect(overflowing.contentY).toBeGreaterThanOrEqual(contentTopY - overflowing.maxScroll)
+
+    // When content fits, contentY pins to the (inset) contentTopY — NOT to
+    // the bare viewportTopY. This is the invariant the helper's docstring
+    // promises and that the renderer relies on for the top inset.
+    const fitting = computeLogScrollLayout({
+      contentTopY,
+      viewportTopY,
+      viewportBottomY,
+      contentHeight: 80,
+      bottomPadding: 6,
+      requestedOffset: 999,
+      pinnedToBottom: false,
+    })
+    expect(fitting.maxScroll).toBe(0)
+    expect(fitting.contentY).toBe(contentTopY)
   })
 
   it('treats degenerate (zero-height) viewports as fully scrolled', () => {
