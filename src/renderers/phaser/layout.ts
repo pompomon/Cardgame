@@ -133,6 +133,17 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const logColumnGap = 12
   const desiredLogWidth = clamp(safeWidth * 0.25 - logColumnGap, 180, Math.max(180, safeWidth * 0.4))
   const collapsedLogHeight = clamp(safeHeight * 0.2, 96, 200)
+  // Defensive gutters between the header strip and the log panel, and between
+  // the log panel and the next container below it. Without these, regressions
+  // in masking/clipping let log tiles render flush against the ☰ Menu button
+  // or the player-info container. Even with masks working correctly, a small
+  // visible gap reinforces that the log is its own contained region.
+  const logColumnGapTop = clamp(minDimension * 0.012, 6, 12)
+  const logColumnGapBottom = clamp(minDimension * 0.012, 6, 12)
+  // Collapsed (mobile portrait) viewports need a usable minimum that still
+  // fits ~2-3 tile rows; this also guarantees the replay-log viewport region
+  // used by GeometryMask + per-row culling remains non-degenerate.
+  const collapsedLogMinHeight = 88
 
   let logColumnLeft: number
   let logColumnTop: number
@@ -147,18 +158,25 @@ export function buildLayout(width: number, height: number, orientation: Orientat
     // Single-column stacked layout: log on top, board below (mirrors DOM
     // `@media (max-width: 720px)` rule that flattens the grid to one column).
     logColumnLeft = margin
-    logColumnTop = bodyTop
+    logColumnTop = bodyTop + logColumnGapTop
     logColumnWidth = Math.max(120, contentWidth)
-    logColumnHeight = Math.min(collapsedLogHeight, Math.max(80, bodyHeight * 0.28))
+    const collapsedDesiredHeight = Math.min(collapsedLogHeight, Math.max(80, bodyHeight * 0.28))
+    // Don't let the gutters shrink the log below the readable minimum unless
+    // the available body really is that small.
+    const availableForLog = Math.max(0, bodyHeight - logColumnGapTop - logColumnGapBottom)
+    logColumnHeight = Math.min(
+      availableForLog,
+      Math.max(Math.min(collapsedLogMinHeight, availableForLog), collapsedDesiredHeight),
+    )
     boardColumnLeft = margin
     boardColumnWidth = Math.max(160, contentWidth)
-    boardColumnTop = logColumnTop + logColumnHeight + 8
+    boardColumnTop = logColumnTop + logColumnHeight + logColumnGapBottom
     boardColumnHeight = Math.max(0, bodyBottom - boardColumnTop)
   } else {
     logColumnLeft = margin
-    logColumnTop = bodyTop
+    logColumnTop = bodyTop + logColumnGapTop
     logColumnWidth = Math.max(160, Math.min(desiredLogWidth, contentWidth - 200))
-    logColumnHeight = Math.max(0, bodyHeight)
+    logColumnHeight = Math.max(0, bodyHeight - logColumnGapTop - logColumnGapBottom)
     boardColumnLeft = margin + logColumnWidth + logColumnGap
     boardColumnWidth = Math.max(200, safeWidth - margin - boardColumnLeft)
     boardColumnTop = bodyTop

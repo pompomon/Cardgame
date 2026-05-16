@@ -19,6 +19,7 @@ import type { AppRenderer } from '../types'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
+import { computeLogScrollLayout } from './log-scroll'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -82,6 +83,25 @@ const COLOR_PLAYER_NON_ACTIVE_FILL = 0x2a1233
 const COLOR_PANEL_STROKE = 0x2a355f
 const COLOR_LOG_PANEL_FILL = 0x0d162e
 const COLOR_LOG_VIEWPORT_FILL = 0x091227
+// Scene depth layering for the in-scene game view. Layering is anchored at
+// the scene default depth (0), where gameplay UI (hand cards, End Turn /
+// response buttons, battlefield rectangles & text) lives:
+//
+//   Z_LOG    = -10  // replay log container (panel bg, viewport, tile column)
+//   Z_BOARD  = -5   // player-info panel bg + text (above log, below cards)
+//   default  =  0   // cards, action buttons, battlefields — unchanged
+//   Z_HEADER =  10  // ☰ Menu button, Turn/Phase label, Winner banner, header strip
+//
+// The replay log is pinned BELOW gameplay UI so even if its per-row culling
+// regresses (Phaser 4's GeometryMask is documented as Canvas-only), any
+// overshoot is occluded by either the player-info panels or the header
+// strip instead of drawing over the ☰ Menu / Winner banner / cards. We
+// deliberately keep Z_BOARD < 0 so panels never sit *above* gameplay UI —
+// that way panel bg can't accidentally hide hand cards or buttons if a
+// future layout change makes them overlap.
+const Z_LOG = -10
+const Z_BOARD = -5
+const Z_HEADER = 10
 
 const UI_THEME = {
   buttonFill: 0x1c2f63,
@@ -1181,12 +1201,30 @@ class CardgameScene extends Phaser.Scene {
 
     const left = this.currentLayout.margin
 
+    // Header strip background: a solid rectangle behind the Menu button and
+    // turn/phase label. Even if a future regression breaks the log mask, the
+    // log paints at Z_LOG and this strip paints at Z_HEADER above it, so the
+    // ☰ Menu button and the Winner banner stay readable on top.
+    const headerStripHeight = Math.max(this.currentLayout.headerHeight, this.currentLayout.actionButtonHeight + 4)
+    const headerStrip = this.add.rectangle(
+      this.currentLayout.width / 2,
+      this.currentLayout.headerTop + headerStripHeight / 2,
+      this.currentLayout.width,
+      headerStripHeight,
+      0x0b1020,
+      1,
+    )
+    headerStrip.setDepth(Z_HEADER - 1)
+    this.rootContainer?.add(headerStrip)
+
     // Header: Menu button on the left, then turn/phase label. No Rematch in the
     // header — Rematch lives under the Menu (mirrors DOM PR #13 menu-section 1).
     const menuButtonWidth = Math.min(this.currentLayout.actionButtonWidth, 180)
-    this.rootContainer?.add(this.createButton('☰ Menu', left + menuButtonWidth / 2, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, () => {
+    const menuButton = this.createButton('☰ Menu', left + menuButtonWidth / 2, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, () => {
       this.openMenuOverlay(view)
-    }, menuButtonWidth, this.currentLayout.actionButtonHeight))
+    }, menuButtonWidth, this.currentLayout.actionButtonHeight)
+    menuButton.setDepth(Z_HEADER)
+    this.rootContainer?.add(menuButton)
 
     const headerTextX = left + menuButtonWidth + 16
     const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
@@ -1202,12 +1240,14 @@ class CardgameScene extends Phaser.Scene {
     // and board area on collapsed phone-sized layouts. Phaser truncates the
     // text at the line boundary when maxLines is set, which is preferable to
     // overflowing the reserved single-row header strip.
-    this.rootContainer?.add(this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, headerLabel, {
+    const headerText = this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, headerLabel, {
       color: game.winnerText ? '#f7d56b' : '#e5ecf5',
       fontSize: this.currentLayout.titleFontSize,
       wordWrap: { width: headerTextWidth },
       maxLines: 1,
-    }).setOrigin(0, 0.5))
+    }).setOrigin(0, 0.5)
+    headerText.setDepth(Z_HEADER)
+    this.rootContainer?.add(headerText)
 
     if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen })) {
       this.renderInSceneLog(game.events, game.log, game.actor)
@@ -1232,6 +1272,7 @@ class CardgameScene extends Phaser.Scene {
     const safeHeight = height
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
       .setStrokeStyle(1, COLOR_PANEL_STROKE)
+    bg.setDepth(Z_BOARD)
     this.rootContainer?.add(bg)
     if (lines.length === 0) {
       return
@@ -1241,6 +1282,7 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.bodyFontSize,
       wordWrap: { width: Math.max(40, safeWidth - 20) },
     })
+    text.setDepth(Z_BOARD)
     this.rootContainer?.add(text)
   }
 
@@ -1440,8 +1482,11 @@ class CardgameScene extends Phaser.Scene {
           fontSize: this.currentLayout.smallFontSize,
           wordWrap: { width: Math.max(20, contentWidth) },
         }).setOrigin(0, 0)
+        const noteRowHeight = Math.max(tileHeight, note.height + tilePadding * 2)
+        note.setData('rowTop', cursorY)
+        note.setData('rowHeight', noteRowHeight)
         container.add(note)
-        cursorY += Math.max(tileHeight, note.height + tilePadding * 2) + tileSpacing
+        cursorY += noteRowHeight + tileSpacing
       }
       for (const line of visibleLines) {
         const labelText = this.add.text(0, 0, line, {
@@ -1451,8 +1496,10 @@ class CardgameScene extends Phaser.Scene {
           maxLines: 2,
         }).setOrigin(0, 0)
         labelText.y = cursorY + tilePadding
-        container.add(labelText)
         const rowHeight = Math.max(tileHeight, labelText.height + tilePadding * 2)
+        labelText.setData('rowTop', cursorY)
+        labelText.setData('rowHeight', rowHeight)
+        container.add(labelText)
         cursorY += rowHeight + tileSpacing
       }
       const contentHeight = Math.max(0, cursorY - tileSpacing)
@@ -1465,6 +1512,8 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: Math.max(40, contentWidth) },
       }).setOrigin(0, 0)
+      empty.setData('rowTop', 0)
+      empty.setData('rowHeight', empty.height)
       container.add(empty)
       return { container, contentHeight: empty.height, tileCount: 0 }
     }
@@ -1485,8 +1534,11 @@ class CardgameScene extends Phaser.Scene {
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: Math.max(20, contentWidth) },
       }).setOrigin(0, 0)
+      const noteRowHeight = Math.max(tileHeight, note.height + tilePadding * 2)
+      note.setData('rowTop', cursorY)
+      note.setData('rowHeight', noteRowHeight)
       container.add(note)
-      cursorY += Math.max(tileHeight, note.height + tilePadding * 2) + tileSpacing
+      cursorY += noteRowHeight + tileSpacing
     }
     for (const event of visibleEvents) {
       const tile = formatLogEventTile(event)
@@ -1547,11 +1599,57 @@ class CardgameScene extends Phaser.Scene {
       labelText.setOrigin(0, 0.5)
       row.add(labelText)
 
+      row.setData('rowTop', cursorY)
+      row.setData('rowHeight', rowHeight)
       container.add(row)
       cursorY += rowHeight + tileSpacing
     }
     const contentHeight = Math.max(0, cursorY - tileSpacing)
     return { container, contentHeight, tileCount: visibleEvents.length }
+  }
+
+  // Hide any tile row in `tilesColumn` whose Y rectangle falls outside the
+  // viewport rect [viewportTopY, viewportBottomY]. Coordinates are expressed
+  // in the tile column's *parent* coordinate space, not world space — the
+  // caller passes the column's own `y` (in its parent) together with the
+  // viewport bounds expressed in the same parent space. (For the in-scene
+  // log the parent is the scene root so parent space == world space, but
+  // for the menu-overlay log the parent is the overlay's `content`
+  // container, so do not confuse this with world coordinates.) Used to
+  // prevent log tiles from rendering on top of the header strip (☰ Menu /
+  // Turn label / Winner banner) or the player-info container below, even
+  // on WebGL where GeometryMask is documented to be a no-op (Phaser 4
+  // ships only GeometryMask, which clips only in the Canvas renderer).
+  // By default, rows whose bounding box partially overlaps the viewport stay
+  // visible (Canvas GeometryMask clips them). Callers can opt into strict
+  // "fully contained only" visibility for overlays where even partial
+  // WebGL spillover is undesirable.
+  private cullLogRowsToViewport(
+    tilesColumn: Phaser.GameObjects.Container,
+    columnOriginY: number,
+    viewportTopY: number,
+    viewportBottomY: number,
+    fullyContainedOnly = false,
+  ): void {
+    for (const child of tilesColumn.list) {
+      const obj = child as Phaser.GameObjects.GameObject & {
+        getData: (key: string) => unknown
+        setVisible: (visible: boolean) => unknown
+        y?: number
+        height?: number
+      }
+      if (typeof obj.setVisible !== 'function') {
+        continue
+      }
+      const rowTop = (obj.getData('rowTop') as number | undefined) ?? (obj.y ?? 0)
+      const rowHeight = (obj.getData('rowHeight') as number | undefined) ?? (obj.height ?? 0)
+      const rowParentTop = columnOriginY + rowTop
+      const rowParentBottom = rowParentTop + rowHeight
+      const visible = fullyContainedOnly
+        ? rowParentTop >= viewportTopY && rowParentBottom <= viewportBottomY
+        : rowParentBottom > viewportTopY && rowParentTop < viewportBottomY
+      obj.setVisible(visible)
+    }
   }
 
   private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[], activeActor: number): void {
@@ -1570,6 +1668,7 @@ class CardgameScene extends Phaser.Scene {
       height,
       COLOR_LOG_PANEL_FILL,
     ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    panelBg.setDepth(Z_LOG)
     this.rootContainer?.add(panelBg)
 
     const padding = 10
@@ -1578,6 +1677,7 @@ class CardgameScene extends Phaser.Scene {
       color: '#e5ecf5',
       fontSize: this.currentLayout.subtitleFontSize,
     })
+    heading.setDepth(Z_LOG)
     this.rootContainer?.add(heading)
 
     // Hidden screen-reader / accessibility mirror: keep a flat text version of
@@ -1641,43 +1741,80 @@ class CardgameScene extends Phaser.Scene {
       0.6,
     ).setStrokeStyle(1, COLOR_PANEL_STROKE)
     viewportBg.setInteractive()
+    viewportBg.setDepth(Z_LOG)
     this.rootContainer?.add(viewportBg)
 
     const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const tileColumnWidth = Math.max(40, viewportWidth - 12)
     const { container: tilesColumn, contentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle, { activeActor, legacyLog })
-    const logContent = this.add.container(viewportLeft + 6, viewportTop + 6, [tilesColumn])
+    const contentTopY = viewportTop + 6
+    const logContent = this.add.container(viewportLeft + 6, contentTopY, [tilesColumn])
+    logContent.setDepth(Z_LOG)
     this.rootContainer?.add(logContent)
 
+    // Bitmap masks were dropped in Phaser 4, and GeometryMask is documented to
+    // only clip in the Canvas renderer (in WebGL it silently no-ops). We keep
+    // the geometry mask for the Canvas backend and additionally cull every
+    // tile row whose world Y falls outside the viewport rect, so log content
+    // never paints over the header strip / player-info container even on
+    // WebGL where the mask is a no-op. See `cullLogRowsToViewport` below.
     const logMask = this.add.graphics()
     logMask.setVisible(false)
     logMask.fillStyle(0xffffff)
     logMask.fillRect(viewportLeft, viewportTop, viewportWidth, viewportHeight)
-    this.rootContainer?.add(logMask)
     logContent.setMask(logMask.createGeometryMask())
+    // Track the mask graphic on the content container so it is destroyed
+    // when `clearRoot()` removes the content (Phaser only auto-destroys the
+    // mask source when it's a child of the masked object's display list).
+    logContent.setData('log-mask-graphic', logMask)
+    logContent.once(Phaser.GameObjects.Events.DESTROY, () => {
+      logMask.destroy()
+    })
 
-    const maxScroll = Math.max(0, contentHeight + 12 - viewportHeight)
-    let scrollOffset: number
-    if (this.inSceneLogScrollOffset === null || this.inSceneLogPinnedToBottom) {
-      scrollOffset = maxScroll
-    } else {
-      scrollOffset = Phaser.Math.Clamp(this.inSceneLogScrollOffset, 0, maxScroll)
-    }
-    this.inSceneLogScrollOffset = scrollOffset
-    this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
-    logContent.y = viewportTop + 6 - scrollOffset
+    const scroll = computeLogScrollLayout({
+      contentTopY,
+      viewportTopY: viewportTop,
+      viewportBottomY: viewportBottom,
+      contentHeight,
+      bottomPadding: 12,
+      requestedOffset: this.inSceneLogScrollOffset,
+      pinnedToBottom: this.inSceneLogPinnedToBottom,
+    })
+    this.inSceneLogScrollOffset = scroll.scrollOffset
+    this.inSceneLogPinnedToBottom = scroll.pinnedToBottom
+    logContent.y = scroll.contentY
+    this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom)
 
-    if (maxScroll > 0) {
+    if (scroll.maxScroll > 0) {
+      let scrollOffset = scroll.scrollOffset
+      const maxScroll = scroll.maxScroll
       const applyScroll = (deltaY: number): void => {
         scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
         this.inSceneLogScrollOffset = scrollOffset
         this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
-        logContent.y = viewportTop + 6 - scrollOffset
+        logContent.y = contentTopY - scrollOffset
+        this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom)
       }
       this.bindScrollableViewport(
         viewportBg,
         applyScroll,
       )
+      // Scroll affordance: a small unobtrusive hint anchored to the top-right
+      // of the viewport that signals older entries are reachable by scrolling.
+      // The previous overflow visually misled users into thinking the log
+      // was bleeding into the header — making scroll discoverable mitigates
+      // that even when the mask is working as intended.
+      const scrollHint = this.add.text(
+        viewportLeft + viewportWidth - SCROLL_INDICATOR_RIGHT_OFFSET,
+        viewportTop + 2,
+        '▲ scroll',
+        {
+          color: '#9db0d9',
+          fontSize: this.currentLayout.smallFontSize,
+        },
+      ).setOrigin(1, 0)
+      scrollHint.setDepth(Z_LOG)
+      this.rootContainer?.add(scrollHint)
     }
   }
 
@@ -2208,27 +2345,46 @@ class CardgameScene extends Phaser.Scene {
       content.add(logMask)
       logContent.setMask(logMask.createGeometryMask())
 
-      const maxScroll = Math.max(0, logContentHeight + 16 - logViewportHeight)
-      // Preserve "stick to bottom" intent across rebuilds: if the user was previously
-      // pinned to the newest entry, snap to the new max so fresh log lines remain visible
-      // when AI/replay ticks rebuild the menu while it stays open.
-      let scrollOffset: number
-      if (this.menuLogScrollOffset === null || this.menuLogPinnedToBottom) {
-        scrollOffset = maxScroll
-      } else {
-        scrollOffset = Phaser.Math.Clamp(this.menuLogScrollOffset, 0, maxScroll)
-      }
+      const logContentTopY = logViewportTop + 8
+      const logViewportBottom = logViewportTop + logViewportHeight
+      // Use the shared scroll helper so the menu log clamps + pin-to-bottom
+      // semantics stay in lock-step with the in-scene log (and remain
+      // covered by the helper's unit tests). bottomPadding=16 matches the
+      // legacy `+ 16` term — 8px top inset above the tile column plus 8px
+      // breathing room below the last tile.
+      const initialScroll = computeLogScrollLayout({
+        contentTopY: logContentTopY,
+        viewportTopY: logViewportTop,
+        viewportBottomY: logViewportBottom,
+        contentHeight: logContentHeight,
+        bottomPadding: 16,
+        requestedOffset: this.menuLogScrollOffset,
+        pinnedToBottom: this.menuLogPinnedToBottom,
+      })
+      const maxScroll = initialScroll.maxScroll
+      let scrollOffset = initialScroll.scrollOffset
       this.menuLogScrollOffset = scrollOffset
-      this.menuLogPinnedToBottom = scrollOffset >= maxScroll
-      logContent.y = logViewportTop + 8 - scrollOffset
+      this.menuLogPinnedToBottom = initialScroll.pinnedToBottom
+      logContent.y = initialScroll.contentY
+      this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
       const applyScroll = (deltaY: number): void => {
         if (maxScroll <= 0) {
           return
         }
-        scrollOffset = Phaser.Math.Clamp(scrollOffset + deltaY, 0, maxScroll)
+        const next = computeLogScrollLayout({
+          contentTopY: logContentTopY,
+          viewportTopY: logViewportTop,
+          viewportBottomY: logViewportBottom,
+          contentHeight: logContentHeight,
+          bottomPadding: 16,
+          requestedOffset: scrollOffset + deltaY,
+          pinnedToBottom: false,
+        })
+        scrollOffset = next.scrollOffset
         this.menuLogScrollOffset = scrollOffset
-        this.menuLogPinnedToBottom = scrollOffset >= maxScroll
-        logContent.y = logViewportTop + 8 - scrollOffset
+        this.menuLogPinnedToBottom = next.pinnedToBottom
+        logContent.y = next.contentY
+        this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
       }
 
       if (maxScroll > 0) {
@@ -2599,6 +2755,7 @@ export class PhaserRenderer implements AppRenderer {
       height: canvasHost.clientHeight > 0 ? canvasHost.clientHeight : BASE_HEIGHT,
       parent: canvasHost,
       backgroundColor: '#0b1020',
+      transparent: false,
       scene: [this.lobbyScene, this.cardgameScene],
       scale: {
         mode: Phaser.Scale.RESIZE,
