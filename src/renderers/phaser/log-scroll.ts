@@ -28,6 +28,8 @@
 //     clamped to maxScroll),
 //   - the final scrollOffset matches the position implied by `contentY`.
 
+import { clamp } from './layout'
+
 export interface LogScrollInput {
   contentTopY: number
   viewportTopY: number
@@ -51,13 +53,6 @@ export interface LogScrollResult {
   // True when the resulting offset is exactly at maxScroll. Callers use this
   // to keep their pin-to-bottom state in sync across rebuilds.
   pinnedToBottom: boolean
-}
-
-function clamp(value: number, minValue: number, maxValue: number): number {
-  if (maxValue < minValue) {
-    return minValue
-  }
-  return Math.min(maxValue, Math.max(minValue, value))
 }
 
 export function computeLogScrollLayout(input: LogScrollInput): LogScrollResult {

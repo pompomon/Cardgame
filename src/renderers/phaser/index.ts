@@ -86,9 +86,13 @@ const COLOR_LOG_VIEWPORT_FILL = 0x091227
 // Scene depth layering for the in-scene game view. The replay log must
 // always paint below the header strip (so even if a regression breaks the
 // log's clipping mask, the ☰ Menu button / Turn label / Winner banner stay
-// readable on top). Player-info / battlefield rows sit between the two so
-// any minor overshoot from the log is hidden by the next container instead
-// of stacking visibly on top of it.
+// readable on top). Player-info panels are explicitly raised to Z_BOARD so
+// any minor overshoot from the log is hidden by them instead of stacking
+// visibly on top. Battlefield rectangles/text/cards keep the scene default
+// depth — they're added to the scene after the log container (so they
+// already paint above it under Phaser's draw order) but are not pinned to
+// Z_BOARD; if you ever reorder rendering so battlefields are added before
+// the log, call setDepth(Z_BOARD) on them too to preserve this guarantee.
 const Z_LOG = 0
 const Z_BOARD = 5
 const Z_HEADER = 10
@@ -1598,18 +1602,24 @@ class CardgameScene extends Phaser.Scene {
     return { container, contentHeight, tileCount: visibleEvents.length }
   }
 
-  // Hide any tile row in `tilesColumn` whose world-Y rectangle falls outside
-  // the viewport rect [viewportTopY, viewportBottomY]. Used to prevent log
-  // tiles from rendering on top of the header strip (☰ Menu / Turn label /
-  // Winner banner) or the player-info container below, even on WebGL where
-  // GeometryMask is documented to be a no-op (Phaser 4 ships only
-  // GeometryMask, which clips only in the Canvas renderer). Rows whose
-  // bounding box partially overlaps the viewport stay visible — the
-  // geometry mask still clips them correctly in Canvas, and a partial WebGL
-  // overshoot is hidden by the Z_HEADER strip painted above the log.
+  // Hide any tile row in `tilesColumn` whose Y rectangle falls outside the
+  // viewport rect [viewportTopY, viewportBottomY]. Coordinates are expressed
+  // in the tile column's *parent* coordinate space, not world space — the
+  // caller passes the column's own `y` (in its parent) together with the
+  // viewport bounds expressed in the same parent space. (For the in-scene
+  // log the parent is the scene root so parent space == world space, but
+  // for the menu-overlay log the parent is the overlay's `content`
+  // container, so do not confuse this with world coordinates.) Used to
+  // prevent log tiles from rendering on top of the header strip (☰ Menu /
+  // Turn label / Winner banner) or the player-info container below, even
+  // on WebGL where GeometryMask is documented to be a no-op (Phaser 4
+  // ships only GeometryMask, which clips only in the Canvas renderer).
+  // Rows whose bounding box partially overlaps the viewport stay visible —
+  // the geometry mask still clips them correctly in Canvas, and a partial
+  // WebGL overshoot is hidden by the Z_HEADER strip painted above the log.
   private cullLogRowsToViewport(
     tilesColumn: Phaser.GameObjects.Container,
-    columnWorldOriginY: number,
+    columnOriginY: number,
     viewportTopY: number,
     viewportBottomY: number,
   ): void {
@@ -1625,9 +1635,9 @@ class CardgameScene extends Phaser.Scene {
       }
       const rowTop = (obj.getData('rowTop') as number | undefined) ?? (obj.y ?? 0)
       const rowHeight = (obj.getData('rowHeight') as number | undefined) ?? (obj.height ?? 0)
-      const worldTop = columnWorldOriginY + rowTop
-      const worldBottom = worldTop + rowHeight
-      const visible = worldBottom > viewportTopY && worldTop < viewportBottomY
+      const rowParentTop = columnOriginY + rowTop
+      const rowParentBottom = rowParentTop + rowHeight
+      const visible = rowParentBottom > viewportTopY && rowParentTop < viewportBottomY
       obj.setVisible(visible)
     }
   }
