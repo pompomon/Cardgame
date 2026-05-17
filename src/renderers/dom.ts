@@ -10,6 +10,21 @@ import type { AppRenderer } from './types'
 
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const DOM_LOG_VISIBLE_ENTRIES = 14
+const failedRasterCardArtUrls = new Set<string>()
+
+declare global {
+  interface Window {
+    __cardgameNoteRasterCardArtLoadFailure?: (url: string) => void
+  }
+}
+
+export function noteRasterCardArtLoadFailure(url: string): void {
+  failedRasterCardArtUrls.add(url)
+}
+
+export function resetRasterCardArtLoadFailuresForTests(): void {
+  failedRasterCardArtUrls.clear()
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -152,15 +167,22 @@ export function renderLandIcon(
   options: { forceProcedural?: boolean } = {},
 ): string {
   const source = cardArtSourceFor(name, style, size, options)
+  const sourceFailed = source.isRaster && failedRasterCardArtUrls.has(source.primaryUrl)
+  const iconSrc = sourceFailed ? source.proceduralUrl : source.primaryUrl
+  const iconIsRaster = source.isRaster && !sourceFailed
   // For raster styles, swap to the procedural SVG if the PNG fails to load
   // (missing asset, wrong base path, offline before service-worker cache).
   // The fallback URL is HTML-attribute safe (data:image/svg+xml,...) so it
   // is fine to inline inside an `onerror` handler with single quotes.
-  const onError = source.isRaster
-    ? ` onerror="this.onerror=null;this.src=&#39;${source.proceduralUrl}&#39;"`
+  const onError = iconIsRaster
+    ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
     : ''
-  const finalClassName = source.isRaster ? `${className} ${className}--raster` : className
-  return `<img class="${finalClassName}" src="${source.primaryUrl}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
+  const finalClassName = iconIsRaster ? `${className} ${className}--raster` : className
+  return `<img class="${finalClassName}" src="${iconSrc}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
+}
+
+if (typeof window !== 'undefined') {
+  window.__cardgameNoteRasterCardArtLoadFailure = noteRasterCardArtLoadFailure
 }
 
 export function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {

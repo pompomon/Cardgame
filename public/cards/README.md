@@ -43,7 +43,7 @@ When adding a new visual style, add it to `RASTER_CARD_VISUAL_STYLES` in `src/ap
 
 1. Produce new square artwork at least 256×256 (HD replacements are typically 1024×1024).
 2. Save it as `public/cards/<style>/<Land>.png`, matching the existing filename casing exactly (lands are PascalCase: `Forest`, `Island`, `Mountain`, `Plains`, `Swamp`).
-3. Reload the app — Phaser preloads art via `ALL_CARD_ART` on scene boot and the DOM renderer references the PNGs by URL, so the new file is picked up automatically.
+3. Reload the app — Phaser preloads art via `ALL_CARD_ART` on scene boot and the DOM renderer references the PNGs by URL, so the new file is picked up automatically. The service worker uses a network-first strategy for `/cards/*`, so online clients refresh to updated same-path PNGs while still keeping offline fallback in cache.
 
 If a file is missing or fails to load, both renderers fall back to the procedural pixel icon (`landPixelRects`) so cards remain visible. The DOM renderer wires this up via an `onerror` swap to a `data:image/svg+xml` URL; the Phaser renderer falls back via `addCardArtToContainer` when the texture is missing and logs the failing key once per `(style, land)` pair.
 

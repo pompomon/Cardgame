@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { renderCardTile, renderLandIcon } from '../renderers/dom'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { noteRasterCardArtLoadFailure, renderCardTile, renderLandIcon, resetRasterCardArtLoadFailuresForTests } from '../renderers/dom'
 
 describe('DOM renderer card tile output', () => {
+  beforeEach(() => {
+    resetRasterCardArtLoadFailuresForTests()
+  })
+
   it('renders HD card tiles using the shipped PNG with a raster icon class', () => {
     const html = renderCardTile('Forest', 'hd')
     expect(html).toContain('src="/cards/hd/Forest.png"')
@@ -40,5 +44,14 @@ describe('DOM renderer card tile output', () => {
     const html = renderLandIcon('Swamp', 'hd', 22, 'card-tile-icon')
     expect(html).toContain('src="/cards/hd/Swamp.png"')
     expect(html).toContain('card-tile-icon--raster')
+  })
+
+  it('uses procedural art directly after a raster URL has failed in-session', () => {
+    noteRasterCardArtLoadFailure('/cards/hd/Forest.png')
+    const html = renderLandIcon('Forest', 'hd', 22, 'card-tile-icon')
+    expect(html).toContain('src="data:image/svg+xml')
+    expect(html).not.toContain('/cards/hd/Forest.png')
+    expect(html).not.toContain('card-tile-icon--raster')
+    expect(html).not.toContain('onerror=')
   })
 })

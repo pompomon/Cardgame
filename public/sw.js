@@ -96,10 +96,27 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  const isStaticAsset = relativePath.startsWith('/assets/')
-    || relativePath.startsWith('/cards/')
-    || STATIC_FILE_PATHS.has(relativePath)
-  if (!isStaticAsset) {
+  const isCardAsset = relativePath.startsWith('/cards/')
+  const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
+  if (!isStaticAsset && !isCardAsset) {
+    return
+  }
+
+  if (isCardAsset) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone()
+            void caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, clone))
+          }
+          return response
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request)
+          return cached ?? Response.error()
+        }),
+    )
     return
   }
 
