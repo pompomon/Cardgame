@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v4'
+const CACHE_VERSION = 'v5'
 const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
 const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
 
@@ -96,7 +96,9 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
+  const isStaticAsset = relativePath.startsWith('/assets/')
+    || relativePath.startsWith('/cards/')
+    || STATIC_FILE_PATHS.has(relativePath)
   if (!isStaticAsset) {
     return
   }

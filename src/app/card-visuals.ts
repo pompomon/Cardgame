@@ -1,5 +1,16 @@
+import { cardArtUrl } from './card-art'
 import type { CardVisualStyle } from './types'
 import type { BasicLand } from '../game/types'
+
+// Styles whose shipped artwork is photographic / rasterised PNG art rather
+// than the procedural pixel template. Callers use this to choose CSS
+// `image-rendering` and whether to draw the palette card frame behind the
+// art. Keep in sync with the contents of `public/cards/<style>/*.png`.
+const RASTER_CARD_VISUAL_STYLES: ReadonlySet<CardVisualStyle> = new Set(['hd'])
+
+export function isRasterCardVisualStyle(style: CardVisualStyle): boolean {
+  return RASTER_CARD_VISUAL_STYLES.has(style)
+}
 
 export interface CardVisualPalette {
   cardFill: string
@@ -252,4 +263,44 @@ export function stylePreviewDataUrl(style: CardVisualStyle, targetSize: number):
   const dataUrl = encodeSvg(svg)
   stylePreviewDataUrlCache.set(cacheKey, dataUrl)
   return dataUrl
+}
+
+export interface CardArtSource {
+  /**
+   * Preferred image URL for `(land, style)`. For raster styles this is the
+   * shipped PNG under `public/cards/<style>/<Land>.png`; for procedural styles
+   * it is the same SVG data URL as `proceduralUrl`.
+   */
+  readonly primaryUrl: string
+  /**
+   * Procedural pixel-template SVG data URL, used as a graceful fallback when
+   * the raster asset fails to load (missing file, offline, wrong base path).
+   */
+  readonly proceduralUrl: string
+  /** True when the primary asset is a rasterised image (currently `hd`). */
+  readonly isRaster: boolean
+}
+
+/**
+ * Returns the best available card art source for a `(land, style, targetSize)`.
+ * For raster styles (currently `hd`) the primary URL points at the shipped
+ * PNG, with the procedural icon retained as an `onerror` fallback. For
+ * procedural styles the two URLs are identical so callers can render the
+ * pixel icon without any special-casing.
+ *
+ * Pass `forceProcedural = true` for small inline glyphs (e.g. 16px action
+ * buttons) where downloading a 1024x1024 PNG is overkill — those callers
+ * keep using the procedural icon even for raster styles.
+ */
+export function cardArtSourceFor(
+  land: BasicLand,
+  style: CardVisualStyle,
+  targetSize: number,
+  options: { forceProcedural?: boolean } = {},
+): CardArtSource {
+  const proceduralUrl = landIconDataUrl(land, style, targetSize)
+  if (options.forceProcedural || !isRasterCardVisualStyle(style)) {
+    return { primaryUrl: proceduralUrl, proceduralUrl, isRaster: false }
+  }
+  return { primaryUrl: cardArtUrl(land, style), proceduralUrl, isRaster: true }
 }
