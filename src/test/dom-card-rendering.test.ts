@@ -11,12 +11,11 @@ describe('DOM renderer card tile output', () => {
     expect(html).toContain('src="/cards/hd/Forest.png"')
     expect(html).toContain('card-tile-icon--raster')
     expect(html).toContain('card-tile--raster')
-    // The neon palette swatch must be suppressed for raster tiles so the
-    // PNG art is not stacked under a colored fill.
-    expect(html).not.toContain('--tile-fill:')
     // Procedural SVG is retained as the `onerror` fallback so cards stay
     // visible even when the PNG fails to load.
     expect(html).toContain('onerror=')
+    expect(html).toContain("this.classList.remove(&#39;card-tile-icon--raster&#39;)")
+    expect(html).toContain("this.parentElement?.classList.remove(&#39;card-tile--raster&#39;)")
     expect(html).toContain('data:image/svg+xml')
   })
 
@@ -48,10 +47,14 @@ describe('DOM renderer card tile output', () => {
 
   it('uses procedural art directly after a raster URL has failed in-session', () => {
     noteRasterCardArtLoadFailure('/cards/hd/Forest.png')
-    const html = renderLandIcon('Forest', 'hd', 22, 'card-tile-icon')
-    expect(html).toContain('src="data:image/svg+xml')
-    expect(html).not.toContain('/cards/hd/Forest.png')
-    expect(html).not.toContain('card-tile-icon--raster')
-    expect(html).not.toContain('onerror=')
+    const iconHtml = renderLandIcon('Forest', 'hd', 22, 'card-tile-icon')
+    expect(iconHtml).toContain('src="data:image/svg+xml')
+    expect(iconHtml).not.toContain('/cards/hd/Forest.png')
+    expect(iconHtml).not.toContain('card-tile-icon--raster')
+    expect(iconHtml).not.toContain('onerror=')
+
+    const tileHtml = renderCardTile('Forest', 'hd')
+    expect(tileHtml).not.toContain('card-tile--raster')
+    expect(tileHtml).toContain('--tile-fill:')
   })
 })

@@ -26,6 +26,10 @@ export function resetRasterCardArtLoadFailuresForTests(): void {
   failedRasterCardArtUrls.clear()
 }
 
+function shouldRenderRasterArt(source: { isRaster: boolean; primaryUrl: string }): boolean {
+  return source.isRaster && !failedRasterCardArtUrls.has(source.primaryUrl)
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -167,15 +171,14 @@ export function renderLandIcon(
   options: { forceProcedural?: boolean } = {},
 ): string {
   const source = cardArtSourceFor(name, style, size, options)
-  const sourceFailed = source.isRaster && failedRasterCardArtUrls.has(source.primaryUrl)
-  const iconSrc = sourceFailed ? source.proceduralUrl : source.primaryUrl
-  const iconIsRaster = source.isRaster && !sourceFailed
+  const iconIsRaster = shouldRenderRasterArt(source)
+  const iconSrc = iconIsRaster ? source.primaryUrl : source.proceduralUrl
   // For raster styles, swap to the procedural SVG if the PNG fails to load
   // (missing asset, wrong base path, offline before service-worker cache).
   // The fallback URL is HTML-attribute safe (data:image/svg+xml,...) so it
   // is fine to inline inside an `onerror` handler with single quotes.
   const onError = iconIsRaster
-    ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
+    ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
     : ''
   const finalClassName = iconIsRaster ? `${className} ${className}--raster` : className
   return `<img class="${finalClassName}" src="${iconSrc}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
@@ -189,16 +192,14 @@ export function renderCardTile(name: string, style: AppViewModel['cardVisualStyl
   if (!isBasicLand(name)) {
     return `<span>${escapeHtml(name)}</span>`
   }
+  const source = cardArtSourceFor(name, style, 22)
   const palette = cardVisualPaletteFor(name, style)
-  const raster = isRasterCardVisualStyle(style)
+  const raster = isRasterCardVisualStyle(style) && shouldRenderRasterArt(source)
   const tileClass = raster ? 'card-tile card-tile--raster' : 'card-tile'
-  // For raster styles the shipped PNG already paints its own background, so
-  // skip the neon palette `--tile-fill` swatch and let the image carry the
-  // visuals. The non-raster styles keep the palette swatch behind their
-  // procedural pixel icon.
-  const tileStyleAttr = raster
-    ? ` style="--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
-    : ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
+  // Keep `--tile-fill` available even for raster styles so if a raster icon
+  // fails and the `onerror` handler drops `card-tile--raster`, the same DOM
+  // node immediately shows the procedural tile background.
+  const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
   return `<span class="${tileClass}"${tileStyleAttr}>${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${escapeHtml(name)}</span></span>`
 }
 
