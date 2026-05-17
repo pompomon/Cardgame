@@ -204,6 +204,15 @@ function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualSty
   }
 }
 
+function parseFontPx(fontSize: string, fallback: number): number {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*px\s*$/.exec(fontSize)
+  if (!match) {
+    return fallback
+  }
+  const parsed = Number.parseFloat(match[1])
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 function recordingMetadataText(view: AppViewModel): string {
   const meta = view.recording.metadata
   if (!meta) {
@@ -952,12 +961,33 @@ class CardgameScene extends Phaser.Scene {
     centerY: number,
     size: number,
     container: Phaser.GameObjects.Container,
+    options: { fit?: 'contain' | 'cover'; coverWidth?: number; coverHeight?: number } = {},
   ): boolean {
     const key = cardArtKey(land, visualStyle)
     if (this.textures && this.textures.exists(key)) {
       const image = this.add.image(centerX, centerY, key)
-      image.setDisplaySize(size, size)
       image.setOrigin(0.5, 0.5)
+      if (options.fit === 'cover' && options.coverWidth && options.coverHeight) {
+        // Cover-fit: scale uniformly so the texture fills the target rectangle
+        // and crop the overflow so the visible region is exactly coverWidth ×
+        // coverHeight, centered on (centerX, centerY). Using setCrop instead
+        // of a Phaser GeometryMask because Phaser 4's GeometryMask is a no-op
+        // under the WebGL renderer.
+        const source = this.textures.get(key).getSourceImage() as { width?: number; height?: number } | null
+        const texW = (source && typeof source.width === 'number' && source.width > 0) ? source.width : size
+        const texH = (source && typeof source.height === 'number' && source.height > 0) ? source.height : size
+        const w = options.coverWidth
+        const h = options.coverHeight
+        const scale = Math.max(w / texW, h / texH)
+        const cropW = Math.min(texW, w / scale)
+        const cropH = Math.min(texH, h / scale)
+        const cropX = Math.max(0, (texW - cropW) / 2)
+        const cropY = Math.max(0, (texH - cropH) / 2)
+        image.setScale(scale)
+        image.setCrop(cropX, cropY, cropW, cropH)
+      } else {
+        image.setDisplaySize(size, size)
+      }
       container.add(image)
       return isRasterCardVisualStyle(visualStyle)
     }
@@ -1841,39 +1871,78 @@ class CardgameScene extends Phaser.Scene {
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
     const strokeColor = config.highlight ? 0xffe680 : style.stroke
+    const cardWidth = this.currentLayout.cardWidth
+    const cardHeight = this.currentLayout.cardHeight
     // For raster (HD) styles the shipped PNG already includes its own
     // background; draw an unfilled rectangle so the painted art is not
     // covered by the neon palette swatch. Keep the stroke so the card
     // boundary stays visible (and so the highlight outline still works).
     const willUseRasterArt = isBasicLand(label) && isRasterCardVisualStyle(visualStyle)
       && this.textures?.exists(cardArtKey(label, visualStyle))
-    const rect = willUseRasterArt
-      ? this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor)
-      : this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
-    const card = this.add.container(x, y, [rect])
+    // Fill rectangle is unfilled (alpha 0) for HD so the cover-fit image
+    // shows through; for procedural styles keep the palette swatch behind
+    // the centered pixel icon as before. The stroke is intentionally NOT
+    // applied here for HD — it's added as a separate top-most rectangle
+    // below so the image cannot cover the card border.
+    const fillRect = willUseRasterArt
+      ? this.add.rectangle(0, 0, cardWidth, cardHeight, 0x000000, 0)
+      : this.add.rectangle(0, 0, cardWidth, cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
+    const card = this.add.container(x, y, [fillRect])
     if (isBasicLand(label)) {
-      // Image card art occupies ~60% of the card face. Falls back to the
-      // procedural pixel icon if the texture is not in cache (e.g. asset
-      // failed to load).
-      const artSize = Math.max(
-        CARD_FACE_ICON_MIN_SIZE,
-        Math.floor(Math.min(
-          this.currentLayout.cardWidth * 0.66,
-          this.currentLayout.cardHeight * 0.6,
-        )),
-      )
-      this.addCardArtToContainer(label, visualStyle, 0, -8, artSize, card)
+      if (willUseRasterArt) {
+        // HD: cover-fill the whole card face with the painted art.
+        this.addCardArtToContainer(label, visualStyle, 0, 0, Math.max(cardWidth, cardHeight), card, {
+          fit: 'cover',
+          coverWidth: cardWidth,
+          coverHeight: cardHeight,
+        })
+      } else {
+        // Procedural styles: keep the existing ~66% centered icon layout so
+        // the small pixel template stays readable above the card title.
+        const artSize = Math.max(
+          CARD_FACE_ICON_MIN_SIZE,
+          Math.floor(Math.min(
+            cardWidth * 0.66,
+            cardHeight * 0.6,
+          )),
+        )
+        this.addCardArtToContainer(label, visualStyle, 0, -8, artSize, card)
+      }
     }
-    const text = this.add.text(0, 0, label, {
-      color: style.text,
-      fontSize: this.currentLayout.bodyFontSize,
-      align: 'center',
-      wordWrap: { width: this.currentLayout.cardWidth - 12 },
-    }).setOrigin(0.5, 0)
-    text.y = Math.max(8, this.currentLayout.cardHeight * 0.17)
-    card.add(text)
+    if (willUseRasterArt) {
+      // HD: overlay the label at the bottom of the card on a translucent
+      // dark backdrop strip so the per-land pastel text stays legible over
+      // bright skies, dark caves, or anything in between.
+      const fontPx = parseFontPx(this.currentLayout.bodyFontSize, 14)
+      const stripHeight = Math.max(fontPx + 8, 18)
+      const stripWidth = Math.max(0, cardWidth - 4)
+      const stripY = cardHeight / 2 - stripHeight / 2 - 2
+      const backdrop = this.add.rectangle(0, stripY, stripWidth, stripHeight, 0x000000, 0.6)
+      card.add(backdrop)
+      const text = this.add.text(0, stripY, label, {
+        color: style.text,
+        fontSize: this.currentLayout.bodyFontSize,
+        align: 'center',
+        wordWrap: { width: cardWidth - 12 },
+      }).setOrigin(0.5, 0.5)
+      text.setShadow(0, 1, '#000000', 2, false, true)
+      card.add(text)
+      // Stroke overlay so the card border is not covered by the cover-fit
+      // image. Use an unfilled rectangle of the same size; alpha 0 fill.
+      const strokeOverlay = this.add.rectangle(0, 0, cardWidth, cardHeight, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor)
+      card.add(strokeOverlay)
+    } else {
+      const text = this.add.text(0, 0, label, {
+        color: style.text,
+        fontSize: this.currentLayout.bodyFontSize,
+        align: 'center',
+        wordWrap: { width: cardWidth - 12 },
+      }).setOrigin(0.5, 0)
+      text.y = Math.max(8, cardHeight * 0.17)
+      card.add(text)
+    }
     if (config.onClick) {
-      card.setSize(this.currentLayout.cardWidth, this.currentLayout.cardHeight)
+      card.setSize(cardWidth, cardHeight)
       card.setInteractive({ useHandCursor: true })
       card.on('pointerup', config.onClick)
     }

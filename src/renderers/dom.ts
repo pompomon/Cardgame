@@ -195,12 +195,28 @@ export function renderCardTile(name: string, style: AppViewModel['cardVisualStyl
   const source = cardArtSourceFor(name, style, 22)
   const palette = cardVisualPaletteFor(name, style)
   const raster = isRasterCardVisualStyle(style) && shouldRenderRasterArt(source)
-  const tileClass = raster ? 'card-tile card-tile--raster' : 'card-tile'
+  const safeName = escapeHtml(name)
+  if (raster) {
+    // HD tiles: the PNG art fills the tile background and the card name is
+    // overlaid on a translucent dark backdrop strip so the per-land pastel
+    // text stays legible over any art. Keep `--tile-fill` / `--tile-stroke`
+    // available so if the raster image fails to load and the `onerror`
+    // handler drops the `card-tile--raster` class, the same DOM node
+    // immediately reverts to the procedural pixel-icon tile look.
+    const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
+    // Inline `onerror` is HTML-attribute safe (data:image/svg+xml,...). We
+    // mirror the existing fallback chain used by `renderLandIcon`: note the
+    // failed URL, drop the raster classes from the image AND its parent
+    // tile, and swap the src to the procedural SVG.
+    const onError = ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
+    return `<span class="card-tile card-tile--raster"${tileStyleAttr}><img class="card-tile-bg" src="${source.primaryUrl}" alt="" role="presentation"${onError} /><span class="card-tile-label">${safeName}</span></span>`
+  }
+  const tileClass = 'card-tile'
   // Keep `--tile-fill` available even for raster styles so if a raster icon
   // fails and the `onerror` handler drops `card-tile--raster`, the same DOM
   // node immediately shows the procedural tile background.
   const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
-  return `<span class="${tileClass}"${tileStyleAttr}>${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${escapeHtml(name)}</span></span>`
+  return `<span class="${tileClass}"${tileStyleAttr}>${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${safeName}</span></span>`
 }
 
 function renderGame(view: AppViewModel, menuOpen: boolean): string {

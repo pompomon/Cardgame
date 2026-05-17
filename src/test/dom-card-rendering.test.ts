@@ -6,15 +6,19 @@ describe('DOM renderer card tile output', () => {
     resetRasterCardArtLoadFailuresForTests()
   })
 
-  it('renders HD card tiles using the shipped PNG with a raster icon class', () => {
+  it('renders HD card tiles using the shipped PNG as a full-bleed background with an overlaid label', () => {
     const html = renderCardTile('Forest', 'hd')
     expect(html).toContain('src="/cards/hd/Forest.png"')
-    expect(html).toContain('card-tile-icon--raster')
+    // HD tile uses a dedicated background-image structure (not the small
+    // `card-tile-icon` glyph) so the PNG can fill the entire tile.
+    expect(html).toContain('card-tile-bg')
+    expect(html).toContain('card-tile-label')
     expect(html).toContain('card-tile--raster')
+    expect(html).not.toContain('card-tile-icon')
     // Procedural SVG is retained as the `onerror` fallback so cards stay
     // visible even when the PNG fails to load.
     expect(html).toContain('onerror=')
-    expect(html).toContain("this.classList.remove(&#39;card-tile-icon--raster&#39;)")
+    expect(html).toContain("this.classList.remove(&#39;card-tile-bg&#39;)")
     expect(html).toContain("this.parentElement?.classList.remove(&#39;card-tile--raster&#39;)")
     expect(html).toContain('data:image/svg+xml')
   })
