@@ -6,13 +6,13 @@ import { BASIC_LANDS } from '../game/types'
 describe('card-art', () => {
   it('produces a deterministic, namespaced texture key per (style, land)', () => {
     expect(cardArtKey('Forest', 'classic')).toBe('card-art:classic:Forest')
-    expect(cardArtKey('Plains', 'neon')).toBe('card-art:neon:Plains')
+    expect(cardArtKey('Plains', 'hd')).toBe('card-art:hd:Plains')
     expect(cardArtKey('Swamp', 'monochrome')).toBe('card-art:monochrome:Swamp')
   })
 
   it('builds public URLs that follow the public/cards/<style>/<land>.png layout', () => {
     expect(cardArtUrl('Mountain', 'classic')).toBe('/cards/classic/Mountain.png')
-    expect(cardArtUrl('Island', 'neon')).toBe('/cards/neon/Island.png')
+    expect(cardArtUrl('Island', 'hd')).toBe('/cards/hd/Island.png')
     expect(cardArtUrl('Plains', 'monochrome')).toBe('/cards/monochrome/Plains.png')
   })
 

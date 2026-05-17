@@ -126,12 +126,12 @@ const paletteByStyleAndLand: Record<CardVisualStyle, Record<BasicLand, CardVisua
     Plains: { cardFill: '#695d31', cardStroke: '#c8b872', cardText: '#fff8dd', iconPrimary: '#fff2ba', iconSecondary: '#f2dc8b' },
     Swamp: { cardFill: '#362148', cardStroke: '#8a62af', cardText: '#f3e4ff', iconPrimary: '#d9bbff', iconSecondary: '#b694e6' },
   },
-  neon: {
-    Forest: { cardFill: '#0d2f1d', cardStroke: '#37ff8f', cardText: '#dcffe9', iconPrimary: '#8effbf', iconSecondary: '#37ff8f' },
-    Island: { cardFill: '#102c52', cardStroke: '#2ab9ff', cardText: '#e7f6ff', iconPrimary: '#88deff', iconSecondary: '#2ab9ff' },
-    Mountain: { cardFill: '#3f1d14', cardStroke: '#ff7b52', cardText: '#ffe5dc', iconPrimary: '#ffb198', iconSecondary: '#ff7b52' },
-    Plains: { cardFill: '#3f3613', cardStroke: '#ffe14a', cardText: '#fffde6', iconPrimary: '#fff39d', iconSecondary: '#ffe14a' },
-    Swamp: { cardFill: '#241636', cardStroke: '#ca69ff', cardText: '#f7ebff', iconPrimary: '#e2a8ff', iconSecondary: '#ca69ff' },
+  hd: {
+    Forest: { cardFill: '#0d2f1d', cardStroke: '#5ed59a', cardText: '#dcffe9', iconPrimary: '#a8f4cb', iconSecondary: '#5ed59a' },
+    Island: { cardFill: '#0f2a52', cardStroke: '#5fb6ff', cardText: '#e7f4ff', iconPrimary: '#a8dcff', iconSecondary: '#5fb6ff' },
+    Mountain: { cardFill: '#3a1a12', cardStroke: '#ff8b62', cardText: '#ffe3d6', iconPrimary: '#ffbfa3', iconSecondary: '#ff8b62' },
+    Plains: { cardFill: '#3a3216', cardStroke: '#f4d35e', cardText: '#fff7d6', iconPrimary: '#ffe89a', iconSecondary: '#f4d35e' },
+    Swamp: { cardFill: '#1f1430', cardStroke: '#b075d8', cardText: '#f1e3ff', iconPrimary: '#d6b3f5', iconSecondary: '#b075d8' },
   },
   monochrome: {
     Forest: { cardFill: '#202020', cardStroke: '#929292', cardText: '#f0f0f0', iconPrimary: '#d0d0d0', iconSecondary: '#a8a8a8' },
