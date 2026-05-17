@@ -2,17 +2,16 @@ import { CARD_VISUAL_STYLE_OPTIONS } from './card-visual-styles'
 import type { CardVisualStyle } from './types'
 import { BASIC_LANDS, type BasicLand } from '../game/types'
 
-// Vite exposes the deployed base URL on `import.meta.env.BASE_URL`. When
-// running unit tests under vitest there is no Vite shim, so default to '/'.
+// Vite exposes the deployed base URL on `import.meta.env.BASE_URL`. The
+// access must be a literal `import.meta.env.BASE_URL` member expression so
+// Vite's static replacement engages at build time; routing the lookup through
+// an intermediate alias (e.g. `meta.env?.BASE_URL`) leaves the reference
+// untransformed in the production bundle, which then evaluates to `undefined`
+// in the browser and silently breaks every `/cards/...` URL on GitHub Pages.
 function basePath(): string {
-  try {
-    const meta = import.meta as unknown as { env?: { BASE_URL?: string } }
-    const base = meta.env?.BASE_URL
-    if (typeof base === 'string' && base.length > 0) {
-      return base.endsWith('/') ? base : `${base}/`
-    }
-  } catch {
-    // Ignore: tests/non-Vite environments simply use '/'.
+  const base = import.meta.env.BASE_URL
+  if (typeof base === 'string' && base.length > 0) {
+    return base.endsWith('/') ? base : `${base}/`
   }
   return '/'
 }
