@@ -10,7 +10,7 @@ import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ALL_CARD_ART, cardArtKey } from '../../app/card-art'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
-import { bucketIconSize, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
+import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
@@ -152,7 +152,11 @@ function colorHexToNumber(hex: string): number {
   return Number.isFinite(parsed) ? parsed : 0xffffff
 }
 
-let cardArtLoadErrorReported = false
+// Per-key tracking so each (style, land) load failure is logged exactly
+// once instead of swallowing all subsequent errors after the first. This
+// turns "every HD card silently fell back to the procedural pixel icon"
+// from invisible into an actionable warning per missing asset.
+const cardArtLoadErrorKeys = new Set<string>()
 
 function preloadCardArt(scene: Phaser.Scene): void {
   for (const entry of ALL_CARD_ART) {
@@ -174,14 +178,15 @@ function preloadCardArt(scene: Phaser.Scene): void {
     return
   }
   const onError = (file: { key?: string; src?: string }): void => {
-    if (cardArtLoadErrorReported) {
+    const key = file?.key ?? '<unknown>'
+    if (cardArtLoadErrorKeys.has(key)) {
       return
     }
-    cardArtLoadErrorReported = true
+    cardArtLoadErrorKeys.add(key)
     // eslint-disable-next-line no-console
-    console.warn('[phaser] failed to load card art', file?.key ?? '<unknown>', file?.src ?? '')
+    console.warn('[phaser] failed to load card art', key, file?.src ?? '')
   }
-  scene.load.once(errorEvent, onError)
+  scene.load.on(errorEvent, onError)
   scene.load.once(Phaser.Loader.Events.COMPLETE, () => {
     scene.load.off(errorEvent, onError)
   })
@@ -935,7 +940,11 @@ class CardgameScene extends Phaser.Scene {
   // Renders the card art image centered at (centerX, centerY) inside `container`.
   // Falls back to the procedural pixel icon when the texture is not yet
   // available (e.g. during preload, missing asset, or in unit tests with no
-  // loader).
+  // loader). Returns `true` only when a raster-style image was placed so
+  // callers can suppress their own palette `cardFill` rectangle and let
+  // the painted art carry the visuals instead of stacking under a neon
+  // frame. Classic/Monochrome textures are placeholder palette swatches
+  // and intentionally return `false` so their palette frame stays drawn.
   private addCardArtToContainer(
     land: BasicLand,
     visualStyle: AppViewModel['cardVisualStyle'],
@@ -943,14 +952,14 @@ class CardgameScene extends Phaser.Scene {
     centerY: number,
     size: number,
     container: Phaser.GameObjects.Container,
-  ): void {
+  ): boolean {
     const key = cardArtKey(land, visualStyle)
     if (this.textures && this.textures.exists(key)) {
       const image = this.add.image(centerX, centerY, key)
       image.setDisplaySize(size, size)
       image.setOrigin(0.5, 0.5)
       container.add(image)
-      return
+      return isRasterCardVisualStyle(visualStyle)
     }
     // Fallback: keep the original pixel-rect icon path so cards remain
     // visible. Bucket the size to match what `addPixelIconToContainer` will
@@ -960,6 +969,7 @@ class CardgameScene extends Phaser.Scene {
     const left = centerX - Math.floor(effectiveSize / 2)
     const top = centerY - Math.floor(effectiveSize / 2)
     this.addPixelIconToContainer(land, visualStyle, left, top, effectiveSize, container)
+    return false
   }
 
   private syncPendingPlayLandTargetSelection(game: GameUiState): void {
@@ -1831,7 +1841,15 @@ class CardgameScene extends Phaser.Scene {
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
     const strokeColor = config.highlight ? 0xffe680 : style.stroke
-    const rect = this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
+    // For raster (HD) styles the shipped PNG already includes its own
+    // background; draw an unfilled rectangle so the painted art is not
+    // covered by the neon palette swatch. Keep the stroke so the card
+    // boundary stays visible (and so the highlight outline still works).
+    const willUseRasterArt = isBasicLand(label) && isRasterCardVisualStyle(visualStyle)
+      && this.textures?.exists(cardArtKey(label, visualStyle))
+    const rect = willUseRasterArt
+      ? this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor)
+      : this.add.rectangle(0, 0, this.currentLayout.cardWidth, this.currentLayout.cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
     const card = this.add.container(x, y, [rect])
     if (isBasicLand(label)) {
       // Image card art occupies ~60% of the card face. Falls back to the

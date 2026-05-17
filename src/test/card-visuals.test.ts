@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bucketIconSize, cardVisualPaletteFor, landIconDataUrl, landPixelRects, stylePreviewDataUrl } from '../app/card-visuals'
+import { bucketIconSize, cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle, landIconDataUrl, landPixelRects, stylePreviewDataUrl } from '../app/card-visuals'
 
 describe('card-visuals', () => {
   it('produces distinct icon data by card type and style', () => {
@@ -76,5 +76,36 @@ describe('card-visuals', () => {
     expect(palette.cardText).toMatch(/^#/)
     expect(palette.iconPrimary).toMatch(/^#/)
     expect(palette.iconSecondary).toMatch(/^#/)
+  })
+
+  it('flags hd as the only raster card visual style', () => {
+    expect(isRasterCardVisualStyle('hd')).toBe(true)
+    expect(isRasterCardVisualStyle('classic')).toBe(false)
+    expect(isRasterCardVisualStyle('monochrome')).toBe(false)
+  })
+
+  describe('cardArtSourceFor', () => {
+    it('returns the shipped PNG URL for HD and keeps the procedural SVG as fallback', () => {
+      const source = cardArtSourceFor('Forest', 'hd', 64)
+      expect(source.isRaster).toBe(true)
+      expect(source.primaryUrl).toBe('/cards/hd/Forest.png')
+      expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
+    })
+
+    it('returns the procedural SVG as the primary URL for classic and monochrome', () => {
+      for (const style of ['classic', 'monochrome'] as const) {
+        const source = cardArtSourceFor('Mountain', style, 64)
+        expect(source.isRaster).toBe(false)
+        expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
+        expect(source.primaryUrl).toBe(source.proceduralUrl)
+      }
+    })
+
+    it('forceProcedural: true keeps the procedural icon even for HD', () => {
+      const source = cardArtSourceFor('Island', 'hd', 16, { forceProcedural: true })
+      expect(source.isRaster).toBe(false)
+      expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
+      expect(source.primaryUrl).toBe(source.proceduralUrl)
+    })
   })
 })

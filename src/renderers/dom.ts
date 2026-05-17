@@ -2,7 +2,7 @@ import type { ControllerApi } from '../app/controller'
 import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS, isAnimationSpeed } from '../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual-styles'
-import { cardVisualPaletteFor, landIconDataUrl } from '../app/card-visuals'
+import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
 import { isBasicLand, type BasicLand, type GameAction } from '../game/types'
@@ -10,6 +10,25 @@ import type { AppRenderer } from './types'
 
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const DOM_LOG_VISIBLE_ENTRIES = 14
+const failedRasterCardArtUrls = new Set<string>()
+
+declare global {
+  interface Window {
+    __cardgameNoteRasterCardArtLoadFailure?: (url: string) => void
+  }
+}
+
+export function noteRasterCardArtLoadFailure(url: string): void {
+  failedRasterCardArtUrls.add(url)
+}
+
+export function resetRasterCardArtLoadFailuresForTests(): void {
+  failedRasterCardArtUrls.clear()
+}
+
+function shouldRenderRasterArt(source: { isRaster: boolean; primaryUrl: string }): boolean {
+  return source.isRaster && !failedRasterCardArtUrls.has(source.primaryUrl)
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -144,22 +163,44 @@ function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: 
   `
 }
 
-function renderLandIcon(
+export function renderLandIcon(
   name: BasicLand,
   style: AppViewModel['cardVisualStyle'],
   size: number,
   className: string,
+  options: { forceProcedural?: boolean } = {},
 ): string {
-  const src = landIconDataUrl(name, style, size)
-  return `<img class="${className}" src="${src}" alt="" role="presentation" width="${size}" height="${size}" />`
+  const source = cardArtSourceFor(name, style, size, options)
+  const iconIsRaster = shouldRenderRasterArt(source)
+  const iconSrc = iconIsRaster ? source.primaryUrl : source.proceduralUrl
+  // For raster styles, swap to the procedural SVG if the PNG fails to load
+  // (missing asset, wrong base path, offline before service-worker cache).
+  // The fallback URL is HTML-attribute safe (data:image/svg+xml,...) so it
+  // is fine to inline inside an `onerror` handler with single quotes.
+  const onError = iconIsRaster
+    ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
+    : ''
+  const finalClassName = iconIsRaster ? `${className} ${className}--raster` : className
+  return `<img class="${finalClassName}" src="${iconSrc}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
 }
 
-function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
+if (typeof window !== 'undefined') {
+  window.__cardgameNoteRasterCardArtLoadFailure = noteRasterCardArtLoadFailure
+}
+
+export function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
   if (!isBasicLand(name)) {
     return `<span>${escapeHtml(name)}</span>`
   }
+  const source = cardArtSourceFor(name, style, 22)
   const palette = cardVisualPaletteFor(name, style)
-  return `<span class="card-tile" style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}">${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${escapeHtml(name)}</span></span>`
+  const raster = isRasterCardVisualStyle(style) && shouldRenderRasterArt(source)
+  const tileClass = raster ? 'card-tile card-tile--raster' : 'card-tile'
+  // Keep `--tile-fill` available even for raster styles so if a raster icon
+  // fails and the `onerror` handler drops `card-tile--raster`, the same DOM
+  // node immediately shows the procedural tile background.
+  const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
+  return `<span class="${tileClass}"${tileStyleAttr}>${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${escapeHtml(name)}</span></span>`
 }
 
 function renderGame(view: AppViewModel, menuOpen: boolean): string {
@@ -186,7 +227,10 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
     const targetAttr = option.action.effectTargetId
       ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
       : ''
-    const icon = isBasicLand(cardName) ? renderLandIcon(cardName, view.cardVisualStyle, 16, 'action-icon') : ''
+    // Tiny inline glyphs always use the procedural pixel icon: a 16px
+    // shrunken HD PNG looks worse than the procedural template and would
+    // pull a 1024x1024 raster per button.
+    const icon = isBasicLand(cardName) ? renderLandIcon(cardName, view.cardVisualStyle, 16, 'action-icon', { forceProcedural: true }) : ''
     return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${icon}${escapeHtml(option.label)}</button>`
   }
 
@@ -218,7 +262,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
             const discardAttr = option.action.discardCardId
               ? ` data-discard-card-id="${escapeHtml(option.action.discardCardId)}"`
               : ''
-            return `<button data-action="counter_land"${discardAttr}>${renderLandIcon('Island', view.cardVisualStyle, 16, 'action-icon')}${escapeHtml(option.label)}</button>`
+            return `<button data-action="counter_land"${discardAttr}>${renderLandIcon('Island', view.cardVisualStyle, 16, 'action-icon', { forceProcedural: true })}${escapeHtml(option.label)}</button>`
           }).join('')}
           ${game.legal.canPassResponse ? '<button data-action="pass_response">Pass</button>' : ''}
         </div>
@@ -237,7 +281,7 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
               ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
               : ''
             const land = game.pendingPlainsReuseName
-            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land && isBasicLand(land) ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon') : ''}${escapeHtml(option.label)}</button>`
+            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land && isBasicLand(land) ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon', { forceProcedural: true }) : ''}${escapeHtml(option.label)}</button>`
           }).join('')}
         </div>
       </div>

@@ -75,6 +75,14 @@ body {
   vertical-align: middle;
 }
 
+/* Raster (HD) style variant: smooth scaling for downscaled PNG glyphs.
+   Override `image-rendering: pixelated` from the base `.action-icon` /
+   `.card-tile-icon` rules so PNG art is not pixel-snapped. */
+.action-icon.action-icon--raster,
+.card-tile-icon.card-tile-icon--raster {
+  image-rendering: auto;
+}
+
 button,
 select,
 textarea {
@@ -140,6 +148,16 @@ textarea {
   padding: 4px 6px;
   background: var(--tile-fill, #111c3d);
   color: var(--tile-text, #e5ecf5);
+}
+
+/* Raster (HD) tiles: drop the neon palette swatch so the painted PNG art
+   carries its own background. Keep the border for shape, drop the padding
+   that would otherwise leak the dark default `background` color around
+   the image. */
+.card-tile--raster {
+  background: transparent;
+  padding: 2px 6px 2px 2px;
+  gap: 4px;
 }
 
 .card-tile-icon {

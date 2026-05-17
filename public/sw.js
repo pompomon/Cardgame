@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v4'
+const CACHE_VERSION = 'v5'
 const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
 const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
 
@@ -96,8 +96,27 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  const isCardAsset = relativePath.startsWith('/cards/')
   const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
-  if (!isStaticAsset) {
+  if (!isStaticAsset && !isCardAsset) {
+    return
+  }
+
+  if (isCardAsset) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone()
+            void caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, clone))
+          }
+          return response
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request)
+          return cached ?? Response.error()
+        }),
+    )
     return
   }
 
