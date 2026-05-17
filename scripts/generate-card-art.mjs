@@ -5,8 +5,8 @@
 //   npm run generate:card-art
 //
 // Implementation notes:
-// - Uses only Node stdlib (`node:zlib`, `node:fs`, `node:crypto`,
-//   `node:path`, `node:url`) so it can run in CI without extra deps.
+// - Uses only Node stdlib (`node:buffer`, `node:fs`, `node:path`,
+//   `node:url`, `node:zlib`) so it can run in CI without extra deps.
 // - Emits 1024x1024 8-bit RGBA PNGs. The Phaser renderer scales them down
 //   via `setDisplaySize`, so 1024 is comfortably hi-DPI-friendly for any
 //   in-game card slot.
