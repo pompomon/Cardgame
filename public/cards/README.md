@@ -26,7 +26,7 @@ public/cards/
 
 ## Replacement workflow
 
-1. Produce new artwork at 1024×1024 (or any larger square).
+1. Produce new square artwork at least 256×256 (HD replacements are typically 1024×1024).
 2. Save it as `public/cards/<style>/<Land>.png`, matching the existing filename casing exactly (lands are PascalCase: `Forest`, `Island`, `Mountain`, `Plains`, `Swamp`).
 3. Reload the app — Phaser preloads art via `ALL_CARD_ART` on scene boot, so the new file is picked up automatically.
 

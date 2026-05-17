@@ -517,7 +517,7 @@ function paintPlains(buf) {
 
 function paintSwamp(buf) {
   // Near-black sky with a sickly bruise-purple cast fading into pitch-dark
-  // marsh. No bright moon — just an oppressive void.
+  // marsh, with an eerie crescent moon.
   fillBackgroundGradient(buf, hexToRgb('#0b0612'), hexToRgb('#020106'))
 
   // Distant, sickly green miasma glow on the horizon (low and ominous,
