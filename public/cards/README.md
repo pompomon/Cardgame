@@ -26,13 +26,18 @@ public/cards/
 
 ## Per-style rendering behavior
 
-The shared helper `cardArtSourceFor(land, style, size)` in `src/app/card-visuals.ts` picks the best image source for each style and is used by both renderers:
+The two renderers pick their image source differently, but the raster vs procedural decision is centralized via the `isRasterCardVisualStyle(style)` predicate and the `RASTER_CARD_VISUAL_STYLES` set in `src/app/card-visuals.ts`:
+
+- The **DOM renderer** uses the shared helper `cardArtSourceFor(land, style, size, { forceProcedural? })` in `src/app/card-visuals.ts`, which returns `{ primaryUrl, proceduralUrl, isRaster }` — a PNG URL for raster styles with the procedural SVG as an `onerror` fallback, and the procedural SVG for both URLs otherwise.
+- The **Phaser renderer** preloads `ALL_CARD_ART` via `preloadCardArt(scene)` and looks textures up directly by `cardArtKey(land, style)` inside `addCardArtToContainer`, falling back to the pixel-template icon when the texture is missing. It consults `isRasterCardVisualStyle` to decide whether to skip the palette `cardFill` rectangle behind the art.
+
+Per-style behavior:
 
 - `hd` is a **raster** style — the shipped PNG is rendered directly (DOM `<img src="/cards/hd/<Land>.png">`, Phaser `add.image(textureKey)`). The neon palette `cardFill` / `--tile-fill` background is suppressed so the painted art covers the card face, and CSS uses smooth scaling (`image-rendering: auto` via the `--raster` class variants).
-- `classic` and `monochrome` are **procedural** styles — the shipped PNGs are palette swatches, and most render paths use the inline `landIconDataUrl` SVG built from `PIXEL_TEMPLATES`. CSS keeps `image-rendering: pixelated` for these so the grid stays crisp.
-- Tiny inline glyphs (16px action buttons) always use the procedural SVG regardless of style (see `cardArtSourceFor(..., { forceProcedural: true })`), since downsampling a 1024×1024 PNG to 16px looks worse and adds bandwidth.
+- `classic` and `monochrome` are **procedural** styles — the shipped PNGs are palette swatches, and most DOM render paths use the inline `landIconDataUrl` SVG built from `PIXEL_TEMPLATES`. CSS keeps `image-rendering: pixelated` for these so the grid stays crisp. Phaser also has these PNGs preloaded but they are visually equivalent to the procedural fallback.
+- Tiny inline glyphs (16px action buttons in the DOM renderer) always use the procedural SVG regardless of style (see `cardArtSourceFor(..., { forceProcedural: true })`), since downsampling a 1024×1024 PNG to 16px looks worse and adds bandwidth.
 
-When adding a new visual style, decide whether it should join the `RASTER_CARD_VISUAL_STYLES` set in `src/app/card-visuals.ts`. Raster styles must ship real PNGs and will skip the palette background; procedural styles render the pixel template from `PIXEL_TEMPLATES`.
+When adding a new visual style, add it to `RASTER_CARD_VISUAL_STYLES` in `src/app/card-visuals.ts` if it ships real painted PNGs. Raster styles must ship real PNGs and will skip the palette background in both renderers; procedural styles render the pixel template from `PIXEL_TEMPLATES`.
 
 ## Replacement workflow
 

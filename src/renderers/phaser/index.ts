@@ -940,9 +940,11 @@ class CardgameScene extends Phaser.Scene {
   // Renders the card art image centered at (centerX, centerY) inside `container`.
   // Falls back to the procedural pixel icon when the texture is not yet
   // available (e.g. during preload, missing asset, or in unit tests with no
-  // loader). Returns `true` when a raster image was placed so the caller
-  // can suppress its own palette `cardFill` rectangle and let the painted
-  // art carry the visuals instead of stacking under a neon frame.
+  // loader). Returns `true` only when a raster-style image was placed so
+  // callers can suppress their own palette `cardFill` rectangle and let
+  // the painted art carry the visuals instead of stacking under a neon
+  // frame. Classic/Monochrome textures are placeholder palette swatches
+  // and intentionally return `false` so their palette frame stays drawn.
   private addCardArtToContainer(
     land: BasicLand,
     visualStyle: AppViewModel['cardVisualStyle'],
@@ -957,7 +959,7 @@ class CardgameScene extends Phaser.Scene {
       image.setDisplaySize(size, size)
       image.setOrigin(0.5, 0.5)
       container.add(image)
-      return true
+      return isRasterCardVisualStyle(visualStyle)
     }
     // Fallback: keep the original pixel-rect icon path so cards remain
     // visible. Bucket the size to match what `addPixelIconToContainer` will
