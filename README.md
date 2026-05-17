@@ -32,7 +32,7 @@ The selected renderer is also stored in `localStorage` for later visits.
   - **HD**
   - **Monochrome**
 - Style selection is a client-side presentation preference persisted in browser local storage.
-- Phaser uses static HD PNG card art when available. DOM (and Phaser fallback when textures are missing) uses generated land icons for the selected style, cached by land/style/size bucket.
+- Phaser uses static PNG card art for the selected style when those textures exist (including Classic, HD, and Monochrome in `ALL_CARD_ART`). DOM uses generated land icons for the selected style, and Phaser falls back to those generated icons when textures for the selected style are missing; generated icons are cached by land/style/size bucket.
 - Core implementation lives in `src/app/card-visuals.ts` and style options in `src/app/card-visual-styles.ts`.
 
 ## AI levels
