@@ -23,16 +23,24 @@ describe('DOM renderer card tile output', () => {
     expect(html).toContain('data:image/svg+xml')
   })
 
-  it('renders Classic and Monochrome card tiles using the procedural SVG and palette swatch', () => {
-    for (const style of ['classic', 'monochrome'] as const) {
-      const html = renderCardTile('Mountain', style)
-      expect(html).not.toContain(`src="/cards/${style}/Mountain.png"`)
-      expect(html).toContain('src="data:image/svg+xml')
-      expect(html).toContain('--tile-fill:')
-      expect(html).not.toContain('card-tile--raster')
-      expect(html).not.toContain('card-tile-icon--raster')
-      expect(html).not.toContain('onerror=')
-    }
+  it('renders Monochrome card tiles using the shipped cartoon-cat PNG with overlay', () => {
+    const html = renderCardTile('Forest', 'monochrome')
+    expect(html).toContain('src="/cards/monochrome/Forest.png"')
+    expect(html).toContain('card-tile-bg')
+    expect(html).toContain('card-tile-label')
+    expect(html).toContain('card-tile--raster')
+    expect(html).toContain('onerror=')
+    expect(html).toContain('data:image/svg+xml')
+  })
+
+  it('renders Classic card tiles using the procedural SVG and palette swatch', () => {
+    const html = renderCardTile('Mountain', 'classic')
+    expect(html).not.toContain('src="/cards/classic/Mountain.png"')
+    expect(html).toContain('src="data:image/svg+xml')
+    expect(html).toContain('--tile-fill:')
+    expect(html).not.toContain('card-tile--raster')
+    expect(html).not.toContain('card-tile-icon--raster')
+    expect(html).not.toContain('onerror=')
   })
 
   it('keeps the procedural icon for tiny action glyphs even in HD mode', () => {
@@ -60,5 +68,13 @@ describe('DOM renderer card tile output', () => {
     const tileHtml = renderCardTile('Forest', 'hd')
     expect(tileHtml).not.toContain('card-tile--raster')
     expect(tileHtml).toContain('--tile-fill:')
+  })
+
+  it('renders a face-down placeholder tile for the hidden-hand sentinel name', () => {
+    const html = renderCardTile('__hidden__', 'classic')
+    expect(html).toContain('card-tile--hidden')
+    expect(html).toContain('aria-label="Hidden card"')
+    // Must not leak any land name into the rendered tile.
+    expect(html).not.toMatch(/Forest|Island|Mountain|Plains|Swamp/)
   })
 })

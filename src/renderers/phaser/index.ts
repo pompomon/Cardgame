@@ -14,6 +14,7 @@ import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixe
 import type { ControllerApi } from '../../app/controller'
 import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
+import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
@@ -392,16 +393,20 @@ class LobbyScene extends Phaser.Scene {
 
     const left = this.currentLayout.margin
     const top = this.currentLayout.headerTop
+    const centerX = this.currentLayout.width / 2
+    const wrapWidth = Math.max(40, this.currentLayout.width - left * 2)
 
-    this.rootContainer.add(this.add.text(left, top, 'Basic Land Game (Phaser Renderer)', {
+    this.rootContainer.add(this.add.text(centerX, top, 'Basic Land Game (Phaser Renderer)', {
       color: '#e5ecf5',
       fontSize: this.currentLayout.titleFontSize,
-    }))
-    this.rootContainer.add(this.add.text(left, top + this.currentLayout.actionButtonHeight + 6, 'Land-only 2-player game with local AI and optional P2P mode.', {
+      align: 'center',
+    }).setOrigin(0.5, 0))
+    this.rootContainer.add(this.add.text(centerX, top + this.currentLayout.actionButtonHeight + 6, 'Land-only 2-player game with local AI and optional P2P mode.', {
       color: '#9db0d9',
       fontSize: this.currentLayout.subtitleFontSize,
-      wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
-    }))
+      wordWrap: { width: wrapWidth },
+      align: 'center',
+    }).setOrigin(0.5, 0))
 
     const modes: Array<{ mode: Mode; label: string }> = [
       { mode: 'local-hvh', label: 'Local Human vs Human' },
@@ -420,15 +425,16 @@ class LobbyScene extends Phaser.Scene {
     const adventure = view?.adventure
     const nextOpponent = adventure?.opponentLineup?.[adventure.currentOpponentIndex]
     const adventureStatusText = this.add.text(
-      left,
+      centerX,
       top + this.currentLayout.actionButtonHeight + 6 + Math.max(this.currentLayout.actionButtonHeight, 28),
       `Adventure: ${adventure?.status ?? 'inactive'} • Round ${adventure?.currentRound ?? 0}/7 • Chances ${adventure?.remainingChances ?? 0} • High Score ${adventure?.highScore ?? 0}${nextOpponent ? ` • Next ${nextOpponent.label}` : ''}`,
       {
         color: '#9db0d9',
         fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: Math.max(40, this.currentLayout.width - left * 2) },
+        wordWrap: { width: wrapWidth },
+        align: 'center',
       },
-    )
+    ).setOrigin(0.5, 0)
     this.rootContainer.add(adventureStatusText)
 
     type LobbyRow = { label: string; disabled?: boolean; onClick: () => void }
@@ -515,10 +521,11 @@ class LobbyScene extends Phaser.Scene {
     let rowsTop = lobbyBodyTop
     if (this.activeSubmenu !== 'root') {
       const submenuLabel = this.activeSubmenu === 'settings' ? 'Settings' : 'Recording'
-      const heading = this.add.text(left, rowsTop, submenuLabel, {
+      const heading = this.add.text(centerX, rowsTop, submenuLabel, {
         color: '#9db0d9',
         fontSize: this.currentLayout.bodyFontSize,
-      })
+        align: 'center',
+      }).setOrigin(0.5, 0)
       this.rootContainer.add(heading)
       rowsTop += Math.max(18, heading.height) + 8
     }
@@ -531,15 +538,16 @@ class LobbyScene extends Phaser.Scene {
     const rowHeight = desiredRowHeight * rowScale
     if (rowHeight < MIN_LOBBY_ROW_HEIGHT) {
       this.rootContainer?.add(this.add.text(
-        left,
+        centerX,
         rowsTop,
         'Viewport too short to show lobby actions. Increase window height.',
         {
           color: '#9db0d9',
           fontSize: this.currentLayout.smallFontSize,
           wordWrap: { width: buttonWidth },
+          align: 'center',
         },
-      ))
+      ).setOrigin(0.5, 0))
       this.rendererRef.refreshA11yNavForCurrentView()
       return
     }
@@ -549,7 +557,7 @@ class LobbyScene extends Phaser.Scene {
       const button = buildButton(
         this,
         entry.label,
-        left + buttonWidth / 2,
+        centerX,
         modeStartY + index * rowHeight,
         this.currentLayout.actionButtonFontSize,
         buttonWidth,
@@ -567,15 +575,16 @@ class LobbyScene extends Phaser.Scene {
     const status = this.rendererRef.currentView?.status ?? ''
     if (status) {
       this.rootContainer.add(this.add.text(
-        this.currentLayout.margin,
+        centerX,
         this.currentLayout.height - this.currentLayout.statusBottomOffset,
         status,
         {
           color: '#9db0d9',
           fontSize: this.currentLayout.bodyFontSize,
           wordWrap: { width: Math.max(40, this.currentLayout.width - this.currentLayout.margin * 2) },
+          align: 'center',
         },
-      ))
+      ).setOrigin(0.5, 0))
     }
     this.rendererRef.refreshA11yNavForCurrentView()
   }
@@ -1858,6 +1867,31 @@ class CardgameScene extends Phaser.Scene {
     }
   }
 
+  private renderHiddenCard(x: number, y: number): Phaser.GameObjects.Container {
+    // Face-down placeholder rendered when the AI's hand is hidden from the
+    // local human viewer. Keeps the hand slot visible (so the human can see
+    // card count) without revealing card identities.
+    const cardWidth = this.currentLayout.cardWidth
+    const cardHeight = this.currentLayout.cardHeight
+    const back = this.add.rectangle(0, 0, cardWidth, cardHeight, 0x1a2545).setStrokeStyle(1, 0x365092)
+    const card = this.add.container(x, y, [back])
+    // Cross-hatch pattern to mark the card as face-down.
+    const inset = 6
+    const innerW = Math.max(0, cardWidth - inset * 2)
+    const innerH = Math.max(0, cardHeight - inset * 2)
+    if (innerW > 0 && innerH > 0) {
+      const innerBg = this.add.rectangle(0, 0, innerW, innerH, 0x243366).setStrokeStyle(1, 0x365092)
+      card.add(innerBg)
+    }
+    const glyph = this.add.text(0, 0, '?', {
+      color: '#9db0d9',
+      fontSize: this.currentLayout.titleFontSize,
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0.5)
+    card.add(glyph)
+    return card
+  }
+
   private renderStaticCard(
     x: number,
     y: number,
@@ -1867,6 +1901,12 @@ class CardgameScene extends Phaser.Scene {
       highlight?: boolean
     } = {},
   ): Phaser.GameObjects.Container {
+    // Hidden-hand sentinel: render a face-down card so the local human
+    // viewer cannot read the AI player's hand. The cardId is still attached
+    // by the caller so the slot stays stable across renders.
+    if (label === HIDDEN_HAND_CARD_NAME) {
+      return this.renderHiddenCard(x, y)
+    }
     const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1

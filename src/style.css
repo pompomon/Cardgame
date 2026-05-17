@@ -62,6 +62,30 @@ body {
   margin-top: 12px;
 }
 
+/* Lobby panel: center all controls / buttons / text horizontally.
+   Scoped to `.panel.lobby` so other panels (e.g. P2P signaling, in-game
+   menu) keep their default left alignment. */
+.panel.lobby {
+  text-align: center;
+}
+
+.panel.lobby .modes,
+.panel.lobby .action-row {
+  justify-content: center;
+  align-items: center;
+}
+
+.panel.lobby .controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel.lobby .controls h3 {
+  margin: 0;
+}
+
 .action-row button {
   display: inline-flex;
   align-items: center;
@@ -148,6 +172,25 @@ textarea {
   padding: 4px 6px;
   background: var(--tile-fill, #111c3d);
   color: var(--tile-text, #e5ecf5);
+}
+
+/* Hidden-hand placeholder tile: face-down card slot shown when an AI hand
+   is redacted from the local human viewer (see HIDDEN_HAND_CARD_NAME). */
+.card-tile--hidden {
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  background: repeating-linear-gradient(
+    45deg,
+    #1a2545,
+    #1a2545 6px,
+    #243366 6px,
+    #243366 12px
+  );
+  border-color: #365092;
+  color: #9db0d9;
+  font-weight: bold;
+  font-family: monospace;
 }
 
 /* Raster (HD) tiles: the painted PNG fills the entire tile and the card

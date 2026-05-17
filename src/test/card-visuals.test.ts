@@ -78,10 +78,10 @@ describe('card-visuals', () => {
     expect(palette.iconSecondary).toMatch(/^#/)
   })
 
-  it('flags hd as the only raster card visual style', () => {
+  it('flags hd and monochrome as raster card visual styles', () => {
     expect(isRasterCardVisualStyle('hd')).toBe(true)
+    expect(isRasterCardVisualStyle('monochrome')).toBe(true)
     expect(isRasterCardVisualStyle('classic')).toBe(false)
-    expect(isRasterCardVisualStyle('monochrome')).toBe(false)
   })
 
   describe('cardArtSourceFor', () => {
@@ -92,20 +92,27 @@ describe('card-visuals', () => {
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })
 
-    it('returns the procedural SVG as the primary URL for classic and monochrome', () => {
-      for (const style of ['classic', 'monochrome'] as const) {
-        const source = cardArtSourceFor('Mountain', style, 64)
+    it('returns the shipped PNG URL for Monochrome (cartoon cats) and keeps the procedural SVG as fallback', () => {
+      const source = cardArtSourceFor('Forest', 'monochrome', 64)
+      expect(source.isRaster).toBe(true)
+      expect(source.primaryUrl).toBe('/cards/monochrome/Forest.png')
+      expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
+    })
+
+    it('returns the procedural SVG as the primary URL for classic', () => {
+      const source = cardArtSourceFor('Mountain', 'classic', 64)
+      expect(source.isRaster).toBe(false)
+      expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
+      expect(source.primaryUrl).toBe(source.proceduralUrl)
+    })
+
+    it('forceProcedural: true keeps the procedural icon even for raster styles', () => {
+      for (const style of ['hd', 'monochrome'] as const) {
+        const source = cardArtSourceFor('Island', style, 16, { forceProcedural: true })
         expect(source.isRaster).toBe(false)
         expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
         expect(source.primaryUrl).toBe(source.proceduralUrl)
       }
-    })
-
-    it('forceProcedural: true keeps the procedural icon even for HD', () => {
-      const source = cardArtSourceFor('Island', 'hd', 16, { forceProcedural: true })
-      expect(source.isRaster).toBe(false)
-      expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
-      expect(source.primaryUrl).toBe(source.proceduralUrl)
     })
   })
 })

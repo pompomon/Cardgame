@@ -5,6 +5,7 @@ import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { getInstallUiState, promptInstall } from '../app/install-support'
 import type { AppViewModel, Mode, RendererKind } from '../app/types'
+import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { isBasicLand, type BasicLand, type GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 
@@ -61,7 +62,7 @@ function renderInstallControls(): string {
   `
 }
 
-function renderLobby(view: AppViewModel): string {
+export function renderLobby(view: AppViewModel): string {
   const aiLevelOptions = AI_LEVEL_OPTIONS.map((option) => {
     const selected = option.value === view.aiLevel ? ' selected' : ''
     return `<option value="${option.value}"${selected}>${option.label}</option>`
@@ -80,7 +81,7 @@ function renderLobby(view: AppViewModel): string {
   const canResumeAdventure = adventure.hasSavedRun && (adventure.status === 'paused' || adventure.status === 'active')
 
   return `
-    <section class="panel">
+    <section class="panel lobby">
       <h1>Basic Land Game</h1>
       <p class="subtitle">Land-only 2-player game with local AI and optional P2P mode.</p>
       <p>${rendererSwitchLink(view.renderer)}</p>
@@ -189,6 +190,12 @@ if (typeof window !== 'undefined') {
 }
 
 export function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
+  // Hidden hand card sentinel: render a face-down placeholder tile so the
+  // local human can see how many cards the AI holds without learning what
+  // they are. The card slot remains visible in the hand row.
+  if (name === HIDDEN_HAND_CARD_NAME) {
+    return '<span class="card-tile card-tile--hidden" aria-label="Hidden card" title="Hidden card">?</span>'
+  }
   if (!isBasicLand(name)) {
     return `<span>${escapeHtml(name)}</span>`
   }

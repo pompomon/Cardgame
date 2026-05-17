@@ -6,7 +6,7 @@ import type { BasicLand } from '../game/types'
 // than the procedural pixel template. Callers use this to choose CSS
 // `image-rendering` and whether to draw the palette card frame behind the
 // art. Keep in sync with the contents of `public/cards/<style>/*.png`.
-const RASTER_CARD_VISUAL_STYLES: ReadonlySet<CardVisualStyle> = new Set(['hd'])
+const RASTER_CARD_VISUAL_STYLES: ReadonlySet<CardVisualStyle> = new Set(['hd', 'monochrome'])
 
 export function isRasterCardVisualStyle(style: CardVisualStyle): boolean {
   return RASTER_CARD_VISUAL_STYLES.has(style)
