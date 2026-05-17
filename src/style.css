@@ -78,8 +78,8 @@ body {
 /* Raster (HD) style variant: smooth scaling for downscaled PNG glyphs.
    Override `image-rendering: pixelated` from the base `.action-icon` /
    `.card-tile-icon` rules so PNG art is not pixel-snapped. */
-.action-icon--raster,
-.card-tile-icon--raster {
+.action-icon.action-icon--raster,
+.card-tile-icon.card-tile-icon--raster {
   image-rendering: auto;
 }
 
