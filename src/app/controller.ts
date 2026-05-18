@@ -4,7 +4,7 @@ import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
 import { isGameAction, isLegalActionForState, isSeedPayload } from './action-validation'
-import { readStorageItem, writeStorageItem } from './safe-storage'
+import { readStorageItem, tryReadStorageItem, writeStorageItem } from './safe-storage'
 import {
   clearStoredAdventureGameSnapshot,
   clearStoredAdventureRun,
@@ -1076,7 +1076,17 @@ export class AppController implements ControllerApi {
   }
 
   loadRecordingFromLocalStorage(): void {
-    const payload = readStorageItem(RECORDING_STORAGE_KEY) ?? ''
+    const result = tryReadStorageItem(RECORDING_STORAGE_KEY)
+    if (!result.available) {
+      // Distinct from "no saved recording": storage threw, so we cannot
+      // tell whether a recording exists. Surface an actionable failure
+      // status instead of pretending the slot is empty.
+      this.state.status = 'Failed to read local storage recording.'
+      this.refreshSavedRecordingFlag()
+      this.notify()
+      return
+    }
+    const payload = result.value ?? ''
     if (!payload) {
       this.state.status = 'No saved recording found in local storage.'
       this.refreshSavedRecordingFlag()

@@ -10,13 +10,24 @@ import { createInitialGame } from '../game/engine'
 
 describe('action-validation', () => {
   describe('isSeedPayload', () => {
-    it('accepts payloads with numeric seed', () => {
+    it('accepts payloads with non-negative integer seed', () => {
       expect(isSeedPayload({ seed: 42 })).toBe(true)
+      expect(isSeedPayload({ seed: 0 })).toBe(true)
     })
     it('rejects non-objects and missing seed', () => {
       expect(isSeedPayload(null)).toBe(false)
       expect(isSeedPayload({})).toBe(false)
       expect(isSeedPayload({ seed: 'x' })).toBe(false)
+    })
+    it('rejects Infinity, NaN, negatives, and fractions', () => {
+      // P2P trust-boundary payloads — `1e999` parses to Infinity via
+      // JSON.parse, and negatives/fractions would corrupt the engine's
+      // shared RNG.
+      expect(isSeedPayload({ seed: Number.POSITIVE_INFINITY })).toBe(false)
+      expect(isSeedPayload({ seed: Number.NEGATIVE_INFINITY })).toBe(false)
+      expect(isSeedPayload({ seed: Number.NaN })).toBe(false)
+      expect(isSeedPayload({ seed: -1 })).toBe(false)
+      expect(isSeedPayload({ seed: 1.5 })).toBe(false)
     })
   })
 

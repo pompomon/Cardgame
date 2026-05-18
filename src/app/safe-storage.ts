@@ -22,6 +22,28 @@ export function readStorageItem(key: string): string | null {
   }
 }
 
+/**
+ * Read a storage entry but distinguish "missing" from "storage unavailable".
+ *
+ * `readStorageItem` collapses both into `null`, which is fine for most
+ * callers (defaulting to "no saved value"). UI flows that need to surface
+ * an actionable "storage failed" status to the user — e.g. the recording
+ * loader, which previously reported a dedicated error — should use this
+ * helper instead. `value` is the raw string (or `null` for a missing key),
+ * and `available` is `false` only when `localStorage.getItem` threw.
+ */
+export type StorageReadResult =
+  | { available: true; value: string | null }
+  | { available: false; value: null }
+
+export function tryReadStorageItem(key: string): StorageReadResult {
+  try {
+    return { available: true, value: localStorage.getItem(key) }
+  } catch {
+    return { available: false, value: null }
+  }
+}
+
 /** Returns true on success, false if storage rejected the write. */
 export function writeStorageItem(key: string, value: string): boolean {
   try {

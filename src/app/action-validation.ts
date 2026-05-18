@@ -8,6 +8,7 @@
 
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
+import { isNonNegativeInteger } from './validators'
 
 export function isGameAction(payload: unknown): payload is GameAction {
   if (typeof payload !== 'object' || payload === null) {
@@ -65,5 +66,9 @@ export function isSeedPayload(payload: unknown): payload is { seed: number } {
   if (typeof payload !== 'object' || payload === null) {
     return false
   }
-  return typeof (payload as { seed?: unknown }).seed === 'number'
+  // Seeds cross the P2P trust boundary and feed `createInitialGame`, which
+  // would happily accept `Infinity`/`NaN`/fractions and produce a corrupt
+  // shared game state. Constrain to non-negative integers, matching how
+  // the controller generates seeds locally (`Date.now()`).
+  return isNonNegativeInteger((payload as { seed?: unknown }).seed)
 }

@@ -4,6 +4,7 @@ import {
   readJsonStorageItem,
   readStorageItem,
   removeStorageItem,
+  tryReadStorageItem,
   writeJsonStorageItem,
   writeStorageItem,
 } from '../app/safe-storage'
@@ -95,6 +96,17 @@ describe('safe-storage', () => {
     const circular: Record<string, unknown> = {}
     circular.self = circular
     expect(writeJsonStorageItem('k', circular)).toBe(false)
+  })
+
+  it('tryReadStorageItem distinguishes missing entry from storage failure', () => {
+    // Missing entry: storage is available but the key has no value.
+    expect(tryReadStorageItem('missing')).toEqual({ available: true, value: null })
+    // Present entry: returns the stored string.
+    store.data.set('k', 'v')
+    expect(tryReadStorageItem('k')).toEqual({ available: true, value: 'v' })
+    // Storage threw: distinguish via `available: false`.
+    store.shouldThrowOnGet = true
+    expect(tryReadStorageItem('k')).toEqual({ available: false, value: null })
   })
 
   it('returns false from writeJsonStorageItem for values that stringify to undefined', () => {

@@ -2,7 +2,7 @@ import type { AiLevel, ControllerKind, Mode } from './types'
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent, Winner } from '../game/types'
 import { isAiLevel } from './ai-levels'
 import { isGameAction } from './action-validation'
-import { capTail, isRecordObject } from './validators'
+import { capTail, isFiniteInteger, isNonNegativeInteger, isRecordObject } from './validators'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
 export const GAME_RECORD_VERSION = 2
@@ -76,7 +76,7 @@ function isLogEventLike(value: unknown): value is LogEvent {
     case 'game_start_skip_draw':
       return isActorIndex(value.actor)
     case 'turn_start':
-      return typeof value.turn === 'number' && isActorIndex(value.actor)
+      return isNonNegativeInteger(value.turn) && isActorIndex(value.actor)
     case 'draw':
     case 'play_land':
     case 'ability_forest_return':
@@ -148,7 +148,7 @@ function isPlayerLike(value: unknown): boolean {
     && value.battlefield.every((entry) => isBattlefieldEntryLike(entry))
     && Array.isArray(value.graveyard)
     && value.graveyard.every((entry) => isCardLike(entry))
-    && typeof value.landsPlayedThisTurn === 'number'
+    && isNonNegativeInteger(value.landsPlayedThisTurn)
 }
 
 function isPhase(value: unknown): value is GamePhase {
@@ -217,9 +217,9 @@ function isGameStateLike(value: unknown): value is GameState {
     }
   }
 
-  return typeof value.turn === 'number'
+  return isNonNegativeInteger(value.turn)
     && (value.currentPlayer === 0 || value.currentPlayer === 1)
-    && typeof value.nextInstanceId === 'number'
+    && isNonNegativeInteger(value.nextInstanceId)
     && Array.isArray(value.log)
     && value.log.every((entry) => typeof entry === 'string')
 }
@@ -481,9 +481,9 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
   if (!aiLevel) {
     return { ok: false, error: 'Invalid AI level metadata.' }
   }
-  if (typeof metadata.seed !== 'number'
-    || typeof metadata.startedAt !== 'number'
-    || typeof metadata.updatedAt !== 'number'
+  if (!isNonNegativeInteger(metadata.seed)
+    || !isNonNegativeInteger(metadata.startedAt)
+    || !isNonNegativeInteger(metadata.updatedAt)
     || typeof metadata.completed !== 'boolean') {
     return { ok: false, error: 'Invalid metadata fields.' }
   }
@@ -500,7 +500,7 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     if (!isRecordObject(step)) {
       return { ok: false, error: `Invalid timeline step at index ${index}.` }
     }
-    if (typeof step.index !== 'number' || step.index !== index + 1) {
+    if (!isFiniteInteger(step.index) || step.index !== index + 1) {
       return { ok: false, error: `Invalid step index at timeline position ${index}.` }
     }
     if (!isSource(step.source)) {
@@ -512,7 +512,7 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     if (!isGameStateLike(step.state)) {
       return { ok: false, error: `Invalid state at timeline position ${index}.` }
     }
-    if (typeof step.timestamp !== 'number') {
+    if (!isNonNegativeInteger(step.timestamp)) {
       return { ok: false, error: `Invalid timestamp at timeline position ${index}.` }
     }
   }
