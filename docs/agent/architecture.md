@@ -41,7 +41,7 @@ src/
 │
 ├── net/                   P2P (WebRTC data channel + manual signaling)
 │
-├── test/                  vitest specs (one file per module)
+├── test/                  vitest specs (named after module or behavior under test)
 ├── main.ts                Entry; mounts renderer and subscriptions
 └── style.css              DOM styling
 ```

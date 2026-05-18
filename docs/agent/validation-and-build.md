@@ -66,9 +66,12 @@ A well-validated change has all of:
 
 ## Skipping rules
 
-- **Docs-only changes** still run `npm run lint` (TypeScript can break if
-  docs reference moved exports) but may skip CodeQL — declare the change as
-  trivial when invoking `codeql_checker`.
+- **Docs-only changes** still run `npm run lint` as a policy check (it's
+  cheap and catches accidental edits to `src/` that slipped into a
+  "docs-only" change) but may skip CodeQL — declare the change as trivial
+  when invoking `codeql_checker`. Note: `tsc --noEmit` only typechecks
+  files under `src/` per `tsconfig.json`, so it does not validate Markdown
+  references on its own.
 - **Test-only changes** still go through all four steps; tests can affect
   the build (e.g. new ambient declarations in `src/test/node-shims.d.ts`).
 

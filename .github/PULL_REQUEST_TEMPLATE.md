@@ -10,11 +10,15 @@
 
 ## Validation
 
-- [ ] `npm run lint` (= `tsc --noEmit`) passes
-- [ ] `npm run test` (= `vitest run`) passes — **count:** `N` tests
-- [ ] `npm run build` (= `tsc && vite build`) passes
-- [ ] `codeql_checker` run; no actionable alerts (or alerts addressed inline)
-- [ ] UI screenshot attached (only when the change is user-visible)
+End the description with the one-line validation block documented in
+[`docs/agent/pr-workflow.md`](../docs/agent/pr-workflow.md), for example:
+
+```
+Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
+```
+
+`N` is the actual passing test count from `npm run test`. Attach a UI
+screenshot only when the change is user-visible.
 
 ## Risk / migration notes
 
