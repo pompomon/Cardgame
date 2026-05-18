@@ -8,18 +8,6 @@
 
 <!-- Bullet list of concrete edits, grouped by area (app / renderer / engine / docs / tests). -->
 
-## Validation
-
-End the description with the one-line validation block documented in
-[`docs/agent/pr-workflow.md`](../docs/agent/pr-workflow.md), for example:
-
-```
-Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
-```
-
-`N` is the actual passing test count from `npm run test`. Attach a UI
-screenshot only when the change is user-visible.
-
 ## Risk / migration notes
 
 <!--
@@ -37,3 +25,15 @@ None.
 ## References
 
 Contributor guide: [`AGENTS.md`](../AGENTS.md) and [`docs/agent/`](../docs/agent/).
+
+## Validation
+
+End the description with the one-line validation block documented in
+[`docs/agent/pr-workflow.md`](../docs/agent/pr-workflow.md), for example:
+
+```
+Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
+```
+
+`N` is the actual passing test count from `npm run test`. Attach a UI
+screenshot only when the change is user-visible.

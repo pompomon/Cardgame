@@ -85,11 +85,12 @@ the bottom of the visible strip".
   recursion. Capturing `options` at queue start means mid-queue
   `animationSpeed`/`durationMs` changes don't take effect until the queue
   drains.
-- **`clearEffectQueue` must actually stop the in-flight tween.** Track
-  the currently playing tween/GameObject and cancel it before flipping
-  `state.playing = false`. Otherwise switching to `animationSpeed: 'off'`
-  mid-effect leaves the queue out of sync and a later `pumpEffectQueue`
-  can overlap visuals.
+- **`clearEffectQueue` drops pending entries but leaves the in-flight
+  tween to complete on its own.** The running effect's `done` callback
+  (set up by `pumpEffectQueue` / `playAbilityEffect`) flips
+  `state.playing` back to `false`. Don't reset `playing` here — doing so
+  would let a follow-up `pumpEffectQueue` start a new effect concurrently
+  with the still-running tween and double up rings on screen.
 
 ## Log rendering rules
 
