@@ -28,12 +28,12 @@ Contributor guide: [`AGENTS.md`](../AGENTS.md) and [`docs/agent/`](../docs/agent
 
 ## Validation
 
-End the description with the one-line validation block documented in
-[`docs/agent/pr-workflow.md`](../docs/agent/pr-workflow.md), for example:
+<!--
+End the description with the one-line validation block below (documented
+in `docs/agent/pr-workflow.md`). Replace `N` with the actual passing test
+count from `npm run test`. Attach a UI screenshot only when the change is
+user-visible. Keep the validation line as the final content of the PR
+description — do not add sections or prose after it.
+-->
 
-```
 Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
-```
-
-`N` is the actual passing test count from `npm run test`. Attach a UI
-screenshot only when the change is user-visible.
