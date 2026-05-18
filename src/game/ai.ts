@@ -1,6 +1,6 @@
 import { getLegalActions } from './engine'
 import type { GameAction, GameState } from './types'
-import type { AiLevel } from '../app/types'
+import { DEFAULT_AI_LEVEL, type AiLevel } from './ai-levels'
 import type { AiPolicy, AiPolicyContext } from './ai-policy-types'
 import { basicPolicy } from './ai-policies/basic'
 import { advancedPolicy } from './ai-policies/advanced'
@@ -47,13 +47,13 @@ export const AI_POLICY_REGISTRY: Record<AiLevel, AiPolicyRegistration> = {
 export function chooseAiAction(
   state: GameState,
   actor: number,
-  options: { level: AiLevel } = { level: 'basic' },
+  options: { level: AiLevel } = { level: DEFAULT_AI_LEVEL },
 ): GameAction | null {
   const actions = getLegalActions(state, actor)
   if (actions.length === 0) {
     return null
   }
-  const registration = AI_POLICY_REGISTRY[options.level] ?? AI_POLICY_REGISTRY.basic
+  const registration = AI_POLICY_REGISTRY[options.level] ?? AI_POLICY_REGISTRY[DEFAULT_AI_LEVEL]
   return registration.policy({
     state,
     actor,

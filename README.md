@@ -55,8 +55,8 @@ The selected renderer is also stored in `localStorage` for later visits.
 
 ### Extending with more AI levels
 
-1. Add the level to `AiLevel` in `src/app/types.ts`.
-2. Add the label to `AI_LEVEL_OPTIONS` in `src/app/ai-levels.ts`.
+1. Add the level to `AI_LEVELS` in `src/game/ai-levels.ts` (this derives the `AiLevel` type and the `isAiLevel` guard). Update `DEFAULT_AI_LEVEL` in the same file if the new level should become the default.
+2. Add the label to `AI_LEVEL_LABELS` in `src/app/ai-levels.ts` (this auto-generates the lobby `AI_LEVEL_OPTIONS` entry).
 3. Implement a policy module in `src/game/ai-policies/`.
 4. Register the policy in `AI_POLICY_REGISTRY` in `src/game/ai.ts`.
 5. Add/update tests in `src/test/ai.test.ts` and controller/recording tests.

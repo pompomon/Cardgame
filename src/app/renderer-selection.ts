@@ -1,3 +1,4 @@
+import { readStorageItem, writeStorageItem } from './safe-storage'
 import type { RendererKind } from './types'
 
 const STORAGE_KEY = 'cardgame-renderer'
@@ -15,17 +16,9 @@ export function pickRendererKind(search: string, stored: string | null): Rendere
 }
 
 export function persistRendererKind(kind: RendererKind): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, kind)
-  } catch {
-    // Ignore storage failures and keep default/in-memory behavior.
-  }
+  writeStorageItem(STORAGE_KEY, kind)
 }
 
 export function readStoredRendererKind(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY)
-  } catch {
-    return null
-  }
+  return readStorageItem(STORAGE_KEY)
 }

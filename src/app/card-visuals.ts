@@ -1,16 +1,12 @@
 import { cardArtUrl } from './card-art'
+import { isRasterCardVisualStyle } from './card-visual-styles'
 import type { CardVisualStyle } from './types'
 import type { BasicLand } from '../game/types'
 
-// Styles whose shipped artwork is photographic / rasterised PNG art rather
-// than the procedural pixel template. Callers use this to choose CSS
-// `image-rendering` and whether to draw the palette card frame behind the
-// art. Keep in sync with the contents of `public/cards/<style>/*.png`.
-const RASTER_CARD_VISUAL_STYLES: ReadonlySet<CardVisualStyle> = new Set(['hd', 'monochrome'])
-
-export function isRasterCardVisualStyle(style: CardVisualStyle): boolean {
-  return RASTER_CARD_VISUAL_STYLES.has(style)
-}
+// Re-export so existing imports `from './card-visuals'` keep working while
+// the canonical definition lives alongside the rest of the style metadata
+// in `./card-visual-styles.ts` (single source of truth — see ADR 0001).
+export { isRasterCardVisualStyle }
 
 export interface CardVisualPalette {
   cardFill: string

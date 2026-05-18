@@ -1,6 +1,8 @@
 import type { AiLevel, ControllerKind, Mode } from './types'
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent, Winner } from '../game/types'
 import { isAiLevel } from './ai-levels'
+import { isGameAction } from './action-validation'
+import { capTail, isFiniteInteger, isNonNegativeInteger, isRecordObject } from './validators'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
 export const GAME_RECORD_VERSION = 2
@@ -47,10 +49,6 @@ export type ParseGameRecordResult = ParseSuccess | ParseFailure
 
 const BASIC_LANDS: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
 
-function isRecordObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 function isBasicLandName(value: unknown): value is BasicLand {
   return typeof value === 'string' && BASIC_LANDS.includes(value as BasicLand)
 }
@@ -78,7 +76,7 @@ function isLogEventLike(value: unknown): value is LogEvent {
     case 'game_start_skip_draw':
       return isActorIndex(value.actor)
     case 'turn_start':
-      return typeof value.turn === 'number' && isActorIndex(value.actor)
+      return isNonNegativeInteger(value.turn) && isActorIndex(value.actor)
     case 'draw':
     case 'play_land':
     case 'ability_forest_return':
@@ -108,7 +106,7 @@ export function sanitizeLogEvents(raw: unknown): LogEvent[] {
   }
   // Keep the tail (most recent events) when capping so legitimate long
   // recordings preserve the latest gameplay rather than discarding it.
-  const limited = raw.length > MAX_PARSED_LOG_EVENTS ? raw.slice(raw.length - MAX_PARSED_LOG_EVENTS) : raw
+  const limited = capTail(raw, MAX_PARSED_LOG_EVENTS)
   const out: LogEvent[] = []
   for (const entry of limited) {
     if (isLogEventLike(entry)) {
@@ -150,7 +148,7 @@ function isPlayerLike(value: unknown): boolean {
     && value.battlefield.every((entry) => isBattlefieldEntryLike(entry))
     && Array.isArray(value.graveyard)
     && value.graveyard.every((entry) => isCardLike(entry))
-    && typeof value.landsPlayedThisTurn === 'number'
+    && isNonNegativeInteger(value.landsPlayedThisTurn)
 }
 
 function isPhase(value: unknown): value is GamePhase {
@@ -219,40 +217,21 @@ function isGameStateLike(value: unknown): value is GameState {
     }
   }
 
-  return typeof value.turn === 'number'
+  return isNonNegativeInteger(value.turn)
     && (value.currentPlayer === 0 || value.currentPlayer === 1)
-    && typeof value.nextInstanceId === 'number'
+    && isNonNegativeInteger(value.nextInstanceId)
     && Array.isArray(value.log)
     && value.log.every((entry) => typeof entry === 'string')
 }
 
 function isGameActionLike(payload: unknown): payload is GameAction {
-  if (!isRecordObject(payload)) {
-    return false
-  }
-  const action = payload as {
-    type?: unknown
-    actor?: unknown
-    cardId?: unknown
-    effectTargetId?: unknown
-    discardCardId?: unknown
-  }
-  if (typeof action.type !== 'string' || (action.actor !== 0 && action.actor !== 1)) {
-    return false
-  }
-  if (action.type === 'play_land') {
-    if (typeof action.cardId !== 'string') {
-      return false
-    }
-    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
-  }
-  if (action.type === 'resolve_plains_reuse') {
-    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
-  }
-  if (action.type === 'counter_land') {
-    return action.discardCardId === undefined || typeof action.discardCardId === 'string'
-  }
-  return action.type === 'end_turn' || action.type === 'pass_response'
+  // Delegate shape-checking to the shared `isGameAction` so the
+  // controller and recording importer agree on the contract — and stay in
+  // sync automatically whenever `GameAction` grows a new branch. Imported
+  // recordings additionally constrain the actor to the 2-player engine's
+  // valid indices (the controller's broader `actor: number` check is
+  // sufficient for in-process callers).
+  return isGameAction(payload) && (payload.actor === 0 || payload.actor === 1)
 }
 
 function normalizeStateSchema(state: GameState): GameState {
@@ -502,9 +481,9 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
   if (!aiLevel) {
     return { ok: false, error: 'Invalid AI level metadata.' }
   }
-  if (typeof metadata.seed !== 'number'
-    || typeof metadata.startedAt !== 'number'
-    || typeof metadata.updatedAt !== 'number'
+  if (!isNonNegativeInteger(metadata.seed)
+    || !isNonNegativeInteger(metadata.startedAt)
+    || !isNonNegativeInteger(metadata.updatedAt)
     || typeof metadata.completed !== 'boolean') {
     return { ok: false, error: 'Invalid metadata fields.' }
   }
@@ -521,7 +500,7 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     if (!isRecordObject(step)) {
       return { ok: false, error: `Invalid timeline step at index ${index}.` }
     }
-    if (typeof step.index !== 'number' || step.index !== index + 1) {
+    if (!isFiniteInteger(step.index) || step.index !== index + 1) {
       return { ok: false, error: `Invalid step index at timeline position ${index}.` }
     }
     if (!isSource(step.source)) {
@@ -533,7 +512,7 @@ export function parseGameRecordJson(text: string): ParseGameRecordResult {
     if (!isGameStateLike(step.state)) {
       return { ok: false, error: `Invalid state at timeline position ${index}.` }
     }
-    if (typeof step.timestamp !== 'number') {
+    if (!isNonNegativeInteger(step.timestamp)) {
       return { ok: false, error: `Invalid timestamp at timeline position ${index}.` }
     }
   }

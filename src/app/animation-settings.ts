@@ -1,3 +1,4 @@
+import { readStorageItem, writeStorageItem } from './safe-storage'
 import type { AnimationSpeed } from './types'
 
 const STORAGE_KEY = 'cardgame.animation-speed'
@@ -30,20 +31,12 @@ export function isAnimationSpeed(value: unknown): value is AnimationSpeed {
 }
 
 export function persistAnimationSpeed(speed: AnimationSpeed): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, speed)
-  } catch {
-    // Ignore storage failures and keep default/in-memory behavior.
-  }
+  writeStorageItem(STORAGE_KEY, speed)
 }
 
 export function readStoredAnimationSpeed(): AnimationSpeed | null {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY)
-    return isAnimationSpeed(value) ? value : null
-  } catch {
-    return null
-  }
+  const value = readStorageItem(STORAGE_KEY)
+  return isAnimationSpeed(value) ? value : null
 }
 
 // Resolve the effective speed to use on app boot:
