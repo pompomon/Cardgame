@@ -24,7 +24,7 @@ Use Markdown task lists in the PR body to track work:
 - [x] PR review feedback (round 1)
 - [x] PR review feedback (round 2)
   - [x] Cap parsed log events to most recent N entries
-- [x] Lint + 187 tests passing
+- [x] Lint + N tests passing
 ```
 
 - Add a new **"PR review feedback (round N)"** sub-checklist each time a
