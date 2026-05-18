@@ -23,9 +23,9 @@ order; do not skip steps.
    npm run test    # vitest run
    ```
 
-   At the time of writing the suite has ~187 tests. PR descriptions
-   typically state the count (see `pr-workflow.md`). If your change adds or
-   removes tests, the new count goes in the PR description.
+   PR descriptions typically state the exact current test count (see
+   `pr-workflow.md`). If your change adds or removes tests, update the
+   count in the PR description.
 
 4. **Build** — typecheck + production bundle:
 
