@@ -1,5 +1,13 @@
 # Cardgame
 
+## Contributing / Agent docs
+
+Contributor and AI-agent conventions live in [`AGENTS.md`](AGENTS.md), with
+topic deep-dives under [`docs/agent/`](docs/agent/) (architecture,
+validation/build, state and persistence, Phaser renderer, DOM/CSS, service
+worker and PWA, testing, PR workflow). Read those before making non-trivial
+changes; they capture recurring review findings.
+
 ## Rendering options
 
 The app now supports two rendering backends:
