@@ -1,12 +1,19 @@
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent } from '../game/types'
+import type { AiLevel } from '../game/ai-levels'
 import type { GameRecordFile } from './game-recording'
 import type { AdventureOpponentDeck, AdventureOpponentKind, AdventureRunStatus } from './adventure'
+import type { CardVisualStyle } from './card-visual-styles'
 
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
-export type AiLevel = 'basic' | 'advanced' | 'hard'
-export type CardVisualStyle = 'classic' | 'hd' | 'monochrome'
+// Canonical `AiLevel` definition lives in `src/game/ai-levels.ts` so the
+// engine and AI policies do not have to reach across into `src/app/`
+// (closes the legacy `game/ → app/` seam documented in
+// docs/agent/architecture.md). Re-exported here for backwards-compatible
+// imports.
+export type { AiLevel }
+export type { CardVisualStyle }
 export type AnimationSpeed = 'off' | 'fast' | 'normal' | 'slow'
 
 export interface AdventureState {

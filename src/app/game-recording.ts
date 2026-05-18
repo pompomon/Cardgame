@@ -1,6 +1,7 @@
 import type { AiLevel, ControllerKind, Mode } from './types'
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent, Winner } from '../game/types'
 import { isAiLevel } from './ai-levels'
+import { capTail, isRecordObject } from './validators'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
 export const GAME_RECORD_VERSION = 2
@@ -46,10 +47,6 @@ interface ParseFailure {
 export type ParseGameRecordResult = ParseSuccess | ParseFailure
 
 const BASIC_LANDS: BasicLand[] = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']
-
-function isRecordObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
 
 function isBasicLandName(value: unknown): value is BasicLand {
   return typeof value === 'string' && BASIC_LANDS.includes(value as BasicLand)
@@ -108,7 +105,7 @@ export function sanitizeLogEvents(raw: unknown): LogEvent[] {
   }
   // Keep the tail (most recent events) when capping so legitimate long
   // recordings preserve the latest gameplay rather than discarding it.
-  const limited = raw.length > MAX_PARSED_LOG_EVENTS ? raw.slice(raw.length - MAX_PARSED_LOG_EVENTS) : raw
+  const limited = capTail(raw, MAX_PARSED_LOG_EVENTS)
   const out: LogEvent[] = []
   for (const entry of limited) {
     if (isLogEventLike(entry)) {

@@ -1,4 +1,4 @@
-import type { AiLevel } from '../app/types'
+import type { AiLevel } from './ai-levels'
 import type { GameAction, GameState } from './types'
 
 export interface AiVisibilityProfile {

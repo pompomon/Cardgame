@@ -1,6 +1,14 @@
 import { createStarterDeck, lcg, shuffle } from '../game/cards'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card, type GameState } from '../game/types'
 import { sanitizeLogEvents } from './game-recording'
+import { isFiniteInteger as validatorsIsFiniteInteger } from './validators'
+import {
+  readJsonStorageItem,
+  readStorageItem,
+  removeStorageItem,
+  writeJsonStorageItem,
+  writeStorageItem,
+} from './safe-storage'
 
 export const ADVENTURE_RUN_STORAGE_KEY = 'cardgame.adventure-run'
 export const ADVENTURE_HIGH_SCORE_STORAGE_KEY = 'cardgame.adventure-high-score'
@@ -199,7 +207,7 @@ function isAdventureRunStatus(value: unknown): value is AdventureRunStatus {
 }
 
 function isFiniteInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value)
+  return validatorsIsFiniteInteger(value)
 }
 
 function isAdventureRunState(value: unknown): value is AdventureRunState {
@@ -232,71 +240,40 @@ function isAdventureRunState(value: unknown): value is AdventureRunState {
 }
 
 export function persistAdventureRun(run: AdventureRunState): boolean {
-  try {
-    localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(run))
-    return true
-  } catch {
-    // Ignore storage failures.
-    return false
-  }
+  return writeJsonStorageItem(ADVENTURE_RUN_STORAGE_KEY, run)
 }
 
 export function clearStoredAdventureRun(): void {
-  try {
-    localStorage.removeItem(ADVENTURE_RUN_STORAGE_KEY)
-  } catch {
-    // Ignore storage failures.
-  }
+  removeStorageItem(ADVENTURE_RUN_STORAGE_KEY)
 }
 
 export function readStoredAdventureRun(): AdventureRunState | null {
-  try {
-    const raw = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
-    if (!raw) {
-      return null
-    }
-    const parsed: unknown = JSON.parse(raw)
-    return isAdventureRunState(parsed) ? parsed : null
-  } catch {
+  const parsed = readJsonStorageItem(ADVENTURE_RUN_STORAGE_KEY)
+  if (parsed === null) {
     return null
   }
+  return isAdventureRunState(parsed) ? parsed : null
 }
 
 export function readStoredAdventureHighScore(): number {
-  try {
-    const raw = localStorage.getItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY)
-    if (raw === null) {
-      return 0
-    }
-    const value = Number(raw)
-    return Number.isFinite(value) ? value : 0
-  } catch {
+  const raw = readStorageItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY)
+  if (raw === null) {
     return 0
   }
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : 0
 }
 
 export function persistAdventureHighScore(score: number): void {
-  try {
-    localStorage.setItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY, String(score))
-  } catch {
-    // Ignore storage failures.
-  }
+  writeStorageItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY, String(score))
 }
 
 export function persistAdventureGameSnapshot(game: GameState): void {
-  try {
-    localStorage.setItem(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(game))
-  } catch {
-    // Ignore storage failures.
-  }
+  writeJsonStorageItem(ADVENTURE_GAME_STORAGE_KEY, game)
 }
 
 export function clearStoredAdventureGameSnapshot(): void {
-  try {
-    localStorage.removeItem(ADVENTURE_GAME_STORAGE_KEY)
-  } catch {
-    // Ignore storage failures.
-  }
+  removeStorageItem(ADVENTURE_GAME_STORAGE_KEY)
 }
 
 function isBattlefieldCard(value: unknown): value is { instanceId: string; card: Card } {
@@ -378,24 +355,19 @@ function isGameStateSnapshot(value: unknown): value is GameState {
 }
 
 export function readStoredAdventureGameSnapshot(): GameState | null {
-  try {
-    const raw = localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)
-    if (!raw) {
-      return null
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (!isGameStateSnapshot(parsed)) {
-      return null
-    }
-    // Back-fill / sanitize `events` for snapshots persisted before LogEvent
-    // existed and for any user-edited localStorage payload. Use the same
-    // shape-check + cap as the recording loader so malformed/huge events
-    // arrays can't reach the renderers and crash `formatLogEventTile` or
-    // freeze the visual log on iteration. Keep raw `log` strings so the
-    // legacy fallback path can still render them.
-    const snapshot = parsed as GameState & { events?: unknown }
-    return { ...snapshot, events: sanitizeLogEvents(snapshot.events) }
-  } catch {
+  const parsed = readJsonStorageItem(ADVENTURE_GAME_STORAGE_KEY)
+  if (parsed === null) {
     return null
   }
+  if (!isGameStateSnapshot(parsed)) {
+    return null
+  }
+  // Back-fill / sanitize `events` for snapshots persisted before LogEvent
+  // existed and for any user-edited localStorage payload. Use the same
+  // shape-check + cap as the recording loader so malformed/huge events
+  // arrays can't reach the renderers and crash `formatLogEventTile` or
+  // freeze the visual log on iteration. Keep raw `log` strings so the
+  // legacy fallback path can still render them.
+  const snapshot = parsed as GameState & { events?: unknown }
+  return { ...snapshot, events: sanitizeLogEvents(snapshot.events) }
 }

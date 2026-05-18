@@ -1,8 +1,10 @@
 import { chooseAiAction } from '../game/ai'
-import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
+import { applyAction, canAct, createInitialGame } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
+import { isGameAction, isLegalActionForState, isSeedPayload } from './action-validation'
+import { readStorageItem, writeStorageItem } from './safe-storage'
 import {
   clearStoredAdventureGameSnapshot,
   clearStoredAdventureRun,
@@ -50,65 +52,6 @@ function inactiveAdventureState(highScore: number, hasSavedRun = false): Adventu
     highScore,
     hasSavedRun,
   }
-}
-
-function isSeedPayload(payload: unknown): payload is { seed: number } {
-  if (typeof payload !== 'object' || payload === null) {
-    return false
-  }
-  return typeof (payload as { seed?: unknown }).seed === 'number'
-}
-
-function isGameAction(payload: unknown): payload is GameAction {
-  if (typeof payload !== 'object' || payload === null) {
-    return false
-  }
-  const action = payload as {
-    type?: unknown
-    actor?: unknown
-    cardId?: unknown
-    effectTargetId?: unknown
-    discardCardId?: unknown
-  }
-  if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
-    return false
-  }
-  if (action.type === 'play_land') {
-    if (typeof action.cardId !== 'string') {
-      return false
-    }
-    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
-  }
-  if (action.type === 'resolve_plains_reuse') {
-    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
-  }
-  if (action.type === 'counter_land') {
-    return action.discardCardId === undefined || typeof action.discardCardId === 'string'
-  }
-  return action.type === 'end_turn' || action.type === 'pass_response'
-}
-
-function isSameAction(left: GameAction, right: GameAction): boolean {
-  if (left.type !== right.type || left.actor !== right.actor) {
-    return false
-  }
-  if (left.type === 'play_land' && right.type === 'play_land') {
-    return left.cardId === right.cardId && left.effectTargetId === right.effectTargetId
-  }
-  if (left.type === 'resolve_plains_reuse' && right.type === 'resolve_plains_reuse') {
-    return left.effectTargetId === right.effectTargetId
-  }
-  if (left.type === 'counter_land' && right.type === 'counter_land') {
-    return left.discardCardId === right.discardCardId
-  }
-  return true
-}
-
-function isLegalActionForState(state: GameState, action: GameAction): boolean {
-  if (!canAct(state, action.actor)) {
-    return false
-  }
-  return getLegalActions(state, action.actor).some((candidate) => isSameAction(candidate, action))
 }
 
 function isP2PMode(mode: Mode): boolean {
@@ -203,12 +146,8 @@ export class AppController implements ControllerApi {
   }
 
   private hasSavedRecording(): boolean {
-    try {
-      const value = localStorage.getItem(RECORDING_STORAGE_KEY)
-      return typeof value === 'string' && value.length > 0
-    } catch {
-      return false
-    }
+    const value = readStorageItem(RECORDING_STORAGE_KEY)
+    return typeof value === 'string' && value.length > 0
   }
 
   private refreshSavedRecordingFlag(): void {
@@ -1127,10 +1066,9 @@ export class AppController implements ControllerApi {
       return
     }
     const payload = serializeGameRecord(this.state.recording)
-    try {
-      localStorage.setItem(RECORDING_STORAGE_KEY, payload)
+    if (writeStorageItem(RECORDING_STORAGE_KEY, payload)) {
       this.state.status = 'Recording saved to local storage.'
-    } catch {
+    } else {
       this.state.status = 'Failed to save recording to local storage.'
     }
     this.refreshSavedRecordingFlag()
@@ -1138,15 +1076,7 @@ export class AppController implements ControllerApi {
   }
 
   loadRecordingFromLocalStorage(): void {
-    let payload = ''
-    try {
-      payload = localStorage.getItem(RECORDING_STORAGE_KEY) ?? ''
-    } catch {
-      this.state.status = 'Failed to read local storage recording.'
-      this.refreshSavedRecordingFlag()
-      this.notify()
-      return
-    }
+    const payload = readStorageItem(RECORDING_STORAGE_KEY) ?? ''
     if (!payload) {
       this.state.status = 'No saved recording found in local storage.'
       this.refreshSavedRecordingFlag()
