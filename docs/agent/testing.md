@@ -45,9 +45,10 @@ npm run test    # vitest run
 - Mock `window.matchMedia`, `beforeinstallprompt`, `appinstalled`,
   `MediaQueryList.addListener` etc. The patterns in
   `src/test/install-support.test.ts` are the reference.
-- When testing DOM rendering, the suite uses vitest's `jsdom`-style
-  environment by default (see existing DOM tests for setup). Reuse the
-  existing scaffolding instead of rolling new fixtures.
+- Vitest runs in Node by default in this repo (no global jsdom setup). For
+  DOM-related tests, follow existing patterns: assert string-rendered HTML
+  and manually stub the minimal `window`/`navigator` surface when needed
+  (see `src/test/dom-lobby.test.ts`).
 
 ## Build-behavior tests
 

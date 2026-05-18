@@ -74,12 +74,16 @@ non-root base.
 - **Apply the same normalization in `public/404.html`** when building the
   `__gh_path` redirect — `remainder` may already start with `/` if the
   original URL contained `//`.
-- **Don't fall back to "first path segment" for the base.**
-  `VITE_BASE_PATH` supports multi-segment bases (e.g. `/foo/bar/`).
-  Picking only `segments[0]` will redirect deep links to the wrong site.
-  Use the full configured base or fall back to `/`. The same applies when
-  manifest probing in `findBasePath()` times out — `/` is a safer
-  fallback than a guessed single segment.
+- **Current `404.html` timeout fallback is intentionally `/<first-segment>/`.**
+  When manifest probes fail or time out, `findBasePath()` falls back to the
+  first path segment so typical GitHub Pages project URLs (`/<repo>/...`)
+  still recover to the SPA shell instead of `/`.
+- **Know the trade-off for multi-segment bases.**
+  This fallback is heuristic and can misroute deep links for bases like
+  `/foo/bar/` (it resolves to `/foo/`). Prefer a reachable
+  `<base>/manifest.webmanifest` so probing succeeds; if your deploy needs a
+  different timeout fallback, update `public/404.html` and its tests/docs
+  together.
 
 ## PWA install flow (`src/app/install-support.ts`)
 

@@ -48,15 +48,20 @@ src/
 
 ## Layering rule
 
-Strict one-way dependency direction:
+Preferred dependency direction:
 
 ```
 game/  ──→  app/  ──→  renderers/{dom,phaser}/
 ```
 
-- `game/` must not import from `app/` or `renderers/`.
+- `game/` is intended to stay independent of `app/` and `renderers/`, but the
+  current codebase has a narrow exception: AI modules import `AiLevel` from
+  `src/app/types.ts` (`src/game/ai.ts`, `src/game/ai-policy-types.ts`).
+  Treat this as a legacy seam; don't add new `game/ → app/` imports.
 - `app/` must not import from `renderers/`.
-- Both renderers consume only the view-model exported by `app/view-model.ts`.
+- Renderers should consume controller state through `AppViewModel`/controller
+  APIs, but may import shared app/game helpers and types directly
+  (options/constants/guards) when needed.
 
 A renderer should never reach into controller internals; if it needs
 information, project it into the view-model.
