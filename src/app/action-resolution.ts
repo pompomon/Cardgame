@@ -1,5 +1,8 @@
 import type { GameAction } from '../game/types'
 import type { GameUiState } from './types'
+import { HIDDEN_HAND_CARD_NAME } from './types'
+
+export const HIDDEN_HAND_DISPLAY_NAME = 'Hidden card'
 
 export type DragDropResolution =
   | { kind: 'invalid' }
@@ -46,7 +49,11 @@ function targetNameFor(
     return game.players[actor].graveyardCards.find((card) => card.id === effectTargetId)?.name ?? null
   }
   if (sourceCardName === 'Swamp') {
-    return game.players[enemy].handCards.find((card) => card.id === effectTargetId)?.name ?? null
+    const name = game.players[enemy].handCards.find((card) => card.id === effectTargetId)?.name ?? null
+    if (name === HIDDEN_HAND_CARD_NAME) {
+      return HIDDEN_HAND_DISPLAY_NAME
+    }
+    return name
   }
   if (sourceCardName === 'Mountain') {
     return game.players[enemy].battlefield.find((entry) => entry.instanceId === effectTargetId)?.name ?? null

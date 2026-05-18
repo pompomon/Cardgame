@@ -25,6 +25,7 @@ import { deflateSync } from 'node:zlib'
 const SIZE = 1024
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OUT_ROOT = resolve(HERE, '..', 'public', 'cards', 'hd')
+const MONO_OUT_ROOT = resolve(HERE, '..', 'public', 'cards', 'monochrome')
 
 // ---------------------------------------------------------------------------
 // Minimal PNG encoder (8-bit truecolor + alpha).
@@ -686,6 +687,299 @@ function paintSwamp(buf) {
 }
 
 // ---------------------------------------------------------------------------
+// Monochrome / cartoon-cat compositions.
+//
+// One unique cartoon cat per basic land. Each scene uses a distinct color
+// palette + pose + environmental motif so the land association is obvious
+// at a glance even at small render sizes. Drawn from primitives only (no
+// external assets) so the output remains deterministic and license-clean.
+// ---------------------------------------------------------------------------
+
+function drawCatHead(buf, cx, cy, radius, body, ear, eye, mouth) {
+  // Pointed ears (drawn first so head overlaps their base for clean seams).
+  const earH = radius * 0.85
+  const earW = radius * 0.55
+  fillTriangle(buf,
+    cx - radius * 0.65, cy - radius * 0.55,
+    cx - radius * 0.95, cy - radius * 0.55 - earH,
+    cx - radius * 0.20, cy - radius * 0.75,
+    ear,
+  )
+  fillTriangle(buf,
+    cx + radius * 0.65, cy - radius * 0.55,
+    cx + radius * 0.95, cy - radius * 0.55 - earH,
+    cx + radius * 0.20, cy - radius * 0.75,
+    ear,
+  )
+  // Inner ears (smaller pink-ish accent triangle).
+  fillTriangle(buf,
+    cx - radius * 0.55, cy - radius * 0.60,
+    cx - radius * 0.78, cy - radius * 0.55 - earH * 0.7,
+    cx - radius * 0.30, cy - radius * 0.72,
+    mouth,
+  )
+  fillTriangle(buf,
+    cx + radius * 0.55, cy - radius * 0.60,
+    cx + radius * 0.78, cy - radius * 0.55 - earH * 0.7,
+    cx + radius * 0.30, cy - radius * 0.72,
+    mouth,
+  )
+  // Head disc.
+  fillDisc(buf, cx, cy, radius, body)
+  // Cheek tufts.
+  fillDisc(buf, cx - radius * 0.95, cy + radius * 0.25, radius * 0.22, body)
+  fillDisc(buf, cx + radius * 0.95, cy + radius * 0.25, radius * 0.22, body)
+  // Eyes — big round shiny eyes with a highlight.
+  const eyeR = radius * 0.18
+  fillDisc(buf, cx - radius * 0.34, cy - radius * 0.05, eyeR, hexToRgb('#ffffff'))
+  fillDisc(buf, cx + radius * 0.34, cy - radius * 0.05, eyeR, hexToRgb('#ffffff'))
+  fillDisc(buf, cx - radius * 0.32, cy - radius * 0.02, eyeR * 0.65, eye)
+  fillDisc(buf, cx + radius * 0.36, cy - radius * 0.02, eyeR * 0.65, eye)
+  // Vertical pupil slits.
+  fillRect(buf,
+    Math.round(cx - radius * 0.34 - eyeR * 0.12), Math.round(cy - radius * 0.18),
+    Math.max(2, Math.round(eyeR * 0.22)), Math.round(eyeR * 1.0), hexToRgb('#0a0a0a'))
+  fillRect(buf,
+    Math.round(cx + radius * 0.34 - eyeR * 0.12), Math.round(cy - radius * 0.18),
+    Math.max(2, Math.round(eyeR * 0.22)), Math.round(eyeR * 1.0), hexToRgb('#0a0a0a'))
+  // Eye highlights.
+  fillDisc(buf, cx - radius * 0.27, cy - radius * 0.14, eyeR * 0.22, hexToRgb('#ffffff'))
+  fillDisc(buf, cx + radius * 0.42, cy - radius * 0.14, eyeR * 0.22, hexToRgb('#ffffff'))
+  // Nose (small triangle).
+  fillTriangle(buf,
+    cx - radius * 0.08, cy + radius * 0.18,
+    cx + radius * 0.08, cy + radius * 0.18,
+    cx, cy + radius * 0.30,
+    mouth,
+  )
+  // Mouth — two small curves approximated by tiny triangles.
+  drawLine(buf, cx, cy + radius * 0.30, cx - radius * 0.12, cy + radius * 0.42, 3, hexToRgb('#0a0a0a'))
+  drawLine(buf, cx, cy + radius * 0.30, cx + radius * 0.12, cy + radius * 0.42, 3, hexToRgb('#0a0a0a'))
+  // Whiskers.
+  const whisker = hexToRgb('#0a0a0a', 200)
+  for (let i = -1; i <= 1; i += 1) {
+    drawLine(buf,
+      cx - radius * 0.20, cy + radius * 0.30 + i * radius * 0.08,
+      cx - radius * 0.80, cy + radius * 0.25 + i * radius * 0.12,
+      2, whisker)
+    drawLine(buf,
+      cx + radius * 0.20, cy + radius * 0.30 + i * radius * 0.08,
+      cx + radius * 0.80, cy + radius * 0.25 + i * radius * 0.12,
+      2, whisker)
+  }
+}
+
+function drawSittingCatBody(buf, cx, baseY, scale, body) {
+  // Body (rounded teardrop).
+  fillDisc(buf, cx, baseY - scale * 0.55, scale * 0.95, body)
+  fillDisc(buf, cx, baseY - scale * 0.12, scale * 1.10, body)
+  // Front legs (two small ovals at the base).
+  fillDisc(buf, cx - scale * 0.40, baseY + scale * 0.08, scale * 0.22, body)
+  fillDisc(buf, cx + scale * 0.40, baseY + scale * 0.08, scale * 0.22, body)
+  fillRect(buf,
+    Math.round(cx - scale * 0.55), Math.round(baseY - scale * 0.10),
+    Math.round(scale * 0.30), Math.round(scale * 0.22), body)
+  fillRect(buf,
+    Math.round(cx + scale * 0.25), Math.round(baseY - scale * 0.10),
+    Math.round(scale * 0.30), Math.round(scale * 0.22), body)
+}
+
+function paintForestCat(buf) {
+  fillBackgroundGradient(buf, hexToRgb('#1d3a22'), hexToRgb('#0a1f0e'))
+  // Distant tree silhouettes.
+  const treeColor = hexToRgb('#0a1f0e')
+  for (const [x, h] of [[120, 360], [260, 480], [410, 380], [620, 460], [780, 360], [920, 420]]) {
+    drawLine(buf, x, 880, x, 880 - h, 28, treeColor)
+    fillTriangle(buf, x, 880 - h - 40, x - 60, 880 - h + 80, x + 60, 880 - h + 80, treeColor)
+    fillTriangle(buf, x, 880 - h - 100, x - 90, 880 - h + 20, x + 90, 880 - h + 20, treeColor)
+  }
+  // Ground line.
+  fillRect(buf, 0, 860, 1024, 164, hexToRgb('#0e2814'))
+  // Tabby cat: green-tinted gray body with darker stripes.
+  const body = hexToRgb('#6f8a5e')
+  const ear = hexToRgb('#536b46')
+  const stripe = hexToRgb('#3a4a32', 200)
+  drawSittingCatBody(buf, 512, 820, 240, body)
+  // Tabby stripes on body.
+  for (let i = 0; i < 5; i += 1) {
+    drawLine(buf, 512 - 200 + i * 80, 720, 512 - 200 + i * 80 + 30, 760, 8, stripe)
+  }
+  // Tail curling beside the body.
+  drawLine(buf, 720, 830, 800, 760, 28, body)
+  drawLine(buf, 800, 760, 820, 660, 24, body)
+  drawLine(buf, 820, 660, 760, 600, 22, body)
+  // Head.
+  drawCatHead(buf, 512, 460, 200, body, ear, hexToRgb('#3a8a3a'), hexToRgb('#cfa8a0'))
+  // Tabby head stripes.
+  drawLine(buf, 472, 300, 490, 360, 8, stripe)
+  drawLine(buf, 512, 290, 512, 360, 8, stripe)
+  drawLine(buf, 552, 300, 534, 360, 8, stripe)
+  // A leaf falling next to the cat (signature: forest).
+  fillTriangle(buf, 820, 360, 870, 360, 845, 420, hexToRgb('#7fc06a'))
+  drawLine(buf, 845, 360, 845, 425, 3, hexToRgb('#3a4a2a'))
+}
+
+function paintIslandCat(buf) {
+  fillBackgroundGradient(buf, hexToRgb('#1d3a66'), hexToRgb('#0a1a3a'))
+  // Sun / moon disc.
+  fillDisc(buf, 820, 220, 90, hexToRgb('#c8d8ff', 220))
+  // Horizon waves.
+  for (let i = 0; i < 6; i += 1) {
+    const y = 540 + i * 30
+    fillRect(buf, 0, y, 1024, 6, hexToRgb('#3a6cb0', 180 - i * 18))
+  }
+  // Curled wave the cat rides on.
+  fillPolygon(buf,
+    [[40, 920], [200, 820], [420, 800], [620, 840], [820, 800], [1000, 880], [1024, 1024], [0, 1024]],
+    hexToRgb('#1e4a90'),
+  )
+  fillPolygon(buf,
+    [[40, 980], [200, 900], [420, 880], [620, 920], [820, 880], [1000, 940], [1024, 1024], [0, 1024]],
+    hexToRgb('#143570'),
+  )
+  // White wave crests.
+  drawLine(buf, 100, 820, 250, 805, 6, hexToRgb('#e7f4ff', 200))
+  drawLine(buf, 600, 840, 800, 810, 6, hexToRgb('#e7f4ff', 200))
+  // Curled cat: blue-tinted body, sleeping/curled with eyes squinting.
+  const body = hexToRgb('#7aa8d8')
+  const ear = hexToRgb('#5a88b8')
+  // Curled body (a fat ellipse).
+  fillDisc(buf, 512, 760, 240, body)
+  fillDisc(buf, 400, 760, 120, body)
+  fillDisc(buf, 624, 760, 120, body)
+  // Tail wrapping around — long arc.
+  drawLine(buf, 680, 760, 760, 700, 28, body)
+  drawLine(buf, 760, 700, 740, 600, 26, body)
+  drawLine(buf, 740, 600, 640, 540, 22, body)
+  // Head poking up.
+  drawCatHead(buf, 460, 580, 180, body, ear, hexToRgb('#1e7ad8'), hexToRgb('#cfa8a0'))
+  // A small fish next to the cat's mouth (signature: island).
+  fillTriangle(buf, 280, 600, 340, 580, 340, 620, hexToRgb('#ffc56a'))
+  fillTriangle(buf, 340, 580, 340, 620, 240, 600, hexToRgb('#ffc56a'))
+  fillDisc(buf, 320, 598, 4, hexToRgb('#0a0a0a'))
+}
+
+function paintMountainCat(buf) {
+  fillBackgroundGradient(buf, hexToRgb('#5a1f10'), hexToRgb('#1a0604'))
+  // Sunset glow.
+  addRadialGlow(buf, 512, 320, 320, hexToRgb('#ffb27a', 160))
+  fillDisc(buf, 512, 320, 70, hexToRgb('#ffe3c0', 240))
+  // Mountain silhouettes.
+  fillPolygon(buf, [
+    [-20, 760], [180, 540], [360, 660], [560, 480],
+    [720, 620], [900, 520], [1044, 660], [1044, 1024], [-20, 1024],
+  ], hexToRgb('#2a0a04'))
+  // Snow caps.
+  fillPolygon(buf, [[180, 540], [140, 600], [220, 600]], hexToRgb('#ffeed8'))
+  fillPolygon(buf, [[560, 480], [510, 560], [610, 560]], hexToRgb('#ffeed8'))
+  fillPolygon(buf, [[900, 520], [860, 580], [940, 580]], hexToRgb('#ffeed8'))
+  // Rocky foreground (the peak the cat stands on).
+  fillPolygon(buf, [[300, 980], [420, 800], [600, 800], [720, 980]], hexToRgb('#3a1a10'))
+  // Arched-back cat: orange/red tinted.
+  const body = hexToRgb('#e07a3a')
+  const ear = hexToRgb('#a8541e')
+  const stripe = hexToRgb('#7a3a18', 220)
+  // Arched body — drawn as a low arc using two stacked discs and a top arch.
+  fillDisc(buf, 460, 760, 80, body)
+  fillDisc(buf, 564, 760, 80, body)
+  fillRect(buf, 460, 700, 105, 80, body)
+  // Top of arch.
+  fillDisc(buf, 512, 680, 80, body)
+  // Tail bristled straight up.
+  drawLine(buf, 600, 720, 660, 580, 22, body)
+  drawLine(buf, 660, 580, 720, 500, 18, body)
+  // Stripes on arched back.
+  drawLine(buf, 480, 670, 480, 710, 6, stripe)
+  drawLine(buf, 512, 660, 512, 700, 6, stripe)
+  drawLine(buf, 544, 670, 544, 710, 6, stripe)
+  // Legs.
+  fillRect(buf, 440, 760, 30, 80, body)
+  fillRect(buf, 560, 760, 30, 80, body)
+  // Hissing head: ears pinned back, mouth open (we use the helper, then add fangs).
+  drawCatHead(buf, 420, 720, 130, body, ear, hexToRgb('#f4d35e'), hexToRgb('#cfa8a0'))
+  // Fangs.
+  fillTriangle(buf, 410, 770, 418, 770, 414, 790, hexToRgb('#ffffff'))
+  fillTriangle(buf, 430, 770, 438, 770, 434, 790, hexToRgb('#ffffff'))
+}
+
+function paintPlainsCat(buf) {
+  fillBackgroundGradient(buf, hexToRgb('#a08a3a'), hexToRgb('#3a2f10'))
+  // Sun.
+  addRadialGlow(buf, 760, 240, 200, hexToRgb('#ffe89a', 200))
+  fillDisc(buf, 760, 240, 80, hexToRgb('#fff7d6', 240))
+  // Rolling hills.
+  fillPolygon(buf, [[0, 700], [300, 620], [620, 660], [1024, 600], [1024, 1024], [0, 1024]], hexToRgb('#7a6a2a'))
+  fillPolygon(buf, [[0, 820], [340, 760], [700, 800], [1024, 740], [1024, 1024], [0, 1024]], hexToRgb('#5a4a1a'))
+  // Tall grass / wheat stalks.
+  const rand = mulberry32(31)
+  for (let i = 0; i < 180; i += 1) {
+    const x = rand() * 1024
+    const y = 820 + rand() * 180
+    const h = 30 + rand() * 40
+    drawLine(buf, x, y, x + (rand() - 0.5) * 8, y - h, 1.6, hexToRgb('#f0d878', 220))
+  }
+  // Lying cat: tan, stretched out flat. Body is a long horizontal ellipse.
+  const body = hexToRgb('#e8c878')
+  const ear = hexToRgb('#b89a52')
+  fillDisc(buf, 460, 820, 180, body)
+  fillDisc(buf, 620, 820, 180, body)
+  fillRect(buf, 460, 760, 200, 120, body)
+  // Outstretched legs / paws.
+  fillDisc(buf, 260, 860, 40, body)
+  drawLine(buf, 280, 850, 460, 820, 30, body)
+  fillDisc(buf, 800, 860, 40, body)
+  drawLine(buf, 780, 850, 620, 820, 30, body)
+  // Tail trailing behind.
+  drawLine(buf, 720, 820, 860, 800, 22, body)
+  drawLine(buf, 860, 800, 940, 740, 18, body)
+  // Head resting on paws — drawn slightly smaller.
+  drawCatHead(buf, 360, 760, 140, body, ear, hexToRgb('#3a8a3a'), hexToRgb('#cfa8a0'))
+}
+
+function paintSwampCat(buf) {
+  fillBackgroundGradient(buf, hexToRgb('#1a0a2a'), hexToRgb('#04020a'))
+  // Sickly moon.
+  fillDisc(buf, 780, 240, 80, hexToRgb('#c9c4b8', 220))
+  fillDisc(buf, 810, 230, 70, hexToRgb('#04020a', 255))
+  // Murky horizon glow.
+  addRadialGlow(buf, 512, 720, 480, hexToRgb('#3a2a4a', 130))
+  // Reeds.
+  const reedColor = hexToRgb('#1a0a2a')
+  for (let i = 0; i < 14; i += 1) {
+    const x = 80 + i * 70
+    drawLine(buf, x, 1024, x + 4, 760, 4, reedColor)
+    drawLine(buf, x + 4, 760, x - 6, 700, 3, reedColor)
+  }
+  // Swampy water reflection.
+  fillRect(buf, 0, 940, 1024, 84, hexToRgb('#06031a'))
+  for (let i = 0; i < 10; i += 1) {
+    const y = 950 + i * 8
+    fillRect(buf, 80 + (i * 41) % 700, y, 60, 2, hexToRgb('#4a3a6a', 100))
+  }
+  // Dark cat with glowing eyes.
+  const body = hexToRgb('#1a0e26')
+  const ear = hexToRgb('#0a0510')
+  drawSittingCatBody(buf, 512, 880, 240, body)
+  // Tail.
+  drawLine(buf, 720, 880, 800, 800, 28, body)
+  drawLine(buf, 800, 800, 820, 700, 24, body)
+  drawLine(buf, 820, 700, 760, 640, 22, body)
+  // Head with extra-glowy eyes (override the helper's eye color).
+  drawCatHead(buf, 512, 520, 200, body, ear, hexToRgb('#7aff3a'), hexToRgb('#3a1a4a'))
+  // Replace eyes with brighter ghostly green for emphasis.
+  fillDisc(buf, 444, 510, 36, hexToRgb('#7aff3a', 240))
+  fillDisc(buf, 580, 510, 36, hexToRgb('#7aff3a', 240))
+  addRadialGlow(buf, 444, 510, 70, hexToRgb('#7aff3a', 120))
+  addRadialGlow(buf, 580, 510, 70, hexToRgb('#7aff3a', 120))
+  // Vertical slit pupils for that creepy look.
+  fillRect(buf, 442, 488, 4, 44, hexToRgb('#020106'))
+  fillRect(buf, 578, 488, 4, 44, hexToRgb('#020106'))
+  // A wisp / firefly above the head.
+  fillDisc(buf, 320, 360, 6, hexToRgb('#b8ffa8', 220))
+  addRadialGlow(buf, 320, 360, 30, hexToRgb('#7aff3a', 90))
+}
+
+// ---------------------------------------------------------------------------
 // Drivers
 // ---------------------------------------------------------------------------
 
@@ -697,8 +991,27 @@ const LAND_RECIPES = {
   Swamp: { paint: paintSwamp, accent: hexToRgb('#b075d8') },
 }
 
+// Cartoon-cat compositions for the Monochrome style slot. One unique cat per
+// land — the palette and accompanying motif make the land obvious. Drawn
+// from primitives only (deterministic, license-clean).
+const MONO_LAND_RECIPES = {
+  Forest: { paint: paintForestCat, accent: hexToRgb('#7fc06a') },
+  Island: { paint: paintIslandCat, accent: hexToRgb('#7aa8d8') },
+  Mountain: { paint: paintMountainCat, accent: hexToRgb('#e07a3a') },
+  Plains: { paint: paintPlainsCat, accent: hexToRgb('#e8c878') },
+  Swamp: { paint: paintSwampCat, accent: hexToRgb('#7aff3a') },
+}
+
 function renderCard(land) {
   const recipe = LAND_RECIPES[land]
+  const buf = createBuffer(SIZE, SIZE)
+  recipe.paint(buf)
+  drawFrame(buf, recipe.accent)
+  return buf
+}
+
+function renderMonoCard(land) {
+  const recipe = MONO_LAND_RECIPES[land]
   const buf = createBuffer(SIZE, SIZE)
   recipe.paint(buf)
   drawFrame(buf, recipe.accent)
@@ -711,6 +1024,15 @@ function main() {
     const buf = renderCard(land)
     const png = encodePng(buf.width, buf.height, buf.data)
     const outPath = resolve(OUT_ROOT, `${land}.png`)
+    writeFileSync(outPath, png)
+    // eslint-disable-next-line no-console
+    console.log(`wrote ${outPath} (${png.length} bytes)`)
+  }
+  mkdirSync(MONO_OUT_ROOT, { recursive: true })
+  for (const land of Object.keys(MONO_LAND_RECIPES)) {
+    const buf = renderMonoCard(land)
+    const png = encodePng(buf.width, buf.height, buf.data)
+    const outPath = resolve(MONO_OUT_ROOT, `${land}.png`)
     writeFileSync(outPath, png)
     // eslint-disable-next-line no-console
     console.log(`wrote ${outPath} (${png.length} bytes)`)

@@ -1,7 +1,8 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
 import { activeActor } from './active-actor'
-import type { AdventureUiState, AppState, AppViewModel, CounterOption, PlayLandOption } from './types'
+import type { AdventureUiState, AppState, AppViewModel, ControllerKind, CounterOption, PlayLandOption, UiCard } from './types'
+import { HIDDEN_HAND_CARD_NAME } from './types'
 
 function projectAdventureUiState(state: AppState): AdventureUiState {
   const adventure = state.adventure
@@ -38,12 +39,14 @@ function nestedTargetLabel(
   actor: number,
   cardName: 'Forest' | 'Mountain' | 'Swamp',
   effectTargetId: string | undefined,
+  controllers: readonly [ControllerKind, ControllerKind],
 ): string | null {
   if (!effectTargetId) {
     return null
   }
   const me = game.players[actor]
-  const enemy = game.players[actor === 0 ? 1 : 0]
+  const enemyIndex = actor === 0 ? 1 : 0
+  const enemy = game.players[enemyIndex]
   if (cardName === 'Forest') {
     const target = me.graveyard.find((entry) => entry.id === effectTargetId)
     return target ? `return ${target.name}` : null
@@ -53,10 +56,18 @@ function nestedTargetLabel(
     return target ? `destroy ${target.card.name}` : null
   }
   const target = enemy.hand.find((entry) => entry.id === effectTargetId)
-  return target ? `discard ${target.name}` : null
+  if (!target) {
+    return null
+  }
+  // When the opposing hand is hidden from the local viewer (human vs AI),
+  // do not leak the discard target's name in the play-land button label —
+  // the human picks blind, matching the AI's information set when it plays
+  // Swamp against the human.
+  const targetName = shouldHideHandFromViewer(controllers, enemyIndex) ? 'hidden card' : target.name
+  return `discard ${targetName}`
 }
 
-function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAction, { type: 'play_land' }>): string {
+function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAction, { type: 'play_land' }>, controllers: readonly [ControllerKind, ControllerKind]): string {
   const me = game.players[actor]
   const card = me.hand.find((entry) => entry.id === action.cardId)
   if (!card) {
@@ -69,7 +80,7 @@ function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAc
   }
 
   if (card.name === 'Forest' || card.name === 'Mountain' || card.name === 'Swamp') {
-    const suffix = nestedTargetLabel(game, actor, card.name, action.effectTargetId)
+    const suffix = nestedTargetLabel(game, actor, card.name, action.effectTargetId, controllers)
     if (suffix) {
       label += ` (${suffix})`
     }
@@ -90,13 +101,14 @@ function plainsReuseLabelFor(
   game: GameState,
   actor: number,
   action: Extract<GameAction, { type: 'resolve_plains_reuse' }>,
+  controllers: readonly [ControllerKind, ControllerKind],
 ): string {
   const reusedName = game.pendingPlainsReuse?.reusedCardName
   if (!reusedName) {
     return 'Resolve Plains reuse'
   }
   if (reusedName === 'Forest' || reusedName === 'Mountain' || reusedName === 'Swamp') {
-    const suffix = nestedTargetLabel(game, actor, reusedName, action.effectTargetId)
+    const suffix = nestedTargetLabel(game, actor, reusedName, action.effectTargetId, controllers)
     return suffix ? `Reuse ${reusedName} (${suffix})` : `Reuse ${reusedName}`
   }
   return `Reuse ${reusedName}`
@@ -113,6 +125,31 @@ function counterLabelFor(
     : undefined
   const suffix = discard ? ` + ${discard.name}` : ' + another land'
   return `Counter with Island (discard Island${suffix})`
+}
+
+function shouldHideHandFromViewer(
+  controllers: readonly [ControllerKind, ControllerKind],
+  playerIndex: number,
+): boolean {
+  // Hide an AI player's hand whenever a local human is playing on the other
+  // side: in `local-hvai` / `adventure-hvai` the human shares the screen
+  // with the AI and could otherwise read the AI's cards. Keep both hands
+  // visible for `local-hvh` (both human) and `local-aivai` (no human to
+  // protect). For P2P, the local side is `human` and the opposing side is
+  // `remote`, so this predicate is false there too — and the remote opponent
+  // never sends raw hand data over the wire anyway.
+  return controllers[playerIndex] === 'ai' && controllers[1 - playerIndex] === 'human'
+}
+
+function projectHandCards(
+  hand: ReadonlyArray<{ id: string; name: string }>,
+  controllers: readonly [ControllerKind, ControllerKind],
+  playerIndex: number,
+): UiCard[] {
+  if (shouldHideHandFromViewer(controllers, playerIndex)) {
+    return hand.map((card) => ({ id: card.id, name: HIDDEN_HAND_CARD_NAME }))
+  }
+  return hand.map((card) => ({ id: card.id, name: card.name }))
 }
 
 export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewModel {
@@ -180,7 +217,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       const options = playLandByCard[action.cardId] ?? []
       options.push({
         action,
-        label: playLandLabelFor(game, actor, action),
+        label: playLandLabelFor(game, actor, action, state.controllers),
       })
       playLandByCard[action.cardId] = options
       continue
@@ -192,7 +229,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     }
 
     if (action.type === 'resolve_plains_reuse') {
-      plainsReuseOptions.push({ action, label: plainsReuseLabelFor(game, actor, action) })
+      plainsReuseOptions.push({ action, label: plainsReuseLabelFor(game, actor, action, state.controllers) })
     }
   }
 
@@ -225,7 +262,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
           handCount: game.players[0].hand.length,
           deckCount: game.players[0].deck.length,
           graveyardCount: game.players[0].graveyard.length,
-          handCards: game.players[0].hand.map((card) => ({ id: card.id, name: card.name })),
+          handCards: projectHandCards(game.players[0].hand, state.controllers, 0),
           graveyardCards: game.players[0].graveyard.map((card) => ({ id: card.id, name: card.name })),
           battlefield: game.players[0].battlefield.map((entry) => ({ instanceId: entry.instanceId, name: entry.card.name })),
         },
@@ -234,7 +271,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
           handCount: game.players[1].hand.length,
           deckCount: game.players[1].deck.length,
           graveyardCount: game.players[1].graveyard.length,
-          handCards: game.players[1].hand.map((card) => ({ id: card.id, name: card.name })),
+          handCards: projectHandCards(game.players[1].hand, state.controllers, 1),
           graveyardCards: game.players[1].graveyard.map((card) => ({ id: card.id, name: card.name })),
           battlefield: game.players[1].battlefield.map((entry) => ({ instanceId: entry.instanceId, name: entry.card.name })),
         },
