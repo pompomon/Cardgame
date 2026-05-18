@@ -18,6 +18,8 @@ Deployed to GitHub Pages under a non-root base path.
 3. `npm run build` (= `tsc && vite build`)
 4. `codeql_checker` — address every alert
 
+Docs-only changes still run lint (TypeScript can break if docs reference
+moved exports) but may declare the `codeql_checker` invocation as trivial.
 See [`docs/agent/validation-and-build.md`](../docs/agent/validation-and-build.md).
 
 ## Non-negotiable rules

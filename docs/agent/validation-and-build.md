@@ -54,7 +54,8 @@ order; do not skip steps.
 
 A well-validated change has all of:
 
-- All four numbered steps above passing locally.
+- All four validation checks (lint, tests, build, CodeQL) passing locally
+  on top of a clean `npm install`.
 - A PR description that ends with a validation block (see `pr-workflow.md`):
   ```
   Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔

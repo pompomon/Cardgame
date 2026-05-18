@@ -18,13 +18,17 @@ Rules:
 
 - **Bump `CACHE_VERSION` when same-path card-art binaries change.**
   Note this in the PR's "Risk / migration notes" block.
-- **Do not precache `404.html` into the SPA shell slot.** Adding `404.html`
-  to `CORE` makes a navigation to `${BASE_PATH}404.html` (which returns
-  200) look like a successful `navigate` fetch, and the existing
-  navigation handler can then cache it under `INDEX_URL`, overwriting the
-  real shell. If you need the 404 redirect installed, install it
-  separately and make sure only real index navigations update
-  `INDEX_URL`.
+- **`404.html` is precached but must never overwrite the SPA shell.**
+  `CORE` includes `${BASE_PATH}404.html` (as `FALLBACK_URL`) so the GitHub
+  Pages deep-link redirect works offline. The hazard is that a navigation
+  to `${BASE_PATH}404.html` returns 200 and, without a guard, the
+  navigation handler would cache that response under `INDEX_URL` —
+  overwriting the real shell with a redirect document. The current
+  handler guards against this with an `isIndexNavigation` check
+  (`relativePath === '/' || relativePath === '/index.html'`); only those
+  paths update the `INDEX_URL` cache entry. If you change either side
+  (add other entries to `CORE`, or relax the navigation handler), keep
+  the invariant: **only real index navigations write `INDEX_URL`.**
 - **Document the strategy in the SW file**: keep the inline comments in
   sync with the actual switch on URL path.
 
