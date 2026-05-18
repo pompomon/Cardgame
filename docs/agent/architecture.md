@@ -51,7 +51,7 @@ src/
 Preferred dependency direction:
 
 ```
-game/  ──→  app/  ──→  renderers/{dom,phaser}/
+renderers/{dom,phaser}/  ──→  app/  ──→  game/
 ```
 
 - `game/` is intended to stay independent of `app/` and `renderers/`, but the
