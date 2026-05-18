@@ -2,12 +2,13 @@
 //
 // `CARD_VISUAL_STYLES` is the canonical tuple — the `CardVisualStyle`
 // union type, `isCardVisualStyle` guard, and the lobby `{value,label}`
-// options array are all derived from it. `RASTER_CARD_VISUAL_STYLES`
-// (which styles ship raster PNGs vs. procedural SVG icons) also lives
-// here so renderers route through `isRasterCardVisualStyle` instead of
-// re-declaring the set. Adding a new style requires only an entry in
-// `CARD_VISUAL_STYLES`, a label below, and (for raster styles) inclusion
-// in `RASTER_CARD_VISUAL_STYLES`.
+// options array are all derived from it. The raster set
+// (`RASTER_CARD_VISUAL_STYLE_SET`) — i.e. which styles ship raster PNGs
+// vs. procedural SVG icons — also lives here as a module-private constant
+// behind the `isRasterCardVisualStyle` predicate, so renderers route
+// through the predicate instead of re-declaring the set. Adding a new
+// style requires only an entry in `CARD_VISUAL_STYLES`, a label below,
+// and (for raster styles) inclusion in `RASTER_CARD_VISUAL_STYLE_SET`.
 
 export const CARD_VISUAL_STYLES = ['classic', 'hd', 'monochrome'] as const
 

@@ -1,6 +1,7 @@
 import type { AiLevel, ControllerKind, Mode } from './types'
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent, Winner } from '../game/types'
 import { isAiLevel } from './ai-levels'
+import { isGameAction } from './action-validation'
 import { capTail, isRecordObject } from './validators'
 
 export const GAME_RECORD_KIND = 'cardgame.recording'
@@ -224,32 +225,13 @@ function isGameStateLike(value: unknown): value is GameState {
 }
 
 function isGameActionLike(payload: unknown): payload is GameAction {
-  if (!isRecordObject(payload)) {
-    return false
-  }
-  const action = payload as {
-    type?: unknown
-    actor?: unknown
-    cardId?: unknown
-    effectTargetId?: unknown
-    discardCardId?: unknown
-  }
-  if (typeof action.type !== 'string' || (action.actor !== 0 && action.actor !== 1)) {
-    return false
-  }
-  if (action.type === 'play_land') {
-    if (typeof action.cardId !== 'string') {
-      return false
-    }
-    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
-  }
-  if (action.type === 'resolve_plains_reuse') {
-    return action.effectTargetId === undefined || typeof action.effectTargetId === 'string'
-  }
-  if (action.type === 'counter_land') {
-    return action.discardCardId === undefined || typeof action.discardCardId === 'string'
-  }
-  return action.type === 'end_turn' || action.type === 'pass_response'
+  // Delegate shape-checking to the shared `isGameAction` so the
+  // controller and recording importer agree on the contract — and stay in
+  // sync automatically whenever `GameAction` grows a new branch. Imported
+  // recordings additionally constrain the actor to the 2-player engine's
+  // valid indices (the controller's broader `actor: number` check is
+  // sufficient for in-process callers).
+  return isGameAction(payload) && (payload.actor === 0 || payload.actor === 1)
 }
 
 function normalizeStateSchema(state: GameState): GameState {

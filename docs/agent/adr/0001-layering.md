@@ -34,8 +34,10 @@ renderers/{dom,phaser}/  ──→  app/  ──→  game/
 
 1. **Single source of truth.** Option lists, default values, and type
    guards for the same domain concept live in one module
-   (e.g. `app/ai-levels.ts` owns `AiLevel`, `AI_LEVEL_OPTIONS`,
-   `DEFAULT_AI_LEVEL`, `isAiLevel`; renderers re-import, never re-declare).
+   (e.g. `game/ai-levels.ts` owns `AiLevel`, `AI_LEVELS`, `DEFAULT_AI_LEVEL`,
+   and `isAiLevel`; `app/ai-levels.ts` re-exports them and adds the
+   renderer-facing `AI_LEVEL_OPTIONS` label table; renderers re-import,
+   never re-declare).
 2. **Validation at the trust boundary.** Anything entering the app from
    `localStorage`, imported JSON, or a P2P payload must pass a guard from
    `app/validators.ts` (or a guard built from those helpers).

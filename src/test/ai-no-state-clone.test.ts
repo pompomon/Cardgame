@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -9,26 +9,49 @@ import { describe, expect, it } from 'vitest'
 // statically by scanning the AI evaluation surface and asserting that no
 // `structuredClone` call survives in those files.
 //
+// `ai-policies/` is discovered at runtime so new policy modules are picked
+// up automatically — there is no list to keep in sync when a new AI level
+// lands. Other AI-adjacent files are listed explicitly because they live
+// at known paths.
+//
 // If you genuinely need to clone in a different AI module, prefer a narrow,
 // typed copy of just the fields you mutate. If you must add an exception
 // here, document the reason in the file and add the path to the
 // `EXCEPTIONS` list with a comment explaining why.
 
-const AI_HOT_LOOP_FILES = [
+const REPO_ROOT = join(__dirname, '..', '..')
+
+const AI_POLICIES_DIR = 'src/game/ai-policies'
+
+const AI_HOT_LOOP_FIXED_FILES: readonly string[] = [
   'src/game/ai-evaluation.ts',
-  'src/game/ai-policies/basic.ts',
-  'src/game/ai-policies/advanced.ts',
-  'src/game/ai-policies/hard.ts',
   'src/game/ai-action-utils.ts',
   'src/game/ai-visibility.ts',
   'src/game/ai.ts',
-] as const
+]
+
+function discoverAiPolicyFiles(): string[] {
+  const dir = join(REPO_ROOT, AI_POLICIES_DIR)
+  return readdirSync(dir)
+    .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.d.ts'))
+    .map((entry) => `${AI_POLICIES_DIR}/${entry}`)
+    .sort()
+}
+
+const AI_HOT_LOOP_FILES: readonly string[] = [
+  ...AI_HOT_LOOP_FIXED_FILES,
+  ...discoverAiPolicyFiles(),
+]
 
 const EXCEPTIONS: ReadonlySet<string> = new Set()
 
-const REPO_ROOT = join(__dirname, '..', '..')
-
 describe('AI hot-loop modules', () => {
+  it('discovers at least one ai-policies/* module', () => {
+    // Guards against the scanner silently degrading to an empty policy
+    // list (e.g. directory rename) and then trivially "passing".
+    expect(discoverAiPolicyFiles().length).toBeGreaterThan(0)
+  })
+
   for (const relativePath of AI_HOT_LOOP_FILES) {
     if (EXCEPTIONS.has(relativePath)) {
       continue

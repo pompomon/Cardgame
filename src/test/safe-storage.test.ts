@@ -96,4 +96,15 @@ describe('safe-storage', () => {
     circular.self = circular
     expect(writeJsonStorageItem('k', circular)).toBe(false)
   })
+
+  it('returns false from writeJsonStorageItem for values that stringify to undefined', () => {
+    // JSON.stringify returns `undefined` (no throw) for these values.
+    // The helper must not silently coerce that into the literal string
+    // "undefined" via setItem.
+    expect(writeJsonStorageItem('k', undefined)).toBe(false)
+    expect(writeJsonStorageItem('k', () => 1)).toBe(false)
+    expect(writeJsonStorageItem('k', Symbol('s'))).toBe(false)
+    // And the storage entry remains absent.
+    expect(store.data.has('k')).toBe(false)
+  })
 })

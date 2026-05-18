@@ -5,7 +5,12 @@
 // The invariants enforced here are the ones called out in
 // `docs/agent/state-and-persistence.md`:
 //
-//  - Reject non-finite numbers (`Infinity` / `NaN` from `JSON.parse`).
+//  - Reject non-finite numbers (e.g. values typed as `number` that are
+//    actually `Infinity` or `NaN`). `JSON.parse` itself rejects the bare
+//    `Infinity` / `NaN` tokens, but untrusted inputs reach the app from
+//    other surfaces too (P2P payloads constructed in-process, hand-edited
+//    state in tests, future binary codecs), so we keep the guard at the
+//    trust boundary.
 //  - Reject negatives and fractions for counters that the engine treats
 //    as non-negative integers.
 //  - Cap arrays from the **tail** (most recent), not the head, so log

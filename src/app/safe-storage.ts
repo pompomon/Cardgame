@@ -61,11 +61,21 @@ export function readJsonStorageItem(key: string): unknown {
 }
 
 export function writeJsonStorageItem(key: string, value: unknown): boolean {
+  let serialized: string | undefined
   try {
-    return writeStorageItem(key, JSON.stringify(value))
+    serialized = JSON.stringify(value)
   } catch {
     // JSON.stringify can throw on circular structures. Treat as a write
     // failure rather than letting it propagate into UI code.
     return false
   }
+  if (typeof serialized !== 'string') {
+    // `JSON.stringify(undefined)` and stringify of a function/symbol
+    // return `undefined` (no throw). Persisting that would coerce to the
+    // literal string "undefined" via `setItem`, which `readJsonStorageItem`
+    // would later treat as malformed. Treat it as a write failure so
+    // callers can react instead of silently corrupting storage.
+    return false
+  }
+  return writeStorageItem(key, serialized)
 }
