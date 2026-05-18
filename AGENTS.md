@@ -45,8 +45,12 @@ review.
    Reject `Infinity`, `NaN`, negatives, fractions, and unknown discriminants.
    When capping logs/events, keep the **tail** (most recent), not the head.
 4. **Every exhaustive `switch` over a discriminated union needs a `default:`.**
-   Unknown `kind` values must degrade gracefully (safe placeholder), never
-   fall through to `undefined`.
+   Unknown `kind` values must take the safe path documented for that
+   function's contract — a placeholder for formatter/rendering paths
+   (e.g. `formatLogEventTile`), a documented sentinel such as `null` for
+   selector paths where "no result" is normal (e.g.
+   `effectDescriptorForEvent`). Never fall through to an accidental
+   `undefined`.
 5. **View-model projects immutable snapshots.** Never leak internal
    controller state (`state.adventure`, `state.game`, …) by reference.
 6. **Phaser 4 `GeometryMask` is a no-op under WebGL.** For scrollable/clipped

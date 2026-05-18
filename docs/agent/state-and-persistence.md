@@ -45,9 +45,19 @@ rigor:
 ## Switches over snapshot/event shapes
 
 Every `switch (event.kind)` (or any other discriminator-driven switch) must
-have a `default:` branch that returns a safe placeholder
-(`{ kind: 'unknown', text: '???' }`-style tile). Returning `undefined` from
-a formatter will crash callers further down the pipeline.
+have a `default:` branch that returns a value matching the function's
+documented contract — never an accidental `undefined` fall-through.
+
+- **Formatter/rendering paths** (e.g. `formatLogEventTile`,
+  `formatLogEventText`) whose callers always render the result must return
+  a safe placeholder such as `{ kind: 'unknown', text: '???' }`. Returning
+  `undefined` will crash callers downstream.
+- **Selector/lookup paths** where "no result" is a normal outcome (e.g.
+  `effectDescriptorForEvent` in `src/renderers/phaser/effects.ts`, which
+  returns `null` for events with no animation recipe) may return that
+  documented sentinel (`null`/`undefined`) — but the `default:` branch
+  must still be present so unknown discriminants take the safe path
+  explicitly.
 
 ## Controller hygiene
 

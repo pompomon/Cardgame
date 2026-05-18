@@ -33,8 +33,11 @@ See [`docs/agent/validation-and-build.md`](../docs/agent/validation-and-build.md
   (`turn`, `nextInstanceId`, `landsPlayedThisTurn`). Validate deck length (50)
   where required. Validate discriminated unions element-by-element. **Cap**
   arrays, keeping the **tail** (most recent).
-- **Switches over discriminated unions need a `default:`** that returns a safe
-  placeholder. Never let `formatLogEventTile`/similar return `undefined`.
+- **Switches over discriminated unions need a `default:`** that returns a
+  value matching the function's contract — a safe placeholder for
+  formatter/rendering paths (never let `formatLogEventTile`/similar return
+  `undefined`), or a documented sentinel like `null` for selector paths
+  where "no result" is normal (e.g. `effectDescriptorForEvent`).
 - **View-model returns immutable snapshots.** Do not pass
   `state.adventure`/`state.game` by reference into renderers.
 - **No string→enum casts.** Use `isAiLevel`, `isCardVisualStyle`, etc.

@@ -1,6 +1,9 @@
 # Testing
 
-Tests live in `src/test/`, one `*.test.ts` file per module under test.
+Tests live in `src/test/`, named after the module or behavior under test
+(most modules have a single `<module>.test.ts`, but focused behaviors may
+get their own files, e.g. `controller.test.ts` + `controller-ai-level.test.ts`,
+`engine.test.ts` + `engine-log-events.test.ts`).
 Runner: [vitest](https://vitest.dev/). Invocation:
 
 ```bash
@@ -9,8 +12,12 @@ npm run test    # vitest run
 
 ## Conventions
 
-- **Co-locate by module under test.** A new module `src/app/foo.ts` gets
-  `src/test/foo.test.ts`. Keep file names aligned with the module name.
+- **Co-locate by module or behavior under test.** A new module
+  `src/app/foo.ts` typically gets `src/test/foo.test.ts`; if a single
+  behavior is large or independently interesting, give it its own
+  `foo-<behavior>.test.ts` (see `controller-ai-level.test.ts`,
+  `engine-log-events.test.ts`). Keep names aligned with what's being
+  exercised.
 - **Use top-level `describe`/`it`/`test` from `vitest`.** Don't import
   jest-style globals.
 - **Type stubs go in `src/test/node-shims.d.ts`.** The project intentionally
