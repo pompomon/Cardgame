@@ -83,7 +83,8 @@ const COLOR_BATTLEFIELD_NON_ACTIVE_FILL = 0x7a1f33
 const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xff6b8a
 const COLOR_PLAYER_ACTIVE_FILL = 0x1e4f7a
 const COLOR_PLAYER_NON_ACTIVE_FILL = 0x4a1f5e
-const COLOR_PANEL_STROKE = 0x3a4a8a
+const COLOR_BORDER_SUBTLE = 0x3a4a8a
+const COLOR_BORDER_STRONG = 0x5d7cff
 const COLOR_LOG_PANEL_FILL = 0x161f4d
 const COLOR_LOG_VIEWPORT_FILL = 0x0f1740
 // Scene depth layering for the in-scene game view. Layering is anchored at
@@ -108,9 +109,9 @@ const Z_HEADER = 10
 
 const UI_THEME = {
   buttonFill: 0x28368a,
-  buttonStroke: 0x5d7cff,
+  buttonStroke: COLOR_BORDER_STRONG,
   panelFill: 0x1f2a5e,
-  panelStroke: 0x5d7cff,
+  panelStroke: COLOR_BORDER_STRONG,
   viewportFill: COLOR_LOG_VIEWPORT_FILL,
   backdropFill: 0x000000,
   scrimFill: 0x000000,
@@ -1334,7 +1335,7 @@ class CardgameScene extends Phaser.Scene {
     const safeWidth = width
     const safeHeight = height
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
-      .setStrokeStyle(1, COLOR_PANEL_STROKE)
+      .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     bg.setDepth(Z_BOARD)
     this.rootContainer?.add(bg)
     if (lines.length === 0) {
@@ -1636,7 +1637,7 @@ class CardgameScene extends Phaser.Scene {
         const isActive = tile.actor === activeActor
         const fill = isActive ? COLOR_PLAYER_ACTIVE_FILL : COLOR_PLAYER_NON_ACTIVE_FILL
         const pillBg = this.add.rectangle(0, verticalCenter, pillWidth, tileHeight - 2, fill, 0.85)
-          .setStrokeStyle(1, COLOR_PANEL_STROKE)
+          .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
           .setOrigin(0, 0.5)
         const pillText = this.add.text(pillWidth / 2, verticalCenter, `P${tile.actor + 1}`, {
           color: UI_THEME.primaryText,
@@ -1730,7 +1731,7 @@ class CardgameScene extends Phaser.Scene {
       width,
       height,
       COLOR_LOG_PANEL_FILL,
-    ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     panelBg.setDepth(Z_LOG)
     this.rootContainer?.add(panelBg)
 
@@ -1802,7 +1803,7 @@ class CardgameScene extends Phaser.Scene {
       viewportHeight,
       COLOR_LOG_VIEWPORT_FILL,
       0.6,
-    ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     viewportBg.setInteractive()
     viewportBg.setDepth(Z_LOG)
     this.rootContainer?.add(viewportBg)
