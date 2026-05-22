@@ -1,7 +1,47 @@
 :root {
+  /* Brighter vibrant-dark palette. Tokens are grouped by role so swapping
+     the scheme is a single-file change. Keep these in sync with the Phaser
+     UI_THEME / COLOR_* constants in src/renderers/phaser/index.ts. */
+
+  /* Surfaces */
+  --bg-app: #1b1148;
+  --bg-gradient-from: #2a1f6b;
+  --bg-gradient-to: #150a3a;
+  --surface-panel: #1f2a5e;
+  --surface-panel-strong: #28368a;
+  --surface-log: #161f4d;
+  --surface-log-viewport: #0f1740;
+
+  /* Borders */
+  --border-subtle: #3a4a8a;
+  --border-strong: #5d7cff;
+  --border-focus: #a7c0ff;
+
+  /* Text */
+  --text-primary: #f3f6ff;
+  --text-secondary: #c0d0ff;
+  --text-link: #7aa2ff;
+
+  /* Interactive */
+  --button-bg: #28368a;
+  --button-bg-hover: #3a4ec0;
+  --button-border: #5d7cff;
+
+  /* Status */
+  --battlefield-active-bg: #1f6b3e;
+  --battlefield-active-stroke: #46d27a;
+  --battlefield-nonactive-bg: #7a1f33;
+  --battlefield-nonactive-stroke: #ff6b8a;
+  --player-active-bg: #1e4f7a;
+  --player-nonactive-bg: #4a1f5e;
+
+  /* Patterned tiles */
+  --hidden-tile-stripe-a: #2c3a78;
+  --hidden-tile-stripe-b: #475ec2;
+
   font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
-  color: #e5ecf5;
-  background: #0b1020;
+  color: var(--text-primary);
+  background: var(--bg-app);
   --app-shell-padding: 16px;
 }
 
@@ -11,7 +51,7 @@
 
 body {
   margin: 0;
-  background: radial-gradient(circle at top, #111b3a 0%, #070c1a 70%);
+  background: radial-gradient(circle at top, var(--bg-gradient-from) 0%, var(--bg-gradient-to) 70%);
 }
 
 html,
@@ -43,15 +83,15 @@ body {
 }
 
 .panel {
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: rgba(10, 18, 38, 0.9);
+  background: var(--surface-panel);
   padding: 16px;
 }
 
 .subtitle,
 .status {
-  color: #9db0d9;
+  color: var(--text-secondary);
 }
 
 .modes,
@@ -110,10 +150,10 @@ body {
 button,
 select,
 textarea {
-  border: 1px solid #365092;
+  border: 1px solid var(--button-border);
   border-radius: 8px;
-  background: #182a55;
-  color: #e5ecf5;
+  background: var(--button-bg);
+  color: var(--text-primary);
   padding: 8px 10px;
 }
 
@@ -139,14 +179,14 @@ textarea {
 }
 
 .player {
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px;
-  background: #111c3d;
+  background: var(--surface-panel);
 }
 
 .battlefield {
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px;
 }
@@ -167,11 +207,11 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--tile-stroke, #2a355f);
+  border: 1px solid var(--tile-stroke, var(--border-subtle));
   border-radius: 6px;
   padding: 4px 6px;
-  background: var(--tile-fill, #111c3d);
-  color: var(--tile-text, #e5ecf5);
+  background: var(--tile-fill, var(--surface-panel));
+  color: var(--tile-text, var(--text-primary));
 }
 
 /* Hidden-hand placeholder tile: face-down card slot shown when an AI hand
@@ -182,13 +222,13 @@ textarea {
   min-height: 28px;
   background: repeating-linear-gradient(
     45deg,
-    #1a2545,
-    #1a2545 6px,
-    #243366 6px,
-    #243366 12px
+    var(--hidden-tile-stripe-a),
+    var(--hidden-tile-stripe-a) 6px,
+    var(--hidden-tile-stripe-b) 6px,
+    var(--hidden-tile-stripe-b) 12px
   );
-  border-color: #365092;
-  color: #9db0d9;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
   font-weight: bold;
   font-family: monospace;
 }
@@ -225,7 +265,7 @@ textarea {
   margin: 0 auto;
   padding: 1px 4px;
   background: rgba(0, 0, 0, 0.55);
-  color: var(--tile-text, #f3f3f3);
+  color: var(--tile-text, var(--text-primary));
   border-radius: 3px;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
   line-height: 1.1;
@@ -240,21 +280,21 @@ textarea {
 }
 
 .battlefield-active {
-  background: #1c3a2c;
-  border-color: #2f6a4a;
+  background: var(--battlefield-active-bg);
+  border-color: var(--battlefield-active-stroke);
 }
 
 .battlefield-non-active {
-  background: #3a1c1c;
-  border-color: #6a2f2f;
+  background: var(--battlefield-nonactive-bg);
+  border-color: var(--battlefield-nonactive-stroke);
 }
 
 .player-active {
-  background: #14304a;
+  background: var(--player-active-bg);
 }
 
 .player-non-active {
-  background: #2a1233;
+  background: var(--player-nonactive-bg);
 }
 
 .battlefield-layout {
@@ -266,17 +306,17 @@ textarea {
 
 .controls {
   margin-top: 12px;
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px;
-  background: #111c3d;
+  background: var(--surface-panel);
 }
 
 .log {
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px;
-  background: #0d162e;
+  background: var(--surface-log-viewport);
   max-width: 25vw;
   max-height: 60vh;
   overflow: auto;
@@ -314,10 +354,10 @@ textarea {
 
 .menu-panel {
   margin-top: 8px;
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px;
-  background: #0d162e;
+  background: var(--surface-log);
   display: grid;
   gap: 12px;
 }
@@ -343,7 +383,7 @@ textarea {
 }
 
 .renderer-link {
-  color: #9ecbff;
+  color: var(--text-link);
 }
 
 .install-controls p {
@@ -351,7 +391,7 @@ textarea {
 }
 
 .install-hint {
-  color: #9db0d9;
+  color: var(--text-secondary);
 }
 
 .phaser-host {
@@ -448,17 +488,17 @@ textarea {
   clip: auto;
   white-space: normal;
   z-index: 30;
-  background: #1c2f63;
-  color: #e5ecf5;
-  border: 2px solid #6aa1ff;
+  background: var(--button-bg);
+  color: var(--text-primary);
+  border: 2px solid var(--border-focus);
   border-radius: 6px;
   font: inherit;
 }
 
 .phaser-lobby-p2p-panel {
-  border: 1px solid #2a355f;
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: rgba(10, 18, 38, 0.95);
+  background: var(--surface-panel);
   padding: 16px;
   display: grid;
   gap: 8px;
@@ -476,7 +516,7 @@ textarea {
 
 .phaser-lobby-p2p-status {
   margin: 0;
-  color: #9db0d9;
+  color: var(--text-secondary);
 }
 
 @supports not (height: 100dvh) {
