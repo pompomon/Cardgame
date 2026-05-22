@@ -136,7 +136,13 @@ describe('buildViewModel hand-redaction', () => {
     expect(vm.game?.players[1].handCards[0].name).toBe('Swamp')
   })
 
-  it('does not leak the AI discard target name in Swamp play-land button labels (hvai)', () => {
+  it('reveals real AI hand names in Swamp play-land button labels while the human is choosing the discard target (hvai)', () => {
+    // This test was deliberately reversed: previously the design hid the AI
+    // hand here to mirror the AI's information set when *it* plays Swamp.
+    // Players expect to see the discard candidates when *they* play Swamp,
+    // so the view model now narrows the redaction: the enemy hand is
+    // revealed only for the duration of this decision. The AI continues to
+    // play Swamp without enemy-hand visibility (see `ai-visibility.ts`).
     const state = createState(105)
     state.mode = 'local-hvai'
     state.controllers = ['human', 'ai']
@@ -153,13 +159,72 @@ describe('buildViewModel hand-redaction', () => {
     ]
 
     const vm = buildViewModel(state, false)
-    // Any play_land label generated for the human's Swamp must NOT mention
-    // the actual AI card names (Mountain/Forest); it should fall back to
-    // the generic "hidden card" wording.
     const labels = Object.values(vm.game!.legal.playLandByCard).flat().map((o) => o.label).join('|')
-    if (labels.length > 0) {
-      expect(labels).not.toMatch(/discard Mountain|discard Forest/)
-      expect(labels).toMatch(/hidden card/)
+    expect(labels).toMatch(/discard Mountain/)
+    expect(labels).toMatch(/discard Forest/)
+    expect(labels).not.toMatch(/hidden card/)
+    // The reveal is exposed on the view model so renderers can show the
+    // real card art in the target picker.
+    expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain', 'Forest'])
+    // The general hand projection is still redacted everywhere else.
+    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
+  })
+
+  it('keeps the AI hand redacted (no reveal) when the human cannot play Swamp', () => {
+    const state = createState(106)
+    state.mode = 'local-hvai'
+    state.controllers = ['human', 'ai']
+    // Human has no Swamp in hand; only a Forest with nothing to return.
+    state.game!.players[0].hand = [{ id: 'p0-forest', name: 'Forest', type: 'land' }]
+    state.game!.players[1].hand = [
+      { id: 'ai-1', name: 'Mountain', type: 'land' },
+      { id: 'ai-2', name: 'Forest', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+    expect(vm.game?.revealedEnemyHandForSwamp).toBeNull()
+    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
+  })
+
+  it('reveals the AI hand for Swamp targeting in adventure-hvai too', () => {
+    const state = createState(107)
+    state.mode = 'adventure-hvai'
+    state.controllers = ['human', 'ai']
+    state.game!.players[0].hand = [{ id: 'p0-swamp', name: 'Swamp', type: 'land' }]
+    state.game!.players[0].battlefield = [
+      { instanceId: 'bf-1', card: { id: 'pre-swamp', name: 'Swamp', type: 'land' } },
+    ]
+    state.game!.players[1].hand = [{ id: 'ai-1', name: 'Mountain', type: 'land' }]
+
+    const vm = buildViewModel(state, false)
+    const labels = Object.values(vm.game!.legal.playLandByCard).flat().map((o) => o.label).join('|')
+    expect(labels).toMatch(/discard Mountain/)
+    expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain'])
+  })
+
+  it('reveals the enemy hand for a Plains→Swamp reuse decision', () => {
+    const state = createState(108)
+    state.mode = 'local-hvai'
+    state.controllers = ['human', 'ai']
+    state.game!.phase = 'plains_target'
+    state.game!.pendingPlainsReuse = {
+      actor: 0,
+      reusedInstanceId: 'bf-swamp',
+      reusedCardName: 'Swamp',
     }
+    state.game!.players[1].hand = [
+      { id: 'ai-1', name: 'Mountain', type: 'land' },
+      { id: 'ai-2', name: 'Forest', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+    const labels = vm.game!.legal.plainsReuseOptions.map((o) => o.label).join('|')
+    expect(labels).toMatch(/discard Mountain/)
+    expect(labels).toMatch(/discard Forest/)
+    expect(labels).not.toMatch(/hidden card/)
+    expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain', 'Forest'])
+    // Outside the play-land label path, the projected enemy hand is still
+    // redacted in players[].handCards.
+    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
   })
 })

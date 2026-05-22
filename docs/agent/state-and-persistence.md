@@ -104,6 +104,18 @@ These patterns come up repeatedly:
 - **Back-fill on the way out.** If a renderer needs `game.events` and an
   older snapshot might not have it, default to `[]` here so renderers
   never see `undefined`.
+- **Scoped hand reveals.** `projectHandCards` redacts the AI hand to
+  `HIDDEN_HAND_CARD_NAME` in hvai / adventure-hvai modes. The view model
+  may *narrowly* widen visibility for a specific decision (e.g.
+  `revealedEnemyHandForSwamp` is populated only while the local human is
+  choosing a Swamp discard target, in `main` or `plains_target` phase).
+  The reveal must (a) read from the real `GameState`, not the redacted
+  projection, (b) be exposed as its own field — never by un-redacting
+  `players[].handCards`, which other surfaces (battlefield panels,
+  replay log) rely on — and (c) clear automatically once the decision
+  phase ends. The AI side continues to play Swamp without enemy-hand
+  visibility (see `src/game/ai-visibility.ts`); the resulting asymmetry
+  is intentional.
 
 ## Adventure-specific rules
 
