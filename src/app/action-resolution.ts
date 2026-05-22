@@ -49,6 +49,15 @@ function targetNameFor(
     return game.players[actor].graveyardCards.find((card) => card.id === effectTargetId)?.name ?? null
   }
   if (sourceCardName === 'Swamp') {
+    // Prefer the revealed real name (populated by the view model when the
+    // local human is actively choosing a Swamp discard target). Fall back
+    // to the projected handCards entry — which is `HIDDEN_HAND_CARD_NAME`
+    // in hvai outside the decision — and finally to the display sentinel
+    // so the picker keeps a stable label even in unexpected states.
+    const revealed = game.revealedEnemyHandForSwamp?.find((card) => card.id === effectTargetId)?.name
+    if (revealed) {
+      return revealed
+    }
     const name = game.players[enemy].handCards.find((card) => card.id === effectTargetId)?.name ?? null
     if (name === HIDDEN_HAND_CARD_NAME) {
       return HIDDEN_HAND_DISPLAY_NAME
