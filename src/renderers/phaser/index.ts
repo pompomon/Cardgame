@@ -111,7 +111,7 @@ const UI_THEME = {
   buttonFill: 0x28368a,
   buttonStroke: COLOR_BORDER_STRONG,
   panelFill: 0x1f2a5e,
-  panelStroke: COLOR_BORDER_STRONG,
+  panelStroke: COLOR_BORDER_SUBTLE,
   viewportFill: COLOR_LOG_VIEWPORT_FILL,
   backdropFill: 0x000000,
   scrimFill: 0x000000,
