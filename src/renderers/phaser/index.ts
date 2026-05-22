@@ -17,9 +17,11 @@ import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
+import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
+import { isLogRowVisible } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import {
   clearEffectQueue,
@@ -1292,13 +1294,16 @@ class CardgameScene extends Phaser.Scene {
 
     const headerTextX = left + menuButtonWidth + 16
     const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
-    // Winner text used to render as a separate second header row, but the
-    // layout only reserves a single-row header before bodyTop, so the banner
-    // spilled on top of the board. Inline it into the header text instead so
-    // everything stays within the reserved header strip.
-    const headerLabel = game.winnerText
-      ? `${game.winnerText} • Turn ${game.turn} • Phase: ${game.phase}`
-      : `Turn ${game.turn} • Phase: ${game.phase}`
+    // Header label: once the game ends, show ONLY the winner (most important
+    // information). Otherwise show the turn/phase string. Inlining both into
+    // a single header row caused phone-width viewports to wrap+truncate the
+    // winner mid-word, leaving "Winner:" with no player shown. See
+    // computeHeaderLabel for the derivation and rationale.
+    const headerLabel = computeHeaderLabel({
+      winnerText: game.winnerText,
+      turn: game.turn,
+      phase: game.phase,
+    })
     // Cap the header text to a single line so the inlined winner banner can
     // never wrap onto a second row and spill into bodyTop / overlap the log
     // and board area on collapsed phone-sized layouts. Phaser truncates the
@@ -1707,11 +1712,14 @@ class CardgameScene extends Phaser.Scene {
       }
       const rowTop = (obj.getData('rowTop') as number | undefined) ?? (obj.y ?? 0)
       const rowHeight = (obj.getData('rowHeight') as number | undefined) ?? (obj.height ?? 0)
-      const rowParentTop = columnOriginY + rowTop
-      const rowParentBottom = rowParentTop + rowHeight
-      const visible = fullyContainedOnly
-        ? rowParentTop >= viewportTopY && rowParentBottom <= viewportBottomY
-        : rowParentBottom > viewportTopY && rowParentTop < viewportBottomY
+      const visible = isLogRowVisible({
+        rowTop,
+        rowHeight,
+        columnOriginY,
+        viewportTopY,
+        viewportBottomY,
+        fullyContainedOnly,
+      })
       obj.setVisible(visible)
     }
   }
@@ -1741,7 +1749,12 @@ class CardgameScene extends Phaser.Scene {
       color: UI_THEME.primaryText,
       fontSize: this.currentLayout.subtitleFontSize,
     })
-    heading.setDepth(Z_LOG)
+    // Heading sits above the scrollable log content (which is drawn at Z_LOG)
+    // so it stays readable even if a row-cull regression lets a partial row
+    // overlap the heading's Y band. Z_HEADER is safe here because the header
+    // strip rectangle is anchored to the top of the scene and does not cover
+    // the log panel.
+    heading.setDepth(Z_HEADER)
     this.rootContainer?.add(heading)
 
     // Hidden screen-reader / accessibility mirror: keep a flat text version of
@@ -1847,7 +1860,7 @@ class CardgameScene extends Phaser.Scene {
     this.inSceneLogScrollOffset = scroll.scrollOffset
     this.inSceneLogPinnedToBottom = scroll.pinnedToBottom
     logContent.y = scroll.contentY
-    this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom)
+    this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
 
     if (scroll.maxScroll > 0) {
       let scrollOffset = scroll.scrollOffset
@@ -1857,7 +1870,7 @@ class CardgameScene extends Phaser.Scene {
         this.inSceneLogScrollOffset = scrollOffset
         this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
         logContent.y = contentTopY - scrollOffset
-        this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom)
+        this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
       }
       this.bindScrollableViewport(
         viewportBg,
