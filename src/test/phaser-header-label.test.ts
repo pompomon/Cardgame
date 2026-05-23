@@ -24,7 +24,7 @@ describe('computeHeaderLabel', () => {
     expect(computeHeaderLabel({
       winnerText: 'Draw game.',
       turn: 20,
-      phase: 'end',
+      phase: 'gameOver',
     })).toBe('Draw game.')
   })
 })

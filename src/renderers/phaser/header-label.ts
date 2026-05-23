@@ -13,10 +13,12 @@
 // turn/phase string. Both fit comfortably on one line at any supported
 // viewport width.
 
+import type { GamePhase } from '../../game/types'
+
 export interface HeaderLabelInput {
   winnerText: string
   turn: number
-  phase: string
+  phase: GamePhase
 }
 
 export function computeHeaderLabel(input: HeaderLabelInput): string {
