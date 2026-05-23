@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "generate:card-art": "node scripts/generate-card-art.mjs"
+    "generate:card-art": "node scripts/generate-card-art.mjs",
+    "generate:photoreal-card-art": "node scripts/generate-photoreal-card-art.mjs"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

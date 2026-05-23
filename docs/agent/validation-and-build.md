@@ -45,10 +45,16 @@ order; do not skip steps.
 
 - `npm run dev` — local Vite dev server.
 - `npm run preview` — preview the production bundle locally.
-- `npm run generate:card-art` — regenerates `public/cards/hd/*.png` and
-  `public/cards/monochrome/*.png` from
-  `scripts/generate-card-art.mjs`. **Re-run after any change to that
-  script or its land recipes.** Commit the regenerated PNGs.
+- `npm run generate:card-art` — regenerates `public/cards/hd-fallback/*.png`
+  and `public/cards/monochrome/*.png` from
+  `scripts/generate-card-art.mjs`. Deterministic and CI-safe (no API
+  keys). **Re-run after any change to that script or its land recipes.**
+  Commit the regenerated PNGs.
+- `npm run generate:photoreal-card-art` — one-off operator script that
+  calls a hosted image-generation API (default `gpt-image-1`) to (re)write
+  the photoreal HD PNGs at `public/cards/hd/*.png`. Requires an
+  `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`). **Not** invoked by CI, lint,
+  test, or build. See `public/cards/README.md` for flags and env vars.
 
 ## What "good" looks like
 

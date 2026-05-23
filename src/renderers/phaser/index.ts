@@ -7,7 +7,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { ALL_CARD_ART, cardArtKey } from '../../app/card-art'
+import { ALL_CARD_ART, cardArtFallbackKey, cardArtKey } from '../../app/card-art'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixelRects } from '../../app/card-visuals'
@@ -178,10 +178,16 @@ const cardArtLoadErrorKeys = new Set<string>()
 
 function preloadCardArt(scene: Phaser.Scene): void {
   for (const entry of ALL_CARD_ART) {
-    if (scene.textures.exists(entry.key)) {
-      continue
+    if (!scene.textures.exists(entry.key)) {
+      scene.load.image(entry.key, entry.url)
     }
-    scene.load.image(entry.key, entry.url)
+    // Also preload the geometric raster fallback (e.g. hd-fallback) under a
+    // dedicated key so `addCardArtToContainer` can render it when the
+    // primary photoreal texture is missing or failed to load — before
+    // degrading further to the procedural pixel-template icon.
+    if (entry.fallbackKey !== undefined && entry.fallbackUrl !== undefined && !scene.textures.exists(entry.fallbackKey)) {
+      scene.load.image(entry.fallbackKey, entry.fallbackUrl)
+    }
   }
   // Phaser scenes can be stopped/started repeatedly (e.g. lobby ↔ game).
   // `scene.load.once` only detaches when the event actually fires, so on
@@ -989,9 +995,21 @@ class CardgameScene extends Phaser.Scene {
     container: Phaser.GameObjects.Container,
     options: { fit?: 'contain' | 'cover'; coverWidth?: number; coverHeight?: number } = {},
   ): boolean {
-    const key = cardArtKey(land, visualStyle)
-    if (this.textures && this.textures.exists(key)) {
-      const image = this.add.image(centerX, centerY, key)
+    // Walk the texture-fallback chain in order: primary (photoreal) →
+    // geometric raster fallback (e.g. hd-fallback) → procedural pixel-icon.
+    // The fallback chain is only populated for styles that ship a backup
+    // raster (currently `hd`); other styles fall straight from primary to
+    // the procedural pixel-template.
+    const primaryKey = cardArtKey(land, visualStyle)
+    const fallbackKey = visualStyle === 'hd' ? cardArtFallbackKey(land, 'hd') : null
+    let resolvedKey: string | null = null
+    if (this.textures && this.textures.exists(primaryKey)) {
+      resolvedKey = primaryKey
+    } else if (fallbackKey !== null && this.textures && this.textures.exists(fallbackKey)) {
+      resolvedKey = fallbackKey
+    }
+    if (resolvedKey !== null) {
+      const image = this.add.image(centerX, centerY, resolvedKey)
       image.setOrigin(0.5, 0.5)
       if (options.fit === 'cover' && options.coverWidth && options.coverHeight) {
         // Cover-fit: scale uniformly so the texture fills the target rectangle
@@ -999,7 +1017,7 @@ class CardgameScene extends Phaser.Scene {
         // coverHeight, centered on (centerX, centerY). Using setCrop instead
         // of a Phaser GeometryMask because Phaser 4's GeometryMask is a no-op
         // under the WebGL renderer.
-        const source = this.textures.get(key).getSourceImage() as { width?: number; height?: number } | null
+        const source = this.textures.get(resolvedKey).getSourceImage() as { width?: number; height?: number } | null
         const texW = (source && typeof source.width === 'number' && source.width > 0) ? source.width : size
         const texH = (source && typeof source.height === 'number' && source.height > 0) ? source.height : size
         const w = options.coverWidth

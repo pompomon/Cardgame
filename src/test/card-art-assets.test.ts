@@ -59,6 +59,24 @@ describe('card art asset files', () => {
     }
   })
 
+  it('ships a runtime raster fallback PNG for every ALL_CARD_ART entry that declares one', () => {
+    const fallbackEntries = ALL_CARD_ART.filter(
+      (entry) => entry.fallbackUrl !== undefined,
+    )
+    // Sanity: at least the 5 HD lands ship a hd-fallback PNG.
+    expect(fallbackEntries.length).toBeGreaterThanOrEqual(5)
+    for (const entry of fallbackEntries) {
+      const fallbackUrl = entry.fallbackUrl as string
+      const path = publicPathFor(fallbackUrl)
+      const stat = statSync(path)
+      expect(stat.size, `${fallbackUrl} should be a non-empty file`).toBeGreaterThan(0)
+      const { width, height } = readImageSize(path)
+      expect(width, `${fallbackUrl} width`).toBeGreaterThanOrEqual(256)
+      expect(height, `${fallbackUrl} height`).toBeGreaterThanOrEqual(256)
+      expect(width, `${fallbackUrl} must be square`).toBe(height)
+    }
+  })
+
   it('ships a shared card-back PNG at the documented path', () => {
     const path = publicPathFor('/cards/card-back.png')
     const { width, height } = readImageSize(path)
