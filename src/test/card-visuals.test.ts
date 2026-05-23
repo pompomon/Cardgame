@@ -89,6 +89,7 @@ describe('card-visuals', () => {
       const source = cardArtSourceFor('Forest', 'hd', 64)
       expect(source.isRaster).toBe(true)
       expect(source.primaryUrl).toBe('/cards/hd/Forest.png')
+      expect(source.rasterFallbackUrl).toBe('/cards/hd-fallback/Forest.png')
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })
 
@@ -96,6 +97,7 @@ describe('card-visuals', () => {
       const source = cardArtSourceFor('Forest', 'monochrome', 64)
       expect(source.isRaster).toBe(true)
       expect(source.primaryUrl).toBe('/cards/monochrome/Forest.png')
+      expect(source.rasterFallbackUrl).toBe(null)
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })
 
@@ -104,6 +106,7 @@ describe('card-visuals', () => {
       expect(source.isRaster).toBe(false)
       expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
       expect(source.primaryUrl).toBe(source.proceduralUrl)
+      expect(source.rasterFallbackUrl).toBe(null)
     })
 
     it('forceProcedural: true keeps the procedural icon even for raster styles', () => {
@@ -112,6 +115,7 @@ describe('card-visuals', () => {
         expect(source.isRaster).toBe(false)
         expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)
         expect(source.primaryUrl).toBe(source.proceduralUrl)
+        expect(source.rasterFallbackUrl).toBe(null)
       }
     })
   })

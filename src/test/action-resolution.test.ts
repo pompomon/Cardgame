@@ -161,6 +161,35 @@ describe('action-resolution', () => {
     expect(resolution.kind).toBe('invalid')
   })
 
+  it('groups Swamp popup targets by revealed enemy card name (hvai)', () => {
+    const state = createState(56)
+    state.mode = 'local-hvai'
+    state.controllers = ['human', 'ai']
+    state.game!.players[0].hand = [{ id: 'p0-swamp', name: 'Swamp', type: 'land' }]
+    state.game!.players[0].battlefield = [
+      { instanceId: 'bf-1', card: { id: 'pre-swamp', name: 'Swamp', type: 'land' } },
+    ]
+    state.game!.players[1].hand = [
+      { id: 'ai-1', name: 'Mountain', type: 'land' },
+      { id: 'ai-2', name: 'Mountain', type: 'land' },
+      { id: 'ai-3', name: 'Forest', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+    const game = vm.game!
+    const resolution = resolvePlayLandDrop(game, 'p0-swamp')
+    expect(resolution.kind).toBe('needs_target')
+    if (resolution.kind !== 'needs_target') {
+      return
+    }
+
+    const grouped = groupCardTargetOptions(game, { kind: 'play_land', cardId: 'p0-swamp' }, resolution.options)
+    // The popup should surface one entry per distinct revealed card name
+    // (with counts), not a single collapsed `"Hidden card X3"` group.
+    expect(grouped.map((entry) => entry.label)).toEqual(['Mountain X2', 'Forest'])
+    expect(grouped.map((entry) => entry.cardName)).toEqual(['Mountain', 'Forest'])
+  })
+
   it('resolves plains reuse target selection action', () => {
     const state = createState(53)
     state.game!.phase = 'plains_target'

@@ -158,6 +158,19 @@ export interface GameUiState {
   log: string[]
   events: readonly LogEvent[]
   isReplay: boolean
+  // When the local human actor is in the middle of choosing a Swamp discard
+  // target (either by playing a Swamp directly in `main` phase, or by
+  // resolving a Plains-reuse that nests into Swamp in `plains_target`
+  // phase), this exposes the opposing player's *real* hand so the target
+  // picker / play-land labels can show the actual card names and art.
+  //
+  // Scope is intentionally narrow: outside this decision the enemy hand is
+  // still redacted via `projectHandCards`, and `players[].handCards` is
+  // never bypassed. The AI continues to play Swamp without enemy-hand
+  // visibility (see `src/game/ai-visibility.ts`); the asymmetry is by
+  // design — the human picks the discard, so the human must see the
+  // options.
+  revealedEnemyHandForSwamp: ReadonlyArray<UiCard> | null
 }
 
 export interface AppViewModel {

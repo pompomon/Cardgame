@@ -27,8 +27,88 @@ export function resetRasterCardArtLoadFailuresForTests(): void {
   failedRasterCardArtUrls.clear()
 }
 
-function shouldRenderRasterArt(source: { isRaster: boolean; primaryUrl: string }): boolean {
-  return source.isRaster && !failedRasterCardArtUrls.has(source.primaryUrl)
+interface RasterRenderStage {
+  /** URL to use as the `<img src>` for this render pass. */
+  readonly src: string
+  /** True when `src` itself is a raster image (drives `--raster` class application). */
+  readonly isRaster: boolean
+  /** Next URL to swap to if `src` fails to load, or `null` when no further fallback is available. */
+  readonly onErrorSrc: string | null
+  /** True when the `onErrorSrc` is also raster — used so the `onerror` handler can preserve the raster classes. */
+  readonly onErrorIsRaster: boolean
+  /** URL to register as failed when `onerror` fires (always equals `src` for a raster stage). */
+  readonly noteFailureUrl: string | null
+  /**
+   * When `onErrorIsRaster` is true, the terminal procedural URL to load if the
+   * raster fallback (`onErrorSrc`) also fails. The first-hop `onerror` embeds a
+   * chained second-hop handler that advances to this URL and drops raster classes.
+   */
+  readonly onErrorChainSrc: string | null
+  /**
+   * When `onErrorIsRaster` is true, the URL to register as failed before loading
+   * `onErrorChainSrc` (i.e. the raster fallback URL itself).
+   */
+  readonly onErrorChainNoteFailureUrl: string | null
+}
+
+/**
+ * Resolves which raster/procedural stage should be rendered now given the
+ * in-session failed-URL set. The stages, in order of preference:
+ *   0. `source.primaryUrl` (photoreal HD or other style PNG)
+ *   1. `source.rasterFallbackUrl` (geometric HD fallback under `hd-fallback/`)
+ *   2. `source.proceduralUrl` (procedural pixel-template SVG, terminal)
+ * The first stage whose URL has not already failed in-session is rendered;
+ * the inline `onerror` handler advances exactly one stage and the next
+ * state-driven render call picks the right stage again.
+ */
+function resolveRasterRenderStage(source: {
+  isRaster: boolean
+  primaryUrl: string
+  rasterFallbackUrl: string | null
+  proceduralUrl: string
+}): RasterRenderStage {
+  if (!source.isRaster) {
+    return { src: source.primaryUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null, onErrorChainSrc: null, onErrorChainNoteFailureUrl: null }
+  }
+  const primaryFailed = failedRasterCardArtUrls.has(source.primaryUrl)
+  const fallbackUrl = source.rasterFallbackUrl
+  const fallbackUsable = fallbackUrl !== null && !failedRasterCardArtUrls.has(fallbackUrl)
+  if (!primaryFailed) {
+    if (fallbackUsable) {
+      // primary → raster fallback → procedural: embed chain so a second failure
+      // (fallback raster missing) still reaches the terminal procedural SVG.
+      return {
+        src: source.primaryUrl,
+        isRaster: true,
+        onErrorSrc: fallbackUrl,
+        onErrorIsRaster: true,
+        noteFailureUrl: source.primaryUrl,
+        onErrorChainSrc: source.proceduralUrl,
+        onErrorChainNoteFailureUrl: fallbackUrl,
+      }
+    }
+    return {
+      src: source.primaryUrl,
+      isRaster: true,
+      onErrorSrc: source.proceduralUrl,
+      onErrorIsRaster: false,
+      noteFailureUrl: source.primaryUrl,
+      onErrorChainSrc: null,
+      onErrorChainNoteFailureUrl: null,
+    }
+  }
+  if (fallbackUsable) {
+    return {
+      src: fallbackUrl,
+      isRaster: true,
+      onErrorSrc: source.proceduralUrl,
+      onErrorIsRaster: false,
+      noteFailureUrl: fallbackUrl,
+      onErrorChainSrc: null,
+      onErrorChainNoteFailureUrl: null,
+    }
+  }
+  return { src: source.proceduralUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null, onErrorChainSrc: null, onErrorChainNoteFailureUrl: null }
 }
 
 function escapeHtml(value: string): string {
@@ -172,17 +252,23 @@ export function renderLandIcon(
   options: { forceProcedural?: boolean } = {},
 ): string {
   const source = cardArtSourceFor(name, style, size, options)
-  const iconIsRaster = shouldRenderRasterArt(source)
-  const iconSrc = iconIsRaster ? source.primaryUrl : source.proceduralUrl
-  // For raster styles, swap to the procedural SVG if the PNG fails to load
-  // (missing asset, wrong base path, offline before service-worker cache).
-  // The fallback URL is HTML-attribute safe (data:image/svg+xml,...) so it
-  // is fine to inline inside an `onerror` handler with single quotes.
-  const onError = iconIsRaster
-    ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
+  const stage = resolveRasterRenderStage(source)
+  // For raster stages the inline `onerror` advances exactly one step in the
+  // photo → geometric HD fallback → procedural SVG chain. If the next step
+  // is itself raster we keep the `--raster` classes so the swapped image
+  // still uses smooth scaling; otherwise we drop them to revert to the
+  // procedural pixel-icon look. URLs come from `cardArtFallbackUrl` /
+  // `landIconDataUrl` and are HTML-attribute safe.
+  const onError = stage.isRaster && stage.onErrorSrc !== null && stage.noteFailureUrl !== null
+    ? (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null
+        // raster→raster first hop: note failure, install chained handler for second hop, swap src.
+        // The arrow function captures `this` from the outer onerror so the element reference stays valid.
+        ? ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
+        // raster→procedural terminal hop: note failure, drop raster classes, swap src.
+        : ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`)
     : ''
-  const finalClassName = iconIsRaster ? `${className} ${className}--raster` : className
-  return `<img class="${finalClassName}" src="${iconSrc}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
+  const finalClassName = stage.isRaster ? `${className} ${className}--raster` : className
+  return `<img class="${finalClassName}" src="${stage.src}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
 }
 
 if (typeof window !== 'undefined') {
@@ -201,7 +287,8 @@ export function renderCardTile(name: string, style: AppViewModel['cardVisualStyl
   }
   const source = cardArtSourceFor(name, style, 22)
   const palette = cardVisualPaletteFor(name, style)
-  const raster = isRasterCardVisualStyle(style) && shouldRenderRasterArt(source)
+  const stage = resolveRasterRenderStage(source)
+  const raster = isRasterCardVisualStyle(style) && stage.isRaster
   const safeName = escapeHtml(name)
   if (raster) {
     // HD tiles: the PNG art fills the tile background and the card name is
@@ -211,12 +298,19 @@ export function renderCardTile(name: string, style: AppViewModel['cardVisualStyl
     // handler drops the `card-tile--raster` class, the same DOM node
     // immediately reverts to the procedural pixel-icon tile look.
     const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
-    // Inline `onerror` is HTML-attribute safe (data:image/svg+xml,...). We
-    // mirror the existing fallback chain used by `renderLandIcon`: note the
-    // failed URL, drop the raster classes from the image AND its parent
-    // tile, and swap the src to the procedural SVG.
-    const onError = ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${source.primaryUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${source.proceduralUrl}&#39;"`
-    return `<span class="card-tile card-tile--raster"${tileStyleAttr}><img class="card-tile-bg" src="${source.primaryUrl}" alt="" role="presentation"${onError} /><span class="card-tile-label">${safeName}</span></span>`
+    // Inline `onerror` is HTML-attribute safe (data:image/svg+xml,... or
+    // a same-origin /cards/... URL). Mirrors the staged fallback chain used
+    // by `renderLandIcon`: note the failed URL, advance to the next stage,
+    // and only drop the raster classes when the next stage is the
+    // procedural SVG (i.e. no further raster fallback is available).
+    const onError = stage.onErrorSrc !== null && stage.noteFailureUrl !== null
+      ? (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null
+          // raster→raster first hop: note failure, install chained handler for second hop, swap src.
+          ? ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
+          // raster→procedural terminal hop: note failure, drop raster classes, swap src.
+          : ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`)
+      : ''
+    return `<span class="card-tile card-tile--raster"${tileStyleAttr}><img class="card-tile-bg" src="${stage.src}" alt="" role="presentation"${onError} /><span class="card-tile-label">${safeName}</span></span>`
   }
   const tileClass = 'card-tile'
   // Keep `--tile-fill` available even for raster styles so if a raster icon

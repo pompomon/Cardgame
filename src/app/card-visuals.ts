@@ -1,4 +1,4 @@
-import { cardArtUrl } from './card-art'
+import { cardArtFallbackUrl, cardArtUrl } from './card-art'
 import { isRasterCardVisualStyle } from './card-visual-styles'
 import type { CardVisualStyle } from './types'
 import type { BasicLand } from '../game/types'
@@ -269,17 +269,26 @@ export interface CardArtSource {
    */
   readonly primaryUrl: string
   /**
-   * Procedural pixel-template SVG data URL, used as a graceful fallback when
-   * the raster asset fails to load (missing file, offline, wrong base path).
+   * Optional intermediate raster fallback inserted between `primaryUrl` and
+   * `proceduralUrl`. Populated for the `hd` style — the deterministic
+   * geometric PNG under `public/cards/hd-fallback/<Land>.png` — so when the
+   * photoreal HD asset fails to load the renderer can fall back to a known
+   * good raster before degrading to the procedural pixel icon. `null` for
+   * styles without a shipped fallback layer.
+   */
+  readonly rasterFallbackUrl: string | null
+  /**
+   * Procedural pixel-template SVG data URL, used as the terminal fallback
+   * when the primary (and any intermediate raster) asset fails to load.
    */
   readonly proceduralUrl: string
-  /** True when the primary asset is a rasterised image (currently `hd`). */
+  /** True when the primary asset is a rasterised image (`hd` and `monochrome`). */
   readonly isRaster: boolean
 }
 
 /**
  * Returns the best available card art source for a `(land, style, targetSize)`.
- * For raster styles (currently `hd`) the primary URL points at the shipped
+ * For raster styles (`hd` and `monochrome`) the primary URL points at the shipped
  * PNG, with the procedural icon retained as an `onerror` fallback. For
  * procedural styles the two URLs are identical so callers can render the
  * pixel icon without any special-casing.
@@ -296,7 +305,17 @@ export function cardArtSourceFor(
 ): CardArtSource {
   const proceduralUrl = landIconDataUrl(land, style, targetSize)
   if (options.forceProcedural || !isRasterCardVisualStyle(style)) {
-    return { primaryUrl: proceduralUrl, proceduralUrl, isRaster: false }
+    return {
+      primaryUrl: proceduralUrl,
+      rasterFallbackUrl: null,
+      proceduralUrl,
+      isRaster: false,
+    }
   }
-  return { primaryUrl: cardArtUrl(land, style), proceduralUrl, isRaster: true }
+  return {
+    primaryUrl: cardArtUrl(land, style),
+    rasterFallbackUrl: cardArtFallbackUrl(land, style),
+    proceduralUrl,
+    isRaster: true,
+  }
 }

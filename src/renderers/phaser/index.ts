@@ -7,7 +7,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { ALL_CARD_ART, cardArtKey } from '../../app/card-art'
+import { ALL_CARD_ART, cardArtFallbackKey, cardArtKey } from '../../app/card-art'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixelRects } from '../../app/card-visuals'
@@ -17,9 +17,11 @@ import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
+import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
+import { isLogRowVisible } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import {
   clearEffectQueue,
@@ -73,17 +75,20 @@ const CARD_CHOICE_ICON_WIDTH_RATIO = 0.2
 const CARD_CHOICE_ICON_HEIGHT_RATIO = 0.8
 const CARD_FACE_ICON_MIN_SIZE = 22
 
-// Color palette mirrors DOM PR #13 (.battlefield-active / .battlefield-non-active /
-// .player-active / .player-non-active / .log) so both renderers feel consistent.
-const COLOR_BATTLEFIELD_ACTIVE_FILL = 0x1c3a2c
-const COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x2f6a4a
-const COLOR_BATTLEFIELD_NON_ACTIVE_FILL = 0x3a1c1c
-const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0x6a2f2f
-const COLOR_PLAYER_ACTIVE_FILL = 0x14304a
-const COLOR_PLAYER_NON_ACTIVE_FILL = 0x2a1233
-const COLOR_PANEL_STROKE = 0x2a355f
-const COLOR_LOG_PANEL_FILL = 0x0d162e
-const COLOR_LOG_VIEWPORT_FILL = 0x091227
+// Color palette. Tokenized to match the CSS custom properties in
+// src/style.css so the DOM and Phaser renderers stay visually consistent.
+// To re-skin the UI, update both this block and the :root tokens in
+// src/style.css together.
+const COLOR_BATTLEFIELD_ACTIVE_FILL = 0x1f6b3e
+const COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x46d27a
+const COLOR_BATTLEFIELD_NON_ACTIVE_FILL = 0x7a1f33
+const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xff6b8a
+const COLOR_PLAYER_ACTIVE_FILL = 0x1e4f7a
+const COLOR_PLAYER_NON_ACTIVE_FILL = 0x4a1f5e
+const COLOR_BORDER_SUBTLE = 0x3a4a8a
+const COLOR_BORDER_STRONG = 0x5d7cff
+const COLOR_LOG_PANEL_FILL = 0x161f4d
+const COLOR_LOG_VIEWPORT_FILL = 0x0f1740
 // Scene depth layering for the in-scene game view. Layering is anchored at
 // the scene default depth (0), where gameplay UI (hand cards, End Turn /
 // response buttons, battlefield rectangles & text) lives:
@@ -105,16 +110,28 @@ const Z_BOARD = -5
 const Z_HEADER = 10
 
 const UI_THEME = {
-  buttonFill: 0x1c2f63,
-  buttonStroke: 0x365092,
-  panelFill: 0x0f1a3b,
-  panelStroke: 0x365092,
+  buttonFill: 0x28368a,
+  buttonStroke: COLOR_BORDER_STRONG,
+  panelFill: 0x1f2a5e,
+  panelStroke: COLOR_BORDER_SUBTLE,
   viewportFill: COLOR_LOG_VIEWPORT_FILL,
   backdropFill: 0x000000,
   scrimFill: 0x000000,
-  primaryText: '#e5ecf5',
-  secondaryText: '#9db0d9',
+  primaryText: '#f3f6ff',
+  secondaryText: '#c0d0ff',
 }
+
+// Additional shared color tokens for special-purpose UI surfaces. Kept here
+// so the entire palette lives at the top of the file.
+const COLOR_APP_BACKGROUND_HEX = '#1b1148'
+const COLOR_APP_BACKGROUND = 0x1b1148
+const COLOR_WINNER_TEXT = '#ffe27a'
+const COLOR_ERROR_TEXT = '#ffd0d8'
+const COLOR_SUCCESS_TEXT = '#d6ffd9'
+const COLOR_CARD_HIGHLIGHT_STROKE = 0xffe680
+const COLOR_CARD_BACK_FILL = 0x2c3a78
+const COLOR_CARD_BACK_INNER_FILL = 0x475ec2
+const COLOR_CARD_BACK_STROKE = 0x5d7cff
 
 interface CardStyle {
   fill: number
@@ -161,10 +178,16 @@ const cardArtLoadErrorKeys = new Set<string>()
 
 function preloadCardArt(scene: Phaser.Scene): void {
   for (const entry of ALL_CARD_ART) {
-    if (scene.textures.exists(entry.key)) {
-      continue
+    if (!scene.textures.exists(entry.key)) {
+      scene.load.image(entry.key, entry.url)
     }
-    scene.load.image(entry.key, entry.url)
+    // Also preload the geometric raster fallback (e.g. hd-fallback) under a
+    // dedicated key so `addCardArtToContainer` can render it when the
+    // primary photoreal texture is missing or failed to load — before
+    // degrading further to the procedural pixel-template icon.
+    if (entry.fallbackKey !== undefined && entry.fallbackUrl !== undefined && !scene.textures.exists(entry.fallbackKey)) {
+      scene.load.image(entry.fallbackKey, entry.fallbackUrl)
+    }
   }
   // Phaser scenes can be stopped/started repeatedly (e.g. lobby ↔ game).
   // `scene.load.once` only detaches when the event actually fires, so on
@@ -195,7 +218,7 @@ function preloadCardArt(scene: Phaser.Scene): void {
 
 function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualStyle']): CardStyle {
   if (!isBasicLand(name)) {
-    return { fill: 0x132652, stroke: 0x4f6caa, text: '#e5ecf5' }
+    return { fill: 0x132652, stroke: 0x4f6caa, text: UI_THEME.primaryText }
   }
   const palette = cardVisualPaletteFor(name, visualStyle)
   return {
@@ -397,12 +420,12 @@ class LobbyScene extends Phaser.Scene {
     const wrapWidth = Math.max(40, this.currentLayout.width - left * 2)
 
     this.rootContainer.add(this.add.text(centerX, top, 'Basic Land Game (Phaser Renderer)', {
-      color: '#e5ecf5',
+      color: UI_THEME.primaryText,
       fontSize: this.currentLayout.titleFontSize,
       align: 'center',
     }).setOrigin(0.5, 0))
     this.rootContainer.add(this.add.text(centerX, top + this.currentLayout.actionButtonHeight + 6, 'Land-only 2-player game with local AI and optional P2P mode.', {
-      color: '#9db0d9',
+      color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.subtitleFontSize,
       wordWrap: { width: wrapWidth },
       align: 'center',
@@ -429,7 +452,7 @@ class LobbyScene extends Phaser.Scene {
       top + this.currentLayout.actionButtonHeight + 6 + Math.max(this.currentLayout.actionButtonHeight, 28),
       `Adventure: ${adventure?.status ?? 'inactive'} • Round ${adventure?.currentRound ?? 0}/7 • Chances ${adventure?.remainingChances ?? 0} • High Score ${adventure?.highScore ?? 0}${nextOpponent ? ` • Next ${nextOpponent.label}` : ''}`,
       {
-        color: '#9db0d9',
+        color: UI_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: wrapWidth },
         align: 'center',
@@ -522,7 +545,7 @@ class LobbyScene extends Phaser.Scene {
     if (this.activeSubmenu !== 'root') {
       const submenuLabel = this.activeSubmenu === 'settings' ? 'Settings' : 'Recording'
       const heading = this.add.text(centerX, rowsTop, submenuLabel, {
-        color: '#9db0d9',
+        color: UI_THEME.secondaryText,
         fontSize: this.currentLayout.bodyFontSize,
         align: 'center',
       }).setOrigin(0.5, 0)
@@ -542,7 +565,7 @@ class LobbyScene extends Phaser.Scene {
         rowsTop,
         'Viewport too short to show lobby actions. Increase window height.',
         {
-          color: '#9db0d9',
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
           wordWrap: { width: buttonWidth },
           align: 'center',
@@ -579,7 +602,7 @@ class LobbyScene extends Phaser.Scene {
         this.currentLayout.height - this.currentLayout.statusBottomOffset,
         status,
         {
-          color: '#9db0d9',
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.bodyFontSize,
           wordWrap: { width: Math.max(40, this.currentLayout.width - this.currentLayout.margin * 2) },
           align: 'center',
@@ -652,7 +675,7 @@ class CardgameScene extends Phaser.Scene {
     this.lastRenderedSeed = null
     this.updateLayout()
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
-      color: '#9db0d9',
+      color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.bodyFontSize,
     })
 
@@ -972,9 +995,21 @@ class CardgameScene extends Phaser.Scene {
     container: Phaser.GameObjects.Container,
     options: { fit?: 'contain' | 'cover'; coverWidth?: number; coverHeight?: number } = {},
   ): boolean {
-    const key = cardArtKey(land, visualStyle)
-    if (this.textures && this.textures.exists(key)) {
-      const image = this.add.image(centerX, centerY, key)
+    // Walk the texture-fallback chain in order: primary (photoreal) →
+    // geometric raster fallback (e.g. hd-fallback) → procedural pixel-icon.
+    // The fallback chain is only populated for styles that ship a backup
+    // raster (currently `hd`); other styles fall straight from primary to
+    // the procedural pixel-template.
+    const primaryKey = cardArtKey(land, visualStyle)
+    const fallbackKey = visualStyle === 'hd' ? cardArtFallbackKey(land, 'hd') : null
+    let resolvedKey: string | null = null
+    if (this.textures && this.textures.exists(primaryKey)) {
+      resolvedKey = primaryKey
+    } else if (fallbackKey !== null && this.textures && this.textures.exists(fallbackKey)) {
+      resolvedKey = fallbackKey
+    }
+    if (resolvedKey !== null) {
+      const image = this.add.image(centerX, centerY, resolvedKey)
       image.setOrigin(0.5, 0.5)
       if (options.fit === 'cover' && options.coverWidth && options.coverHeight) {
         // Cover-fit: scale uniformly so the texture fills the target rectangle
@@ -982,7 +1017,7 @@ class CardgameScene extends Phaser.Scene {
         // coverHeight, centered on (centerX, centerY). Using setCrop instead
         // of a Phaser GeometryMask because Phaser 4's GeometryMask is a no-op
         // under the WebGL renderer.
-        const source = this.textures.get(key).getSourceImage() as { width?: number; height?: number } | null
+        const source = this.textures.get(resolvedKey).getSourceImage() as { width?: number; height?: number } | null
         const texW = (source && typeof source.width === 'number' && source.width > 0) ? source.width : size
         const texH = (source && typeof source.height === 'number' && source.height > 0) ? source.height : size
         const w = options.coverWidth
@@ -1260,7 +1295,7 @@ class CardgameScene extends Phaser.Scene {
       this.currentLayout.headerTop + headerStripHeight / 2,
       this.currentLayout.width,
       headerStripHeight,
-      0x0b1020,
+      COLOR_APP_BACKGROUND,
       1,
     )
     headerStrip.setDepth(Z_HEADER - 1)
@@ -1277,20 +1312,23 @@ class CardgameScene extends Phaser.Scene {
 
     const headerTextX = left + menuButtonWidth + 16
     const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
-    // Winner text used to render as a separate second header row, but the
-    // layout only reserves a single-row header before bodyTop, so the banner
-    // spilled on top of the board. Inline it into the header text instead so
-    // everything stays within the reserved header strip.
-    const headerLabel = game.winnerText
-      ? `${game.winnerText} • Turn ${game.turn} • Phase: ${game.phase}`
-      : `Turn ${game.turn} • Phase: ${game.phase}`
+    // Header label: once the game ends, show ONLY the winner (most important
+    // information). Otherwise show the turn/phase string. Inlining both into
+    // a single header row caused phone-width viewports to wrap+truncate the
+    // winner mid-word, leaving "Winner:" with no player shown. See
+    // computeHeaderLabel for the derivation and rationale.
+    const headerLabel = computeHeaderLabel({
+      winnerText: game.winnerText,
+      turn: game.turn,
+      phase: game.phase,
+    })
     // Cap the header text to a single line so the inlined winner banner can
     // never wrap onto a second row and spill into bodyTop / overlap the log
     // and board area on collapsed phone-sized layouts. Phaser truncates the
     // text at the line boundary when maxLines is set, which is preferable to
     // overflowing the reserved single-row header strip.
     const headerText = this.add.text(headerTextX, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, headerLabel, {
-      color: game.winnerText ? '#f7d56b' : '#e5ecf5',
+      color: game.winnerText ? COLOR_WINNER_TEXT : UI_THEME.primaryText,
       fontSize: this.currentLayout.titleFontSize,
       wordWrap: { width: headerTextWidth },
       maxLines: 1,
@@ -1320,14 +1358,14 @@ class CardgameScene extends Phaser.Scene {
     const safeWidth = width
     const safeHeight = height
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
-      .setStrokeStyle(1, COLOR_PANEL_STROKE)
+      .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     bg.setDepth(Z_BOARD)
     this.rootContainer?.add(bg)
     if (lines.length === 0) {
       return
     }
     const text = this.add.text(x + 10, y + 6, lines.join('\n'), {
-      color: '#e5ecf5',
+      color: UI_THEME.primaryText,
       fontSize: this.currentLayout.bodyFontSize,
       wordWrap: { width: Math.max(40, safeWidth - 20) },
     })
@@ -1407,7 +1445,7 @@ class CardgameScene extends Phaser.Scene {
       this.currentLayout.nonActiveBattlefieldY + 4,
       `Player ${nonActiveIndex + 1} Battlefield`,
       {
-        color: '#f0d2d2',
+        color: COLOR_ERROR_TEXT,
         fontSize: this.currentLayout.smallFontSize,
       },
     ))
@@ -1453,7 +1491,7 @@ class CardgameScene extends Phaser.Scene {
       this.currentLayout.activeBattlefieldY + 4,
       `Player ${activeIndex + 1} Battlefield (drop card here)`,
       {
-        color: '#d2f0d8',
+        color: COLOR_SUCCESS_TEXT,
         fontSize: this.currentLayout.smallFontSize,
       },
     ))
@@ -1527,7 +1565,7 @@ class CardgameScene extends Phaser.Scene {
       if (totalLines > MAX_RENDERED_LOG_TILES) {
         const omittedCount = totalLines - visibleLines.length
         const note = this.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
-          color: '#9db0d9',
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
           wordWrap: { width: Math.max(20, contentWidth) },
         }).setOrigin(0, 0)
@@ -1539,7 +1577,7 @@ class CardgameScene extends Phaser.Scene {
       }
       for (const line of visibleLines) {
         const labelText = this.add.text(0, 0, line, {
-          color: '#9db0d9',
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
           wordWrap: { width: Math.max(20, contentWidth) },
           maxLines: 2,
@@ -1557,7 +1595,7 @@ class CardgameScene extends Phaser.Scene {
 
     if (events.length === 0) {
       const empty = this.add.text(0, 0, 'No log entries yet.', {
-        color: '#9db0d9',
+        color: UI_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: Math.max(40, contentWidth) },
       }).setOrigin(0, 0)
@@ -1579,7 +1617,7 @@ class CardgameScene extends Phaser.Scene {
     if (totalEvents > MAX_RENDERED_LOG_TILES) {
       const omittedCount = totalEvents - visibleEvents.length
       const note = this.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
-        color: '#9db0d9',
+        color: UI_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: Math.max(20, contentWidth) },
       }).setOrigin(0, 0)
@@ -1605,7 +1643,7 @@ class CardgameScene extends Phaser.Scene {
       contentX += iconSize + 6
       const labelWidth = Math.max(20, contentWidth - contentX)
       const labelText = this.add.text(0, 0, tile.label, {
-        color: '#9db0d9',
+        color: UI_THEME.secondaryText,
         fontSize: this.currentLayout.smallFontSize,
         wordWrap: { width: labelWidth },
         maxLines: 2,
@@ -1622,10 +1660,10 @@ class CardgameScene extends Phaser.Scene {
         const isActive = tile.actor === activeActor
         const fill = isActive ? COLOR_PLAYER_ACTIVE_FILL : COLOR_PLAYER_NON_ACTIVE_FILL
         const pillBg = this.add.rectangle(0, verticalCenter, pillWidth, tileHeight - 2, fill, 0.85)
-          .setStrokeStyle(1, COLOR_PANEL_STROKE)
+          .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
           .setOrigin(0, 0.5)
         const pillText = this.add.text(pillWidth / 2, verticalCenter, `P${tile.actor + 1}`, {
-          color: '#e5ecf5',
+          color: UI_THEME.primaryText,
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(0.5, 0.5)
         row.add(pillBg)
@@ -1637,7 +1675,7 @@ class CardgameScene extends Phaser.Scene {
         this.addCardArtToContainer(tile.cardName, visualStyle, iconX, verticalCenter, iconSize, row)
       } else {
         const glyph = this.add.text(iconX, verticalCenter, tile.glyph, {
-          color: '#9db0d9',
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
         }).setOrigin(0.5, 0.5)
         row.add(glyph)
@@ -1692,11 +1730,14 @@ class CardgameScene extends Phaser.Scene {
       }
       const rowTop = (obj.getData('rowTop') as number | undefined) ?? (obj.y ?? 0)
       const rowHeight = (obj.getData('rowHeight') as number | undefined) ?? (obj.height ?? 0)
-      const rowParentTop = columnOriginY + rowTop
-      const rowParentBottom = rowParentTop + rowHeight
-      const visible = fullyContainedOnly
-        ? rowParentTop >= viewportTopY && rowParentBottom <= viewportBottomY
-        : rowParentBottom > viewportTopY && rowParentTop < viewportBottomY
+      const visible = isLogRowVisible({
+        rowTop,
+        rowHeight,
+        columnOriginY,
+        viewportTopY,
+        viewportBottomY,
+        fullyContainedOnly,
+      })
       obj.setVisible(visible)
     }
   }
@@ -1716,17 +1757,21 @@ class CardgameScene extends Phaser.Scene {
       width,
       height,
       COLOR_LOG_PANEL_FILL,
-    ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     panelBg.setDepth(Z_LOG)
     this.rootContainer?.add(panelBg)
 
     const padding = 10
     const headingTop = y + 6
     const heading = this.add.text(x + padding, headingTop, 'Replay Log', {
-      color: '#e5ecf5',
+      color: UI_THEME.primaryText,
       fontSize: this.currentLayout.subtitleFontSize,
     })
-    heading.setDepth(Z_LOG)
+    // Heading sits above the scrollable log content (which is drawn at Z_LOG)
+    // so it stays readable even if a row-cull regression lets a partial row
+    // overlap the heading's Y band. Keep this just above Z_LOG so it remains
+    // above log rows but below gameplay UI at default depth 0.
+    heading.setDepth(Z_LOG + 1)
     this.rootContainer?.add(heading)
 
     // Hidden screen-reader / accessibility mirror: keep a flat text version of
@@ -1788,7 +1833,7 @@ class CardgameScene extends Phaser.Scene {
       viewportHeight,
       COLOR_LOG_VIEWPORT_FILL,
       0.6,
-    ).setStrokeStyle(1, COLOR_PANEL_STROKE)
+    ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     viewportBg.setInteractive()
     viewportBg.setDepth(Z_LOG)
     this.rootContainer?.add(viewportBg)
@@ -1832,7 +1877,7 @@ class CardgameScene extends Phaser.Scene {
     this.inSceneLogScrollOffset = scroll.scrollOffset
     this.inSceneLogPinnedToBottom = scroll.pinnedToBottom
     logContent.y = scroll.contentY
-    this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom)
+    this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
 
     if (scroll.maxScroll > 0) {
       let scrollOffset = scroll.scrollOffset
@@ -1842,7 +1887,7 @@ class CardgameScene extends Phaser.Scene {
         this.inSceneLogScrollOffset = scrollOffset
         this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
         logContent.y = contentTopY - scrollOffset
-        this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom)
+        this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
       }
       this.bindScrollableViewport(
         viewportBg,
@@ -1858,7 +1903,7 @@ class CardgameScene extends Phaser.Scene {
         viewportTop + 2,
         '▲ scroll',
         {
-          color: '#9db0d9',
+          color: UI_THEME.secondaryText,
           fontSize: this.currentLayout.smallFontSize,
         },
       ).setOrigin(1, 0)
@@ -1873,18 +1918,18 @@ class CardgameScene extends Phaser.Scene {
     // card count) without revealing card identities.
     const cardWidth = this.currentLayout.cardWidth
     const cardHeight = this.currentLayout.cardHeight
-    const back = this.add.rectangle(0, 0, cardWidth, cardHeight, 0x1a2545).setStrokeStyle(1, 0x365092)
+    const back = this.add.rectangle(0, 0, cardWidth, cardHeight, COLOR_CARD_BACK_FILL).setStrokeStyle(1, COLOR_CARD_BACK_STROKE)
     const card = this.add.container(x, y, [back])
     // Cross-hatch pattern to mark the card as face-down.
     const inset = 6
     const innerW = Math.max(0, cardWidth - inset * 2)
     const innerH = Math.max(0, cardHeight - inset * 2)
     if (innerW > 0 && innerH > 0) {
-      const innerBg = this.add.rectangle(0, 0, innerW, innerH, 0x243366).setStrokeStyle(1, 0x365092)
+      const innerBg = this.add.rectangle(0, 0, innerW, innerH, COLOR_CARD_BACK_INNER_FILL).setStrokeStyle(1, COLOR_CARD_BACK_STROKE)
       card.add(innerBg)
     }
     const glyph = this.add.text(0, 0, '?', {
-      color: '#9db0d9',
+      color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.titleFontSize,
       fontStyle: 'bold',
     }).setOrigin(0.5, 0.5)
@@ -1910,7 +1955,7 @@ class CardgameScene extends Phaser.Scene {
     const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
-    const strokeColor = config.highlight ? 0xffe680 : style.stroke
+    const strokeColor = config.highlight ? COLOR_CARD_HIGHLIGHT_STROKE : style.stroke
     const cardWidth = this.currentLayout.cardWidth
     const cardHeight = this.currentLayout.cardHeight
     // For raster (HD) styles the shipped PNG already includes its own
@@ -2881,7 +2926,7 @@ export class PhaserRenderer implements AppRenderer {
       width: canvasHost.clientWidth > 0 ? canvasHost.clientWidth : BASE_WIDTH,
       height: canvasHost.clientHeight > 0 ? canvasHost.clientHeight : BASE_HEIGHT,
       parent: canvasHost,
-      backgroundColor: '#0b1020',
+      backgroundColor: COLOR_APP_BACKGROUND_HEX,
       transparent: false,
       scene: [this.lobbyScene, this.cardgameScene],
       scale: {
