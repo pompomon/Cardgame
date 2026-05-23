@@ -12,15 +12,15 @@ single, reviewable PR.
 ## How to use this document
 
 1. Create the **tracking issue** below (Issue T-0). Paste its body
-   verbatim; keep the child-issue table in the body so the parent shows
-   live progress.
+   verbatim; keep the child-issue task list in the body so the parent
+   shows live progress.
 2. Create each child issue. Suggested labels are listed; create any
    missing labels first (`area:phaser`, `area:dom`, `area:controller`,
    `area:state`, `area:ai`, `area:service-worker`, `area:tests`,
    `area:docs`, `type:refactor`, `type:bug`, `type:tech-debt`,
    `type:perf`, `good first issue`).
 3. Link each child issue back to T-0 with `Part of #<T-0 number>`.
-4. When closing a child issue, tick its row in T-0's table.
+4. When closing a child issue, tick its checkbox in T-0's task list.
 
 > Conventions: every PR ends with the validation block from
 > [`docs/agent/pr-workflow.md`](pr-workflow.md):
