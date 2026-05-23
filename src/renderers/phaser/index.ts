@@ -1001,11 +1001,11 @@ class CardgameScene extends Phaser.Scene {
     // raster (currently `hd`); other styles fall straight from primary to
     // the procedural pixel-template.
     const primaryKey = cardArtKey(land, visualStyle)
-    const fallbackKey = cardArtFallbackKey(land, visualStyle)
+    const fallbackKey = visualStyle === 'hd' ? cardArtFallbackKey(land, 'hd') : null
     let resolvedKey: string | null = null
     if (this.textures && this.textures.exists(primaryKey)) {
       resolvedKey = primaryKey
-    } else if (this.textures && this.textures.exists(fallbackKey)) {
+    } else if (fallbackKey !== null && this.textures && this.textures.exists(fallbackKey)) {
       resolvedKey = fallbackKey
     }
     if (resolvedKey !== null) {

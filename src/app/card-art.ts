@@ -29,8 +29,13 @@ export function cardArtUrl(land: BasicLand, style: CardVisualStyle): string {
  * `public/cards/hd-fallback/<Land>.png`. Preloaded alongside the primary
  * `hd` texture so the Phaser renderer can fall back to deterministic
  * geometric art when the photoreal asset is missing.
+ *
+ * Only `'hd'` is accepted because it is the sole style that ships a backed
+ * raster fallback layer. Use {@link cardArtFallbackUrl} (which returns
+ * `null` for other styles) to guard whether a fallback exists before
+ * constructing a key.
  */
-export function cardArtFallbackKey(land: BasicLand, style: CardVisualStyle): string {
+export function cardArtFallbackKey(land: BasicLand, style: 'hd'): string {
   return `card-art:${style}-fallback:${land}`
 }
 
@@ -84,7 +89,7 @@ function buildAllCardArt(): ReadonlyArray<CardArtEntry> {
         url: cardArtUrl(land, styleOption.value),
         ...(fallbackUrl !== null
           ? {
-              fallbackKey: cardArtFallbackKey(land, styleOption.value),
+              fallbackKey: cardArtFallbackKey(land, 'hd'),
               fallbackUrl,
             }
           : {}),
