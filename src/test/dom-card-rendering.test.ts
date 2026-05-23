@@ -16,11 +16,13 @@ describe('DOM renderer card tile output', () => {
     expect(html).toContain('card-tile--raster')
     expect(html).not.toContain('card-tile-icon')
     // Photoreal HD falls back to the geometric hd-fallback PNG first
-    // (raster→raster swap, classes preserved), and only then to the
-    // procedural SVG. The first onerror step keeps the tile in raster mode.
+    // (raster→raster swap, classes preserved), then to procedural SVG via a
+    // chained second-hop onerror. Both URLs appear in the initial render.
     expect(html).toContain('onerror=')
     expect(html).toContain('/cards/hd-fallback/Forest.png')
-    expect(html).not.toContain('data:image/svg+xml')
+    // The chained second-hop handler embeds the procedural URL so it can reach
+    // procedural SVG even when the first fallback raster also fails.
+    expect(html).toContain('data:image/svg+xml')
   })
 
   it('renders Monochrome card tiles using the shipped cartoon-cat PNG with overlay (no raster fallback layer)', () => {
@@ -61,8 +63,10 @@ describe('DOM renderer card tile output', () => {
     expect(html).toContain('src="/cards/hd/Swamp.png"')
     expect(html).toContain('card-tile-icon--raster')
     expect(html).toContain('/cards/hd-fallback/Swamp.png')
-    // First-hop onerror is raster→raster: it must NOT drop the raster class.
-    expect(html).not.toContain("this.classList.remove(&#39;card-tile-icon--raster&#39;)")
+    // The chained second-hop handler removes the raster class when the raster
+    // fallback also fails; the procedural URL is embedded for that second hop.
+    expect(html).toContain("this.classList.remove(&#39;card-tile-icon--raster&#39;)")
+    expect(html).toContain('data:image/svg+xml')
   })
 
   it('advances to the geometric hd-fallback raster after the photoreal HD URL has failed in-session', () => {

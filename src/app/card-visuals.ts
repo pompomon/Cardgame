@@ -282,13 +282,13 @@ export interface CardArtSource {
    * when the primary (and any intermediate raster) asset fails to load.
    */
   readonly proceduralUrl: string
-  /** True when the primary asset is a rasterised image (currently `hd`). */
+  /** True when the primary asset is a rasterised image (`hd` and `monochrome`). */
   readonly isRaster: boolean
 }
 
 /**
  * Returns the best available card art source for a `(land, style, targetSize)`.
- * For raster styles (currently `hd`) the primary URL points at the shipped
+ * For raster styles (`hd` and `monochrome`) the primary URL points at the shipped
  * PNG, with the procedural icon retained as an `onerror` fallback. For
  * procedural styles the two URLs are identical so callers can render the
  * pixel icon without any special-casing.

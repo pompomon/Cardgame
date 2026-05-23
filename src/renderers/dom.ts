@@ -38,6 +38,17 @@ interface RasterRenderStage {
   readonly onErrorIsRaster: boolean
   /** URL to register as failed when `onerror` fires (always equals `src` for a raster stage). */
   readonly noteFailureUrl: string | null
+  /**
+   * When `onErrorIsRaster` is true, the terminal procedural URL to load if the
+   * raster fallback (`onErrorSrc`) also fails. The first-hop `onerror` embeds a
+   * chained second-hop handler that advances to this URL and drops raster classes.
+   */
+  readonly onErrorChainSrc: string | null
+  /**
+   * When `onErrorIsRaster` is true, the URL to register as failed before loading
+   * `onErrorChainSrc` (i.e. the raster fallback URL itself).
+   */
+  readonly onErrorChainNoteFailureUrl: string | null
 }
 
 /**
@@ -57,19 +68,23 @@ function resolveRasterRenderStage(source: {
   proceduralUrl: string
 }): RasterRenderStage {
   if (!source.isRaster) {
-    return { src: source.primaryUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null }
+    return { src: source.primaryUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null, onErrorChainSrc: null, onErrorChainNoteFailureUrl: null }
   }
   const primaryFailed = failedRasterCardArtUrls.has(source.primaryUrl)
   const fallbackUrl = source.rasterFallbackUrl
   const fallbackUsable = fallbackUrl !== null && !failedRasterCardArtUrls.has(fallbackUrl)
   if (!primaryFailed) {
     if (fallbackUsable) {
+      // primary → raster fallback → procedural: embed chain so a second failure
+      // (fallback raster missing) still reaches the terminal procedural SVG.
       return {
         src: source.primaryUrl,
         isRaster: true,
         onErrorSrc: fallbackUrl,
         onErrorIsRaster: true,
         noteFailureUrl: source.primaryUrl,
+        onErrorChainSrc: source.proceduralUrl,
+        onErrorChainNoteFailureUrl: fallbackUrl,
       }
     }
     return {
@@ -78,6 +93,8 @@ function resolveRasterRenderStage(source: {
       onErrorSrc: source.proceduralUrl,
       onErrorIsRaster: false,
       noteFailureUrl: source.primaryUrl,
+      onErrorChainSrc: null,
+      onErrorChainNoteFailureUrl: null,
     }
   }
   if (fallbackUsable) {
@@ -87,9 +104,11 @@ function resolveRasterRenderStage(source: {
       onErrorSrc: source.proceduralUrl,
       onErrorIsRaster: false,
       noteFailureUrl: fallbackUrl,
+      onErrorChainSrc: null,
+      onErrorChainNoteFailureUrl: null,
     }
   }
-  return { src: source.proceduralUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null }
+  return { src: source.proceduralUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null, onErrorChainSrc: null, onErrorChainNoteFailureUrl: null }
 }
 
 function escapeHtml(value: string): string {
@@ -241,8 +260,11 @@ export function renderLandIcon(
   // procedural pixel-icon look. URLs come from `cardArtFallbackUrl` /
   // `landIconDataUrl` and are HTML-attribute safe.
   const onError = stage.isRaster && stage.onErrorSrc !== null && stage.noteFailureUrl !== null
-    ? (stage.onErrorIsRaster
-        ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`
+    ? (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null
+        // raster→raster first hop: note failure, install chained handler for second hop, swap src.
+        // The arrow function captures `this` from the outer onerror so the element reference stays valid.
+        ? ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
+        // raster→procedural terminal hop: note failure, drop raster classes, swap src.
         : ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`)
     : ''
   const finalClassName = stage.isRaster ? `${className} ${className}--raster` : className
@@ -282,8 +304,10 @@ export function renderCardTile(name: string, style: AppViewModel['cardVisualStyl
     // and only drop the raster classes when the next stage is the
     // procedural SVG (i.e. no further raster fallback is available).
     const onError = stage.onErrorSrc !== null && stage.noteFailureUrl !== null
-      ? (stage.onErrorIsRaster
-          ? ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`
+      ? (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null
+          // raster→raster first hop: note failure, install chained handler for second hop, swap src.
+          ? ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
+          // raster→procedural terminal hop: note failure, drop raster classes, swap src.
           : ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`)
       : ''
     return `<span class="card-tile card-tile--raster"${tileStyleAttr}><img class="card-tile-bg" src="${stage.src}" alt="" role="presentation"${onError} /><span class="card-tile-label">${safeName}</span></span>`
