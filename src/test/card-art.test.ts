@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { ALL_CARD_ART, CARD_BACK_KEY, cardArtKey, cardArtUrl, cardBackUrl } from '../app/card-art'
+import {
+  ALL_CARD_ART,
+  CARD_BACK_KEY,
+  cardArtFallbackKey,
+  cardArtFallbackUrl,
+  cardArtKey,
+  cardArtUrl,
+  cardBackUrl,
+} from '../app/card-art'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../app/card-visual-styles'
 import { BASIC_LANDS } from '../game/types'
 
@@ -21,6 +29,15 @@ describe('card-art', () => {
     expect(cardBackUrl()).toBe('/cards/card-back.png')
   })
 
+  it('ships a geometric hd-fallback raster only for the hd style', () => {
+    for (const land of BASIC_LANDS) {
+      expect(cardArtFallbackUrl(land, 'hd')).toBe(`/cards/hd-fallback/${land}.png`)
+      expect(cardArtFallbackKey(land, 'hd')).toBe(`card-art:hd-fallback:${land}`)
+      expect(cardArtFallbackUrl(land, 'classic')).toBe(null)
+      expect(cardArtFallbackUrl(land, 'monochrome')).toBe(null)
+    }
+  })
+
   it('enumerates every (style, land) pair in ALL_CARD_ART', () => {
     expect(ALL_CARD_ART).toHaveLength(CARD_VISUAL_STYLE_OPTIONS.length * BASIC_LANDS.length)
     const keys = new Set(ALL_CARD_ART.map((entry) => entry.key))
@@ -33,6 +50,13 @@ describe('card-art', () => {
         expect(entry?.land).toBe(land)
         expect(entry?.style).toBe(styleOption.value)
         expect(entry?.url).toBe(cardArtUrl(land, styleOption.value))
+        if (styleOption.value === 'hd') {
+          expect(entry?.fallbackKey).toBe(cardArtFallbackKey(land, 'hd'))
+          expect(entry?.fallbackUrl).toBe(`/cards/hd-fallback/${land}.png`)
+        } else {
+          expect(entry?.fallbackKey).toBeUndefined()
+          expect(entry?.fallbackUrl).toBeUndefined()
+        }
       }
     }
   })

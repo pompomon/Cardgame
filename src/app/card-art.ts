@@ -24,6 +24,33 @@ export function cardArtUrl(land: BasicLand, style: CardVisualStyle): string {
   return `${basePath()}cards/${style}/${land}.png`
 }
 
+/**
+ * Texture key for the geometric HD-fallback raster shipped under
+ * `public/cards/hd-fallback/<Land>.png`. Preloaded alongside the primary
+ * `hd` texture so the Phaser renderer can fall back to deterministic
+ * geometric art when the photoreal asset is missing.
+ */
+export function cardArtFallbackKey(land: BasicLand, style: CardVisualStyle): string {
+  return `card-art:${style}-fallback:${land}`
+}
+
+/**
+ * Returns the URL of the runtime raster fallback for `(land, style)`, or
+ * `null` when no fallback is shipped. Currently only the `hd` style ships a
+ * fallback — the deterministic geometric PNGs at
+ * `public/cards/hd-fallback/<Land>.png` produced by
+ * `scripts/generate-card-art.mjs` — to back-stop the photoreal HD art.
+ */
+export function cardArtFallbackUrl(
+  land: BasicLand,
+  style: CardVisualStyle,
+): string | null {
+  if (style !== 'hd') {
+    return null
+  }
+  return `${basePath()}cards/hd-fallback/${land}.png`
+}
+
 export const CARD_BACK_KEY = 'card-art:back'
 
 export function cardBackUrl(): string {
@@ -35,18 +62,34 @@ export interface CardArtEntry {
   readonly style: CardVisualStyle
   readonly key: string
   readonly url: string
+  /**
+   * Optional runtime raster fallback. Populated for `hd` (the geometric
+   * `hd-fallback/` PNG) and `undefined` for styles without a shipped raster
+   * fallback layer. When present, both `fallbackKey` and `fallbackUrl` are
+   * set in lock-step.
+   */
+  readonly fallbackKey?: string
+  readonly fallbackUrl?: string
 }
 
 function buildAllCardArt(): ReadonlyArray<CardArtEntry> {
   const entries: CardArtEntry[] = []
   for (const styleOption of CARD_VISUAL_STYLE_OPTIONS) {
     for (const land of BASIC_LANDS) {
-      entries.push({
+      const fallbackUrl = cardArtFallbackUrl(land, styleOption.value)
+      const entry: CardArtEntry = {
         land,
         style: styleOption.value,
         key: cardArtKey(land, styleOption.value),
         url: cardArtUrl(land, styleOption.value),
-      })
+        ...(fallbackUrl !== null
+          ? {
+              fallbackKey: cardArtFallbackKey(land, styleOption.value),
+              fallbackUrl,
+            }
+          : {}),
+      }
+      entries.push(entry)
     }
   }
   return Object.freeze(entries)
