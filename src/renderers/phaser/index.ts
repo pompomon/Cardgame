@@ -1751,10 +1751,9 @@ class CardgameScene extends Phaser.Scene {
     })
     // Heading sits above the scrollable log content (which is drawn at Z_LOG)
     // so it stays readable even if a row-cull regression lets a partial row
-    // overlap the heading's Y band. Z_HEADER is safe here because the header
-    // strip rectangle is anchored to the top of the scene and does not cover
-    // the log panel.
-    heading.setDepth(Z_HEADER)
+    // overlap the heading's Y band. Keep this just above Z_LOG so it remains
+    // above log rows but below gameplay UI at default depth 0.
+    heading.setDepth(Z_LOG + 1)
     this.rootContainer?.add(heading)
 
     // Hidden screen-reader / accessibility mirror: keep a flat text version of
