@@ -37,28 +37,26 @@ single, reviewable PR.
 **Body:**
 
 > Umbrella tracking issue for the improvement plan described in
-> [`docs/agent/improvement-plan.md`](../docs/agent/improvement-plan.md).
-> Each row links to a child issue scoped to a single PR. Tick the row
-> when the corresponding PR merges.
+> [`docs/agent/improvement-plan.md`](https://github.com/pompomon/Cardgame/blob/main/docs/agent/improvement-plan.md).
+> Each child issue is scoped to a single PR. Tick its checkbox when the
+> corresponding PR merges.
 >
-> | # | Area | Title | Status |
-> |---|------|-------|--------|
-> | T-1 | phaser | Extract button/typography helpers from `phaser/index.ts` | ☐ |
-> | T-2 | phaser | Extract scene-depth constants and z-order map | ☐ |
-> | T-3 | phaser | Split menu-overlay rendering into its own module | ☐ |
-> | T-4 | phaser | Centralise `setCrop`/culling helpers and add tests | ☐ |
-> | T-5 | controller | Split `controller.ts` adventure persistence into a module | ☐ |
-> | T-6 | controller | Audit status-message ordering vs. storage warnings | ☐ |
-> | T-7 | state | Add structural fuzz tests for `localStorage` validators | ☐ |
-> | T-8 | state | Document and test the view-model redaction contract | ☐ |
-> | T-9 | ai | Add a benchmark gate for AI hot-loop allocations | ☐ |
-> | T-10 | dom/css | Audit `id` vs. `class`/`data-action` for menu+lobby buttons | ☐ |
-> | T-11 | dom/css | Verify `image-rendering` ordering across all card styles | ☐ |
-> | T-12 | sw | Add a service-worker integration test for `/cards/*` 404 fallback | ☐ |
-> | T-13 | sw | Bump `CACHE_VERSION` checklist + release-notes lint | ☐ |
-> | T-14 | tests | Migrate ad-hoc `vi.useFakeTimers` to a shared helper | ☐ |
-> | T-15 | tests | Replace remaining string→enum casts with `isXxx` guards | ☐ |
-> | T-16 | docs | ADR: when to extract from `phaser/index.ts` | ☐ |
+> - [ ] **T-1** (phaser) — Extract button/typography helpers from `phaser/index.ts`
+> - [ ] **T-2** (phaser) — Extract scene-depth constants and z-order map
+> - [ ] **T-3** (phaser) — Split menu-overlay rendering into its own module
+> - [ ] **T-4** (phaser) — Centralise `setCrop`/culling helpers and add tests
+> - [ ] **T-5** (controller) — Split `controller.ts` adventure persistence into a module
+> - [ ] **T-6** (controller) — Audit status-message ordering vs. storage warnings
+> - [ ] **T-7** (state) — Add structural fuzz tests for `localStorage` validators
+> - [ ] **T-8** (state) — Document and test the view-model redaction contract
+> - [ ] **T-9** (ai) — Add a benchmark gate for AI hot-loop allocations
+> - [ ] **T-10** (dom/css) — Audit `id` vs. `class`/`data-action` for menu+lobby buttons
+> - [ ] **T-11** (dom/css) — Verify `image-rendering` ordering across all card styles
+> - [ ] **T-12** (sw) — Add a service-worker integration test for `/cards/*` 404 fallback
+> - [ ] **T-13** (sw) — Bump `CACHE_VERSION` checklist + release-notes lint
+> - [ ] **T-14** (tests) — Migrate ad-hoc `vi.useFakeTimers` to a shared helper
+> - [ ] **T-15** (tests) — Replace remaining string→enum casts with `isXxx` guards
+> - [ ] **T-16** (docs) — ADR: when to extract from `phaser/index.ts`
 >
 > See the plan doc for scope, acceptance criteria, and ordering notes.
 
