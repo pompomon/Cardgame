@@ -37,7 +37,7 @@ single, reviewable PR.
 **Body:**
 
 > Umbrella tracking issue for the improvement plan described in
-> [`docs/agent/improvement-plan.md`](https://github.com/pompomon/Cardgame/blob/main/docs/agent/improvement-plan.md).
+> [`docs/agent/improvement-plan.md`](../../docs/agent/improvement-plan.md).
 > Each child issue is scoped to a single PR. Tick its checkbox when the
 > corresponding PR merges.
 >
@@ -120,9 +120,10 @@ top-level functions; most logic is nested. The file already has siblings
 - **Title:** `phaser: shared viewport-culling helper + tests`
 - **Labels:** `area:phaser`, `type:tech-debt`
 - **Why:** AGENTS rule #6 — `GeometryMask` is a no-op under WebGL; today
-  we have two slightly different culling implementations (in-scene log
-  uses overlap, menu overlay uses fully-contained). Standardise the
-  helper signatures and unit-test both modes.
+  we have a single `cullLogRowsToViewport` helper that every call site
+  invokes in fully-contained mode. Promote it into a shared module and
+  unit-test both overlap and fully-contained modes so future call sites
+  can pick the right semantics.
 - **Scope:** Promote a small `cullRowsToViewport({mode: 'overlap' |
   'contained'})` helper alongside `log-scroll.ts`. Add unit tests for
   both modes. Replace existing inline cull loops.
