@@ -23,7 +23,7 @@ single, reviewable PR.
 4. When closing a child issue, tick its checkbox in T-0's task list.
 
 > Conventions: every PR ends with the validation block from
-> [`docs/agent/pr-workflow.md`](pr-workflow.md):
+> `docs/agent/pr-workflow.md`:
 > `Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔`.
 
 ---
@@ -37,7 +37,7 @@ single, reviewable PR.
 **Body:**
 
 > Umbrella tracking issue for the improvement plan described in
-> [`docs/agent/improvement-plan.md`](../../docs/agent/improvement-plan.md).
+> `docs/agent/improvement-plan.md`.
 > Each child issue is scoped to a single PR. Tick its checkbox when the
 > corresponding PR merges.
 >
