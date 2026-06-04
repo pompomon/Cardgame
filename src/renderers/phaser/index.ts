@@ -22,7 +22,6 @@ import {
   DEPTH_BOARD,
   DEPTH_HEADER,
   DEPTH_HEADER_STRIP,
-  DEPTH_MENU_OVERLAY,
   DEPTH_REPLAY_LOG,
   DEPTH_REPLAY_LOG_HEADING,
   DEPTH_TARGET_PICKER_OVERLAY,
@@ -33,6 +32,7 @@ import { buildLayout, orientationFromViewport, type SceneLayout } from './layout
 import { formatLogEventText, formatLogEventTile } from './log-events'
 import { isLogRowVisible } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
+import { createMenuOverlay, type MenuOverlayInstallEntry } from './menu-overlay'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -50,8 +50,6 @@ const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
-const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
-const MIN_READABLE_LOG_VIEWPORT_HEIGHT = 36
 // Cap how many log tiles we materialize per render. Long replays / imported
 // recordings (or malicious JSON) can carry thousands of entries, and creating
 // multiple Phaser GameObjects per entry on every render quickly becomes a
@@ -66,8 +64,6 @@ const INFO_PANEL_VERTICAL_PADDING = 12
 const INFO_PANEL_LINE_HEIGHT_MULTIPLIER = 1.25
 const MIN_LOBBY_ROW_HEIGHT = 16
 const DEFAULT_BATTLEFIELD_HEADER_BAND = 22
-const POPUP_CLOSE_BUTTON_WIDTH_RATIO = 0.5
-const POPUP_CLOSE_BUTTON_MIN_WIDTH = 160
 const POPUP_CANCEL_BUTTON_WIDTH_RATIO = 0.62
 const POPUP_CANCEL_BUTTON_MIN_WIDTH = 180
 const POPUP_TOGGLE_BUTTON_WIDTH_RATIO = 0.72
@@ -226,15 +222,7 @@ function parseFontPx(fontSize: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function recordingMetadataText(view: AppViewModel): string {
-  const meta = view.recording.metadata
-  if (!meta) {
-    return 'No recording loaded.'
-  }
-  return `Seed ${meta.seed} • ${meta.mode} • AI ${meta.aiLevel} • ${meta.controllers[0]}/${meta.controllers[1]} • Completed ${meta.completed ? 'Yes' : 'No'}`
-}
-
-type InstallButtonState = {
+type InstallButtonState = MenuOverlayInstallEntry & {
   label: string
   onClick: () => void
   disabled?: boolean
@@ -2162,7 +2150,6 @@ class CardgameScene extends Phaser.Scene {
     if (!game) {
       return
     }
-    const installEntry = installButtonState()
 
     this.pendingTargetPicker?.destroy(true)
     this.pendingPlayLandTargetSelection = null
@@ -2170,403 +2157,58 @@ class CardgameScene extends Phaser.Scene {
     this.menuOpen = true
     this.statusText?.setVisible(false)
 
-    const overlay = this.add.container(this.currentLayout.width / 2, this.currentLayout.height / 2)
-    overlay.setDepth(DEPTH_MENU_OVERLAY)
-    overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
-      this.statusText?.setVisible(true)
-      if (this.menuOverlay === overlay) {
-        this.menuOverlay = null
-        this.menuOpen = false
-        this.lastMenuSignature = null
-      }
-      this.rendererRef.refreshA11yNavForCurrentView()
+    const overlay = createMenuOverlay({
+      scene: this,
+      layout: this.currentLayout,
+      view,
+      game,
+      theme: UI_THEME,
+      installEntry: installButtonState(),
+      menuContentScrollOffset: this.menuContentScrollOffset,
+      menuLogScrollOffset: this.menuLogScrollOffset,
+      menuLogPinnedToBottom: this.menuLogPinnedToBottom,
+      createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
+      popupActionWidth: (maxWidth, ratio, minWidth) => this.popupActionWidth(maxWidth, ratio, minWidth),
+      bindScrollableViewport: (viewportBackground, applyScroll, shouldHandleWheel, shouldStartDrag) => {
+        this.bindScrollableViewport(viewportBackground, applyScroll, shouldHandleWheel, shouldStartDrag)
+      },
+      buildLogTilesContent: (events, width, visualStyle, options) => this.buildLogTilesContent(events, width, visualStyle, options),
+      cullLogRowsToViewport: (tilesColumn, columnOriginY, viewportTopY, viewportBottomY, fullyContainedOnly) => {
+        this.cullLogRowsToViewport(tilesColumn, columnOriginY, viewportTopY, viewportBottomY, fullyContainedOnly)
+      },
+      onDestroy: (destroyedOverlay) => {
+        this.statusText?.setVisible(true)
+        if (this.menuOverlay === destroyedOverlay) {
+          this.menuOverlay = null
+          this.menuOpen = false
+          this.lastMenuSignature = null
+        }
+        this.rendererRef.refreshA11yNavForCurrentView()
+      },
+      closeMenuOverlay: () => { this.closeMenuOverlay() },
+      setMenuContentScrollOffset: (offset) => {
+        this.menuContentScrollOffset = offset
+      },
+      setMenuLogScrollState: (offset, pinnedToBottom) => {
+        this.menuLogScrollOffset = offset
+        this.menuLogPinnedToBottom = pinnedToBottom
+      },
+      actions: {
+        pauseAdventure: () => { this.rendererRef.controller?.pauseAdventure() },
+        abandonAdventure: () => { this.rendererRef.controller?.abandonAdventure() },
+        backToLobby: () => { this.rendererRef.controller?.backToLobby() },
+        rematch: () => { this.rendererRef.controller?.rematch() },
+        handleDownloadRecording: () => { this.rendererRef.handleDownloadRecording() },
+        saveRecordingToLocalStorage: () => { this.rendererRef.controller?.saveRecordingToLocalStorage() },
+        loadRecordingFromLocalStorage: () => { this.rendererRef.controller?.loadRecordingFromLocalStorage() },
+        openRecordingFilePicker: () => { this.rendererRef.openRecordingFilePicker() },
+        startReplay: () => { this.rendererRef.controller?.startReplay() },
+        pauseReplay: () => { this.rendererRef.controller?.pauseReplay() },
+        stepReplay: (delta) => { this.rendererRef.controller?.stepReplay(delta) },
+        jumpReplayToEnd: () => { this.rendererRef.controller?.jumpReplayToEnd() },
+        exitReplay: () => { this.rendererRef.controller?.exitReplay() },
+      },
     })
-    const swallowPointerEvent = (
-      _pointer: Phaser.Input.Pointer,
-      _localX: number,
-      _localY: number,
-      event: Phaser.Types.Input.EventData,
-    ): void => {
-      event.stopPropagation()
-    }
-
-    const popupWidth = this.currentLayout.menuPopupWidth
-    const popupHeight = this.currentLayout.menuPopupHeight
-    const popupPadding = this.currentLayout.menuPopupPadding
-    const sectionGap = this.currentLayout.menuSectionGap
-    const panelLeft = (this.currentLayout.width - popupWidth) / 2
-    const panelRight = panelLeft + popupWidth
-    const panelTop = (this.currentLayout.height - popupHeight) / 2
-    const panelBottom = panelTop + popupHeight
-    const scrim = this.add.rectangle(
-      0,
-      0,
-      this.currentLayout.width,
-      this.currentLayout.height,
-      UI_THEME.scrimFill,
-      this.currentLayout.popupScrimAlpha,
-    )
-    scrim.setInteractive()
-    scrim.on('pointerdown', swallowPointerEvent)
-    scrim.on('pointerup', (
-      pointer: Phaser.Input.Pointer,
-      localX: number,
-      localY: number,
-      event: Phaser.Types.Input.EventData,
-    ) => {
-      swallowPointerEvent(pointer, localX, localY, event)
-      const startedInsidePanel = pointer.downX >= panelLeft
-        && pointer.downX <= panelRight
-        && pointer.downY >= panelTop
-        && pointer.downY <= panelBottom
-      if (!startedInsidePanel) {
-        this.closeMenuOverlay()
-      }
-    })
-    scrim.on('pointermove', swallowPointerEvent)
-    overlay.add(scrim)
-
-    const panel = this.add.rectangle(
-      0,
-      0,
-      popupWidth,
-      popupHeight,
-      UI_THEME.panelFill,
-      this.currentLayout.popupPanelAlpha,
-    ).setStrokeStyle(2, UI_THEME.panelStroke)
-    panel.setInteractive()
-    panel.on('pointerdown', swallowPointerEvent)
-    panel.on('pointerup', swallowPointerEvent)
-    panel.on('pointermove', swallowPointerEvent)
-    overlay.add(panel)
-
-    overlay.add(this.add.text(0, -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight / 2, 'Menu', {
-      color: UI_THEME.primaryText,
-      fontSize: this.currentLayout.popupTitleFontSize,
-    }).setOrigin(0.5))
-
-    const fullButtonWidth = Math.max(1, popupWidth - popupPadding * 2)
-    const halfButtonGap = this.currentLayout.popupButtonGap
-    const halfButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap) / 2)
-    const contentViewportTop = -popupHeight / 2 + popupPadding + this.currentLayout.menuTitleHeight + sectionGap
-    const contentViewportBottom = popupHeight / 2 - popupPadding
-    const contentViewportHeight = Math.max(1, contentViewportBottom - contentViewportTop)
-    const contentViewportBackground = this.add.rectangle(
-      0,
-      contentViewportTop + contentViewportHeight / 2,
-      fullButtonWidth,
-      contentViewportHeight,
-      UI_THEME.backdropFill,
-      0,
-    )
-    contentViewportBackground.setInteractive()
-    overlay.add(contentViewportBackground)
-    const contentViewport = this.add.container(0, contentViewportTop)
-    const content = this.add.container(0, 0)
-    contentViewport.add(content)
-    overlay.add(contentViewport)
-
-    const contentMask = this.add.graphics()
-    contentMask.fillStyle(0xffffff)
-    contentMask.fillRect(
-      -fullButtonWidth / 2,
-      contentViewportTop,
-      fullButtonWidth,
-      contentViewportHeight,
-    )
-    contentMask.setVisible(false)
-    overlay.add(contentMask)
-    contentViewport.setMask(contentMask.createGeometryMask())
-    let cursorY = 0
-
-    const adventureMode = this.rendererRef.currentView?.mode === 'adventure-hvai'
-    // Section 1: Lobby/rematch or adventure controls.
-    const section1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    content.add(this.createButton(adventureMode ? 'Pause Adventure' : 'Back to Lobby', -halfButtonWidth / 2 - halfButtonGap / 2, section1Y, () => {
-      this.closeMenuOverlay()
-      if (adventureMode) {
-        this.rendererRef.controller?.pauseAdventure()
-        return
-      }
-      this.rendererRef.controller?.backToLobby()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    content.add(this.createButton(adventureMode ? 'Reset Adventure' : 'Rematch', halfButtonWidth / 2 + halfButtonGap / 2, section1Y, () => {
-      this.closeMenuOverlay()
-      if (adventureMode) {
-        this.rendererRef.controller?.abandonAdventure()
-        return
-      }
-      this.rendererRef.controller?.rematch()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    cursorY += this.currentLayout.popupButtonHeight + sectionGap
-
-    // Section 2: Install.
-    const installY = cursorY + this.currentLayout.popupButtonHeight / 2
-    const installButton = this.createButton(
-      installEntry.label,
-      0,
-      installY,
-      installEntry.disabled
-        ? () => {}
-        : () => {
-            this.closeMenuOverlay()
-            installEntry.onClick()
-          },
-      fullButtonWidth,
-      this.currentLayout.popupButtonHeight,
-      this.currentLayout.popupButtonFontSize,
-    )
-    if (installEntry.disabled) {
-      installButton.setAlpha(0.4)
-      installButton.disableInteractive()
-    }
-    content.add(installButton)
-    cursorY += this.currentLayout.popupButtonHeight + sectionGap
-
-    // Section 4: Recorder.
-    const recorderHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Recorder — ${recordingMetadataText(view)}`, {
-      color: UI_THEME.secondaryText,
-      fontSize: this.currentLayout.smallFontSize,
-      wordWrap: { width: fullButtonWidth },
-    }).setOrigin(0, 0)
-    content.add(recorderHeading)
-    // Use the rendered text height (which reflects wrapping at narrow widths)
-    // instead of a fixed 18px so the next row never overlaps a wrapped heading.
-    cursorY += Math.max(18, recorderHeading.height) + 4
-
-    const recorderRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    content.add(this.createButton('Download Save', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow1Y, () => {
-      this.closeMenuOverlay()
-      this.rendererRef.handleDownloadRecording()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    content.add(this.createButton('Save to Browser', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow1Y, () => {
-      this.closeMenuOverlay()
-      this.rendererRef.controller?.saveRecordingToLocalStorage()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
-
-    const recorderRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
-    content.add(this.createButton('Load from Browser', -halfButtonWidth / 2 - halfButtonGap / 2, recorderRow2Y, () => {
-      this.closeMenuOverlay()
-      this.rendererRef.controller?.loadRecordingFromLocalStorage()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    content.add(this.createButton('Load from File', halfButtonWidth / 2 + halfButtonGap / 2, recorderRow2Y, () => {
-      this.closeMenuOverlay()
-      this.rendererRef.openRecordingFilePicker()
-    }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
-
-    if (!view.replay.active) {
-      const startReplayY = cursorY + this.currentLayout.popupButtonHeight / 2
-      content.add(this.createButton('Start Replay', 0, startReplayY, () => {
-        this.closeMenuOverlay()
-        this.rendererRef.controller?.startReplay()
-      }, fullButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      cursorY += this.currentLayout.popupButtonHeight + sectionGap
-    } else {
-      cursorY += sectionGap
-    }
-
-    // Section 5: Replay controls (only when replay is active).
-    if (view.replay.active) {
-      const replayHeading = this.add.text(-fullButtonWidth / 2, cursorY, `Replay Controls — Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}`, {
-        color: UI_THEME.secondaryText,
-        fontSize: this.currentLayout.smallFontSize,
-        wordWrap: { width: fullButtonWidth },
-      }).setOrigin(0, 0)
-      content.add(replayHeading)
-      cursorY += Math.max(18, replayHeading.height) + 4
-
-      const replayRow1Y = cursorY + this.currentLayout.popupButtonHeight / 2
-      const replayButtonWidth = Math.max(1, (fullButtonWidth - halfButtonGap * 2) / 3)
-      content.add(this.createButton(view.replay.isPlaying ? 'Pause' : 'Play', -replayButtonWidth - halfButtonGap, replayRow1Y, () => {
-        if (view.replay.isPlaying) {
-          this.rendererRef.controller?.pauseReplay()
-        } else {
-          this.rendererRef.controller?.startReplay()
-        }
-      }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      content.add(this.createButton('Previous', 0, replayRow1Y, () => {
-        this.rendererRef.controller?.stepReplay(-1)
-      }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      content.add(this.createButton('Next', replayButtonWidth + halfButtonGap, replayRow1Y, () => {
-        this.rendererRef.controller?.stepReplay(1)
-      }, replayButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      cursorY += this.currentLayout.popupButtonHeight + halfButtonGap
-
-      const replayRow2Y = cursorY + this.currentLayout.popupButtonHeight / 2
-      content.add(this.createButton('Jump to End', -halfButtonWidth / 2 - halfButtonGap / 2, replayRow2Y, () => {
-        this.rendererRef.controller?.jumpReplayToEnd()
-      }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      content.add(this.createButton('Exit Replay', halfButtonWidth / 2 + halfButtonGap / 2, replayRow2Y, () => {
-        this.closeMenuOverlay()
-        this.rendererRef.controller?.exitReplay()
-      }, halfButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-      cursorY += this.currentLayout.popupButtonHeight + sectionGap
-    }
-
-    // Close button.
-    const closeButtonY = cursorY + this.currentLayout.popupButtonHeight / 2
-    const closeButtonWidth = this.popupActionWidth(
-      fullButtonWidth,
-      POPUP_CLOSE_BUTTON_WIDTH_RATIO,
-      POPUP_CLOSE_BUTTON_MIN_WIDTH,
-    )
-    content.add(this.createButton('Close', 0, closeButtonY, () => {
-      this.closeMenuOverlay()
-    }, closeButtonWidth, this.currentLayout.popupButtonHeight, this.currentLayout.popupButtonFontSize))
-    const buttonStackBottomY = closeButtonY + this.currentLayout.popupButtonHeight / 2
-
-    // Replay Log section: heading + masked scrollable viewport.
-    const logTitleY = buttonStackBottomY + sectionGap + 14
-    const logViewportTopWithHeading = logTitleY + 14 + sectionGap
-    const logViewportWidth = fullButtonWidth
-    const contentViewportVisibleHeight = contentViewportHeight
-    const maxViewportHeightWithHeading = Math.max(0, contentViewportVisibleHeight - logViewportTopWithHeading)
-    // If the heading + viewport doesn't fit readably, drop the heading so the log section
-    // still has somewhere to render. This preserves access to the replay log on short
-    // viewports rather than removing it entirely.
-    const showHeading = maxViewportHeightWithHeading >= MIN_READABLE_LOG_VIEWPORT_HEIGHT
-    const logViewportTop = showHeading
-      ? logViewportTopWithHeading
-      : Math.max(buttonStackBottomY + sectionGap, contentViewportVisibleHeight - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
-    const maxViewportHeight = Math.max(0, contentViewportVisibleHeight - logViewportTop)
-    let contentBottomY = buttonStackBottomY
-    let deferredMenuLogScrollSetup: (() => void) | null = null
-    let innerLogViewportBackground: Phaser.GameObjects.Rectangle | null = null
-    let isInnerLogViewportScrollable = false
-    if (maxViewportHeight > 0) {
-      if (showHeading) {
-        content.add(this.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
-          color: UI_THEME.primaryText,
-          fontSize: this.currentLayout.bodyFontSize,
-        }).setOrigin(0, 0.5))
-      }
-
-      const logViewportHeight = Math.min(this.currentLayout.menuLogViewportHeight, maxViewportHeight)
-      const logViewportY = logViewportTop + logViewportHeight / 2
-      const logViewportBackground = this.add.rectangle(
-        0,
-        logViewportY,
-        logViewportWidth,
-        logViewportHeight,
-        UI_THEME.viewportFill,
-        this.currentLayout.popupViewportAlpha,
-      ).setStrokeStyle(1, UI_THEME.buttonStroke)
-      content.add(logViewportBackground)
-      innerLogViewportBackground = logViewportBackground
-
-      const logContent = this.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
-      content.add(logContent)
-      const events = game.events
-      const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
-      const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
-      const { container: tilesColumn, contentHeight: logContentHeight } = this.buildLogTilesContent(
-        events,
-        tileColumnWidth,
-        visualStyle,
-        { activeActor: game.actor, legacyLog: game.log },
-      )
-      logContent.add(tilesColumn)
-
-      const logMask = this.add.graphics()
-      logMask.fillStyle(0xffffff)
-      logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
-      logMask.setVisible(false)
-      content.add(logMask)
-      logContent.setMask(logMask.createGeometryMask())
-
-      const logContentTopY = logViewportTop + 8
-      const logViewportBottom = logViewportTop + logViewportHeight
-      // Use the shared scroll helper so the menu log clamps + pin-to-bottom
-      // semantics stay in lock-step with the in-scene log (and remain
-      // covered by the helper's unit tests). bottomPadding=16 matches the
-      // legacy `+ 16` term — 8px top inset above the tile column plus 8px
-      // breathing room below the last tile.
-      const initialScroll = computeLogScrollLayout({
-        contentTopY: logContentTopY,
-        viewportTopY: logViewportTop,
-        viewportBottomY: logViewportBottom,
-        contentHeight: logContentHeight,
-        bottomPadding: 16,
-        requestedOffset: this.menuLogScrollOffset,
-        pinnedToBottom: this.menuLogPinnedToBottom,
-      })
-      const maxScroll = initialScroll.maxScroll
-      let scrollOffset = initialScroll.scrollOffset
-      this.menuLogScrollOffset = scrollOffset
-      this.menuLogPinnedToBottom = initialScroll.pinnedToBottom
-      logContent.y = initialScroll.contentY
-      this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
-      const applyScroll = (deltaY: number): void => {
-        if (maxScroll <= 0) {
-          return
-        }
-        const next = computeLogScrollLayout({
-          contentTopY: logContentTopY,
-          viewportTopY: logViewportTop,
-          viewportBottomY: logViewportBottom,
-          contentHeight: logContentHeight,
-          bottomPadding: 16,
-          requestedOffset: scrollOffset + deltaY,
-          pinnedToBottom: false,
-        })
-        scrollOffset = next.scrollOffset
-        this.menuLogScrollOffset = scrollOffset
-        this.menuLogPinnedToBottom = next.pinnedToBottom
-        logContent.y = next.contentY
-        this.cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
-      }
-
-      if (maxScroll > 0) {
-        isInnerLogViewportScrollable = true
-        logViewportBackground.setInteractive()
-        logViewportBackground.on('pointerdown', swallowPointerEvent)
-        logViewportBackground.on('pointerup', swallowPointerEvent)
-        logViewportBackground.on('pointermove', swallowPointerEvent)
-        deferredMenuLogScrollSetup = () => {
-          this.bindScrollableViewport(
-            logViewportBackground,
-            applyScroll,
-          )
-          content.add(this.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-            color: UI_THEME.secondaryText,
-            fontSize: this.currentLayout.smallFontSize,
-          }).setOrigin(1, 0.5))
-        }
-      }
-      contentBottomY = Math.max(contentBottomY, logViewportTop + logViewportHeight)
-    }
-
-    const contentMaxScroll = Math.max(0, contentBottomY - contentViewportHeight)
-    if (contentMaxScroll > 0) {
-      let contentScrollOffset = Phaser.Math.Clamp(this.menuContentScrollOffset ?? 0, 0, contentMaxScroll)
-      content.y = -contentScrollOffset
-      const applyContentScroll = (deltaY: number): void => {
-        contentScrollOffset = Phaser.Math.Clamp(contentScrollOffset + deltaY, 0, contentMaxScroll)
-        this.menuContentScrollOffset = contentScrollOffset
-        content.y = -contentScrollOffset
-      }
-      const shouldHandleOuterContentScroll = (pointer: Phaser.Input.Pointer): boolean => {
-        if (!innerLogViewportBackground || !isInnerLogViewportScrollable) {
-          return true
-        }
-        const logBounds = innerLogViewportBackground.getBounds()
-        return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
-      }
-      this.bindScrollableViewport(
-        contentViewportBackground,
-        applyContentScroll,
-        shouldHandleOuterContentScroll,
-        shouldHandleOuterContentScroll,
-      )
-    } else {
-      this.menuContentScrollOffset = null
-    }
-
-    // Always bind the replay-log viewport as well so it remains scrollable
-    // when the outer menu content also needs scrolling on shorter layouts.
-    deferredMenuLogScrollSetup?.()
 
     this.menuOverlay = overlay
     this.rootContainer.add(overlay)
