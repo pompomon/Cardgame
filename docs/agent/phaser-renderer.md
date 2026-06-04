@@ -25,7 +25,7 @@ need a different layering relationship, set the depth.
 If you change the depth constants, update `depth.ts`, this guide, and the
 depth regression tests so they reflect what is actually enforced (don't
 claim "battlefields sit above the log" unless those GameObjects actually
-call `setDepth(DEPTH_BOARD)`).
+render at default depth (`DEPTH_GAMEPLAY`, 0)).
 
 ## Clipping: masks vs culling
 
