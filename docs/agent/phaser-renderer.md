@@ -38,10 +38,11 @@ Options:
 
 - **Static art that needs cover-fit cropping:** use `setCrop` on the
   Image (see `addCardArtToContainer` `{ fit: 'cover', … }`).
-- **Scrollable list:** manual viewport culling. For the menu-overlay
-  replay log, cull to **fully-contained** rows (strict) because partial
-  rows would render outside the panel without masking. The in-scene log
-  uses overlap-based culling.
+- **Scrollable list:** manual viewport culling through
+  `cullRowsToViewport` in `src/renderers/phaser/log-row-visibility.ts`.
+  Use `mode: 'contained'` when partial rows would render outside a panel
+  without masking (both replay-log viewports use this today), and
+  `mode: 'overlap'` only where partial rows are acceptable.
 
 ## Coordinate-space discipline
 

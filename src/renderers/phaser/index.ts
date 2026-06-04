@@ -30,7 +30,7 @@ import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
-import { isLogRowVisible } from './log-row-visibility'
+import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay, type MenuOverlayInstallEntry } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
@@ -1574,53 +1574,6 @@ class CardgameScene extends Phaser.Scene {
     return { container, contentHeight, tileCount: visibleEvents.length }
   }
 
-  // Hide any tile row in `tilesColumn` whose Y rectangle falls outside the
-  // viewport rect [viewportTopY, viewportBottomY]. Coordinates are expressed
-  // in the tile column's *parent* coordinate space, not world space — the
-  // caller passes the column's own `y` (in its parent) together with the
-  // viewport bounds expressed in the same parent space. (For the in-scene
-  // log the parent is the scene root so parent space == world space, but
-  // for the menu-overlay log the parent is the overlay's `content`
-  // container, so do not confuse this with world coordinates.) Used to
-  // prevent log tiles from rendering on top of the header strip (☰ Menu /
-  // Turn label / Winner banner) or the player-info container below, even
-  // on WebGL where GeometryMask is documented to be a no-op (Phaser 4
-  // ships only GeometryMask, which clips only in the Canvas renderer).
-  // By default, rows whose bounding box partially overlaps the viewport stay
-  // visible (Canvas GeometryMask clips them). Callers can opt into strict
-  // "fully contained only" visibility for overlays where even partial
-  // WebGL spillover is undesirable.
-  private cullLogRowsToViewport(
-    tilesColumn: Phaser.GameObjects.Container,
-    columnOriginY: number,
-    viewportTopY: number,
-    viewportBottomY: number,
-    fullyContainedOnly = false,
-  ): void {
-    for (const child of tilesColumn.list) {
-      const obj = child as Phaser.GameObjects.GameObject & {
-        getData: (key: string) => unknown
-        setVisible: (visible: boolean) => unknown
-        y?: number
-        height?: number
-      }
-      if (typeof obj.setVisible !== 'function') {
-        continue
-      }
-      const rowTop = (obj.getData('rowTop') as number | undefined) ?? (obj.y ?? 0)
-      const rowHeight = (obj.getData('rowHeight') as number | undefined) ?? (obj.height ?? 0)
-      const visible = isLogRowVisible({
-        rowTop,
-        rowHeight,
-        columnOriginY,
-        viewportTopY,
-        viewportBottomY,
-        fullyContainedOnly,
-      })
-      obj.setVisible(visible)
-    }
-  }
-
   private renderInSceneLog(events: readonly LogEvent[], legacyLog: readonly string[], activeActor: number): void {
     const x = this.currentLayout.logColumnLeft
     const y = this.currentLayout.logColumnTop
@@ -1731,7 +1684,7 @@ class CardgameScene extends Phaser.Scene {
     // the geometry mask for the Canvas backend and additionally cull every
     // tile row whose world Y falls outside the viewport rect, so log content
     // never paints over the header strip / player-info container even on
-    // WebGL where the mask is a no-op. See `cullLogRowsToViewport` below.
+    // WebGL where the mask is a no-op. See `cullRowsToViewport`.
     const logMask = this.add.graphics()
     logMask.setVisible(false)
     logMask.fillStyle(0xffffff)
@@ -1757,7 +1710,13 @@ class CardgameScene extends Phaser.Scene {
     this.inSceneLogScrollOffset = scroll.scrollOffset
     this.inSceneLogPinnedToBottom = scroll.pinnedToBottom
     logContent.y = scroll.contentY
-    this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
+    cullRowsToViewport({
+      rowsContainer: tilesColumn,
+      columnOriginY: logContent.y,
+      viewportTopY: viewportTop,
+      viewportBottomY: viewportBottom,
+      mode: 'contained',
+    })
 
     if (scroll.maxScroll > 0) {
       let scrollOffset = scroll.scrollOffset
@@ -1767,7 +1726,13 @@ class CardgameScene extends Phaser.Scene {
         this.inSceneLogScrollOffset = scrollOffset
         this.inSceneLogPinnedToBottom = scrollOffset >= maxScroll
         logContent.y = contentTopY - scrollOffset
-        this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
+        cullRowsToViewport({
+          rowsContainer: tilesColumn,
+          columnOriginY: logContent.y,
+          viewportTopY: viewportTop,
+          viewportBottomY: viewportBottom,
+          mode: 'contained',
+        })
       }
       bindScrollableViewport(
         this,
@@ -2105,9 +2070,6 @@ class CardgameScene extends Phaser.Scene {
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
       popupActionWidth: (maxWidth, ratio, minWidth) => this.popupActionWidth(maxWidth, ratio, minWidth),
       buildLogTilesContent: (events, width, visualStyle, options) => this.buildLogTilesContent(events, width, visualStyle, options),
-      cullLogRowsToViewport: (tilesColumn, columnOriginY, viewportTopY, viewportBottomY, fullyContainedOnly) => {
-        this.cullLogRowsToViewport(tilesColumn, columnOriginY, viewportTopY, viewportBottomY, fullyContainedOnly)
-      },
       onDestroy: (destroyedOverlay) => {
         this.statusText?.setVisible(true)
         if (this.menuOverlay === destroyedOverlay) {

@@ -55,7 +55,7 @@ review.
    controller state (`state.adventure`, `state.game`, …) by reference.
 6. **Phaser 4 `GeometryMask` is a no-op under WebGL.** For scrollable/clipped
    viewports use `setCrop` on Images or manual viewport culling
-   (`cullLogRowsToViewport` pattern).
+   (`cullRowsToViewport` pattern).
 7. **No `structuredClone(GameState)` in hot loops.** AI evaluation and render
    paths must not deep-clone the full game state per candidate action.
 8. **Reuse shared helpers and constants.** Use `DEFAULT_CARD_VISUAL_STYLE`,

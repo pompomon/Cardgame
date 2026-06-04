@@ -5,6 +5,7 @@ import type { AppViewModel, GameUiState } from '../../app/types'
 import type { LogEvent } from '../../game/types'
 import { DEPTH_MENU_OVERLAY } from './depth'
 import type { SceneLayout } from './layout'
+import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { bindScrollableViewport } from './scrollable-viewport'
 
@@ -57,13 +58,6 @@ export interface MenuOverlayInput {
     visualStyle: AppViewModel['cardVisualStyle'],
     options: { activeActor: number; legacyLog: readonly string[] },
   ) => { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number }
-  cullLogRowsToViewport: (
-    tilesColumn: Phaser.GameObjects.Container,
-    columnOriginY: number,
-    viewportTopY: number,
-    viewportBottomY: number,
-    fullyContainedOnly?: boolean,
-  ) => void
   onDestroy: (overlay: Phaser.GameObjects.Container) => void
   closeMenuOverlay: () => void
   setMenuContentScrollOffset: (offset: number | null) => void
@@ -104,7 +98,6 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     createButton,
     popupActionWidth,
     buildLogTilesContent,
-    cullLogRowsToViewport,
     closeMenuOverlay,
     setMenuContentScrollOffset,
     setMenuLogScrollState,
@@ -431,7 +424,13 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     let scrollOffset = initialScroll.scrollOffset
     setMenuLogScrollState(scrollOffset, initialScroll.pinnedToBottom)
     logContent.y = initialScroll.contentY
-    cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
+    cullRowsToViewport({
+      rowsContainer: tilesColumn,
+      columnOriginY: logContent.y,
+      viewportTopY: logViewportTop,
+      viewportBottomY: logViewportBottom,
+      mode: 'contained',
+    })
     const applyScroll = (deltaY: number): void => {
       if (maxScroll <= 0) {
         return
@@ -448,7 +447,13 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
       scrollOffset = next.scrollOffset
       setMenuLogScrollState(scrollOffset, next.pinnedToBottom)
       logContent.y = next.contentY
-      cullLogRowsToViewport(tilesColumn, logContent.y, logViewportTop, logViewportBottom, true)
+      cullRowsToViewport({
+        rowsContainer: tilesColumn,
+        columnOriginY: logContent.y,
+        viewportTopY: logViewportTop,
+        viewportBottomY: logViewportBottom,
+        mode: 'contained',
+      })
     }
 
     if (maxScroll > 0) {
