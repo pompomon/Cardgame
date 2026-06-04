@@ -6,6 +6,7 @@ import type { LogEvent } from '../../game/types'
 import { DEPTH_MENU_OVERLAY } from './depth'
 import type { SceneLayout } from './layout'
 import { computeLogScrollLayout } from './log-scroll'
+import { bindScrollableViewport } from './scrollable-viewport'
 
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
@@ -50,12 +51,6 @@ export interface MenuOverlayInput {
     fontSize?: string,
   ) => Phaser.GameObjects.Container
   popupActionWidth: (maxWidth: number, ratio: number, minWidth: number) => number
-  bindScrollableViewport: (
-    viewportBackground: Phaser.GameObjects.Rectangle,
-    applyScroll: (deltaY: number) => void,
-    shouldHandleWheel?: (pointer: Phaser.Input.Pointer) => boolean,
-    shouldStartDrag?: (pointer: Phaser.Input.Pointer) => boolean,
-  ) => void
   buildLogTilesContent: (
     events: readonly LogEvent[],
     width: number,
@@ -108,7 +103,6 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     installEntry,
     createButton,
     popupActionWidth,
-    bindScrollableViewport,
     buildLogTilesContent,
     cullLogRowsToViewport,
     closeMenuOverlay,
@@ -465,6 +459,7 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
       logViewportBackground.on('pointermove', swallowPointerEvent)
       deferredMenuLogScrollSetup = () => {
         bindScrollableViewport(
+          scene,
           logViewportBackground,
           applyScroll,
         )
@@ -494,6 +489,7 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
       return !Phaser.Geom.Rectangle.Contains(logBounds, pointer.worldX, pointer.worldY)
     }
     bindScrollableViewport(
+      scene,
       contentViewportBackground,
       applyContentScroll,
       shouldHandleOuterContentScroll,

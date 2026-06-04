@@ -33,6 +33,7 @@ import { formatLogEventText, formatLogEventTile } from './log-events'
 import { isLogRowVisible } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay, type MenuOverlayInstallEntry } from './menu-overlay'
+import { bindScrollableViewport } from './scrollable-viewport'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -48,7 +49,6 @@ import {
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
-const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 // Cap how many log tiles we materialize per render. Long replays / imported
 // recordings (or malicious JSON) can carry thousands of entries, and creating
@@ -1083,73 +1083,7 @@ class CardgameScene extends Phaser.Scene {
     return this.battlefieldTargetEntries.find((entry) => entry.owner === owner && entry.effectTargetId === effectTargetId) ?? null
   }
 
-  private bindScrollableViewport(
-    viewportBackground: Phaser.GameObjects.Rectangle,
-    applyScroll: (deltaY: number) => void,
-    shouldHandleWheel?: (pointer: Phaser.Input.Pointer) => boolean,
-    shouldStartDrag?: (pointer: Phaser.Input.Pointer) => boolean,
-  ): void {
-    const isPointerWithinViewport = (pointer: Phaser.Input.Pointer): boolean => {
-      const bounds = viewportBackground.getBounds()
-      const withinX = pointer.worldX >= bounds.left && pointer.worldX <= bounds.right
-      const withinY = pointer.worldY >= bounds.top && pointer.worldY <= bounds.bottom
-      return withinX && withinY
-    }
 
-    const handleWheel = (
-      pointer: Phaser.Input.Pointer,
-      _gameObjects: Phaser.GameObjects.GameObject[],
-      _deltaX: number,
-      deltaY: number,
-    ): void => {
-      if (shouldHandleWheel && !shouldHandleWheel(pointer)) {
-        return
-      }
-      if (isPointerWithinViewport(pointer)) {
-        applyScroll(deltaY * SCROLL_WHEEL_MULTIPLIER)
-      }
-    }
-
-    let dragPointerId: number | null = null
-    let lastDragY = 0
-    const handleViewportPointerDown = (pointer: Phaser.Input.Pointer): void => {
-      if (!isPointerWithinViewport(pointer)) {
-        return
-      }
-      if (shouldStartDrag && !shouldStartDrag(pointer)) {
-        return
-      }
-      dragPointerId = pointer.id
-      lastDragY = pointer.worldY
-    }
-    const handlePointerMove = (pointer: Phaser.Input.Pointer): void => {
-      if (dragPointerId !== pointer.id) {
-        return
-      }
-      const deltaY = lastDragY - pointer.worldY
-      applyScroll(deltaY)
-      lastDragY = pointer.worldY
-    }
-    const handlePointerUp = (pointer: Phaser.Input.Pointer): void => {
-      if (dragPointerId === pointer.id) {
-        dragPointerId = null
-      }
-    }
-
-    this.input.on('wheel', handleWheel)
-    viewportBackground.on('pointerdown', handleViewportPointerDown)
-    this.input.on('pointermove', handlePointerMove)
-    this.input.on('pointerup', handlePointerUp)
-    this.input.on('pointerupoutside', handlePointerUp)
-    viewportBackground.once(Phaser.GameObjects.Events.DESTROY, () => {
-      dragPointerId = null
-      this.input.off('wheel', handleWheel)
-      viewportBackground.off('pointerdown', handleViewportPointerDown)
-      this.input.off('pointermove', handlePointerMove)
-      this.input.off('pointerup', handlePointerUp)
-      this.input.off('pointerupoutside', handlePointerUp)
-    })
-  }
 
   private processAbilityEffects(view: AppViewModel): void {
     const game = view.game
@@ -1835,7 +1769,8 @@ class CardgameScene extends Phaser.Scene {
         logContent.y = contentTopY - scrollOffset
         this.cullLogRowsToViewport(tilesColumn, logContent.y, viewportTop, viewportBottom, true)
       }
-      this.bindScrollableViewport(
+      bindScrollableViewport(
+        this,
         viewportBg,
         applyScroll,
       )
@@ -2169,9 +2104,6 @@ class CardgameScene extends Phaser.Scene {
       menuLogPinnedToBottom: this.menuLogPinnedToBottom,
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
       popupActionWidth: (maxWidth, ratio, minWidth) => this.popupActionWidth(maxWidth, ratio, minWidth),
-      bindScrollableViewport: (viewportBackground, applyScroll, shouldHandleWheel, shouldStartDrag) => {
-        this.bindScrollableViewport(viewportBackground, applyScroll, shouldHandleWheel, shouldStartDrag)
-      },
       buildLogTilesContent: (events, width, visualStyle, options) => this.buildLogTilesContent(events, width, visualStyle, options),
       cullLogRowsToViewport: (tilesColumn, columnOriginY, viewportTopY, viewportBottomY, fullyContainedOnly) => {
         this.cullLogRowsToViewport(tilesColumn, columnOriginY, viewportTopY, viewportBottomY, fullyContainedOnly)
@@ -2366,7 +2298,8 @@ class CardgameScene extends Phaser.Scene {
     }
 
     if (maxScroll > 0) {
-      this.bindScrollableViewport(
+      bindScrollableViewport(
+        this,
         optionsViewportBackground,
         applyScroll,
       )
