@@ -17,9 +17,10 @@ import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
+import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
 import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
-import { buildLayout, clamp, orientationFromViewport, type SceneLayout } from './layout'
+import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
 import { isLogRowVisible } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
@@ -38,14 +39,6 @@ import {
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
-const BUTTON_TEXT_HORIZONTAL_PADDING = 24
-const BUTTON_TEXT_HEIGHT_RATIO = 0.42
-const BUTTON_TEXT_NARROW_WIDTH_THRESHOLD = 180
-const BUTTON_TEXT_NARROW_WIDTH_SCALE = 0.92
-const BUTTON_TEXT_MAX_LINES = 2
-// Keep renderer-side clamping aligned with layout button typography limits.
-const MIN_BUTTON_FONT_PX = 12
-const MAX_BUTTON_FONT_PX = 20
 const SCROLL_WHEEL_MULTIPLIER = 0.8
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
@@ -119,6 +112,12 @@ const UI_THEME = {
   scrimFill: 0x000000,
   primaryText: '#f3f6ff',
   secondaryText: '#c0d0ff',
+}
+
+const BUTTON_THEME = {
+  fill: UI_THEME.buttonFill,
+  stroke: UI_THEME.buttonStroke,
+  text: UI_THEME.primaryText,
 }
 
 // Additional shared color tokens for special-purpose UI surfaces. Kept here
@@ -278,39 +277,6 @@ function installButtonState(): InstallButtonState {
     onClick: () => {},
     disabled: true,
   }
-}
-
-function buildButton(
-  scene: Phaser.Scene,
-  label: string,
-  x: number,
-  y: number,
-  fontSize: string,
-  width: number,
-  height: number,
-  onClick: () => void,
-): Phaser.GameObjects.Container {
-  const requestedPx = Number.parseFloat(fontSize)
-  const derivedPx = clamp(height * BUTTON_TEXT_HEIGHT_RATIO, MIN_BUTTON_FONT_PX, MAX_BUTTON_FONT_PX)
-  const widthScale = width < BUTTON_TEXT_NARROW_WIDTH_THRESHOLD ? BUTTON_TEXT_NARROW_WIDTH_SCALE : 1
-  const resolvedPx = clamp(
-    Math.min(Number.isFinite(requestedPx) ? requestedPx : derivedPx, derivedPx * 1.08) * widthScale,
-    MIN_BUTTON_FONT_PX,
-    MAX_BUTTON_FONT_PX,
-  )
-  const background = scene.add.rectangle(0, 0, width, height, UI_THEME.buttonFill).setStrokeStyle(1, UI_THEME.buttonStroke)
-  const text = scene.add.text(0, 0, label, {
-    color: UI_THEME.primaryText,
-    fontSize: `${Math.round(resolvedPx)}px`,
-    align: 'center',
-    wordWrap: { width: Math.max(8, width - BUTTON_TEXT_HORIZONTAL_PADDING) },
-    maxLines: BUTTON_TEXT_MAX_LINES,
-  }).setOrigin(0.5)
-  const button = scene.add.container(x, y, [background, text])
-  button.setSize(width, height)
-  button.setInteractive({ useHandCursor: true })
-  button.on('pointerup', onClick)
-  return button
 }
 
 class LobbyScene extends Phaser.Scene {
@@ -586,6 +552,7 @@ class LobbyScene extends Phaser.Scene {
         buttonWidth,
         buttonHeight,
         entry.disabled ? () => {} : entry.onClick,
+        BUTTON_THEME,
       )
       if (entry.disabled) {
         button.setAlpha(0.4)
@@ -908,7 +875,7 @@ class CardgameScene extends Phaser.Scene {
     height = 44,
     fontSize = this.currentLayout.actionButtonFontSize,
   ): Phaser.GameObjects.Container {
-    return buildButton(this, label, x, y, fontSize, width, height, onClick)
+    return buildButton(this, label, x, y, fontSize, width, height, onClick, BUTTON_THEME)
   }
 
   private popupActionWidth(maxWidth: number, ratio: number, minWidth: number): number {
