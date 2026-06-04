@@ -45,7 +45,7 @@ See [`docs/agent/validation-and-build.md`](../docs/agent/validation-and-build.md
   `state.adventure`/`state.game` by reference into renderers.
 - **No string→enum casts.** Use `isAiLevel`, `isCardVisualStyle`, etc.
 - **Phaser 4 masks don't clip in WebGL.** Use `setCrop` on Images and manual
-  viewport culling (`cullLogRowsToViewport`) for scrollable regions.
+  viewport culling (`cullRowsToViewport`) for scrollable regions.
 - **No `structuredClone(GameState)` in hot loops** (AI evaluation, render).
 - **Reuse shared helpers/constants:** `DEFAULT_CARD_VISUAL_STYLE`, shared
   `clamp` from `src/renderers/phaser/layout.ts`, `isBasicLand`. Do not
