@@ -90,12 +90,19 @@ describe('isLogRowVisible (fully-contained mode)', () => {
 
 class FakeRow {
   visible: boolean | null = null
+  private readonly data: Record<string, number | undefined>
+  readonly y: number
+  readonly height: number
 
   constructor(
-    private readonly data: Record<string, number | undefined>,
-    readonly y: number,
-    readonly height: number,
-  ) {}
+    data: Record<string, number | undefined>,
+    y: number,
+    height: number,
+  ) {
+    this.data = data
+    this.y = y
+    this.height = height
+  }
 
   getData(key: string): number | undefined {
     return this.data[key]
