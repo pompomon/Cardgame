@@ -5,23 +5,27 @@ Phaser 4 specific pitfalls observed in review. The renderer lives in
 
 ## Scene depth contract
 
-The cardgame scene anchors render order on these constants
-(`src/renderers/phaser/index.ts`):
+The cardgame scene anchors render order on constants and a z-order map in
+`src/renderers/phaser/depth.ts`:
 
-- `Z_LOG = -10` — replay log
-- `Z_BOARD = -5` — player-info panels
+- `DEPTH_REPLAY_LOG = -10` — replay log
+- `DEPTH_REPLAY_LOG_HEADING = -9` — replay log heading
+- `DEPTH_BOARD = -5` — player-info panels
 - default `0` — cards, buttons, battlefields
-- `Z_HEADER = 10` — Menu button, Turn/Phase label, Winner banner
+- `DEPTH_HEADER_STRIP = 9` — header strip
+- `DEPTH_HEADER = 10` — Menu button, Turn/Phase label, Winner banner
+- `DEPTH_MENU_OVERLAY = 20` — in-game menu overlay
+- `DEPTH_TARGET_PICKER_OVERLAY = 30` — target picker overlay
 
 Rule: any new GameObject that needs to occlude the log/panel layer must
 call `setDepth` explicitly. Default-depth objects (e.g. battlefield
 rectangles, hand cards) sit above the panel but below the header — if you
 need a different layering relationship, set the depth.
 
-If you change the depth constants, update the inline doc comment near the
-constants so it reflects what is actually enforced (don't claim
-"battlefields sit above the log" unless those GameObjects actually call
-`setDepth(Z_BOARD)`).
+If you change the depth constants, update `depth.ts`, this guide, and the
+depth regression tests so they reflect what is actually enforced (don't
+claim "battlefields sit above the log" unless those GameObjects actually
+render at default depth (`DEPTH_GAMEPLAY`, 0)).
 
 ## Clipping: masks vs culling
 

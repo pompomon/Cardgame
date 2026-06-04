@@ -18,6 +18,15 @@ import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
+import {
+  DEPTH_BOARD,
+  DEPTH_HEADER,
+  DEPTH_HEADER_STRIP,
+  DEPTH_MENU_OVERLAY,
+  DEPTH_REPLAY_LOG,
+  DEPTH_REPLAY_LOG_HEADING,
+  DEPTH_TARGET_PICKER_OVERLAY,
+} from './depth'
 import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
@@ -82,25 +91,6 @@ const COLOR_BORDER_SUBTLE = 0x3a4a8a
 const COLOR_BORDER_STRONG = 0x5d7cff
 const COLOR_LOG_PANEL_FILL = 0x161f4d
 const COLOR_LOG_VIEWPORT_FILL = 0x0f1740
-// Scene depth layering for the in-scene game view. Layering is anchored at
-// the scene default depth (0), where gameplay UI (hand cards, End Turn /
-// response buttons, battlefield rectangles & text) lives:
-//
-//   Z_LOG    = -10  // replay log container (panel bg, viewport, tile column)
-//   Z_BOARD  = -5   // player-info panel bg + text (above log, below cards)
-//   default  =  0   // cards, action buttons, battlefields — unchanged
-//   Z_HEADER =  10  // ☰ Menu button, Turn/Phase label, Winner banner, header strip
-//
-// The replay log is pinned BELOW gameplay UI so even if its per-row culling
-// regresses (Phaser 4's GeometryMask is documented as Canvas-only), any
-// overshoot is occluded by either the player-info panels or the header
-// strip instead of drawing over the ☰ Menu / Winner banner / cards. We
-// deliberately keep Z_BOARD < 0 so panels never sit *above* gameplay UI —
-// that way panel bg can't accidentally hide hand cards or buttons if a
-// future layout change makes them overlap.
-const Z_LOG = -10
-const Z_BOARD = -5
-const Z_HEADER = 10
 
 const UI_THEME = {
   buttonFill: 0x28368a,
@@ -1254,7 +1244,7 @@ class CardgameScene extends Phaser.Scene {
 
     // Header strip background: a solid rectangle behind the Menu button and
     // turn/phase label. Even if a future regression breaks the log mask, the
-    // log paints at Z_LOG and this strip paints at Z_HEADER above it, so the
+    // log paints at DEPTH_REPLAY_LOG and this strip paints above it, so the
     // ☰ Menu button and the Winner banner stay readable on top.
     const headerStripHeight = Math.max(this.currentLayout.headerHeight, this.currentLayout.actionButtonHeight + 4)
     const headerStrip = this.add.rectangle(
@@ -1265,7 +1255,7 @@ class CardgameScene extends Phaser.Scene {
       COLOR_APP_BACKGROUND,
       1,
     )
-    headerStrip.setDepth(Z_HEADER - 1)
+    headerStrip.setDepth(DEPTH_HEADER_STRIP)
     this.rootContainer?.add(headerStrip)
 
     // Header: Menu button on the left, then turn/phase label. No Rematch in the
@@ -1274,7 +1264,7 @@ class CardgameScene extends Phaser.Scene {
     const menuButton = this.createButton('☰ Menu', left + menuButtonWidth / 2, this.currentLayout.headerTop + this.currentLayout.actionButtonHeight / 2, () => {
       this.openMenuOverlay(view)
     }, menuButtonWidth, this.currentLayout.actionButtonHeight)
-    menuButton.setDepth(Z_HEADER)
+    menuButton.setDepth(DEPTH_HEADER)
     this.rootContainer?.add(menuButton)
 
     const headerTextX = left + menuButtonWidth + 16
@@ -1300,7 +1290,7 @@ class CardgameScene extends Phaser.Scene {
       wordWrap: { width: headerTextWidth },
       maxLines: 1,
     }).setOrigin(0, 0.5)
-    headerText.setDepth(Z_HEADER)
+    headerText.setDepth(DEPTH_HEADER)
     this.rootContainer?.add(headerText)
 
     if (shouldRenderInSceneReplayLog({ menuOpen: this.menuOpen })) {
@@ -1326,7 +1316,7 @@ class CardgameScene extends Phaser.Scene {
     const safeHeight = height
     const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
       .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
-    bg.setDepth(Z_BOARD)
+    bg.setDepth(DEPTH_BOARD)
     this.rootContainer?.add(bg)
     if (lines.length === 0) {
       return
@@ -1336,7 +1326,7 @@ class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.bodyFontSize,
       wordWrap: { width: Math.max(40, safeWidth - 20) },
     })
-    text.setDepth(Z_BOARD)
+    text.setDepth(DEPTH_BOARD)
     this.rootContainer?.add(text)
   }
 
@@ -1725,7 +1715,7 @@ class CardgameScene extends Phaser.Scene {
       height,
       COLOR_LOG_PANEL_FILL,
     ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
-    panelBg.setDepth(Z_LOG)
+    panelBg.setDepth(DEPTH_REPLAY_LOG)
     this.rootContainer?.add(panelBg)
 
     const padding = 10
@@ -1734,11 +1724,12 @@ class CardgameScene extends Phaser.Scene {
       color: UI_THEME.primaryText,
       fontSize: this.currentLayout.subtitleFontSize,
     })
-    // Heading sits above the scrollable log content (which is drawn at Z_LOG)
-    // so it stays readable even if a row-cull regression lets a partial row
-    // overlap the heading's Y band. Keep this just above Z_LOG so it remains
-    // above log rows but below gameplay UI at default depth 0.
-    heading.setDepth(Z_LOG + 1)
+    // Heading sits above the scrollable log content (drawn at
+    // DEPTH_REPLAY_LOG), so it stays readable even if a row-cull regression
+    // lets a partial row overlap the heading's Y band. Keep this just above
+    // the log layer so it remains above log rows but below gameplay UI at
+    // default depth 0.
+    heading.setDepth(DEPTH_REPLAY_LOG_HEADING)
     this.rootContainer?.add(heading)
 
     // Hidden screen-reader / accessibility mirror: keep a flat text version of
@@ -1802,7 +1793,7 @@ class CardgameScene extends Phaser.Scene {
       0.6,
     ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
     viewportBg.setInteractive()
-    viewportBg.setDepth(Z_LOG)
+    viewportBg.setDepth(DEPTH_REPLAY_LOG)
     this.rootContainer?.add(viewportBg)
 
     const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
@@ -1810,7 +1801,7 @@ class CardgameScene extends Phaser.Scene {
     const { container: tilesColumn, contentHeight } = this.buildLogTilesContent(events, tileColumnWidth, visualStyle, { activeActor, legacyLog })
     const contentTopY = viewportTop + 6
     const logContent = this.add.container(viewportLeft + 6, contentTopY, [tilesColumn])
-    logContent.setDepth(Z_LOG)
+    logContent.setDepth(DEPTH_REPLAY_LOG)
     this.rootContainer?.add(logContent)
 
     // Bitmap masks were dropped in Phaser 4, and GeometryMask is documented to
@@ -1874,7 +1865,7 @@ class CardgameScene extends Phaser.Scene {
           fontSize: this.currentLayout.smallFontSize,
         },
       ).setOrigin(1, 0)
-      scrollHint.setDepth(Z_LOG)
+      scrollHint.setDepth(DEPTH_REPLAY_LOG)
       this.rootContainer?.add(scrollHint)
     }
   }
@@ -2180,6 +2171,7 @@ class CardgameScene extends Phaser.Scene {
     this.statusText?.setVisible(false)
 
     const overlay = this.add.container(this.currentLayout.width / 2, this.currentLayout.height / 2)
+    overlay.setDepth(DEPTH_MENU_OVERLAY)
     overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
       this.statusText?.setVisible(true)
       if (this.menuOverlay === overlay) {
@@ -2614,6 +2606,7 @@ class CardgameScene extends Phaser.Scene {
     const popupHeight = Math.min(desiredHeight, maxHeight)
 
     const overlay = this.add.container(this.currentLayout.width / 2, this.currentLayout.height / 2)
+    overlay.setDepth(DEPTH_TARGET_PICKER_OVERLAY)
     overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
       if (this.pendingTargetPicker === overlay) {
         this.pendingTargetPicker = null
