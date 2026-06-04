@@ -6,11 +6,10 @@ import {
   readJsonStorageItem,
   readStorageItem,
   removeStorageItem,
-  writeJsonStorageItem,
   writeStorageItem,
+  writeJsonStorageItem,
 } from './safe-storage'
 
-export const ADVENTURE_RUN_STORAGE_KEY = 'cardgame.adventure-run'
 export const ADVENTURE_HIGH_SCORE_STORAGE_KEY = 'cardgame.adventure-high-score'
 export const ADVENTURE_GAME_STORAGE_KEY = 'cardgame.adventure-game'
 
@@ -210,7 +209,7 @@ function isFiniteInteger(value: unknown): value is number {
   return validatorsIsFiniteInteger(value)
 }
 
-function isAdventureRunState(value: unknown): value is AdventureRunState {
+export function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (typeof value !== 'object' || value === null) {
     return false
   }
@@ -237,22 +236,6 @@ function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (!isAdventureRunStatus(run.status)) return false
   if (!Array.isArray(run.opponentLineup) || run.opponentLineup.length !== 7) return false
   return run.opponentLineup.every((entry) => isAdventureOpponentDeck(entry))
-}
-
-export function persistAdventureRun(run: AdventureRunState): boolean {
-  return writeJsonStorageItem(ADVENTURE_RUN_STORAGE_KEY, run)
-}
-
-export function clearStoredAdventureRun(): void {
-  removeStorageItem(ADVENTURE_RUN_STORAGE_KEY)
-}
-
-export function readStoredAdventureRun(): AdventureRunState | null {
-  const parsed = readJsonStorageItem(ADVENTURE_RUN_STORAGE_KEY)
-  if (parsed === null) {
-    return null
-  }
-  return isAdventureRunState(parsed) ? parsed : null
 }
 
 export function readStoredAdventureHighScore(): number {

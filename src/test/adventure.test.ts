@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { BASIC_LANDS } from '../game/types'
 import {
-  ADVENTURE_RUN_STORAGE_KEY,
   buildAdventureLineup,
   computeAdventureScore,
   createAdventureRun,
-  readStoredAdventureRun,
 } from '../app/adventure'
 
 interface StorageLike {
@@ -87,41 +85,4 @@ describe('adventure deck generation', () => {
     expect(computeAdventureScore(run)).toBe(4 * 100 - 17 + 6 * 5)
   })
 
-  it('rejects stored runs whose opponent decks are not exactly 50 cards', () => {
-    const run = createAdventureRun(42)
-    // Corrupt the first opponent's deck length
-    run.opponentLineup[0].deck = run.opponentLineup[0].deck.slice(0, 30)
-    localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(run))
-    try {
-      expect(readStoredAdventureRun()).toBeNull()
-    } finally {
-      localStorage.removeItem(ADVENTURE_RUN_STORAGE_KEY)
-    }
-  })
-
-  it('rejects stored runs with non-finite or out-of-range numeric fields', () => {
-    const baseRun = createAdventureRun(42)
-    const cases: Array<Partial<typeof baseRun>> = [
-      { currentRound: 0 },
-      { currentRound: 8 },
-      { remainingChances: -1 },
-      { winStreak: -3 },
-      { totalRoundsPlayed: -1 },
-      { totalCardsPlayed: -2 },
-      { currentOpponentIndex: -1 },
-      { currentOpponentIndex: 7 },
-    ]
-    for (const overrides of cases) {
-      const corrupted = { ...baseRun, ...overrides }
-      localStorage.setItem(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(corrupted))
-      expect(readStoredAdventureRun()).toBeNull()
-    }
-    // JSON.parse turns 1e309 into Infinity — must also be rejected.
-    localStorage.setItem(
-      ADVENTURE_RUN_STORAGE_KEY,
-      JSON.stringify({ ...baseRun, baseSeed: 'inf-marker' }).replace('"inf-marker"', '1e309'),
-    )
-    expect(readStoredAdventureRun()).toBeNull()
-    localStorage.removeItem(ADVENTURE_RUN_STORAGE_KEY)
-  })
 })

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ADVENTURE_GAME_STORAGE_KEY,
-  ADVENTURE_RUN_STORAGE_KEY,
 } from '../app/adventure'
+import { ADVENTURE_RUN_STORAGE_KEY } from '../app/adventure-persistence'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'

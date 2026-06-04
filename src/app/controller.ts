@@ -7,18 +7,20 @@ import { isGameAction, isLegalActionForState, isSeedPayload } from './action-val
 import { readStorageItem, tryReadStorageItem, writeStorageItem } from './safe-storage'
 import {
   clearStoredAdventureGameSnapshot,
-  clearStoredAdventureRun,
   computeAdventureScore,
   createAdventureRun,
   deckPairForAdventureGame,
   persistAdventureGameSnapshot,
   persistAdventureHighScore,
-  persistAdventureRun,
   readStoredAdventureGameSnapshot,
   readStoredAdventureHighScore,
-  readStoredAdventureRun,
   type AdventureRunState,
 } from './adventure'
+import {
+  clearStoredAdventureRun,
+  persistAdventureRun,
+  readStoredAdventureRun,
+} from './adventure-persistence'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
 import {

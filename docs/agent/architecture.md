@@ -22,6 +22,7 @@ src/
 │   ├── action-validation.ts Shape + legality guards for untrusted actions
 │   ├── game-recording.ts  Versioned save/load + sanitization
 │   ├── adventure.ts       Adventure run shape, snapshot guards
+│   ├── adventure-persistence.ts  Adventure-run localStorage helpers
 │   ├── ai-levels.ts       Lobby AI_LEVEL_OPTIONS (re-exports from game/)
 │   ├── animation-settings.ts  App-wide animation speed setting
 │   ├── card-visuals.ts    Procedural icon generation, raster routing
