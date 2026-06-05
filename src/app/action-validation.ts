@@ -21,7 +21,7 @@ export function isGameAction(payload: unknown): payload is GameAction {
     effectTargetId?: unknown
     discardCardId?: unknown
   }
-  if (typeof action.type !== 'string' || typeof action.actor !== 'number') {
+  if (typeof action.type !== 'string' || !isNonNegativeInteger(action.actor)) {
     return false
   }
   if (action.type === 'play_land') {

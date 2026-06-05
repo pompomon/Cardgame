@@ -12,6 +12,18 @@ import {
 
 describe('validators', () => {
   describe('isFiniteNumber', () => {
+    it.each([
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['NaN', Number.NaN],
+      ['string', '3'],
+      ['array', [1]],
+      ['null', null],
+      ['object', { value: 1 }],
+    ])('rejects %s', (_label, value) => {
+      expect(isFiniteNumber(value)).toBe(false)
+    })
+
     it('accepts finite numbers including zero and negatives', () => {
       expect(isFiniteNumber(0)).toBe(true)
       expect(isFiniteNumber(-1.5)).toBe(true)
@@ -28,6 +40,19 @@ describe('validators', () => {
   })
 
   describe('isFiniteInteger', () => {
+    it.each([
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['NaN', Number.NaN],
+      ['fraction', 1.5],
+      ['string', '3'],
+      ['array', [1]],
+      ['null', null],
+      ['object', { value: 1 }],
+    ])('rejects %s', (_label, value) => {
+      expect(isFiniteInteger(value)).toBe(false)
+    })
+
     it('rejects fractions', () => {
       expect(isFiniteInteger(1.5)).toBe(false)
     })
@@ -39,6 +64,20 @@ describe('validators', () => {
   })
 
   describe('isNonNegativeInteger', () => {
+    it.each([
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['NaN', Number.NaN],
+      ['negative', -1],
+      ['fraction', 1.5],
+      ['string', '3'],
+      ['array', [1]],
+      ['null', null],
+      ['object', { value: 1 }],
+    ])('rejects %s', (_label, value) => {
+      expect(isNonNegativeInteger(value)).toBe(false)
+    })
+
     it('accepts zero and positive integers', () => {
       expect(isNonNegativeInteger(0)).toBe(true)
       expect(isNonNegativeInteger(7)).toBe(true)
@@ -50,6 +89,20 @@ describe('validators', () => {
   })
 
   describe('isIntegerInRange', () => {
+    it.each([
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['NaN', Number.NaN],
+      ['below range', -1],
+      ['fraction', 1.5],
+      ['string', '3'],
+      ['array', [1]],
+      ['null', null],
+      ['object', { value: 1 }],
+    ])('rejects %s', (_label, value) => {
+      expect(isIntegerInRange(value, 0, 5)).toBe(false)
+    })
+
     it('respects inclusive bounds', () => {
       expect(isIntegerInRange(1, 1, 7)).toBe(true)
       expect(isIntegerInRange(7, 1, 7)).toBe(true)
@@ -59,6 +112,19 @@ describe('validators', () => {
   })
 
   describe('isRecordObject', () => {
+    it.each([
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['NaN', Number.NaN],
+      ['negative', -1],
+      ['fraction', 1.5],
+      ['string', '3'],
+      ['array', [1]],
+      ['null', null],
+    ])('rejects %s', (_label, value) => {
+      expect(isRecordObject(value)).toBe(false)
+    })
+
     it('accepts plain objects', () => {
       expect(isRecordObject({})).toBe(true)
       expect(isRecordObject({ a: 1 })).toBe(true)
@@ -76,6 +142,11 @@ describe('validators', () => {
     })
     it('keeps the most recent entries (tail)', () => {
       expect(capTail([1, 2, 3, 4, 5], 3)).toEqual([3, 4, 5])
+    })
+    it('keeps the exact tail at the cap boundary', () => {
+      const input = Array.from({ length: 12 }, (_value, index) => index)
+      expect(capTail(input, 5)).toEqual([7, 8, 9, 10, 11])
+      expect(capTail(input, 12)).toEqual(input)
     })
     it('returns empty array for max <= 0', () => {
       expect(capTail([1, 2, 3], 0)).toEqual([])
@@ -102,6 +173,9 @@ describe('validators', () => {
     it('applies max as a tail cap before filtering', () => {
       // 5 entries, cap to last 3 then filter → [3, 4, 5] all numbers
       expect(filterValid([1, 2, 3, 4, 5], isNumber, { max: 3 })).toEqual([3, 4, 5])
+    })
+    it('drops invalid entries only after applying the tail cap', () => {
+      expect(filterValid([1, 2, 3, 4, 'drop-me'], isNumber, { max: 3 })).toEqual([3, 4])
     })
   })
 })

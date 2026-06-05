@@ -1,7 +1,10 @@
 import { createStarterDeck, lcg, shuffle } from '../game/cards'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card, type GameState } from '../game/types'
 import { sanitizeLogEvents } from './game-recording'
-import { isFiniteInteger as validatorsIsFiniteInteger } from './validators'
+import {
+  isFiniteInteger as validatorsIsFiniteInteger,
+  isNonNegativeInteger as validatorsIsNonNegativeInteger,
+} from './validators'
 import {
   readJsonStorageItem,
   readStorageItem,
@@ -209,6 +212,10 @@ function isFiniteInteger(value: unknown): value is number {
   return validatorsIsFiniteInteger(value)
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return validatorsIsNonNegativeInteger(value)
+}
+
 export function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -225,14 +232,14 @@ export function isAdventureRunState(value: unknown): value is AdventureRunState 
     status?: unknown
     opponentLineup?: unknown
   }
-  if (!isFiniteInteger(run.baseSeed)) return false
+  if (!isNonNegativeInteger(run.baseSeed)) return false
   if (!isFiniteInteger(run.currentRound) || run.currentRound < 1 || run.currentRound > 7) return false
   if (!isFiniteInteger(run.remainingChances) || run.remainingChances < 0) return false
   if (!isFiniteInteger(run.winStreak) || run.winStreak < 0) return false
   if (!isFiniteInteger(run.totalRoundsPlayed) || run.totalRoundsPlayed < 0) return false
   if (!isFiniteInteger(run.totalCardsPlayed) || run.totalCardsPlayed < 0) return false
   if (!isFiniteInteger(run.currentOpponentIndex) || run.currentOpponentIndex < 0 || run.currentOpponentIndex > 6) return false
-  if (run.activeGameSeed !== null && !isFiniteInteger(run.activeGameSeed)) return false
+  if (run.activeGameSeed !== null && !isNonNegativeInteger(run.activeGameSeed)) return false
   if (!isAdventureRunStatus(run.status)) return false
   if (!Array.isArray(run.opponentLineup) || run.opponentLineup.length !== 7) return false
   return run.opponentLineup.every((entry) => isAdventureOpponentDeck(entry))
@@ -284,7 +291,7 @@ function isPlayerStateSnapshot(value: unknown, expectedId: 0 | 1): boolean {
     && Array.isArray(player.hand) && player.hand.every((entry) => isCard(entry))
     && Array.isArray(player.battlefield) && player.battlefield.every((entry) => isBattlefieldCard(entry))
     && Array.isArray(player.graveyard) && player.graveyard.every((entry) => isCard(entry))
-    && Number.isInteger(player.landsPlayedThisTurn)
+    && isNonNegativeInteger(player.landsPlayedThisTurn)
     && (player.landsPlayedThisTurn === 0 || player.landsPlayedThisTurn === 1)
 }
 
@@ -304,7 +311,7 @@ function isPendingPlainsReuseSnapshot(value: unknown): boolean {
   const pending = value as { actor?: unknown; reusedInstanceId?: unknown; reusedCardName?: unknown }
   if (pending.actor !== 0 && pending.actor !== 1) return false
   if (typeof pending.reusedInstanceId !== 'string') return false
-  if (!isBasicLand(pending.reusedCardName)) return false
+  if (!isBasicLand(pending.reusedCardName) || pending.reusedCardName === 'Plains') return false
   return true
 }
 
@@ -331,6 +338,11 @@ function isGameStateSnapshot(value: unknown): value is GameState {
   if (!Number.isInteger(candidate.nextInstanceId) || (candidate.nextInstanceId as number) < 1) return false
   if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'gameOver') return false
   if (!isPendingLandPlaySnapshot(candidate.pendingLandPlay)) return false
+  if (candidate.phase === 'plains_target') {
+    if (candidate.pendingPlainsReuse === null) return false
+  } else if (candidate.pendingPlainsReuse !== null) {
+    return false
+  }
   if (!isPendingPlainsReuseSnapshot(candidate.pendingPlainsReuse)) return false
   if (candidate.winner !== null && candidate.winner !== 'draw' && candidate.winner !== 0 && candidate.winner !== 1) return false
   if (!Array.isArray(candidate.log) || !candidate.log.every((entry) => typeof entry === 'string')) return false
