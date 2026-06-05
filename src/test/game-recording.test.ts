@@ -4,9 +4,62 @@ import {
   appendGameRecordStep,
   createGameRecord,
   parseGameRecordJson,
+  sanitizeLogEvents,
   serializeGameRecord,
   snapshotFromRecord,
 } from '../app/game-recording'
+import type { LogEvent } from '../game/types'
+
+function payloadForValidRecord(seed = 2026): Record<string, unknown> {
+  const initial = createInitialGame(seed)
+  const record = createGameRecord(seed, 'local-hvh', ['human', 'human'], 'basic', initial, 1000)
+  return JSON.parse(serializeGameRecord(record)) as Record<string, unknown>
+}
+
+function payloadForRecordWithTimeline(seed = 2027): Record<string, unknown> {
+  const initial = createInitialGame(seed)
+  const next = applyAction(initial, { type: 'end_turn', actor: 0 })
+  const record = appendGameRecordStep(
+    createGameRecord(seed, 'local-hvh', ['human', 'human'], 'basic', initial, 1000),
+    { type: 'end_turn', actor: 0 },
+    next,
+    'human',
+    1100,
+  )
+  return JSON.parse(serializeGameRecord(record)) as Record<string, unknown>
+}
+
+function parsePayload(payload: Record<string, unknown>) {
+  return parseGameRecordJson(JSON.stringify(payload))
+}
+
+function metadataOf(payload: Record<string, unknown>): Record<string, unknown> {
+  return payload.metadata as Record<string, unknown>
+}
+
+function initialStateOf(payload: Record<string, unknown>): Record<string, unknown> {
+  return payload.initialState as Record<string, unknown>
+}
+
+function timelineStepOf(payload: Record<string, unknown>, index = 0): Record<string, unknown> {
+  return (payload.timeline as Array<Record<string, unknown>>)[index]
+}
+
+function stepStateOf(payload: Record<string, unknown>, index = 0): Record<string, unknown> {
+  return timelineStepOf(payload, index).state as Record<string, unknown>
+}
+
+function playerOf(state: Record<string, unknown>, index: 0 | 1): Record<string, unknown> {
+  return (state.players as Array<Record<string, unknown>>)[index]
+}
+
+function validOversizedEvents(): LogEvent[] {
+  return Array.from({ length: 10000 }, (_value, index) => ({
+    kind: 'turn_start',
+    turn: index + 1,
+    actor: 0,
+  }))
+}
 
 describe('game-recording', () => {
   it('round-trips a recording through JSON parse/serialize', () => {
@@ -517,5 +570,151 @@ describe('game-recording', () => {
     if (synthesized?.action.type === 'resolve_plains_reuse') {
       expect(synthesized.action.effectTargetId).toBe('enemy-a')
     }
+  })
+
+  it.each([
+    ['negative seed', (payload: Record<string, unknown>) => { metadataOf(payload).seed = -1 }],
+    ['fractional seed', (payload: Record<string, unknown>) => { metadataOf(payload).seed = 1.5 }],
+    ['negative startedAt', (payload: Record<string, unknown>) => { metadataOf(payload).startedAt = -1 }],
+    ['fractional updatedAt', (payload: Record<string, unknown>) => { metadataOf(payload).updatedAt = 2.5 }],
+    ['invalid mode', (payload: Record<string, unknown>) => { metadataOf(payload).mode = 'invalid-mode' }],
+    ['invalid controllers', (payload: Record<string, unknown>) => { metadataOf(payload).controllers = ['human', 'bot'] }],
+    ['invalid aiLevel', (payload: Record<string, unknown>) => { metadataOf(payload).aiLevel = 'omniscient' }],
+    ['invalid completed flag', (payload: Record<string, unknown>) => { metadataOf(payload).completed = 'false' }],
+  ])('rejects malformed metadata: %s', (_label, mutate) => {
+    const payload = payloadForValidRecord()
+    mutate(payload)
+
+    expect(parsePayload(payload).ok).toBe(false)
+  })
+
+  it('rejects metadata numeric fields that JSON parses as Infinity', () => {
+    const payload = payloadForValidRecord()
+    metadataOf(payload).seed = '__INF__'
+    const parsed = parseGameRecordJson(JSON.stringify(payload).replace('"__INF__"', '1e309'))
+
+    expect(parsed.ok).toBe(false)
+  })
+
+  it.each([
+    ['negative turn', (state: Record<string, unknown>) => { state.turn = -1 }],
+    ['fractional turn', (state: Record<string, unknown>) => { state.turn = 1.5 }],
+    ['negative nextInstanceId', (state: Record<string, unknown>) => { state.nextInstanceId = -1 }],
+    ['fractional nextInstanceId', (state: Record<string, unknown>) => { state.nextInstanceId = 2.5 }],
+    ['negative landsPlayedThisTurn', (state: Record<string, unknown>) => { playerOf(state, 0).landsPlayedThisTurn = -1 }],
+    ['fractional landsPlayedThisTurn', (state: Record<string, unknown>) => { playerOf(state, 0).landsPlayedThisTurn = 1.5 }],
+    ['missing player', (state: Record<string, unknown>) => { state.players = (state.players as unknown[]).slice(0, 1) }],
+    ['swapped player ids', (state: Record<string, unknown>) => {
+      const players = state.players as unknown[]
+      state.players = [players[1], players[0]]
+    }],
+    ['invalid phase', (state: Record<string, unknown>) => { state.phase = 'cleanup' }],
+    ['invalid winner', (state: Record<string, unknown>) => { state.winner = 9 }],
+    ['invalid currentPlayer', (state: Record<string, unknown>) => { state.currentPlayer = 2 }],
+    ['invalid card name', (state: Record<string, unknown>) => {
+      const deck = playerOf(state, 0).deck as Array<Record<string, unknown>>
+      deck[0] = { ...deck[0], name: 'Bogus' }
+    }],
+    ['malformed battlefield entry', (state: Record<string, unknown>) => { playerOf(state, 0).battlefield = [{ instanceId: 'bf-1' }] }],
+    ['malformed pending land play', (state: Record<string, unknown>) => {
+      state.pendingLandPlay = {
+        actor: 0,
+        card: { id: 'c1', name: 'Forest', type: 'land' },
+        effectTargetId: 5,
+      }
+    }],
+    ['pending Plains reuse outside plains_target', (state: Record<string, unknown>) => {
+      state.phase = 'main'
+      state.pendingPlainsReuse = {
+        actor: 0,
+        reusedInstanceId: 'p0-1',
+        reusedCardName: 'Forest',
+      }
+    }],
+    ['malformed pending Plains reuse', (state: Record<string, unknown>) => {
+      state.phase = 'plains_target'
+      state.pendingPlainsReuse = {
+        actor: 0,
+        reusedInstanceId: 'p0-1',
+        reusedCardName: 'Plains',
+      }
+    }],
+  ])('rejects malformed initial game state: %s', (_label, mutate) => {
+    const payload = payloadForValidRecord()
+    mutate(initialStateOf(payload))
+
+    expect(parsePayload(payload).ok).toBe(false)
+  })
+
+  it('rejects game-state numeric fields that JSON parses as Infinity', () => {
+    const payload = payloadForValidRecord()
+    initialStateOf(payload).turn = '__INF__'
+    const parsed = parseGameRecordJson(JSON.stringify(payload).replace('"__INF__"', '1e309'))
+
+    expect(parsed.ok).toBe(false)
+  })
+
+  it.each([
+    ['unknown source', (step: Record<string, unknown>) => { step.source = 'spectator' }],
+    ['unknown action discriminant', (step: Record<string, unknown>) => { step.action = { type: 'cheat', actor: 0 } }],
+    ['out-of-range action actor', (step: Record<string, unknown>) => { step.action = { type: 'end_turn', actor: 2 } }],
+    ['negative timestamp', (step: Record<string, unknown>) => { step.timestamp = -1 }],
+    ['fractional timestamp', (step: Record<string, unknown>) => { step.timestamp = 1.5 }],
+    ['non-sequential index', (step: Record<string, unknown>) => { step.index = 7 }],
+    ['malformed nested state', (step: Record<string, unknown>) => { (step.state as Record<string, unknown>).currentPlayer = 9 }],
+  ])('rejects malformed timeline step: %s', (_label, mutate) => {
+    const payload = payloadForRecordWithTimeline()
+    mutate(timelineStepOf(payload))
+
+    expect(parsePayload(payload).ok).toBe(false)
+  })
+
+  it('rejects timeline numeric fields that JSON parses as Infinity', () => {
+    const payload = payloadForRecordWithTimeline()
+    timelineStepOf(payload).timestamp = '__INF__'
+    const parsed = parseGameRecordJson(JSON.stringify(payload).replace('"__INF__"', '1e309'))
+
+    expect(parsed.ok).toBe(false)
+  })
+
+  it('sanitizes oversized structured log events from the tail', () => {
+    const sanitized = sanitizeLogEvents([
+      { kind: 'turn_start', turn: 0, actor: 0 },
+      { kind: 'unknown_event' },
+      { kind: 'draw', actor: 0, cardName: 'Bogus' },
+      ...validOversizedEvents(),
+    ])
+
+    expect(sanitized).toHaveLength(10000)
+    expect(sanitized[0]).toEqual({ kind: 'turn_start', turn: 1, actor: 0 })
+    expect(sanitized[sanitized.length - 1]).toEqual({ kind: 'turn_start', turn: 10000, actor: 0 })
+    expect(sanitized.some((event) => event.kind === 'turn_start' && event.turn === 0)).toBe(false)
+    expect(sanitized.some((event) => event.kind === 'draw')).toBe(false)
+  })
+
+  it('sanitizes oversized structured log events when parsing records', () => {
+    const payload = payloadForRecordWithTimeline()
+    initialStateOf(payload).events = [
+      { kind: 'turn_start', turn: 0, actor: 0 },
+      { kind: 'unknown_event' },
+      ...validOversizedEvents(),
+    ]
+    stepStateOf(payload).events = [
+      { kind: 'turn_start', turn: 0, actor: 0 },
+      { kind: 'turn_start', turn: 1.5, actor: 0 },
+      ...validOversizedEvents(),
+    ]
+
+    const parsed = parsePayload(payload)
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) {
+      return
+    }
+    expect(parsed.record.initialState.events).toHaveLength(10000)
+    expect(parsed.record.initialState.events[0]).toEqual({ kind: 'turn_start', turn: 1, actor: 0 })
+    expect(parsed.record.timeline[0].state.events).toHaveLength(10000)
+    expect(parsed.record.timeline[0].state.events[0]).toEqual({ kind: 'turn_start', turn: 1, actor: 0 })
+    expect(parsed.record.timeline[0].state.events.some((event) => event.kind === 'turn_start' && event.turn === 0)).toBe(false)
   })
 })
