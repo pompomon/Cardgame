@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildViewModel } from '../app/view-model'
 import { createInitialGame } from '../game/engine'
-import type { AppState } from '../app/types'
+import { HIDDEN_HAND_CARD_NAME, type AppState } from '../app/types'
 
 function createState(seed: number): AppState {
   return {
@@ -37,6 +37,10 @@ function createState(seed: number): AppState {
       hasSavedRun: false,
     },
   }
+}
+
+function expectAllCardsHidden(cards: ReadonlyArray<{ name: string }>): void {
+  expect(cards.every((card) => card.name === HIDDEN_HAND_CARD_NAME)).toBe(true)
 }
 
 describe('buildViewModel', () => {
@@ -75,6 +79,48 @@ describe('buildViewModel', () => {
     expect(vm.game?.pendingPlainsReuseName).toBe('Forest')
     expect(vm.game?.legal.plainsReuseOptions.map((entry) => entry.action.effectTargetId)).toEqual(['g-1', 'g-2'])
   })
+
+  it('projects game and adventure snapshots without sharing controller-owned references', () => {
+    const state = createState(55)
+    state.game!.log = ['entry-0', 'entry-1']
+    state.game!.events = [
+      { kind: 'game_started' },
+      { kind: 'turn_start', turn: 1, actor: 0 },
+    ]
+    state.game!.players[0].hand = [{ id: 'h-1', name: 'Forest', type: 'land' }]
+    state.game!.players[0].graveyard = [{ id: 'g-1', name: 'Swamp', type: 'land' }]
+    state.game!.players[0].battlefield = [
+      { instanceId: 'bf-1', card: { id: 'bf-card-1', name: 'Mountain', type: 'land' } },
+    ]
+    state.adventure.opponentLineup = [{
+      id: 'opponent-1',
+      label: 'Opponent 1',
+      kind: 'dual',
+      lands: ['Forest', 'Swamp'],
+      deck: [{ id: 'deck-1', name: 'Forest', type: 'land' }],
+    }]
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.game).not.toBe(state.game)
+    expect(vm.game?.players).not.toBe(state.game!.players)
+    expect(vm.game?.players[0]).not.toBe(state.game!.players[0])
+    expect(vm.game?.players[1]).not.toBe(state.game!.players[1])
+    expect(vm.game?.players[0].handCards).not.toBe(state.game!.players[0].hand)
+    expect(vm.game?.players[0].graveyardCards).not.toBe(state.game!.players[0].graveyard)
+    expect(vm.game?.players[0].battlefield).not.toBe(state.game!.players[0].battlefield)
+    expect(vm.game?.log).toEqual(state.game!.log)
+    expect(vm.game?.log).not.toBe(state.game!.log)
+    expect(vm.game?.events).toEqual(state.game!.events)
+    expect(vm.game?.events).not.toBe(state.game!.events)
+    expect(vm.game?.events[0]).not.toBe(state.game!.events[0])
+
+    expect(vm.adventure).not.toBe(state.adventure)
+    expect(vm.adventure.opponentLineup).not.toBe(state.adventure.opponentLineup)
+    expect(vm.adventure.opponentLineup[0]).not.toBe(state.adventure.opponentLineup[0])
+    expect(vm.adventure.opponentLineup[0].lands).toEqual(['Forest', 'Swamp'])
+    expect(vm.adventure.opponentLineup[0].lands).not.toBe(state.adventure.opponentLineup[0].lands)
+  })
 })
 
 describe('buildViewModel hand-redaction', () => {
@@ -99,7 +145,7 @@ describe('buildViewModel hand-redaction', () => {
     // AI hand is fully redacted but the count + ids remain.
     expect(vm.game?.players[1].handCount).toBe(3)
     expect(vm.game?.players[1].handCards.map((c) => c.id)).toEqual(['a-1', 'a-2', 'a-3'])
-    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
+    expectAllCardsHidden(vm.game!.players[1].handCards)
   })
 
   it('redacts the AI hand in adventure-hvai too', () => {
@@ -109,7 +155,8 @@ describe('buildViewModel hand-redaction', () => {
     state.game!.players[1].hand = [{ id: 'a-1', name: 'Swamp', type: 'land' }]
 
     const vm = buildViewModel(state, false)
-    expect(vm.game?.players[1].handCards[0].name).toBe('__hidden__')
+    expect(vm.game?.players[1].handCards[0].name).toBe(HIDDEN_HAND_CARD_NAME)
+    expectAllCardsHidden(vm.game!.players[1].handCards)
   })
 
   it('keeps both hands visible for local-hvh', () => {
@@ -167,23 +214,34 @@ describe('buildViewModel hand-redaction', () => {
     // real card art in the target picker.
     expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain', 'Forest'])
     // The general hand projection is still redacted everywhere else.
-    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
+    expectAllCardsHidden(vm.game!.players[1].handCards)
   })
 
-  it('keeps the AI hand redacted (no reveal) when the human cannot play Swamp', () => {
+  it('does not leak hidden AI hand names outside the scoped Swamp reveal', () => {
     const state = createState(106)
     state.mode = 'local-hvai'
     state.controllers = ['human', 'ai']
-    // Human has no Swamp in hand; only a Forest with nothing to return.
-    state.game!.players[0].hand = [{ id: 'p0-forest', name: 'Forest', type: 'land' }]
+    // Human has no Swamp in hand, so no scoped reveal is active.
+    state.game!.players[0].hand = [{ id: 'p0-island', name: 'Island', type: 'land' }]
     state.game!.players[1].hand = [
       { id: 'ai-1', name: 'Mountain', type: 'land' },
       { id: 'ai-2', name: 'Forest', type: 'land' },
     ]
 
     const vm = buildViewModel(state, false)
+    const labels = Object.values(vm.game!.legal.playLandByCard).flat().map((option) => option.label).join('|')
+    const serializedProtectedSurfaces = JSON.stringify({
+      handCards: vm.game!.players[1].handCards,
+      revealedEnemyHandForSwamp: vm.game!.revealedEnemyHandForSwamp,
+      labels,
+    })
+
     expect(vm.game?.revealedEnemyHandForSwamp).toBeNull()
-    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
+    expectAllCardsHidden(vm.game!.players[1].handCards)
+    expect(labels).not.toContain('Mountain')
+    expect(labels).not.toContain('Forest')
+    expect(serializedProtectedSurfaces).not.toContain('Mountain')
+    expect(serializedProtectedSurfaces).not.toContain('Forest')
   })
 
   it('reveals the AI hand for Swamp targeting in adventure-hvai too', () => {
@@ -225,6 +283,6 @@ describe('buildViewModel hand-redaction', () => {
     expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain', 'Forest'])
     // Outside the play-land label path, the projected enemy hand is still
     // redacted in players[].handCards.
-    expect(vm.game?.players[1].handCards.every((c) => c.name === '__hidden__')).toBe(true)
+    expectAllCardsHidden(vm.game!.players[1].handCards)
   })
 })
