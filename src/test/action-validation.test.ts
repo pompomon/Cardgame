@@ -44,6 +44,16 @@ describe('action-validation', () => {
     it('rejects missing actor', () => {
       expect(isGameAction({ type: 'end_turn' })).toBe(false)
     })
+    it.each([
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['NaN', Number.NaN],
+      ['negative', -1],
+      ['fraction', 1.5],
+      ['string', '0'],
+    ])('rejects %s actors', (_label, actor) => {
+      expect(isGameAction({ type: 'end_turn', actor })).toBe(false)
+    })
     it('accepts end_turn and pass_response', () => {
       expect(isGameAction({ type: 'end_turn', actor: 0 })).toBe(true)
       expect(isGameAction({ type: 'pass_response', actor: 1 })).toBe(true)
