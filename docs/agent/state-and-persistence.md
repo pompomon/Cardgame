@@ -116,6 +116,13 @@ These patterns come up repeatedly:
   phase ends. The AI side continues to play Swamp without enemy-hand
   visibility (see `src/game/ai-visibility.ts`); the resulting asymmetry
   is intentional.
+- **Hidden-hand contract.** When a local human opposes an AI,
+  `players[].handCards` for the AI may expose stable card ids and counts,
+  but every card name must be `HIDDEN_HAND_CARD_NAME`. Do not unredact that
+  array for convenience; any intentional reveal must live in a separate,
+  narrowly scoped view-model field and disappear when the relevant decision
+  phase ends. Keep those fields as projected snapshots, not references to
+  controller-owned `state.game` or `state.adventure` objects.
 
 ## Adventure-specific rules
 

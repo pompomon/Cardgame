@@ -1,5 +1,5 @@
 import { canAct, getLegalActions } from '../game/engine'
-import type { GameAction, GameState } from '../game/types'
+import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
 import type { AdventureUiState, AppState, AppViewModel, ControllerKind, CounterOption, PlayLandOption, UiCard } from './types'
 import { HIDDEN_HAND_CARD_NAME } from './types'
@@ -25,6 +25,10 @@ function projectAdventureUiState(state: AppState): AdventureUiState {
     highScore: adventure.highScore,
     hasSavedRun: adventure.hasSavedRun,
   })
+}
+
+function cloneLogEvent(event: LogEvent): LogEvent {
+  return { ...event }
 }
 
 function winnerTextFor(game: GameState): string {
@@ -324,12 +328,12 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
         canEndTurn: legalActions.some((action) => action.type === 'end_turn'),
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),
       },
-      log: game.log,
+      log: [...game.log],
       // Older persisted snapshots (e.g. Adventure mid-round saves written before
       // LogEvent existed) may not carry an `events` array. Defend against that
       // here so renderers iterating `events` can't crash on legacy data even if
       // the snapshot loader missed back-filling.
-      events: game.events ?? [],
+      events: (game.events ?? []).map(cloneLogEvent),
       isReplay: replayActive,
       revealedEnemyHandForSwamp,
     },
