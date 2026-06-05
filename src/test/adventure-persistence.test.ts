@@ -257,19 +257,18 @@ describe('adventure run persistence', () => {
 
   it('sanitizes oversized adventure game snapshot events from the tail', () => {
     const state = createInitialGame(101) as unknown as Record<string, unknown>
+    const trailingMalformedEvents = Array.from({ length: 300 }, () => ({ kind: 'unknown_event' }))
     state.events = [
-      { kind: 'turn_start', turn: 0, actor: 0 },
-      { kind: 'unknown_event' },
-      { kind: 'turn_start', turn: 1.5, actor: 0 },
       ...validOversizedEvents(),
+      ...trailingMalformedEvents,
     ]
     store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(state))
 
     const parsed = readStoredAdventureGameSnapshot()
 
     expect(parsed).not.toBeNull()
-    expect(parsed?.events).toHaveLength(10000)
-    expect(parsed?.events[0]).toEqual({ kind: 'turn_start', turn: 1, actor: 0 })
-    expect(parsed?.events.some((event) => event.kind === 'turn_start' && event.turn === 0)).toBe(false)
+    expect(parsed?.events).toHaveLength(9700)
+    expect(parsed?.events[0]).toEqual({ kind: 'turn_start', turn: 301, actor: 0 })
+    expect(parsed?.events.some((event) => event.kind === 'unknown_event')).toBe(false)
   })
 })

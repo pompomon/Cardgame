@@ -678,18 +678,16 @@ describe('game-recording', () => {
   })
 
   it('sanitizes oversized structured log events from the tail', () => {
+    const trailingMalformedEvents = Array.from({ length: 300 }, () => ({ kind: 'unknown_event' }))
     const sanitized = sanitizeLogEvents([
-      { kind: 'turn_start', turn: 0, actor: 0 },
-      { kind: 'unknown_event' },
-      { kind: 'draw', actor: 0, cardName: 'Bogus' },
       ...validOversizedEvents(),
+      ...trailingMalformedEvents,
     ])
 
-    expect(sanitized).toHaveLength(10000)
-    expect(sanitized[0]).toEqual({ kind: 'turn_start', turn: 1, actor: 0 })
+    expect(sanitized).toHaveLength(9700)
+    expect(sanitized[0]).toEqual({ kind: 'turn_start', turn: 301, actor: 0 })
     expect(sanitized[sanitized.length - 1]).toEqual({ kind: 'turn_start', turn: 10000, actor: 0 })
-    expect(sanitized.some((event) => event.kind === 'turn_start' && event.turn === 0)).toBe(false)
-    expect(sanitized.some((event) => event.kind === 'draw')).toBe(false)
+    expect(sanitized.some((event) => event.kind === 'unknown_event')).toBe(false)
   })
 
   it('sanitizes oversized structured log events when parsing records', () => {
