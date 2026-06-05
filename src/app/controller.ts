@@ -249,10 +249,10 @@ export class AppController implements ControllerApi {
     if (persisted) {
       this.state.adventure.hasSavedRun = true
     }
-    if (statusMessage) {
-      this.state.status = statusMessage
-    } else if (!persisted) {
+    if (!persisted) {
       this.state.status = 'Adventure progress could not be saved (storage unavailable).'
+    } else if (statusMessage) {
+      this.state.status = statusMessage
     }
     return persisted
   }

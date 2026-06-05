@@ -866,6 +866,34 @@ describe('controller recording and replay', () => {
     expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
   })
 
+  it('keeps storage-unavailable warning when round completion persistence fails', () => {
+    const controller = new AppController('dom')
+    controller.startAdventure()
+    const internals = controller as unknown as {
+      state: {
+        mode: string | null
+        game: ReturnType<typeof createInitialGame> | null
+        adventure: { status: 'active' | 'paused' }
+      }
+      onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
+    }
+    internals.state.mode = 'adventure-hvai'
+    internals.state.adventure.status = 'active'
+    internals.state.game = createInitialGame(300)
+    const previous = structuredClone(internals.state.game)
+    internals.state.game.winner = 0
+    internals.state.game.phase = 'gameOver'
+
+    withAdventureRunPersistFailure(() => {
+      internals.onAdventureGameFinished(previous)
+    })
+
+    const view = controller.getViewModel()
+    expect(view.mode).toBeNull()
+    expect(view.adventure.hasSavedRun).toBe(false)
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
+  })
+
   it('keeps reset status message when abandoning from active adventure game', () => {
     const controller = new AppController('dom')
     controller.startAdventure()
@@ -927,6 +955,7 @@ describe('controller recording and replay', () => {
     expect(view.mode).toBeNull()
     expect(view.adventure.status).toBe('paused')
     expect(view.adventure.hasSavedRun).toBe(false)
+    expect(view.status).toBe('Adventure progress could not be saved (storage unavailable).')
     expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
   })
 
