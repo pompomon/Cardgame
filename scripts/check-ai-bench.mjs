@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, unlinkSync } from 'node:fs'
 
 const BENCHMARK_NAME = 'hard ai chooses from targeted scenario'
 const BASELINE_MS_PER_OP = 0.55
@@ -57,7 +57,12 @@ if (!reportPath) {
   throw new Error('usage: node scripts/check-ai-bench.mjs <benchmark-json>')
 }
 
-const benchmark = findBenchmark(readReport(reportPath), BENCHMARK_NAME)
+let benchmark
+try {
+  benchmark = findBenchmark(readReport(reportPath), BENCHMARK_NAME)
+} finally {
+  try { unlinkSync(reportPath) } catch { /* ignore if already gone */ }
+}
 
 if (!benchmark) {
   throw new Error(`benchmark '${BENCHMARK_NAME}' was not found in ${reportPath}`)
