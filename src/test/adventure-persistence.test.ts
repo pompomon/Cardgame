@@ -269,6 +269,10 @@ describe('adventure run persistence', () => {
     expect(parsed).not.toBeNull()
     expect(parsed?.events).toHaveLength(9700)
     expect(parsed?.events[0]).toEqual({ kind: 'turn_start', turn: 301, actor: 0 })
-    expect(parsed?.events.some((event) => event.kind === 'unknown_event')).toBe(false)
+    expect(parsed?.events).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ kind: 'unknown_event' }),
+      ]),
+    )
   })
 })

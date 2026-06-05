@@ -687,7 +687,11 @@ describe('game-recording', () => {
     expect(sanitized).toHaveLength(9700)
     expect(sanitized[0]).toEqual({ kind: 'turn_start', turn: 301, actor: 0 })
     expect(sanitized[sanitized.length - 1]).toEqual({ kind: 'turn_start', turn: 10000, actor: 0 })
-    expect(sanitized.some((event) => event.kind === 'unknown_event')).toBe(false)
+    expect(sanitized).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ kind: 'unknown_event' }),
+      ]),
+    )
   })
 
   it('sanitizes oversized structured log events when parsing records', () => {
