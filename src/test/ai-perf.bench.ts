@@ -1,4 +1,5 @@
 import { bench, describe } from 'vitest'
+import { isLegalActionForState } from '../app/action-validation'
 import { chooseAiAction } from '../game/ai'
 import { createInitialGame } from '../game/engine'
 import type { BattlefieldCard, Card, GameAction, GameState } from '../game/types'
@@ -79,7 +80,7 @@ function buildAiPerformanceScenario(): GameState {
 const scenario = buildAiPerformanceScenario()
 const initialAction = chooseAiAction(scenario, 0, { level: 'hard' })
 
-if (!initialAction) {
+if (!initialAction || !isLegalActionForState(scenario, initialAction)) {
   throw new Error('AI performance scenario must produce a legal hard-level action')
 }
 
