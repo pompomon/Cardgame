@@ -18,7 +18,7 @@ beforeAll(() => {
 })
 
 import { DomRenderer, renderLobby } from '../renderers/dom'
-import type { AppViewModel, ControllerKind, Mode } from '../app/types'
+import type { AppViewModel, Mode } from '../app/types'
 import type { ControllerApi } from '../app/controller'
 import type { GameAction } from '../game/types'
 
