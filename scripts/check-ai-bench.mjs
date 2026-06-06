@@ -61,7 +61,9 @@ let benchmark
 try {
   benchmark = findBenchmark(readReport(reportPath), BENCHMARK_NAME)
 } finally {
-  try { unlinkSync(reportPath) } catch { /* ignore if already gone */ }
+  if (!process.env.KEEP_AI_BENCH_REPORT) {
+    try { unlinkSync(reportPath) } catch { /* ignore if already gone */ }
+  }
 }
 
 if (!benchmark) {
