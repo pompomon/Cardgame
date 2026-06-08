@@ -204,10 +204,10 @@ export function renderLobby(view: AppViewModel): string {
         <h3>Recording</h3>
         <p>Load a saved game recording from browser storage or a file.</p>
         <div class="action-row">
-          <button id="load-recording-local">Load from Browser</button>
-          <button id="load-recording-file-btn">Load from File</button>
+          <button data-action="load-recording-local">Load from Browser</button>
+          <button data-action="load-recording-file">Load from File</button>
         </div>
-        <input id="load-recording-file" type="file" accept="application/json,.json" hidden />
+        <input data-role="load-recording-file-input" type="file" accept="application/json,.json" hidden />
         <p>Local save available: ${view.recording.hasLocalSave ? 'Yes' : 'No'}</p>
       </div>
     </section>
@@ -439,11 +439,11 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
           <div class="action-row">
             <button id="save-recording-download">Download Save File</button>
             <button id="save-recording-local">Save to Browser</button>
-            <button id="load-recording-local">Load from Browser</button>
-            <button id="load-recording-file-btn">Load from File</button>
+            <button data-action="load-recording-local">Load from Browser</button>
+            <button data-action="load-recording-file">Load from File</button>
             ${view.replay.active ? '' : '<button id="replay-start">Start Replay</button>'}
           </div>
-          <input id="load-recording-file" type="file" accept="application/json,.json" hidden />
+          <input data-role="load-recording-file-input" type="file" accept="application/json,.json" hidden />
         </div>
         ${view.replay.active
           ? `<div class="menu-section">
@@ -654,32 +654,37 @@ export class DomRenderer implements AppRenderer {
       this.controller?.saveRecordingToLocalStorage()
     })
 
-    this.container.querySelectorAll('#load-recording-local').forEach((element) => {
+    this.container.querySelectorAll('[data-action="load-recording-local"]').forEach((element) => {
       element.addEventListener('click', () => {
         this.controller?.loadRecordingFromLocalStorage()
       })
     })
 
-    this.container.querySelectorAll('#load-recording-file-btn').forEach((element) => {
+    this.container.querySelectorAll('[data-action="load-recording-file"]').forEach((element) => {
       element.addEventListener('click', () => {
-        const input = this.container?.querySelector<HTMLInputElement>('#load-recording-file')
+        const input = element
+          .closest('.controls, .menu-section')
+          ?.querySelector<HTMLInputElement>('[data-role="load-recording-file-input"]')
+          ?? this.container?.querySelector<HTMLInputElement>('[data-role="load-recording-file-input"]')
         input?.click()
       })
     })
 
-    this.container.querySelector('#load-recording-file')?.addEventListener('change', async (event) => {
-      const input = event.target as HTMLInputElement
-      const file = input.files?.[0]
-      if (!file) {
-        return
-      }
-      try {
-        const text = await file.text()
-        this.controller?.importRecordingJson(text)
-      } catch {
-        this.controller?.reportStatus('Failed to read recording file.')
-      }
-      input.value = ''
+    this.container.querySelectorAll<HTMLInputElement>('[data-role="load-recording-file-input"]').forEach((input) => {
+      input.addEventListener('change', async (event) => {
+        const target = event.target as HTMLInputElement
+        const file = target.files?.[0]
+        if (!file) {
+          return
+        }
+        try {
+          const text = await file.text()
+          this.controller?.importRecordingJson(text)
+        } catch {
+          this.controller?.reportStatus('Failed to read recording file.')
+        }
+        target.value = ''
+      })
     })
 
     this.container.querySelector('#replay-start')?.addEventListener('click', () => {
