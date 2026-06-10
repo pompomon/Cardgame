@@ -4,12 +4,18 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const REPO_ROOT = join(__dirname, '..', '..')
-const styleCss = readFileSync(join(REPO_ROOT, 'src/style.css'), 'utf8')
+
+function normalizeCssWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+const styleCss = normalizeCssWhitespace(readFileSync(join(REPO_ROOT, 'src/style.css'), 'utf8'))
 
 function ruleBody(selector: string): string {
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const normalizedSelector = normalizeCssWhitespace(selector)
+  const escapedSelector = normalizedSelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = styleCss.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))
-  expect(match, `Missing CSS rule for ${selector}`).not.toBeNull()
+  expect(match, `Missing CSS rule for ${normalizedSelector}`).not.toBeNull()
   return (match?.[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
@@ -24,14 +30,14 @@ describe('CSS image-rendering declarations', () => {
   })
 
   it('keeps raster card-style images on smooth scaling overrides', () => {
-    expect(imageRenderingValues('.action-icon.action-icon--raster,\n.card-tile-icon.card-tile-icon--raster')).toEqual(['auto'])
+    expect(imageRenderingValues('.action-icon.action-icon--raster, .card-tile-icon.card-tile-icon--raster')).toEqual(['auto'])
     expect(imageRenderingValues('.card-tile--raster .card-tile-bg')).toEqual(['auto'])
   })
 
   it('places raster icon overrides after the base icon rules', () => {
     const actionIconIndex = styleCss.indexOf('.action-icon {')
     const cardTileIconIndex = styleCss.indexOf('.card-tile-icon {')
-    const rasterOverrideIndex = styleCss.indexOf('.action-icon.action-icon--raster,\n.card-tile-icon.card-tile-icon--raster')
+    const rasterOverrideIndex = styleCss.indexOf('.action-icon.action-icon--raster, .card-tile-icon.card-tile-icon--raster')
 
     expect(actionIconIndex).toBeGreaterThanOrEqual(0)
     expect(cardTileIconIndex).toBeGreaterThan(actionIconIndex)
