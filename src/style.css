@@ -139,14 +139,6 @@ body {
   vertical-align: middle;
 }
 
-/* Raster (HD) style variant: smooth scaling for downscaled PNG glyphs.
-   Override `image-rendering: pixelated` from the base `.action-icon` /
-   `.card-tile-icon` rules so PNG art is not pixel-snapped. */
-.action-icon.action-icon--raster,
-.card-tile-icon.card-tile-icon--raster {
-  image-rendering: auto;
-}
-
 button,
 select,
 textarea {
@@ -277,6 +269,14 @@ textarea {
   display: inline-block;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
+}
+
+/* Raster (HD/Monochrome) style variant: smooth scaling for downscaled PNG
+   glyphs. Keep this after the base `.action-icon` / `.card-tile-icon` rules
+   so it overrides their pixel-snapped procedural fallback rendering. */
+.action-icon.action-icon--raster,
+.card-tile-icon.card-tile-icon--raster {
+  image-rendering: auto;
 }
 
 .battlefield-active {
