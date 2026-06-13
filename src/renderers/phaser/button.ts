@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 
 import { clamp } from './layout'
+import { buildPolishedPanel } from './visual-primitives'
 
 export const BUTTON_TEXT_HORIZONTAL_PADDING = 24
 const BUTTON_TEXT_HEIGHT_RATIO = 0.42
@@ -36,7 +37,17 @@ export function buildButton(
     MIN_BUTTON_FONT_PX,
     MAX_BUTTON_FONT_PX,
   )
-  const background = scene.add.rectangle(0, 0, width, height, theme.fill).setStrokeStyle(1, theme.stroke)
+  const background = buildPolishedPanel(scene, 0, 0, {
+    fill: theme.fill,
+    stroke: theme.stroke,
+    width,
+    height,
+    radius: 10,
+    strokeWidth: 1,
+    shadow: true,
+    shadowAlpha: 0.2,
+    shadowOffset: 3,
+  })
   const text = scene.add.text(0, 0, label, {
     color: theme.text,
     fontSize: `${Math.round(resolvedPx)}px`,
@@ -47,6 +58,20 @@ export function buildButton(
   const button = scene.add.container(x, y, [background, text])
   button.setSize(width, height)
   button.setInteractive({ useHandCursor: true })
+  button.on('pointerover', () => {
+    background.setAlpha(1)
+    button.setScale(1.015)
+  })
+  button.on('pointerout', () => {
+    background.setAlpha(1)
+    button.setScale(1)
+  })
+  button.on('pointerdown', () => {
+    button.setScale(0.985)
+  })
+  button.on('pointerup', () => {
+    button.setScale(1.015)
+  })
   button.on('pointerup', onClick)
   return button
 }

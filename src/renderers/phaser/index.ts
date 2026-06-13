@@ -7,7 +7,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { ALL_CARD_ART, cardArtFallbackKey, cardArtKey } from '../../app/card-art'
+import { ALL_CARD_ART, CARD_BACK_KEY, cardArtKey, cardBackUrl } from '../../app/card-art'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixelRects } from '../../app/card-visuals'
@@ -18,6 +18,7 @@ import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
+import { canRenderCardBackTexture, resolveRasterCardArtTextureKey } from './card-rendering'
 import {
   DEPTH_BOARD,
   DEPTH_HEADER,
@@ -34,6 +35,7 @@ import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay, type MenuOverlayInstallEntry } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
+import { buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -173,6 +175,9 @@ function preloadCardArt(scene: Phaser.Scene): void {
     if (entry.fallbackKey !== undefined && entry.fallbackUrl !== undefined && !scene.textures.exists(entry.fallbackKey)) {
       scene.load.image(entry.fallbackKey, entry.fallbackUrl)
     }
+  }
+  if (!scene.textures.exists(CARD_BACK_KEY)) {
+    scene.load.image(CARD_BACK_KEY, cardBackUrl())
   }
   // Phaser scenes can be stopped/started repeatedly (e.g. lobby ↔ game).
   // `scene.load.once` only detaches when the event actually fires, so on
@@ -872,7 +877,17 @@ class CardgameScene extends Phaser.Scene {
   ): Phaser.GameObjects.Container {
     const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const style = cardStyleForLand(cardName, visualStyle)
-    const background = this.add.rectangle(0, 0, width, height, style.fill).setStrokeStyle(2, style.stroke)
+    const background = buildPolishedPanel(this, 0, 0, {
+      fill: style.fill,
+      stroke: style.stroke,
+      width,
+      height,
+      radius: 10,
+      strokeWidth: 2,
+      shadow: true,
+      shadowAlpha: 0.2,
+      shadowOffset: 3,
+    })
     const text = this.add.text(0, 0, label, {
       color: style.text,
       fontSize,
@@ -945,38 +960,25 @@ class CardgameScene extends Phaser.Scene {
     // The fallback chain is only populated for styles that ship a backup
     // raster (currently `hd`); other styles fall straight from primary to
     // the procedural pixel-template.
+    const textureExists = (key: string): boolean => this.textures?.exists(key) ?? false
+    const rasterKey = resolveRasterCardArtTextureKey(land, visualStyle, textureExists)
     const primaryKey = cardArtKey(land, visualStyle)
-    const fallbackKey = visualStyle === 'hd' ? cardArtFallbackKey(land, 'hd') : null
-    let resolvedKey: string | null = null
-    if (this.textures && this.textures.exists(primaryKey)) {
-      resolvedKey = primaryKey
-    } else if (fallbackKey !== null && this.textures && this.textures.exists(fallbackKey)) {
-      resolvedKey = fallbackKey
-    }
+    const resolvedKey = rasterKey ?? (textureExists(primaryKey) ? primaryKey : null)
     if (resolvedKey !== null) {
-      const image = this.add.image(centerX, centerY, resolvedKey)
-      image.setOrigin(0.5, 0.5)
       if (options.fit === 'cover' && options.coverWidth && options.coverHeight) {
         // Cover-fit: scale uniformly so the texture fills the target rectangle
         // and crop the overflow so the visible region is exactly coverWidth ×
         // coverHeight, centered on (centerX, centerY). Using setCrop instead
         // of a Phaser GeometryMask because Phaser 4's GeometryMask is a no-op
         // under the WebGL renderer.
-        const source = this.textures.get(resolvedKey).getSourceImage() as { width?: number; height?: number } | null
-        const texW = (source && typeof source.width === 'number' && source.width > 0) ? source.width : size
-        const texH = (source && typeof source.height === 'number' && source.height > 0) ? source.height : size
-        const w = options.coverWidth
-        const h = options.coverHeight
-        const scale = Math.max(w / texW, h / texH)
-        const cropW = Math.min(texW, w / scale)
-        const cropH = Math.min(texH, h / scale)
-        const cropX = Math.max(0, (texW - cropW) / 2)
-        const cropY = Math.max(0, (texH - cropH) / 2)
-        image.setScale(scale)
-        image.setCrop(cropX, cropY, cropW, cropH)
-      } else {
-        image.setDisplaySize(size, size)
+        const coverImage = buildCoverImage(this, resolvedKey, options.coverWidth, options.coverHeight, size)
+        coverImage.setPosition(centerX, centerY)
+        container.add(coverImage)
+        return isRasterCardVisualStyle(visualStyle)
       }
+      const image = this.add.image(centerX, centerY, resolvedKey)
+      image.setOrigin(0.5, 0.5)
+      image.setDisplaySize(size, size)
       container.add(image)
       return isRasterCardVisualStyle(visualStyle)
     }
@@ -1082,8 +1084,6 @@ class CardgameScene extends Phaser.Scene {
   private findBattlefieldTargetEntry(owner: BattlefieldTargetOwner, effectTargetId: string): BattlefieldTargetEntry | null {
     return this.battlefieldTargetEntries.find((entry) => entry.owner === owner && entry.effectTargetId === effectTargetId) ?? null
   }
-
-
 
   private processAbilityEffects(view: AppViewModel): void {
     const game = view.game
@@ -1236,8 +1236,16 @@ class CardgameScene extends Phaser.Scene {
     }
     const safeWidth = width
     const safeHeight = height
-    const bg = this.add.rectangle(x + safeWidth / 2, y + safeHeight / 2, safeWidth, safeHeight, bgColor)
-      .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
+    const bg = buildPolishedPanel(this, x + safeWidth / 2, y + safeHeight / 2, {
+      fill: bgColor,
+      stroke: COLOR_BORDER_SUBTLE,
+      width: safeWidth,
+      height: safeHeight,
+      radius: 10,
+      shadow: true,
+      shadowAlpha: 0.18,
+      shadowOffset: 3,
+    })
     bg.setDepth(DEPTH_BOARD)
     this.rootContainer?.add(bg)
     if (lines.length === 0) {
@@ -1311,13 +1319,22 @@ class CardgameScene extends Phaser.Scene {
     // Non-active battlefield (top, no drop zone, red tint).
     const nonActiveX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
     const nonActiveY = this.currentLayout.nonActiveBattlefieldY + this.currentLayout.nonActiveBattlefieldHeight / 2
-    const nonActiveBg = this.add.rectangle(
+    const nonActiveBg = buildPolishedPanel(
+      this,
       nonActiveX,
       nonActiveY,
-      this.currentLayout.boardColumnWidth,
-      this.currentLayout.nonActiveBattlefieldHeight,
-      COLOR_BATTLEFIELD_NON_ACTIVE_FILL,
-    ).setStrokeStyle(2, COLOR_BATTLEFIELD_NON_ACTIVE_STROKE)
+      {
+        fill: COLOR_BATTLEFIELD_NON_ACTIVE_FILL,
+        stroke: COLOR_BATTLEFIELD_NON_ACTIVE_STROKE,
+        width: this.currentLayout.boardColumnWidth,
+        height: this.currentLayout.nonActiveBattlefieldHeight,
+        radius: 12,
+        strokeWidth: 2,
+        shadow: true,
+        shadowAlpha: 0.2,
+        shadowOffset: 4,
+      },
+    )
     this.rootContainer?.add(nonActiveBg)
     this.rootContainer?.add(this.add.text(
       this.currentLayout.boardColumnLeft + 8,
@@ -1357,13 +1374,22 @@ class CardgameScene extends Phaser.Scene {
     // Active battlefield (below non-active, drop zone enabled, green tint).
     const activeX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
     const activeY = this.currentLayout.activeBattlefieldY + this.currentLayout.activeBattlefieldHeight / 2
-    const activeBg = this.add.rectangle(
+    const activeBg = buildPolishedPanel(
+      this,
       activeX,
       activeY,
-      this.currentLayout.boardColumnWidth,
-      this.currentLayout.activeBattlefieldHeight,
-      COLOR_BATTLEFIELD_ACTIVE_FILL,
-    ).setStrokeStyle(2, COLOR_BATTLEFIELD_ACTIVE_STROKE)
+      {
+        fill: COLOR_BATTLEFIELD_ACTIVE_FILL,
+        stroke: COLOR_BATTLEFIELD_ACTIVE_STROKE,
+        width: this.currentLayout.boardColumnWidth,
+        height: this.currentLayout.activeBattlefieldHeight,
+        radius: 12,
+        strokeWidth: 2,
+        shadow: true,
+        shadowAlpha: 0.24,
+        shadowOffset: 4,
+      },
+    )
     this.rootContainer?.add(activeBg)
     this.rootContainer?.add(this.add.text(
       this.currentLayout.boardColumnLeft + 8,
@@ -1583,13 +1609,21 @@ class CardgameScene extends Phaser.Scene {
       return
     }
 
-    const panelBg = this.add.rectangle(
+    const panelBg = buildPolishedPanel(
+      this,
       x + width / 2,
       y + height / 2,
-      width,
-      height,
-      COLOR_LOG_PANEL_FILL,
-    ).setStrokeStyle(1, COLOR_BORDER_SUBTLE)
+      {
+        fill: COLOR_LOG_PANEL_FILL,
+        stroke: COLOR_BORDER_SUBTLE,
+        width,
+        height,
+        radius: 12,
+        shadow: true,
+        shadowAlpha: 0.18,
+        shadowOffset: 4,
+      },
+    )
     panelBg.setDepth(DEPTH_REPLAY_LOG)
     this.rootContainer?.add(panelBg)
 
@@ -1764,8 +1798,23 @@ class CardgameScene extends Phaser.Scene {
     // card count) without revealing card identities.
     const cardWidth = this.currentLayout.cardWidth
     const cardHeight = this.currentLayout.cardHeight
-    const back = this.add.rectangle(0, 0, cardWidth, cardHeight, COLOR_CARD_BACK_FILL).setStrokeStyle(1, COLOR_CARD_BACK_STROKE)
-    const card = this.add.container(x, y, [back])
+    const card = this.add.container(x, y)
+    if (canRenderCardBackTexture((key) => this.textures?.exists(key) ?? false)) {
+      card.add(buildCoverImage(this, CARD_BACK_KEY, cardWidth, cardHeight, Math.max(cardWidth, cardHeight)))
+      card.add(buildCardFrame(this, cardWidth, cardHeight, COLOR_CARD_BACK_STROKE, 1))
+      return card
+    }
+    const back = buildPolishedPanel(this, 0, 0, {
+      fill: COLOR_CARD_BACK_FILL,
+      stroke: COLOR_CARD_BACK_STROKE,
+      width: cardWidth,
+      height: cardHeight,
+      radius: 8,
+      shadow: true,
+      shadowAlpha: 0.25,
+      shadowOffset: 3,
+    })
+    card.add(back)
     // Cross-hatch pattern to mark the card as face-down.
     const inset = 6
     const innerW = Math.max(0, cardWidth - inset * 2)
@@ -1808,8 +1857,11 @@ class CardgameScene extends Phaser.Scene {
     // background; draw an unfilled rectangle so the painted art is not
     // covered by the neon palette swatch. Keep the stroke so the card
     // boundary stays visible (and so the highlight outline still works).
-    const willUseRasterArt = isBasicLand(label) && isRasterCardVisualStyle(visualStyle)
-      && this.textures?.exists(cardArtKey(label, visualStyle))
+    const willUseRasterArt = isBasicLand(label) && resolveRasterCardArtTextureKey(
+      label,
+      visualStyle,
+      (key) => this.textures?.exists(key) ?? false,
+    ) !== null
     // Fill rectangle is unfilled (alpha 0) for HD so the cover-fit image
     // shows through; for procedural styles keep the palette swatch behind
     // the centered pixel icon as before. The stroke is intentionally NOT
@@ -1817,7 +1869,17 @@ class CardgameScene extends Phaser.Scene {
     // below so the image cannot cover the card border.
     const fillRect = willUseRasterArt
       ? this.add.rectangle(0, 0, cardWidth, cardHeight, 0x000000, 0)
-      : this.add.rectangle(0, 0, cardWidth, cardHeight, style.fill).setStrokeStyle(strokeWidth, strokeColor)
+      : buildPolishedPanel(this, 0, 0, {
+          fill: style.fill,
+          stroke: strokeColor,
+          width: cardWidth,
+          height: cardHeight,
+          radius: 8,
+          strokeWidth,
+          shadow: true,
+          shadowAlpha: 0.24,
+          shadowOffset: 3,
+        })
     const card = this.add.container(x, y, [fillRect])
     if (isBasicLand(label)) {
       if (willUseRasterArt) {
@@ -1848,7 +1910,7 @@ class CardgameScene extends Phaser.Scene {
       const stripHeight = Math.max(fontPx + 8, 18)
       const stripWidth = Math.max(0, cardWidth - 4)
       const stripY = cardHeight / 2 - stripHeight / 2 - 2
-      const backdrop = this.add.rectangle(0, stripY, stripWidth, stripHeight, 0x000000, 0.6)
+      const backdrop = buildLabelStrip(this, stripY, stripWidth, stripHeight)
       card.add(backdrop)
       const text = this.add.text(0, stripY, label, {
         color: style.text,
@@ -1860,8 +1922,7 @@ class CardgameScene extends Phaser.Scene {
       card.add(text)
       // Stroke overlay so the card border is not covered by the cover-fit
       // image. Use an unfilled rectangle of the same size; alpha 0 fill.
-      const strokeOverlay = this.add.rectangle(0, 0, cardWidth, cardHeight, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor)
-      card.add(strokeOverlay)
+      card.add(buildCardFrame(this, cardWidth, cardHeight, strokeColor, strokeWidth, { highlight: config.highlight }))
     } else {
       const text = this.add.text(0, 0, label, {
         color: style.text,
