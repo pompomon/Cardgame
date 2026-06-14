@@ -40,6 +40,19 @@ function makeResponse(body: string, init: ResponseInit = {}): Response {
   return new Response(body, { status: 200, ...init })
 }
 
+function expectSingleCachePut(
+  harness: ServiceWorkerHarness,
+  request: Request,
+  response: Response,
+): void {
+  expect(harness.cachePut).toHaveBeenCalledTimes(1)
+  expect(harness.cachePutCalls).toHaveLength(1)
+  const [{ key, response: cachedResponse }] = harness.cachePutCalls
+  expect(key).toBe(request)
+  expect(cacheKey(key)).toBe(request.url)
+  expect(cachedResponse).toBe(response)
+}
+
 async function flushPromises(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -118,6 +131,8 @@ describe('service worker fetch handling', () => {
       const request = makeRequest('/Cardgame/cards/hd/Forest.png')
       const cached = makeResponse('cached card')
       const network = makeResponse('network card')
+      const networkClone = makeResponse('network card clone')
+      const clone = vi.spyOn(network, 'clone').mockReturnValue(networkClone)
       harness.cachedResponses.set(request.url, cached)
       harness.fetchMock.mockResolvedValue(network)
 
@@ -127,20 +142,24 @@ describe('service worker fetch handling', () => {
       expect(response).toBe(network)
       expect(harness.fetchMock).toHaveBeenCalledWith(request)
       expect(harness.cachesMatch).not.toHaveBeenCalled()
-      expect(harness.cachePutCalls).toEqual([{ key: request, response: network }])
+      expect(clone).toHaveBeenCalledTimes(1)
+      expectSingleCachePut(harness, request, networkClone)
     })
 
     it('caches successful network card responses', async () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/cards/monochrome/Island.png')
       const network = makeResponse('network card')
+      const networkClone = makeResponse('network card clone')
+      const clone = vi.spyOn(network, 'clone').mockReturnValue(networkClone)
       harness.fetchMock.mockResolvedValue(network)
 
       const response = await dispatchFetch(harness, request)
       await flushPromises()
 
       expect(response).toBe(network)
-      expect(harness.cachePutCalls).toEqual([{ key: request, response: network }])
+      expect(clone).toHaveBeenCalledTimes(1)
+      expectSingleCachePut(harness, request, networkClone)
     })
 
     it('returns network 404 card responses without caching or falling back', async () => {
@@ -206,6 +225,8 @@ describe('service worker fetch handling', () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/assets/index-def456.css')
       const network = makeResponse('network asset')
+      const networkClone = makeResponse('network asset clone')
+      const clone = vi.spyOn(network, 'clone').mockReturnValue(networkClone)
       harness.fetchMock.mockResolvedValue(network)
 
       const response = await dispatchFetch(harness, request)
@@ -214,7 +235,8 @@ describe('service worker fetch handling', () => {
       expect(response).toBe(network)
       expect(harness.cachesMatch).toHaveBeenCalledWith(request)
       expect(harness.fetchMock).toHaveBeenCalledWith(request)
-      expect(harness.cachePutCalls).toEqual([{ key: request, response: network }])
+      expect(clone).toHaveBeenCalledTimes(1)
+      expectSingleCachePut(harness, request, networkClone)
     })
 
     it('returns non-ok network asset responses without caching them', async () => {
