@@ -60,7 +60,7 @@ describe('cache-version card-art change warning', () => {
   })
 
   it('runs the real repository check as a soft warning', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn')
     const result = checkCacheVersionForRepo(REPO_ROOT)
 
     if (result.kind === 'warning') {
