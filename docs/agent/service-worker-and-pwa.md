@@ -17,7 +17,11 @@ Current intentional split (verified at `public/sw.js:99-136`):
 Rules:
 
 - **Bump `CACHE_VERSION` when same-path card-art binaries change.**
-  Note this in the PR's "Risk / migration notes" block.
+  Note this in the PR's "Risk / migration notes" block. `npm run test`
+  includes a soft cache-version warning: when `public/cards/` changes
+  against `origin/main` and `public/sw.js` keeps the same `CACHE_VERSION`,
+  Vitest prints a reminder to bump the version and include the release-note
+  callout. The reminder is intentionally non-blocking while the check is new.
 - **`404.html` is precached but must never overwrite the SPA shell.**
   `CORE` includes `${BASE_PATH}404.html` (as `FALLBACK_URL`) so the GitHub
   Pages deep-link redirect works offline. The hazard is that a navigation
