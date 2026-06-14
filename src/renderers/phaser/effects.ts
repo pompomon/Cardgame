@@ -81,19 +81,41 @@ export function playAbilityEffect(
   }
   const cappedDuration = Math.min(durationMs, MAX_EFFECT_MS)
   const tint = KIND_TINTS[descriptor.kind] ?? 0xffffff
+  const halo = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.92, anchor.height * 0.92, tint, 0.14)
+    .setStrokeStyle(1, tint, 0.28)
+  halo.setScale(0.72)
   const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
     .setStrokeStyle(3, tint, 0.85)
-  // Rings start small and tight, then expand and fade.
+  const sparkleCount = 4
+  const sparkles: Phaser.GameObjects.Rectangle[] = []
+  for (let index = 0; index < sparkleCount; index += 1) {
+    const angle = (Math.PI * 2 * index) / sparkleCount
+    const sparkle = scene.add.rectangle(
+      anchor.x + Math.cos(angle) * anchor.width * 0.36,
+      anchor.y + Math.sin(angle) * anchor.height * 0.36,
+      6,
+      6,
+      tint,
+      0.75,
+    )
+    sparkle.setRotation(angle)
+    sparkles.push(sparkle)
+  }
+  // Rings and accent sparks start tight, then expand and fade.
   ring.setScale(0.85)
   ring.setAlpha(0.9)
   scene.tweens.add({
-    targets: ring,
+    targets: [halo, ring, ...sparkles],
     scale: 1.2,
     alpha: 0,
     duration: cappedDuration,
     ease: 'Sine.easeOut',
     onComplete: () => {
+      halo.destroy()
       ring.destroy()
+      for (const sparkle of sparkles) {
+        sparkle.destroy()
+      }
       onDone()
     },
   })
