@@ -61,19 +61,21 @@ describe('cache-version card-art change warning', () => {
 
   it('runs the real repository check as a soft warning', () => {
     const warn = vi.spyOn(console, 'warn')
-    const result = checkCacheVersionForRepo(REPO_ROOT)
+    try {
+      const result = checkCacheVersionForRepo(REPO_ROOT)
 
-    if (result.kind === 'warning') {
-      console.warn(result.message)
+      if (result.kind === 'warning') {
+        console.warn(result.message)
+      }
+
+      expect(['ok', 'skipped', 'warning']).toContain(result.kind)
+      if (result.kind === 'warning') {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('CACHE_VERSION bump'))
+      } else {
+        expect(warn).not.toHaveBeenCalled()
+      }
+    } finally {
+      warn.mockRestore()
     }
-
-    expect(['ok', 'skipped', 'warning']).toContain(result.kind)
-    if (result.kind === 'warning') {
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('CACHE_VERSION bump'))
-    } else {
-      expect(warn).not.toHaveBeenCalled()
-    }
-
-    warn.mockRestore()
   })
 })
