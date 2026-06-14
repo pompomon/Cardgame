@@ -59,11 +59,9 @@ export function buildButton(
   button.setSize(width, height)
   button.setInteractive({ useHandCursor: true })
   button.on('pointerover', () => {
-    background.setAlpha(1)
     button.setScale(1.015)
   })
   button.on('pointerout', () => {
-    background.setAlpha(1)
     button.setScale(1)
   })
   button.on('pointerdown', () => {
