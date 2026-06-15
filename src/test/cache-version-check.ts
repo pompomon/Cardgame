@@ -78,7 +78,12 @@ export function checkCacheVersionForRepo(
     return { kind: 'skipped', reason: baseWorkerResult.reason }
   }
 
-  const currentWorkerSource = readFileSync(resolve(repoRoot, SERVICE_WORKER_PATH), 'utf8')
+  let currentWorkerSource: string
+  try {
+    currentWorkerSource = readFileSync(resolve(repoRoot, SERVICE_WORKER_PATH), 'utf8')
+  } catch {
+    return { kind: 'skipped', reason: `${SERVICE_WORKER_PATH} could not be read` }
+  }
   const changedPaths = changedPathsResult.stdout
     .split('\n')
     .map((path) => path.trim())
