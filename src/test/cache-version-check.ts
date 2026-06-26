@@ -65,6 +65,10 @@ export function checkCacheVersionForRepo(
   const changedPathsResult = runGit(repoRoot, [
     'diff',
     '--name-only',
+    // Only modified/renamed/deleted paths matter for the same-path stale-cache
+    // concern. Newly added (A) card art was never cached under its URL, so
+    // excluding it avoids false-positive CACHE_VERSION warnings.
+    '--diff-filter=MRD',
     baseRef,
     '--',
     CARD_ART_PREFIX,

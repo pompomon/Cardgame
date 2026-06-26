@@ -22,6 +22,9 @@ Rules:
   against `origin/main` and `public/sw.js` keeps the same `CACHE_VERSION`,
   Vitest prints a reminder to bump the version and include the release-note
   callout. The reminder is intentionally non-blocking while the check is new.
+  The check is also skipped entirely when the base ref (`origin/main` by
+  default) isn't available locally — e.g. a shallow clone or a checkout
+  without remote refs — so the reminder may not appear in those setups.
 - **`404.html` is precached but must never overwrite the SPA shell.**
   `CORE` includes `${BASE_PATH}404.html` (as `FALLBACK_URL`) so the GitHub
   Pages deep-link redirect works offline. The hazard is that a navigation
