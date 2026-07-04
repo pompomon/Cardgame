@@ -60,12 +60,12 @@ function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiSt
   const options = game.legal.playLandByCard[card.id] ?? []
   const playable = isActiveHand && game.canInput && game.phase === 'main' && options.length > 0
   const draggable = playable ? 'true' : 'false'
-  const disabledClass = playable ? ' dom-card-shell--playable' : ' dom-card-shell--disabled'
+  const cardStateClass = playable ? ' dom-card-shell--playable' : ' dom-card-shell--disabled'
   const actionButtons = playable
     ? `<div class="dom-card-shell__actions">${options.map((option) => renderPlayLandButton(option, card.name, style)).join('')}</div>`
     : ''
   return `
-    <article class="dom-card-shell ${landClassFor(card.name)}${disabledClass}" data-card-id="${escapeHtml(card.id)}">
+    <article class="dom-card-shell ${landClassFor(card.name)}${cardStateClass}" data-card-id="${escapeHtml(card.id)}">
       <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${playable ? `Drag or play ${escapeHtml(card.name)}` : `${escapeHtml(card.name)} card`}" aria-disabled="${playable ? 'false' : 'true'}">
         ${renderCardTile(card.name, style)}
       </div>
