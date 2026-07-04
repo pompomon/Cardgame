@@ -66,7 +66,7 @@ function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiSt
     : ''
   return `
     <article class="dom-card-shell ${landClassFor(card.name)}${disabledClass}" data-card-id="${escapeHtml(card.id)}">
-      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="0" aria-label="${playable ? `Drag or play ${escapeHtml(card.name)}` : `${escapeHtml(card.name)} card`}" aria-disabled="${playable ? 'false' : 'true'}">
+      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${playable ? `Drag or play ${escapeHtml(card.name)}` : `${escapeHtml(card.name)} card`}" aria-disabled="${playable ? 'false' : 'true'}">
         ${renderCardTile(card.name, style)}
       </div>
       ${actionButtons}
@@ -358,6 +358,7 @@ export class DomRenderer implements AppRenderer {
   private menuOpen = false
   private pendingTargetSelection: PendingPlayLandTargetSelection | null = null
   private draggedCardId: string | null = null
+  private containerListenersBound = false
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -526,19 +527,22 @@ export class DomRenderer implements AppRenderer {
       })
     })
 
-    this.container.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        this.draggedCardId = null
-        if (this.pendingTargetSelection) {
-          this.pendingTargetSelection = null
-          this.controller?.reportStatus('Target selection cancelled.')
-          this.rerender()
+    if (!this.containerListenersBound) {
+      this.container.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          this.draggedCardId = null
+          if (this.pendingTargetSelection) {
+            this.pendingTargetSelection = null
+            this.controller?.reportStatus('Target selection cancelled.')
+            this.rerender()
+          }
         }
-      }
-    })
-    this.container.addEventListener('scroll', () => {
-      this.draggedCardId = null
-    }, { passive: true })
+      })
+      this.container.addEventListener('scroll', () => {
+        this.draggedCardId = null
+      }, { passive: true })
+      this.containerListenersBound = true
+    }
   }
 
   private bindEvents(): void {
