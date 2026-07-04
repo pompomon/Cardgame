@@ -17,7 +17,7 @@ beforeAll(() => {
   }
 })
 
-import { DomRenderer, renderLobby } from '../renderers/dom'
+import { DomRenderer, renderGame, renderLobby } from '../renderers/dom'
 import type { AppViewModel, Mode } from '../app/types'
 import type { ControllerApi } from '../app/controller'
 import type { GameAction } from '../game/types'
@@ -121,6 +121,7 @@ function makeContainer(): HTMLElement & { innerHTML: string } {
     innerHTML: '',
     querySelector: () => null,
     querySelectorAll: () => [],
+    addEventListener: () => {},
   } as unknown as HTMLElement & { innerHTML: string }
 }
 
@@ -161,7 +162,8 @@ describe('DOM lobby layout', () => {
     const html = renderLobby(makeView())
     // The `.lobby` modifier on `.panel` scopes the
     // `justify-content: center` / `text-align: center` rules in style.css.
-    expect(html).toContain('class="panel lobby"')
+    expect(html).toMatch(/class="[^"]*\bpanel\b[^"]*\blobby\b/)
+    expect(html).toContain('dom-cardgame__lobby')
   })
 
   it('does not duplicate element ids across lobby and in-game menu shells', () => {
@@ -182,5 +184,47 @@ describe('DOM lobby layout', () => {
       .filter(({ count }) => count > 1)
 
     expect(duplicates).toEqual([])
+  })
+
+  it('renders mobile-first DOM game layout markers with a collapsible replay log', () => {
+    const gameView = makeGameView()
+    const html = renderGame(gameView, false)
+
+    expect(html).toContain('data-dom-layout="mobile-first"')
+    expect(html).toContain('class="log dom-log-drawer"')
+    expect(html).toContain('<summary>Replay Log</summary>')
+    expect(html).toContain('dom-board__opponent')
+    expect(html).toContain('dom-board__hand')
+  })
+
+  it('marks playable active-hand cards as draggable while preserving button fallback', () => {
+    const gameView = makeGameView()
+    gameView.game!.canInput = true
+    gameView.game!.players[0].handCards = [{ id: 'card-1', name: 'Forest' }]
+    gameView.game!.legal.playLandByCard = {
+      'card-1': [{ action: { type: 'play_land', actor: 0, cardId: 'card-1' }, label: 'Play Forest' }],
+    }
+
+    const html = renderGame(gameView, false)
+
+    expect(html).toContain('data-draggable-card="card-1"')
+    expect(html).toContain('draggable="true"')
+    expect(html).toContain('data-action="play_land"')
+    expect(html).toContain('data-drop-zone="play-land"')
+  })
+
+  it('renders hidden enemy hand placeholders without revealing real card names', () => {
+    const gameView = makeGameView()
+    gameView.game!.actor = 1
+    gameView.game!.players[1].handCards = [{ id: 'hidden-1', name: '__hidden__' }]
+
+    const html = renderGame(gameView, false)
+
+    expect(html).toContain('card-tile--hidden')
+    expect(html).toContain('Hidden card')
+    expect(html).not.toContain('Forest')
+    expect(html).not.toContain('Mountain')
+    expect(html).not.toContain('Plains')
+    expect(html).not.toContain('Swamp')
   })
 })

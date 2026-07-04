@@ -250,7 +250,7 @@ export function renderLandIcon(
 
 export function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
   if (name === HIDDEN_HAND_CARD_NAME) {
-    return '<span class="card-tile dom-card dom-card--hidden" aria-label="Hidden card" title="Hidden card"><span class="dom-card__back">?</span><span class="dom-card__name">Hidden card</span></span>'
+    return '<span class="card-tile card-tile--hidden dom-card dom-card--hidden" aria-label="Hidden card" title="Hidden card"><span class="dom-card__back">?</span><span class="dom-card__name">Hidden card</span></span>'
   }
   if (!isBasicLand(name)) {
     return `<span class="card-tile dom-card dom-card--text"><span class="dom-card__name">${escapeHtml(name)}</span></span>`
