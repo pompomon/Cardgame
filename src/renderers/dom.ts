@@ -10,6 +10,7 @@ import {
 import { isAiLevel } from '../app/ai-levels'
 import { isAnimationSpeed } from '../app/animation-settings'
 import { isCardVisualStyle } from '../app/card-visual-styles'
+import { promptInstall } from '../app/install-support'
 import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
 import { isBasicLand, type GameAction } from '../game/types'
 import type { AppRenderer } from './types'
@@ -609,7 +610,7 @@ export class DomRenderer implements AppRenderer {
 
     this.container.querySelectorAll<HTMLButtonElement>('[data-action="install-app"]').forEach((button) => {
       button.addEventListener('click', () => {
-        void import('../app/install-support').then(({ promptInstall }) => promptInstall())
+        void promptInstall()
       })
     })
 
