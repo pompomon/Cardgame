@@ -7,6 +7,7 @@ import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
 import { createInitialGame } from '../game/engine'
+import { withFakeTimers } from './helpers/timers'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -106,18 +107,18 @@ function installFakeRtcPeerConnection(): () => void {
 describe('controller recording and replay', () => {
   beforeEach(() => {
     installMemoryStorage()
-    vi.useRealTimers()
   })
 
   it('records local and AI actions in timeline', () => {
-    vi.useFakeTimers()
-    const controller = new AppController('dom')
-    controller.startGame('local-aivai')
-    vi.advanceTimersByTime(500)
+    withFakeTimers(() => {
+      const controller = new AppController('dom')
+      controller.startGame('local-aivai')
+      vi.advanceTimersByTime(500)
 
-    const record = parseExported(controller)
-    expect(record.timeline.length).toBeGreaterThanOrEqual(1)
-    expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(true)
+      const record = parseExported(controller)
+      expect(record.timeline.length).toBeGreaterThanOrEqual(1)
+      expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(true)
+    })
   })
 
   it('supports replay step controls and freezes live actions during replay', () => {
@@ -268,21 +269,21 @@ describe('controller recording and replay', () => {
   })
 
   it('resumes AI scheduling after exiting replay at final state', () => {
-    vi.useFakeTimers()
-    const controller = new AppController('dom')
-    controller.startGame('local-hvai')
-    expect(controller.getViewModel().game?.legal.canEndTurn).toBe(true)
-    controller.submitAction({ type: 'end_turn', actor: 0 })
-    expect(parseExported(controller).timeline).toHaveLength(1)
+    withFakeTimers(() => {
+      const controller = new AppController('dom')
+      controller.startGame('local-hvai')
+      expect(controller.getViewModel().game?.legal.canEndTurn).toBe(true)
+      controller.submitAction({ type: 'end_turn', actor: 0 })
+      expect(parseExported(controller).timeline).toHaveLength(1)
 
-    controller.startReplay()
-    controller.exitReplay()
-    vi.advanceTimersByTime(500)
+      controller.startReplay()
+      controller.exitReplay()
+      vi.advanceTimersByTime(500)
 
-    const record = parseExported(controller)
-    expect(record.timeline.length).toBeGreaterThan(1)
-    expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(true)
-    vi.useRealTimers()
+      const record = parseExported(controller)
+      expect(record.timeline.length).toBeGreaterThan(1)
+      expect(record.timeline.some((entry) => entry.source === 'ai')).toBe(true)
+    })
   })
 
   it('clears active recording state when returning to lobby', () => {
@@ -319,15 +320,15 @@ describe('controller recording and replay', () => {
   })
 
   it('cancels stale AI timeout when starting a new game', () => {
-    vi.useFakeTimers()
-    const controller = new AppController('dom')
-    controller.startGame('local-aivai')
-    controller.startGame('local-hvh')
-    vi.advanceTimersByTime(500)
+    withFakeTimers(() => {
+      const controller = new AppController('dom')
+      controller.startGame('local-aivai')
+      controller.startGame('local-hvh')
+      vi.advanceTimersByTime(500)
 
-    const record = parseExported(controller)
-    expect(record.timeline).toHaveLength(0)
-    vi.useRealTimers()
+      const record = parseExported(controller)
+      expect(record.timeline).toHaveLength(0)
+    })
   })
 
   it('blocks replay while connected to a peer game', () => {

@@ -28,11 +28,13 @@ npm run test    # vitest run
 
 ## Fake-timer hygiene
 
-- **Always pair `vi.useFakeTimers()` with `afterEach(() => vi.useRealTimers())`.**
-  Vitest fake timers can leak across tests *and across files* in the same
-  worker, causing unrelated tests to hang or behave nondeterministically.
-- If a test installs interval/timeout handlers, clear them in `afterEach`
-  too.
+- Use `withFakeTimers(...)` from `src/test/helpers/timers.ts` for a single
+  test, or `installFakeTimerHooks()` for a whole `describe` block. Do not
+  open-code `vi.useFakeTimers()` / `vi.useRealTimers()` pairs in individual
+  test files.
+- Vitest fake timers can leak across tests *and across files* in the same
+  worker, causing unrelated tests to hang or behave nondeterministically. The
+  shared helper clears pending timers before restoring real timers.
 
 ## AI / engine tests
 

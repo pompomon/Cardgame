@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { chooseAiActionMock } = vi.hoisted(() => ({
   chooseAiActionMock: vi.fn(),
@@ -10,6 +10,7 @@ vi.mock('../game/ai', () => ({
 
 import { AppController } from '../app/controller'
 import type { GameAction, GameState } from '../game/types'
+import { installFakeTimerHooks } from './helpers/timers'
 
 function installMemoryStorage(): void {
   const map = new Map<string, string>()
@@ -32,18 +33,14 @@ function installMemoryStorage(): void {
 }
 
 describe('controller ai level wiring', () => {
+  installFakeTimerHooks()
+
   beforeEach(() => {
     installMemoryStorage()
-    vi.useFakeTimers()
     chooseAiActionMock.mockReset()
     chooseAiActionMock.mockImplementation((_state: GameState, actor: number): GameAction => {
       return { type: 'end_turn', actor }
     })
-  })
-
-  afterEach(() => {
-    vi.clearAllTimers()
-    vi.useRealTimers()
   })
 
   it('passes selected ai level into local Human vs AI decisions', () => {
