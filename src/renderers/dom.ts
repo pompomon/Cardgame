@@ -1,6 +1,7 @@
 import type { ControllerApi } from '../app/controller'
 import {
   groupCardTargetOptions,
+  HIDDEN_HAND_DISPLAY_NAME,
   resolvePlainsReuseAction,
   resolvePlainsReuseTargetSelectionMode,
   resolvePlayLandDrop,
@@ -12,6 +13,7 @@ import { isAnimationSpeed } from '../app/animation-settings'
 import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
 import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
+import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { isBasicLand, type GameAction } from '../game/types'
 import type { AppRenderer } from './types'
 import {
@@ -64,9 +66,14 @@ function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiSt
   const actionButtons = playable
     ? `<div class="dom-card-shell__actions">${options.map((option) => renderPlayLandButton(option, card.name, style)).join('')}</div>`
     : ''
+  const dragHandleLabel = playable
+    ? `Drag or play ${escapeHtml(card.name)}`
+    : card.name === HIDDEN_HAND_CARD_NAME
+      ? HIDDEN_HAND_DISPLAY_NAME
+      : `${escapeHtml(card.name)} card`
   return `
     <article class="dom-card-shell ${landClassFor(card.name)}${cardStateClass}" data-card-id="${escapeHtml(card.id)}">
-      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${playable ? `Drag or play ${escapeHtml(card.name)}` : `${escapeHtml(card.name)} card`}" aria-disabled="${playable ? 'false' : 'true'}">
+      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${dragHandleLabel}" aria-disabled="${playable ? 'false' : 'true'}">
         ${renderCardTile(card.name, style)}
       </div>
       ${actionButtons}
@@ -189,7 +196,7 @@ function renderPlainsReuseControls(game: GameUiState, view: AppViewModel): strin
   const mode = resolvePlainsReuseTargetSelectionMode(game)
   if (mode === 'popup_cards' && game.legal.plainsReuseOptions.length > 1) {
     const grouped = groupCardTargetOptions(game, { kind: 'plains_reuse' }, game.legal.plainsReuseOptions.map((option) => ({ effectTargetId: option.action.effectTargetId, label: option.label })))
-    return renderTargetSheet('Choose Plains reuse target', grouped.map((option) => ({ ...option, action: 'plains_reuse_target' as const })), view.cardVisualStyle)
+    return renderTargetSheet('Choose Plains reuse target', grouped.map((option) => ({ ...option, action: 'plains_reuse_target' as const })), view.cardVisualStyle, false)
   }
   return `
     <div class="controls dom-action-tray" aria-label="Plains reuse targets">
@@ -211,6 +218,7 @@ function renderTargetSheet(
   title: string,
   options: Array<{ effectTargetId?: string; label: string; cardName: string; action: 'play_land_target' | 'plains_reuse_target' }>,
   style: AppViewModel['cardVisualStyle'],
+  cancellable: boolean,
 ): string {
   return `
     <section class="dom-target-sheet" role="dialog" aria-modal="false" aria-label="${escapeHtml(title)}">
@@ -222,7 +230,7 @@ function renderTargetSheet(
           return `<button class="dom-target-card" data-action="${option.action}"${targetAttr}>${renderCardTile(option.cardName, style)}<span>${escapeHtml(option.label)}</span></button>`
         }).join('')}
       </div>
-      <button data-action="cancel-target-picker">Cancel</button>
+      ${cancellable ? '<button data-action="cancel-target-picker">Cancel</button>' : ''}
     </section>
   `
 }
@@ -240,7 +248,7 @@ function renderPendingPlayLandTargetPicker(game: GameUiState, pending: PendingPl
     return '<p class="dom-target-hint" role="status">Choose a highlighted battlefield target.</p>'
   }
   const grouped = groupCardTargetOptions(game, { kind: 'play_land', cardId: pending.cardId }, resolution.options)
-  return renderTargetSheet('Choose card target', grouped.map((option) => ({ ...option, action: 'play_land_target' as const })), view.cardVisualStyle)
+  return renderTargetSheet('Choose card target', grouped.map((option) => ({ ...option, action: 'play_land_target' as const })), view.cardVisualStyle, true)
 }
 
 function renderLogDrawer(game: GameUiState): string {
