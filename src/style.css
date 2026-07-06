@@ -423,7 +423,6 @@ textarea {
 .dom-cardgame__recorder,
 .dom-cardgame__p2p {
   position: relative;
-  overflow: hidden;
 }
 
 .dom-cardgame__eyebrow,

@@ -493,12 +493,11 @@ export class DomRenderer implements AppRenderer {
     this.container.querySelectorAll<HTMLElement>('[data-draggable-card]').forEach((element) => {
       element.addEventListener('dragstart', (event) => {
         const cardId = element.dataset.draggableCard
-        if (!cardId || element.getAttribute('draggable') !== 'true') {
+        if (!cardId || element.getAttribute('draggable') !== 'true' || this.pendingTargetSelection) {
           event.preventDefault()
           return
         }
         this.draggedCardId = cardId
-        this.pendingTargetSelection = null
         event.dataTransfer?.setData('text/plain', cardId)
         event.dataTransfer?.setData('application/x-cardgame-card-id', cardId)
         event.dataTransfer?.setDragImage?.(element, 40, 60)
