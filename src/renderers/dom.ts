@@ -506,7 +506,7 @@ export class DomRenderer implements AppRenderer {
         this.draggedCardId = null
       })
       element.addEventListener('keydown', (event) => {
-        if ((event.key === 'Enter' || event.key === ' ') && element.dataset.draggableCard && element.getAttribute('draggable') === 'true') {
+        if ((event.key === 'Enter' || event.key === ' ') && element.dataset.draggableCard && element.getAttribute('draggable') === 'true' && !this.pendingTargetSelection) {
           event.preventDefault()
           this.resolveDroppedCard(element.dataset.draggableCard)
         }

@@ -227,7 +227,7 @@ function rasterOnErrorHandler(stage: RasterRenderStage, imageClass: string, pare
   if (stage.onErrorSrc === null || stage.noteFailureUrl === null) {
     return ''
   }
-  const parentRemoval = parentClass ? `this.parentElement?.classList.remove(&#39;${parentClass}&#39;);` : ''
+  const parentRemoval = parentClass ? `this.closest(&#39;.${parentClass}&#39;)?.classList.remove(&#39;${parentClass}&#39;);` : ''
   if (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null) {
     return ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;${imageClass}&#39;);${parentRemoval}this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
   }

@@ -37,7 +37,7 @@ describe('DOM renderer card tile output', () => {
     expect(html).toContain('data:image/svg+xml')
     expect(html).not.toContain('/cards/hd-fallback/')
     expect(html).toContain("this.classList.remove(&#39;card-tile-bg&#39;)")
-    expect(html).toContain("this.parentElement?.classList.remove(&#39;card-tile--raster&#39;)")
+    expect(html).toContain("this.closest(&#39;.card-tile--raster&#39;)?.classList.remove(&#39;card-tile--raster&#39;)")
   })
 
   it('renders Classic card tiles using the procedural SVG and palette swatch', () => {
