@@ -43,10 +43,6 @@ interface PendingPlayLandTargetSelection {
   readonly cardId: string
 }
 
-function landClassFor(name: string): string {
-  return isBasicLand(name) ? `dom-card-shell--${name.toLowerCase()}` : 'dom-card-shell--unknown'
-}
-
 function renderActionIcon(cardName: string | null, style: AppViewModel['cardVisualStyle']): string {
   return cardName && isBasicLand(cardName) ? renderLandIcon(cardName, style, 18, 'action-icon', { forceProcedural: true }) : ''
 }
@@ -72,7 +68,7 @@ function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiSt
       ? HIDDEN_HAND_DISPLAY_NAME
       : `${escapeHtml(card.name)} card`
   return `
-    <article class="dom-card-shell ${landClassFor(card.name)}${cardStateClass}" data-card-id="${escapeHtml(card.id)}">
+    <article class="dom-card-shell${cardStateClass}" data-card-id="${escapeHtml(card.id)}">
       <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${dragHandleLabel}" aria-disabled="${playable ? 'false' : 'true'}">
         ${renderCardTile(card.name, style)}
       </div>
