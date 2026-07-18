@@ -1,326 +1,262 @@
 import type { ControllerApi } from '../app/controller'
-import { AI_LEVEL_OPTIONS, isAiLevel } from '../app/ai-levels'
-import { ANIMATION_SPEED_OPTIONS, isAnimationSpeed } from '../app/animation-settings'
-import { CARD_VISUAL_STYLE_OPTIONS, isCardVisualStyle } from '../app/card-visual-styles'
-import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
-import { getInstallUiState, promptInstall } from '../app/install-support'
-import type { AppViewModel, Mode, RendererKind } from '../app/types'
+import {
+  groupCardTargetOptions,
+  HIDDEN_HAND_DISPLAY_NAME,
+  resolvePlainsReuseAction,
+  resolvePlainsReuseTargetSelectionMode,
+  resolvePlayLandDrop,
+  resolvePlayLandTargetSelectionMode,
+  resolveTargetedPlayLandAction,
+} from '../app/action-resolution'
+import { isAiLevel } from '../app/ai-levels'
+import { isAnimationSpeed } from '../app/animation-settings'
+import { isCardVisualStyle } from '../app/card-visual-styles'
+import { promptInstall } from '../app/install-support'
+import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
-import { isBasicLand, type BasicLand, type GameAction } from '../game/types'
+import { isBasicLand, type GameAction } from '../game/types'
 import type { AppRenderer } from './types'
+import {
+  escapeHtml,
+  noteRasterCardArtLoadFailure,
+  renderCardTile,
+  renderInstallControls,
+  renderLandIcon,
+  renderLobby,
+  renderP2P,
+  resetRasterCardArtLoadFailuresForTests,
+} from './dom-utils'
+
+export {
+  escapeHtml,
+  noteRasterCardArtLoadFailure,
+  renderCardTile,
+  renderLandIcon,
+  renderLobby,
+  resetRasterCardArtLoadFailuresForTests,
+}
 
 const BLOB_URL_REVOCATION_DELAY_MS = 1000
 const DOM_LOG_VISIBLE_ENTRIES = 14
-const failedRasterCardArtUrls = new Set<string>()
 
-declare global {
-  interface Window {
-    __cardgameNoteRasterCardArtLoadFailure?: (url: string) => void
-  }
+interface PendingPlayLandTargetSelection {
+  readonly cardId: string
 }
 
-export function noteRasterCardArtLoadFailure(url: string): void {
-  failedRasterCardArtUrls.add(url)
+function renderActionIcon(cardName: string | null, style: AppViewModel['cardVisualStyle']): string {
+  return cardName && isBasicLand(cardName) ? renderLandIcon(cardName, style, 18, 'action-icon', { forceProcedural: true }) : ''
 }
 
-export function resetRasterCardArtLoadFailuresForTests(): void {
-  failedRasterCardArtUrls.clear()
+function renderPlayLandButton(option: PlayLandOption, cardName: string, style: AppViewModel['cardVisualStyle']): string {
+  const targetAttr = option.action.effectTargetId
+    ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
+    : ''
+  return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${renderActionIcon(cardName, style)}${escapeHtml(option.label)}</button>`
 }
 
-interface RasterRenderStage {
-  /** URL to use as the `<img src>` for this render pass. */
-  readonly src: string
-  /** True when `src` itself is a raster image (drives `--raster` class application). */
-  readonly isRaster: boolean
-  /** Next URL to swap to if `src` fails to load, or `null` when no further fallback is available. */
-  readonly onErrorSrc: string | null
-  /** True when the `onErrorSrc` is also raster — used so the `onerror` handler can preserve the raster classes. */
-  readonly onErrorIsRaster: boolean
-  /** URL to register as failed when `onerror` fires (always equals `src` for a raster stage). */
-  readonly noteFailureUrl: string | null
-  /**
-   * When `onErrorIsRaster` is true, the terminal procedural URL to load if the
-   * raster fallback (`onErrorSrc`) also fails. The first-hop `onerror` embeds a
-   * chained second-hop handler that advances to this URL and drops raster classes.
-   */
-  readonly onErrorChainSrc: string | null
-  /**
-   * When `onErrorIsRaster` is true, the URL to register as failed before loading
-   * `onErrorChainSrc` (i.e. the raster fallback URL itself).
-   */
-  readonly onErrorChainNoteFailureUrl: string | null
-}
-
-/**
- * Resolves which raster/procedural stage should be rendered now given the
- * in-session failed-URL set. The stages, in order of preference:
- *   0. `source.primaryUrl` (photoreal HD or other style PNG)
- *   1. `source.rasterFallbackUrl` (geometric HD fallback under `hd-fallback/`)
- *   2. `source.proceduralUrl` (procedural pixel-template SVG, terminal)
- * The first stage whose URL has not already failed in-session is rendered;
- * the inline `onerror` handler advances exactly one stage and the next
- * state-driven render call picks the right stage again.
- */
-function resolveRasterRenderStage(source: {
-  isRaster: boolean
-  primaryUrl: string
-  rasterFallbackUrl: string | null
-  proceduralUrl: string
-}): RasterRenderStage {
-  if (!source.isRaster) {
-    return { src: source.primaryUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null, onErrorChainSrc: null, onErrorChainNoteFailureUrl: null }
-  }
-  const primaryFailed = failedRasterCardArtUrls.has(source.primaryUrl)
-  const fallbackUrl = source.rasterFallbackUrl
-  const fallbackUsable = fallbackUrl !== null && !failedRasterCardArtUrls.has(fallbackUrl)
-  if (!primaryFailed) {
-    if (fallbackUsable) {
-      // primary → raster fallback → procedural: embed chain so a second failure
-      // (fallback raster missing) still reaches the terminal procedural SVG.
-      return {
-        src: source.primaryUrl,
-        isRaster: true,
-        onErrorSrc: fallbackUrl,
-        onErrorIsRaster: true,
-        noteFailureUrl: source.primaryUrl,
-        onErrorChainSrc: source.proceduralUrl,
-        onErrorChainNoteFailureUrl: fallbackUrl,
-      }
-    }
-    return {
-      src: source.primaryUrl,
-      isRaster: true,
-      onErrorSrc: source.proceduralUrl,
-      onErrorIsRaster: false,
-      noteFailureUrl: source.primaryUrl,
-      onErrorChainSrc: null,
-      onErrorChainNoteFailureUrl: null,
-    }
-  }
-  if (fallbackUsable) {
-    return {
-      src: fallbackUrl,
-      isRaster: true,
-      onErrorSrc: source.proceduralUrl,
-      onErrorIsRaster: false,
-      noteFailureUrl: fallbackUrl,
-      onErrorChainSrc: null,
-      onErrorChainNoteFailureUrl: null,
-    }
-  }
-  return { src: source.proceduralUrl, isRaster: false, onErrorSrc: null, onErrorIsRaster: false, noteFailureUrl: null, onErrorChainSrc: null, onErrorChainNoteFailureUrl: null }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
-function rendererSwitchLink(kind: RendererKind): string {
-  return kind === 'dom'
-    ? '<a href="?renderer=phaser" class="renderer-link">Switch to Phaser renderer</a>'
-    : '<a href="?renderer=dom" class="renderer-link">Switch to DOM renderer</a>'
-}
-
-function renderInstallControls(): string {
-  const installState = getInstallUiState()
+function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiState, style: AppViewModel['cardVisualStyle'], isActiveHand: boolean): string {
+  const options = game.legal.playLandByCard[card.id] ?? []
+  const playable = isActiveHand && game.canInput && game.phase === 'main' && options.length > 0
+  const draggable = playable ? 'true' : 'false'
+  const cardStateClass = playable ? ' dom-card-shell--playable' : ' dom-card-shell--disabled'
+  const actionButtons = playable
+    ? `<div class="dom-card-shell__actions">${options.map((option) => renderPlayLandButton(option, card.name, style)).join('')}</div>`
+    : ''
+  const dragHandleLabel = playable
+    ? `Drag or play ${escapeHtml(card.name)}`
+    : card.name === HIDDEN_HAND_CARD_NAME
+      ? HIDDEN_HAND_DISPLAY_NAME
+      : `${escapeHtml(card.name)} card`
   return `
-    <div class="controls install-controls">
-      <h3>Install</h3>
-      <p>${escapeHtml(installState.statusText)}</p>
-      ${installState.canPromptInstall
-        ? '<div class="action-row"><button data-action="install-app">Install App</button></div>'
-        : ''}
-      ${installState.showIosInstallHint
-        ? `<p class="install-hint">${escapeHtml(installState.iosInstructions)}</p>`
-        : ''}
+    <article class="dom-card-shell${cardStateClass}" data-card-id="${escapeHtml(card.id)}">
+      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${dragHandleLabel}" aria-disabled="${playable ? 'false' : 'true'}">
+        ${renderCardTile(card.name, style)}
+      </div>
+      ${actionButtons}
+    </article>
+  `
+}
+
+function optionTargetIds(options: Array<{ effectTargetId?: string }>): Set<string> {
+  const ids = new Set<string>()
+  for (const option of options) {
+    if (option.effectTargetId) {
+      ids.add(option.effectTargetId)
+    }
+  }
+  return ids
+}
+
+function playLandTargetIds(game: GameUiState, pending: PendingPlayLandTargetSelection | null): Set<string> {
+  if (!pending) {
+    return new Set()
+  }
+  const resolution = resolvePlayLandDrop(game, pending.cardId)
+  return resolution.kind === 'needs_target' ? optionTargetIds(resolution.options) : new Set()
+}
+
+function plainsReuseTargetIds(game: GameUiState): Set<string> {
+  return optionTargetIds(game.legal.plainsReuseOptions.map((option) => option.action))
+}
+
+function renderBattlefieldCard(
+  entry: PlayerUiState['battlefield'][number],
+  style: AppViewModel['cardVisualStyle'],
+  playableTargetIds: Set<string>,
+  targetAction: 'play_land_target' | 'plains_reuse_target',
+): string {
+  const isTarget = playableTargetIds.has(entry.instanceId)
+  const targetButton = isTarget
+    ? `<button class="dom-target-hotspot" data-action="${targetAction}" data-target-id="${escapeHtml(entry.instanceId)}" aria-label="Choose ${escapeHtml(entry.name)} as target">Choose target</button>`
+    : ''
+  return `<div class="dom-battlefield-card ${isTarget ? 'dom-battlefield-card--target' : ''}" data-battlefield-card-id="${escapeHtml(entry.instanceId)}">${renderCardTile(entry.name, style)}${targetButton}</div>`
+}
+
+function renderPlayerSummary(player: PlayerUiState, playerIndex: number, controller: string, kind: 'active' | 'non-active'): string {
+  return `
+    <article class="player player-${kind} dom-player-summary" aria-label="Player ${playerIndex + 1} summary">
+      <h3>Player ${playerIndex + 1} (${escapeHtml(controller)})${kind === 'active' ? ' — Active' : ''}</h3>
+      <p>Hand: ${player.handCount} • Deck: ${player.deckCount} • Graveyard: ${player.graveyardCount}</p>
+    </article>
+  `
+}
+
+function renderBattlefield(
+  player: PlayerUiState,
+  playerIndex: number,
+  kind: 'active' | 'non-active',
+  view: AppViewModel,
+  targetIds: Set<string>,
+  targetAction: 'play_land_target' | 'plains_reuse_target',
+): string {
+  const isActiveDropZone = kind === 'active' && view.game?.canInput && view.game.phase === 'main'
+  return `
+    <article class="battlefield battlefield-${kind} dom-battlefield ${isActiveDropZone ? 'dom-drop-zone' : ''}" ${isActiveDropZone ? 'data-drop-zone="play-land" tabindex="0" aria-label="Drop playable card on your battlefield"' : ''}>
+      <div class="dom-section-heading">
+        <h4>Player ${playerIndex + 1} Battlefield</h4>
+        ${kind === 'active' ? '<span class="dom-pill">Active side</span>' : ''}
+      </div>
+      <div class="card-tile-row dom-battlefield-row">
+        ${player.battlefield.length > 0 ? player.battlefield.map((entry) => renderBattlefieldCard(entry, view.cardVisualStyle, targetIds, targetAction)).join('') : '<span class="dom-empty">None</span>'}
+      </div>
+    </article>
+  `
+}
+
+function renderMainActionTray(game: GameUiState, activeState: PlayerUiState, view: AppViewModel): string {
+  if (!game.canInput || game.phase !== 'main') {
+    return ''
+  }
+  const playButtons = activeState.handCards.map((card) => {
+    const options = game.legal.playLandByCard[card.id]
+    if (!options || options.length === 0) {
+      return ''
+    }
+    return options.map((option) => renderPlayLandButton(option, card.name, view.cardVisualStyle)).join('')
+  }).join('')
+
+  return `
+    <div class="controls dom-action-tray" aria-label="Primary actions">
+      <h3>Main Phase</h3>
+      <div class="action-row">${playButtons}</div>
+      ${game.legal.canEndTurn ? '<button data-action="end_turn">End Turn</button>' : ''}
     </div>
   `
 }
 
-export function renderLobby(view: AppViewModel): string {
-  const aiLevelOptions = AI_LEVEL_OPTIONS.map((option) => {
-    const selected = option.value === view.aiLevel ? ' selected' : ''
-    return `<option value="${option.value}"${selected}>${option.label}</option>`
-  }).join('')
-  const cardVisualStyleOptions = CARD_VISUAL_STYLE_OPTIONS.map((option) => {
-    const selected = option.value === view.cardVisualStyle ? ' selected' : ''
-    return `<option value="${option.value}"${selected}>${option.label}</option>`
-  }).join('')
-  const animationSpeedOptions = ANIMATION_SPEED_OPTIONS.map((option) => {
-    const selected = option.value === view.animationSpeed ? ' selected' : ''
-    return `<option value="${option.value}"${selected}>${option.label}</option>`
-  }).join('')
-
-  const adventure = view.adventure
-  const nextOpponent = adventure.opponentLineup[adventure.currentOpponentIndex]
-  const canResumeAdventure = adventure.hasSavedRun && (adventure.status === 'paused' || adventure.status === 'active')
-
+function renderResponseControls(game: GameUiState, view: AppViewModel): string {
+  if (!game.canInput || game.phase !== 'respond') {
+    return ''
+  }
   return `
-    <section class="panel lobby">
-      <h1>Basic Land Game</h1>
-      <p class="subtitle">Land-only 2-player game with local AI and optional P2P mode.</p>
-      <p>${rendererSwitchLink(view.renderer)}</p>
-      ${renderInstallControls()}
-      <div class="controls">
-        <h3>AI Difficulty</h3>
-        <label for="ai-level-select">AI Level</label>
-        <select id="ai-level-select">${aiLevelOptions}</select>
+    <div class="controls dom-action-tray" aria-label="Response actions">
+      <h3>Response Window</h3>
+      <p>Opponent played ${escapeHtml(game.pendingLandName ?? 'a land')}. Respond?</p>
+      <div class="action-row">
+        ${game.legal.counterOptions.map((option) => {
+          const discardAttr = option.action.discardCardId
+            ? ` data-discard-card-id="${escapeHtml(option.action.discardCardId)}"`
+            : ''
+          return `<button data-action="counter_land"${discardAttr}>${renderLandIcon('Island', view.cardVisualStyle, 18, 'action-icon', { forceProcedural: true })}${escapeHtml(option.label)}</button>`
+        }).join('')}
+        ${game.legal.canPassResponse ? '<button data-action="pass_response">Pass</button>' : ''}
       </div>
-      <div class="controls">
-        <h3>Card Visual Style</h3>
-        <label for="card-visual-style-select">Style</label>
-        <select id="card-visual-style-select">${cardVisualStyleOptions}</select>
-      </div>
-      <div class="controls">
-        <h3>Animations</h3>
-        <label for="animation-speed-select">Speed</label>
-        <select id="animation-speed-select">${animationSpeedOptions}</select>
-        <p class="install-hint">Default follows system reduced-motion preference.</p>
-      </div>
-      <div class="modes">
-        <button data-mode="local-hvh">Local Human vs Human</button>
-        <button data-mode="local-hvai">Local Human vs AI</button>
-        <button data-mode="local-aivai">Local AI vs AI</button>
-        <button data-mode="adventure-hvai">Start Adventure (Human vs AI)</button>
-        ${canResumeAdventure ? '<button id="resume-adventure">Resume Adventure</button>' : ''}
-        <button data-mode="p2p-host">P2P Host</button>
-        <button data-mode="p2p-join">P2P Join</button>
-      </div>
-      <div class="controls">
-        <h3>Adventure</h3>
-        <p>High Score: ${adventure.highScore}</p>
-        <p>Status: ${adventure.status}</p>
-        <p>Round: ${adventure.currentRound}/7 • Chances: ${adventure.remainingChances} • Win Streak: ${adventure.winStreak}</p>
-        <p>Total Rounds: ${adventure.totalRoundsPlayed} • Cards Played: ${adventure.totalCardsPlayed}</p>
-        <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
-        ${adventure.hasSavedRun ? '<button data-action="abandon-adventure">Reset Adventure Run</button>' : ''}
-      </div>
-      <div class="controls">
-        <h3>Recording</h3>
-        <p>Load a saved game recording from browser storage or a file.</p>
-        <div class="action-row">
-          <button data-action="load-recording-local">Load from Browser</button>
-          <button data-action="load-recording-file">Load from File</button>
-        </div>
-        <input data-role="load-recording-file-input" type="file" accept="application/json,.json" hidden />
-        <p>Local save available: ${view.recording.hasLocalSave ? 'Yes' : 'No'}</p>
-      </div>
-    </section>
+    </div>
   `
 }
 
-function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: string): string {
-  const host = view.mode === 'p2p-host'
-  const safeStatus = escapeHtml(view.status)
-  const safeOffer = escapeHtml(view.offer)
-  const safeAnswer = escapeHtml(view.answer)
-  const safeHostAnswerDraft = escapeHtml(hostAnswerDraft)
-  const safeJoinOfferDraft = escapeHtml(joinOfferDraft)
-
+function renderPlainsReuseControls(game: GameUiState, view: AppViewModel): string {
+  if (!game.canInput || game.phase !== 'plains_target') {
+    return ''
+  }
+  const mode = resolvePlainsReuseTargetSelectionMode(game)
+  if (mode === 'popup_cards' && game.legal.plainsReuseOptions.length > 1) {
+    const grouped = groupCardTargetOptions(game, { kind: 'plains_reuse' }, game.legal.plainsReuseOptions.map((option) => ({ effectTargetId: option.action.effectTargetId, label: option.label })))
+    return renderTargetSheet('Choose Plains reuse target', grouped.map((option) => ({ ...option, action: 'plains_reuse_target' as const })), view.cardVisualStyle, false)
+  }
   return `
-    <section class="panel">
-      <h2>P2P Manual Signaling</h2>
-      <p>${host ? 'Host: create offer, share it, then paste answer.' : 'Join: paste host offer, create answer, and share answer.'}</p>
-      <div class="signal-grid">
-        ${
-           host
-             ? `<button id="create-offer">Create Offer</button>
-                <textarea id="offer-text" placeholder="Offer" readonly>${safeOffer}</textarea>
-                <textarea id="answer-text" placeholder="Paste remote answer">${safeHostAnswerDraft}</textarea>
-                <button id="accept-answer">Accept Answer</button>
-                <button id="start-p2p-game">Start Game</button>`
-              : `<textarea id="join-offer-text" placeholder="Paste host offer">${safeJoinOfferDraft}</textarea>
-                <button id="create-answer">Create Answer</button>
-                <textarea id="join-answer-text" placeholder="Answer" readonly>${safeAnswer}</textarea>`
-         }
-       </div>
-      <p class="status">${safeStatus}</p>
-    </section>
+    <div class="controls dom-action-tray" aria-label="Plains reuse targets">
+      <h3>Plains Reuse</h3>
+      <p>Choose target for reused ${escapeHtml(game.pendingPlainsReuseName ?? 'land')}.</p>
+      <div class="action-row">
+        ${game.legal.plainsReuseOptions.map((option) => {
+          const targetAttr = option.action.effectTargetId
+            ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
+            : ''
+          return `<button data-action="resolve_plains_reuse"${targetAttr}>${renderActionIcon(game.pendingPlainsReuseName, view.cardVisualStyle)}${escapeHtml(option.label)}</button>`
+        }).join('')}
+      </div>
+    </div>
   `
 }
 
-export function renderLandIcon(
-  name: BasicLand,
+function renderTargetSheet(
+  title: string,
+  options: Array<{ effectTargetId?: string; label: string; cardName: string; action: 'play_land_target' | 'plains_reuse_target' }>,
   style: AppViewModel['cardVisualStyle'],
-  size: number,
-  className: string,
-  options: { forceProcedural?: boolean } = {},
+  cancellable: boolean,
 ): string {
-  const source = cardArtSourceFor(name, style, size, options)
-  const stage = resolveRasterRenderStage(source)
-  // For raster stages the inline `onerror` advances exactly one step in the
-  // photo → geometric HD fallback → procedural SVG chain. If the next step
-  // is itself raster we keep the `--raster` classes so the swapped image
-  // still uses smooth scaling; otherwise we drop them to revert to the
-  // procedural pixel-icon look. URLs come from `cardArtFallbackUrl` /
-  // `landIconDataUrl` and are HTML-attribute safe.
-  const onError = stage.isRaster && stage.onErrorSrc !== null && stage.noteFailureUrl !== null
-    ? (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null
-        // raster→raster first hop: note failure, install chained handler for second hop, swap src.
-        // The arrow function captures `this` from the outer onerror so the element reference stays valid.
-        ? ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
-        // raster→procedural terminal hop: note failure, drop raster classes, swap src.
-        : ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.classList.remove(&#39;${className}--raster&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`)
-    : ''
-  const finalClassName = stage.isRaster ? `${className} ${className}--raster` : className
-  return `<img class="${finalClassName}" src="${stage.src}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
+  return `
+    <section class="dom-target-sheet" role="dialog" aria-modal="false" aria-label="${escapeHtml(title)}">
+      <div class="dom-target-sheet__grabber" aria-hidden="true"></div>
+      <h3>${escapeHtml(title)}</h3>
+      <div class="dom-target-grid">
+        ${options.map((option) => {
+          const targetAttr = option.effectTargetId ? ` data-target-id="${escapeHtml(option.effectTargetId)}"` : ''
+          return `<button class="dom-target-card" data-action="${option.action}"${targetAttr}>${renderCardTile(option.cardName, style)}<span>${escapeHtml(option.label)}</span></button>`
+        }).join('')}
+      </div>
+      ${cancellable ? '<button data-action="cancel-target-picker">Cancel</button>' : ''}
+    </section>
+  `
 }
 
-if (typeof window !== 'undefined') {
-  window.__cardgameNoteRasterCardArtLoadFailure = noteRasterCardArtLoadFailure
+function renderPendingPlayLandTargetPicker(game: GameUiState, pending: PendingPlayLandTargetSelection | null, view: AppViewModel): string {
+  if (!pending) {
+    return ''
+  }
+  const resolution = resolvePlayLandDrop(game, pending.cardId)
+  if (resolution.kind !== 'needs_target') {
+    return ''
+  }
+  const mode = resolvePlayLandTargetSelectionMode(game, pending.cardId)
+  if (mode === 'battlefield_highlight') {
+    return '<p class="dom-target-hint" role="status">Choose a highlighted battlefield target.</p>'
+  }
+  const grouped = groupCardTargetOptions(game, { kind: 'play_land', cardId: pending.cardId }, resolution.options)
+  return renderTargetSheet('Choose card target', grouped.map((option) => ({ ...option, action: 'play_land_target' as const })), view.cardVisualStyle, true)
 }
 
-export function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
-  // Hidden hand card sentinel: render a face-down placeholder tile so the
-  // local human can see how many cards the AI holds without learning what
-  // they are. The card slot remains visible in the hand row.
-  if (name === HIDDEN_HAND_CARD_NAME) {
-    return '<span class="card-tile card-tile--hidden" aria-label="Hidden card" title="Hidden card">?</span>'
-  }
-  if (!isBasicLand(name)) {
-    return `<span>${escapeHtml(name)}</span>`
-  }
-  const source = cardArtSourceFor(name, style, 22)
-  const palette = cardVisualPaletteFor(name, style)
-  const stage = resolveRasterRenderStage(source)
-  const raster = isRasterCardVisualStyle(style) && stage.isRaster
-  const safeName = escapeHtml(name)
-  if (raster) {
-    // HD tiles: the PNG art fills the tile background and the card name is
-    // overlaid on a translucent dark backdrop strip so the per-land pastel
-    // text stays legible over any art. Keep `--tile-fill` / `--tile-stroke`
-    // available so if the raster image fails to load and the `onerror`
-    // handler drops the `card-tile--raster` class, the same DOM node
-    // immediately reverts to the procedural pixel-icon tile look.
-    const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
-    // Inline `onerror` is HTML-attribute safe (data:image/svg+xml,... or
-    // a same-origin /cards/... URL). Mirrors the staged fallback chain used
-    // by `renderLandIcon`: note the failed URL, advance to the next stage,
-    // and only drop the raster classes when the next stage is the
-    // procedural SVG (i.e. no further raster fallback is available).
-    const onError = stage.onErrorSrc !== null && stage.noteFailureUrl !== null
-      ? (stage.onErrorIsRaster && stage.onErrorChainSrc !== null && stage.onErrorChainNoteFailureUrl !== null
-          // raster→raster first hop: note failure, install chained handler for second hop, swap src.
-          ? ` onerror="window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.onerror=()=>{this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.onErrorChainNoteFailureUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorChainSrc}&#39;};this.src=&#39;${stage.onErrorSrc}&#39;"`
-          // raster→procedural terminal hop: note failure, drop raster classes, swap src.
-          : ` onerror="this.onerror=null;window.__cardgameNoteRasterCardArtLoadFailure?.(&#39;${stage.noteFailureUrl}&#39;);this.classList.remove(&#39;card-tile-bg&#39;);this.parentElement?.classList.remove(&#39;card-tile--raster&#39;);this.src=&#39;${stage.onErrorSrc}&#39;"`)
-      : ''
-    return `<span class="card-tile card-tile--raster"${tileStyleAttr}><img class="card-tile-bg" src="${stage.src}" alt="" role="presentation"${onError} /><span class="card-tile-label">${safeName}</span></span>`
-  }
-  const tileClass = 'card-tile'
-  // Keep `--tile-fill` available even for raster styles so if a raster icon
-  // fails and the `onerror` handler drops `card-tile--raster`, the same DOM
-  // node immediately shows the procedural tile background.
-  const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
-  return `<span class="${tileClass}"${tileStyleAttr}>${renderLandIcon(name, style, 22, 'card-tile-icon')}<span>${safeName}</span></span>`
+function renderLogDrawer(game: GameUiState): string {
+  return `
+    <details class="log dom-log-drawer">
+      <summary>Replay Log</summary>
+      <ul>${game.log.slice(-DOM_LOG_VISIBLE_ENTRIES).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+    </details>
+  `
 }
 
-function renderGame(view: AppViewModel, menuOpen: boolean): string {
+export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetSelection: PendingPlayLandTargetSelection | null = null): string {
   const game = view.game
   if (!game) {
     return ''
@@ -333,159 +269,86 @@ function renderGame(view: AppViewModel, menuOpen: boolean): string {
   const nonActiveState = nonActiveIndex === 0 ? p1 : p2
   const safeStatus = escapeHtml(view.status)
   const safeWinnerText = escapeHtml(game.winnerText)
+  const playTargetIds = playLandTargetIds(game, pendingTargetSelection)
+  const plainsTargetIds = game.phase === 'plains_target' && resolvePlainsReuseTargetSelectionMode(game) === 'battlefield_highlight'
+    ? plainsReuseTargetIds(game)
+    : new Set<string>()
+  const battlefieldTargetIds = playTargetIds.size > 0 ? playTargetIds : plainsTargetIds
+  const battlefieldTargetAction = playTargetIds.size > 0 ? 'play_land_target' : 'plains_reuse_target'
   const recordingMeta = view.recording.metadata
   const recordingMetaText = recordingMeta
     ? `Seed ${recordingMeta.seed} • Mode ${recordingMeta.mode} • AI ${recordingMeta.aiLevel} • Controllers ${recordingMeta.controllers[0]}/${recordingMeta.controllers[1]} • Completed ${recordingMeta.completed ? 'Yes' : 'No'}`
     : 'No recording data.'
-  const renderPlayLandButton = (option: {
-    action: { cardId: string; effectTargetId?: string }
-    label: string
-  }, cardName: string): string => {
-    const targetAttr = option.action.effectTargetId
-      ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
-      : ''
-    // Tiny inline glyphs always use the procedural pixel icon: a 16px
-    // shrunken HD PNG looks worse than the procedural template and would
-    // pull a 1024x1024 raster per button.
-    const icon = isBasicLand(cardName) ? renderLandIcon(cardName, view.cardVisualStyle, 16, 'action-icon', { forceProcedural: true }) : ''
-    return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${icon}${escapeHtml(option.label)}</button>`
-  }
-
-  const mainControls = game.canInput && game.phase === 'main'
-    ? `
-      <div class="controls">
-        <h3>Main Phase</h3>
-        <div class="action-row">
-          ${activeState.handCards.map((card) => {
-            const options = game.legal.playLandByCard[card.id]
-            if (!options || options.length === 0) {
-              return ''
-            }
-            return options.map((option) => renderPlayLandButton(option, card.name)).join('')
-          }).join('')}
-        </div>
-        ${game.legal.canEndTurn ? '<button data-action="end_turn">End Turn</button>' : ''}
-      </div>
-    `
-    : ''
-
-  const responseControls = game.canInput && game.phase === 'respond'
-    ? `
-      <div class="controls">
-        <h3>Response Window</h3>
-        <p>Opponent played ${escapeHtml(game.pendingLandName ?? 'a land')}. Respond?</p>
-        <div class="action-row">
-          ${game.legal.counterOptions.map((option) => {
-            const discardAttr = option.action.discardCardId
-              ? ` data-discard-card-id="${escapeHtml(option.action.discardCardId)}"`
-              : ''
-            return `<button data-action="counter_land"${discardAttr}>${renderLandIcon('Island', view.cardVisualStyle, 16, 'action-icon', { forceProcedural: true })}${escapeHtml(option.label)}</button>`
-          }).join('')}
-          ${game.legal.canPassResponse ? '<button data-action="pass_response">Pass</button>' : ''}
-        </div>
-      </div>
-    `
-    : ''
-
-  const plainsReuseControls = game.canInput && game.phase === 'plains_target'
-    ? `
-      <div class="controls">
-        <h3>Plains Reuse</h3>
-        <p>Choose target for reused ${escapeHtml(game.pendingPlainsReuseName ?? 'land')}.</p>
-        <div class="action-row">
-          ${game.legal.plainsReuseOptions.map((option) => {
-            const targetAttr = option.action.effectTargetId
-              ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
-              : ''
-            const land = game.pendingPlainsReuseName
-            return `<button data-action="resolve_plains_reuse"${targetAttr}>${land && isBasicLand(land) ? renderLandIcon(land, view.cardVisualStyle, 16, 'action-icon', { forceProcedural: true }) : ''}${escapeHtml(option.label)}</button>`
-          }).join('')}
-        </div>
-      </div>
-    `
-    : ''
-
-  const renderPlayerInfo = (player: typeof p1, playerIndex: number, kind: 'active' | 'non-active'): string => `
-    <article class="player player-${kind}">
-      <h3>Player ${playerIndex + 1} (${escapeHtml(view.controllers[playerIndex])})${kind === 'active' ? ' — Active' : ''}</h3>
-      <p>Hand: ${player.handCount} • Deck: ${player.deckCount} • Graveyard: ${player.graveyardCount}</p>
-      <div class="card-tile-row">Hand cards: ${player.handCards.length > 0 ? player.handCards.map((card) => renderCardTile(card.name, view.cardVisualStyle)).join('') : '<span>None</span>'}</div>
-    </article>
-  `
-
-  const renderBattlefield = (player: typeof p1, playerIndex: number, kind: 'active' | 'non-active'): string => `
-    <article class="battlefield battlefield-${kind}">
-      <h4>Player ${playerIndex + 1} Battlefield</h4>
-      <div class="card-tile-row">${player.battlefield.length > 0 ? player.battlefield.map((entry) => renderCardTile(entry.name, view.cardVisualStyle)).join('') : '<span>None</span>'}</div>
-    </article>
-  `
 
   const menuPanel = `
-      <div class="menu-panel" id="menu-panel"${menuOpen ? '' : ' hidden'}>
-        ${menuOpen
-         ? `<div class="menu-section">
-          ${view.mode === 'adventure-hvai'
-            ? `<button id="pause-adventure">Pause Adventure</button>
-               <button data-action="abandon-adventure">Reset Adventure Run</button>`
-            : `<button id="back-to-lobby">Back to Lobby</button>
-               <button id="rematch">Rematch</button>`}
-        </div>
-        <div class="menu-section">
-          ${renderInstallControls()}
-        </div>
-        <div class="menu-section">
-          <h4>Recorder</h4>
-          <p>${escapeHtml(recordingMetaText)}</p>
-          <div class="action-row">
-            <button id="save-recording-download">Download Save File</button>
-            <button id="save-recording-local">Save to Browser</button>
-            <button data-action="load-recording-local">Load from Browser</button>
-            <button data-action="load-recording-file">Load from File</button>
-            ${view.replay.active ? '' : '<button id="replay-start">Start Replay</button>'}
+    <div class="menu-panel dom-menu-panel" id="menu-panel"${menuOpen ? '' : ' hidden'}>
+      ${menuOpen
+        ? `<div class="menu-section">
+            ${view.mode === 'adventure-hvai'
+              ? `<button id="pause-adventure">Pause Adventure</button>
+                 <button data-action="abandon-adventure">Reset Adventure Run</button>`
+              : `<button id="back-to-lobby">Back to Lobby</button>
+                 <button id="rematch">Rematch</button>`}
           </div>
-          <input data-role="load-recording-file-input" type="file" accept="application/json,.json" hidden />
-        </div>
-        ${view.replay.active
-          ? `<div class="menu-section">
-            <h4>Replay Controls</h4>
-            <p>Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}</p>
+          <div class="menu-section">${renderInstallControls()}</div>
+          <div class="menu-section">
+            <h4>Recorder</h4>
+            <p>${escapeHtml(recordingMetaText)}</p>
             <div class="action-row">
-              <button id="replay-playpause">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
-              <button id="replay-prev">Previous</button>
-              <button id="replay-next">Next</button>
-              <button id="replay-end">Jump to End</button>
-              <button id="replay-exit">Exit Replay</button>
+              <button id="save-recording-download">Download Save File</button>
+              <button id="save-recording-local">Save to Browser</button>
+              <button data-action="load-recording-local">Load from Browser</button>
+              <button data-action="load-recording-file">Load from File</button>
+              ${view.replay.active ? '' : '<button id="replay-start">Start Replay</button>'}
             </div>
-          </div>`
-          : ''}`
-          : ''}
-      </div>
-    `
+            <input data-role="load-recording-file-input" type="file" accept="application/json,.json" hidden />
+          </div>
+          ${view.replay.active
+            ? `<div class="menu-section">
+                <h4>Replay Controls</h4>
+                <p>Step ${view.replay.step}/${view.replay.totalSteps} • ${view.replay.isPlaying ? 'Playing' : 'Paused'}</p>
+                <div class="action-row">
+                  <button id="replay-playpause">${view.replay.isPlaying ? 'Pause' : 'Play'}</button>
+                  <button id="replay-prev">Previous</button>
+                  <button id="replay-next">Next</button>
+                  <button id="replay-end">Jump to End</button>
+                  <button id="replay-exit">Exit Replay</button>
+                </div>
+              </div>`
+            : ''}`
+        : ''}
+    </div>
+  `
 
   return `
-    <section class="panel game-scene">
-      <div class="game-header">
+    <section class="panel game-scene dom-cardgame dom-game" data-dom-layout="mobile-first" data-animation-speed="${view.animationSpeed}">
+      <div class="game-header dom-game__header">
         <button id="menu-toggle" class="menu-toggle" aria-expanded="${menuOpen ? 'true' : 'false'}" aria-controls="menu-panel" aria-label="Menu">☰ Menu</button>
         <h2>Turn ${game.turn} • Phase: ${game.phase}</h2>
       </div>
       ${menuPanel}
-      <p class="status">${safeStatus}</p>
+      <p class="status dom-status" role="status" aria-live="polite">${safeStatus}</p>
       ${safeWinnerText ? `<p class="winner">${safeWinnerText}</p>` : ''}
-      <div class="battlefield-layout">
-        <aside class="log">
-          <h3>Replay Log</h3>
-          <ul>${game.log.slice(-DOM_LOG_VISIBLE_ENTRIES).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
-        </aside>
-        <div class="board">
-          ${renderPlayerInfo(nonActiveState, nonActiveIndex, 'non-active')}
-          ${renderBattlefield(nonActiveState, nonActiveIndex, 'non-active')}
-          ${renderBattlefield(activeState, activeIndex, 'active')}
-          ${renderPlayerInfo(activeState, activeIndex, 'active')}
+      <div class="battlefield-layout dom-game__layout">
+        <div class="board dom-board">
+          <section class="dom-board__opponent">
+            ${renderPlayerSummary(nonActiveState, nonActiveIndex, view.controllers[nonActiveIndex], 'non-active')}
+            ${renderBattlefield(nonActiveState, nonActiveIndex, 'non-active', view, battlefieldTargetIds, battlefieldTargetAction)}
+          </section>
+          <section class="dom-board__middle">
+            ${renderBattlefield(activeState, activeIndex, 'active', view, battlefieldTargetIds, battlefieldTargetAction)}
+          </section>
+          <section class="dom-board__hand" aria-label="Active hand">
+            ${renderPlayerSummary(activeState, activeIndex, view.controllers[activeIndex], 'active')}
+            <div class="card-tile-row dom-hand-row">${activeState.handCards.length > 0 ? activeState.handCards.map((card) => renderHandCard(card, game, view.cardVisualStyle, true)).join('') : '<span class="dom-empty">No cards</span>'}</div>
+          </section>
         </div>
+        ${renderLogDrawer(game)}
       </div>
-      ${mainControls}
-      ${responseControls}
-      ${plainsReuseControls}
+      ${renderMainActionTray(game, activeState, view)}
+      ${renderResponseControls(game, view)}
+      ${renderPlainsReuseControls(game, view)}
+      ${renderPendingPlayLandTargetPicker(game, pendingTargetSelection, view)}
     </section>
   `
 }
@@ -497,6 +360,9 @@ export class DomRenderer implements AppRenderer {
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
   private menuOpen = false
+  private pendingTargetSelection: PendingPlayLandTargetSelection | null = null
+  private draggedCardId: string | null = null
+  private containerListenersBound = false
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -525,6 +391,10 @@ export class DomRenderer implements AppRenderer {
     }
     if (!view.game) {
       this.menuOpen = false
+      this.pendingTargetSelection = null
+      this.draggedCardId = null
+    } else if (this.pendingTargetSelection && !view.game.legal.playLandByCard[this.pendingTargetSelection.cardId]) {
+      this.pendingTargetSelection = null
     }
 
     const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
@@ -536,7 +406,7 @@ export class DomRenderer implements AppRenderer {
       <main class="app-shell">
         ${inGame ? '' : renderLobby(view)}
         ${showP2P ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
-        ${inGame ? renderGame(view, this.menuOpen) : ''}
+        ${inGame ? renderGame(view, this.menuOpen, this.pendingTargetSelection) : ''}
       </main>
     `
 
@@ -553,6 +423,129 @@ export class DomRenderer implements AppRenderer {
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
     this.menuOpen = false
+    this.pendingTargetSelection = null
+    this.draggedCardId = null
+  }
+
+  private rerender(): void {
+    if (this.view) {
+      this.render(this.view)
+    }
+  }
+
+  private resolveDroppedCard(cardId: string): void {
+    const game = this.view?.game
+    if (!game) {
+      return
+    }
+    const resolution = resolvePlayLandDrop(game, cardId)
+    if (resolution.kind === 'invalid') {
+      this.pendingTargetSelection = null
+      this.controller?.reportStatus('Invalid drop. Choose a playable card.')
+      return
+    }
+    if (resolution.kind === 'single') {
+      this.pendingTargetSelection = null
+      this.controller?.submitAction(resolution.action)
+      return
+    }
+    this.pendingTargetSelection = { cardId }
+    this.controller?.reportStatus('Choose a target for that land.')
+    this.rerender()
+  }
+
+  private submitPendingTarget(effectTargetId?: string): void {
+    const game = this.view?.game
+    const pending = this.pendingTargetSelection
+    if (!game || !pending) {
+      return
+    }
+    const action = resolveTargetedPlayLandAction(game, pending.cardId, effectTargetId)
+    if (!action) {
+      this.controller?.reportStatus('Invalid target. Choose a highlighted target.')
+      return
+    }
+    this.pendingTargetSelection = null
+    this.controller?.submitAction(action)
+  }
+
+  private submitPlainsReuseTarget(effectTargetId?: string): void {
+    const game = this.view?.game
+    if (!game) {
+      return
+    }
+    const action = resolvePlainsReuseAction(game, effectTargetId)
+    if (!action) {
+      this.controller?.reportStatus('Invalid target. Choose a highlighted target.')
+      return
+    }
+    this.controller?.submitAction(action)
+  }
+
+  private bindDragAndDrop(): void {
+    if (!this.container) {
+      return
+    }
+    this.container.querySelectorAll<HTMLElement>('[data-draggable-card]').forEach((element) => {
+      element.addEventListener('dragstart', (event) => {
+        const cardId = element.dataset.draggableCard
+        if (!cardId || element.getAttribute('draggable') !== 'true' || this.pendingTargetSelection) {
+          event.preventDefault()
+          return
+        }
+        this.draggedCardId = cardId
+        event.dataTransfer?.setData('text/plain', cardId)
+        event.dataTransfer?.setData('application/x-cardgame-card-id', cardId)
+        event.dataTransfer?.setDragImage?.(element, 40, 60)
+      })
+      element.addEventListener('dragend', () => {
+        this.draggedCardId = null
+      })
+      element.addEventListener('keydown', (event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && element.dataset.draggableCard && element.getAttribute('draggable') === 'true' && !this.pendingTargetSelection) {
+          event.preventDefault()
+          this.resolveDroppedCard(element.dataset.draggableCard)
+        }
+      })
+    })
+
+    this.container.querySelectorAll<HTMLElement>('[data-drop-zone="play-land"]').forEach((zone) => {
+      zone.addEventListener('dragover', (event) => {
+        if (this.draggedCardId) {
+          event.preventDefault()
+          zone.classList.add('dom-drop-zone--over')
+        }
+      })
+      zone.addEventListener('dragleave', () => {
+        zone.classList.remove('dom-drop-zone--over')
+      })
+      zone.addEventListener('drop', (event) => {
+        event.preventDefault()
+        zone.classList.remove('dom-drop-zone--over')
+        const cardId = event.dataTransfer?.getData('application/x-cardgame-card-id') || event.dataTransfer?.getData('text/plain') || this.draggedCardId
+        this.draggedCardId = null
+        if (cardId) {
+          this.resolveDroppedCard(cardId)
+        }
+      })
+    })
+
+    if (!this.containerListenersBound) {
+      this.container.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          this.draggedCardId = null
+          if (this.pendingTargetSelection) {
+            this.pendingTargetSelection = null
+            this.controller?.reportStatus('Target selection cancelled.')
+            this.rerender()
+          }
+        }
+      })
+      this.container.addEventListener('scroll', () => {
+        this.draggedCardId = null
+      }, { passive: true })
+      this.containerListenersBound = true
+    }
   }
 
   private bindEvents(): void {
@@ -562,9 +555,7 @@ export class DomRenderer implements AppRenderer {
 
     this.container.querySelector('#menu-toggle')?.addEventListener('click', () => {
       this.menuOpen = !this.menuOpen
-      if (this.view) {
-        this.render(this.view)
-      }
+      this.rerender()
     })
 
     this.container.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
@@ -609,29 +600,23 @@ export class DomRenderer implements AppRenderer {
     this.container.querySelector('#pause-adventure')?.addEventListener('click', () => {
       this.controller?.pauseAdventure()
     })
-
     this.container.querySelector('#create-offer')?.addEventListener('click', () => {
       void this.controller?.createOffer()
     })
-
     this.container.querySelector('#accept-answer')?.addEventListener('click', () => {
       const field = this.container?.querySelector<HTMLTextAreaElement>('#answer-text')
       void this.controller?.acceptAnswer(field?.value ?? '')
     })
-
     this.container.querySelector('#create-answer')?.addEventListener('click', () => {
       const field = this.container?.querySelector<HTMLTextAreaElement>('#join-offer-text')
       void this.controller?.createAnswer(field?.value ?? '')
     })
-
     this.container.querySelector('#start-p2p-game')?.addEventListener('click', () => {
       this.controller?.startP2PGame()
     })
 
     this.container.querySelectorAll<HTMLButtonElement>('[data-action="install-app"]').forEach((button) => {
       button.addEventListener('click', () => {
-        // install-support.promptInstall() calls notifyChange() and main.ts
-        // re-renders via subscribeInstallSupport(); no manual re-render here.
         void promptInstall()
       })
     })
@@ -653,13 +638,11 @@ export class DomRenderer implements AppRenderer {
     this.container.querySelector('#save-recording-local')?.addEventListener('click', () => {
       this.controller?.saveRecordingToLocalStorage()
     })
-
     this.container.querySelectorAll('[data-action="load-recording-local"]').forEach((element) => {
       element.addEventListener('click', () => {
         this.controller?.loadRecordingFromLocalStorage()
       })
     })
-
     this.container.querySelectorAll('[data-action="load-recording-file"]').forEach((element) => {
       element.addEventListener('click', () => {
         const input = element
@@ -669,7 +652,6 @@ export class DomRenderer implements AppRenderer {
         input?.click()
       })
     })
-
     this.container.querySelectorAll<HTMLInputElement>('[data-role="load-recording-file-input"]').forEach((input) => {
       input.addEventListener('change', async (event) => {
         const target = event.target as HTMLInputElement
@@ -690,7 +672,6 @@ export class DomRenderer implements AppRenderer {
     this.container.querySelector('#replay-start')?.addEventListener('click', () => {
       this.controller?.startReplay()
     })
-
     this.container.querySelector('#replay-playpause')?.addEventListener('click', () => {
       if (!this.view?.replay.active) {
         return
@@ -701,19 +682,15 @@ export class DomRenderer implements AppRenderer {
       }
       this.controller?.startReplay()
     })
-
     this.container.querySelector('#replay-prev')?.addEventListener('click', () => {
       this.controller?.stepReplay(-1)
     })
-
     this.container.querySelector('#replay-next')?.addEventListener('click', () => {
       this.controller?.stepReplay(1)
     })
-
     this.container.querySelector('#replay-end')?.addEventListener('click', () => {
       this.controller?.jumpReplayToEnd()
     })
-
     this.container.querySelector('#replay-exit')?.addEventListener('click', () => {
       this.controller?.exitReplay()
     })
@@ -723,7 +700,6 @@ export class DomRenderer implements AppRenderer {
         if (!this.view?.game) {
           return
         }
-
         const actor = this.view.game.actor
         const dataAction = button.dataset.action
         const cardId = button.dataset.cardId
@@ -741,9 +717,21 @@ export class DomRenderer implements AppRenderer {
           action = { type: 'pass_response', actor }
         } else if (dataAction === 'resolve_plains_reuse') {
           action = { type: 'resolve_plains_reuse', actor, effectTargetId }
+        } else if (dataAction === 'play_land_target') {
+          this.submitPendingTarget(effectTargetId)
+          return
+        } else if (dataAction === 'plains_reuse_target') {
+          this.submitPlainsReuseTarget(effectTargetId)
+          return
+        } else if (dataAction === 'cancel-target-picker') {
+          this.pendingTargetSelection = null
+          this.controller?.reportStatus('Target selection cancelled.')
+          this.rerender()
+          return
         }
 
         if (action) {
+          this.pendingTargetSelection = null
           this.controller?.submitAction(action)
         }
       })
@@ -752,5 +740,7 @@ export class DomRenderer implements AppRenderer {
     this.container.querySelector('#rematch')?.addEventListener('click', () => {
       this.controller?.rematch()
     })
+
+    this.bindDragAndDrop()
   }
 }

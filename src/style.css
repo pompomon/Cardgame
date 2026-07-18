@@ -394,6 +394,429 @@ textarea {
   color: var(--text-secondary);
 }
 
+/* DOM renderer HD/mobile foundation. Scoped under `.dom-cardgame` so Phaser
+   host and Phaser accessibility overlays keep their existing sizing. */
+.dom-cardgame {
+  --dom-card-width: clamp(104px, 30vw, 156px);
+  --dom-card-height: calc(var(--dom-card-width) * 1.38);
+  --dom-radius: 18px;
+}
+
+.dom-cardgame button,
+.dom-cardgame select,
+.dom-cardgame textarea {
+  min-height: 44px;
+}
+
+.dom-cardgame button:focus-visible,
+.dom-cardgame select:focus-visible,
+.dom-cardgame textarea:focus-visible,
+.dom-card-drag:focus-visible,
+.dom-drop-zone:focus-visible {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 3px;
+}
+
+.dom-cardgame__hero,
+.dom-cardgame__lobby-grid,
+.dom-cardgame__adventure-card,
+.dom-cardgame__recorder,
+.dom-cardgame__p2p {
+  position: relative;
+}
+
+.dom-cardgame__eyebrow,
+.dom-pill {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dom-cardgame__lobby {
+  display: grid;
+  gap: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(93, 124, 255, 0.18), transparent 38%),
+    var(--surface-panel);
+}
+
+.dom-cardgame__hero h1 {
+  margin: 4px 0;
+  font-size: clamp(2rem, 12vw, 4.5rem);
+}
+
+.dom-cardgame__lobby-grid,
+.dom-cardgame__mode-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.dom-game {
+  min-height: calc(100dvh - (2 * var(--app-shell-padding)));
+  padding: 12px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(93, 124, 255, 0.08), transparent 38%),
+    var(--surface-panel);
+}
+
+.dom-game__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 8px 0;
+  background: linear-gradient(180deg, var(--surface-panel), rgba(31, 42, 94, 0.78));
+  backdrop-filter: blur(8px);
+}
+
+.dom-status {
+  min-height: 1.4em;
+}
+
+.dom-game__layout {
+  grid-template-columns: 1fr;
+}
+
+.dom-board {
+  display: grid;
+  gap: 12px;
+}
+
+.dom-board__opponent,
+.dom-board__middle,
+.dom-board__hand {
+  display: grid;
+  gap: 10px;
+}
+
+.dom-board__hand {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  padding: 10px 0 0;
+  background: linear-gradient(0deg, var(--surface-panel) 80%, rgba(31, 42, 94, 0));
+}
+
+.dom-player-summary,
+.dom-battlefield,
+.dom-action-tray,
+.dom-log-drawer,
+.dom-target-sheet {
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
+.dom-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dom-section-heading h4 {
+  margin: 0;
+}
+
+.dom-battlefield-row,
+.dom-hand-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+  scroll-snap-type: x proximity;
+}
+
+.dom-battlefield-row {
+  min-height: 116px;
+}
+
+.dom-hand-row {
+  align-items: stretch;
+}
+
+.dom-empty {
+  color: var(--text-secondary);
+  padding: 12px;
+}
+
+.dom-card-shell,
+.dom-battlefield-card {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.dom-card-shell {
+  width: var(--dom-card-width);
+  display: grid;
+  gap: 8px;
+}
+
+.dom-card-drag {
+  border-radius: var(--dom-radius);
+  touch-action: pan-x pan-y;
+  transition: transform 150ms ease, filter 150ms ease;
+}
+
+.dom-card-shell--playable .dom-card-drag {
+  cursor: grab;
+}
+
+.dom-card-shell--playable .dom-card-drag:hover,
+.dom-card-shell--playable .dom-card-drag:focus-visible {
+  transform: translateY(-6px);
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.35));
+}
+
+.dom-card-shell--disabled {
+  opacity: 0.78;
+}
+
+.dom-card-shell__actions {
+  display: grid;
+  gap: 6px;
+}
+
+.dom-card-shell__actions button,
+.dom-action-tray button,
+.dom-target-card {
+  width: 100%;
+  justify-content: center;
+}
+
+.dom-card {
+  width: var(--dom-card-width);
+  min-height: var(--dom-card-height);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: stretch;
+  padding: 7px;
+  border-width: 2px;
+  border-radius: var(--dom-radius);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 12px 24px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+
+.dom-card__art-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: calc(var(--dom-radius) - 6px);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.dom-card__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dom-card__name {
+  position: relative;
+  z-index: 1;
+  margin-top: 7px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: rgba(9, 13, 35, 0.78);
+  color: var(--tile-text, var(--text-primary));
+  font-weight: 800;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.dom-card--forest {
+  box-shadow: inset 0 0 0 2px rgba(70, 210, 122, 0.28), 0 12px 24px rgba(0, 0, 0, 0.32);
+}
+
+.dom-card--mountain {
+  box-shadow: inset 0 0 0 2px rgba(255, 107, 90, 0.3), 0 12px 24px rgba(0, 0, 0, 0.32);
+}
+
+.dom-card--island {
+  box-shadow: inset 0 0 0 2px rgba(122, 162, 255, 0.32), 0 12px 24px rgba(0, 0, 0, 0.32);
+}
+
+.dom-card--plains {
+  box-shadow: inset 0 0 0 2px rgba(255, 226, 142, 0.34), 0 12px 24px rgba(0, 0, 0, 0.32);
+}
+
+.dom-card--swamp {
+  box-shadow: inset 0 0 0 2px rgba(185, 143, 255, 0.32), 0 12px 24px rgba(0, 0, 0, 0.32);
+}
+
+.dom-card--hidden {
+  place-items: center;
+  grid-template-rows: 1fr auto;
+}
+
+.dom-card__back {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100px;
+  border-radius: 12px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--hidden-tile-stripe-a),
+    var(--hidden-tile-stripe-a) 10px,
+    var(--hidden-tile-stripe-b) 10px,
+    var(--hidden-tile-stripe-b) 20px
+  );
+  border: 2px solid var(--border-strong);
+  font: 900 2rem/1 monospace;
+}
+
+.dom-drop-zone {
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.dom-drop-zone--over {
+  border-color: var(--border-focus);
+  background: color-mix(in srgb, var(--battlefield-active-bg) 82%, white 18%);
+  transform: translateY(-2px);
+}
+
+.dom-battlefield-card {
+  position: relative;
+}
+
+.dom-battlefield-card--target .dom-card {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 3px;
+}
+
+.dom-target-hotspot {
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 2;
+}
+
+.dom-action-tray {
+  position: sticky;
+  bottom: 0;
+  z-index: 9;
+}
+
+.dom-log-drawer {
+  max-width: none;
+  max-height: none;
+}
+
+.dom-log-drawer summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dom-target-hint {
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: var(--surface-log-viewport);
+  color: var(--text-secondary);
+}
+
+.dom-target-sheet {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 22px 22px 12px 12px;
+  background: var(--surface-log);
+  animation: dom-sheet-in 160ms ease-out;
+}
+
+.dom-target-sheet__grabber {
+  width: 52px;
+  height: 5px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: var(--text-secondary);
+}
+
+.dom-target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 10px;
+}
+
+.dom-target-card {
+  display: grid;
+  gap: 8px;
+}
+
+.dom-target-card .dom-card {
+  --dom-card-width: 100%;
+}
+
+@keyframes dom-sheet-in {
+  from {
+    transform: translateY(18px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (min-width: 760px) {
+  .dom-cardgame {
+    --dom-card-width: clamp(126px, 14vw, 174px);
+  }
+
+  .dom-cardgame__lobby-grid,
+  .dom-cardgame__mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dom-game__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 28vw);
+  }
+
+  .dom-log-drawer {
+    position: sticky;
+    top: 72px;
+    max-height: 72vh;
+  }
+}
+
+@media (min-width: 1040px) {
+  .dom-cardgame__lobby-grid,
+  .dom-cardgame__mode-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dom-card-drag,
+  .dom-drop-zone,
+  .dom-target-sheet {
+    transition: none;
+    animation: none;
+  }
+}
+
+.dom-game[data-animation-speed="off"] .dom-card-drag,
+.dom-game[data-animation-speed="off"] .dom-drop-zone,
+.dom-game[data-animation-speed="off"] .dom-target-sheet {
+  transition: none;
+  animation: none;
+}
+
 .phaser-host {
   width: min(100%, 1280px);
   margin: 16px auto;
