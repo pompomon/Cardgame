@@ -118,9 +118,9 @@ export function buildLayout(
 ): SceneLayout {
   const viewportWidth = width > 0 ? width : 1
   const viewportHeight = height > 0 ? height : 1
-  const safeAreaLeft = clamp(normalizeInset(insets.left), 0, viewportWidth)
+  const safeAreaLeft = clamp(normalizeInset(insets.left), 0, Math.max(0, viewportWidth - 1))
   const safeAreaRight = clamp(normalizeInset(insets.right), 0, Math.max(0, viewportWidth - safeAreaLeft - 1))
-  const safeAreaTop = clamp(normalizeInset(insets.top), 0, viewportHeight)
+  const safeAreaTop = clamp(normalizeInset(insets.top), 0, Math.max(0, viewportHeight - 1))
   const safeAreaBottom = clamp(normalizeInset(insets.bottom), 0, Math.max(0, viewportHeight - safeAreaTop - 1))
   const safeAreaWidth = Math.max(1, viewportWidth - safeAreaLeft - safeAreaRight)
   const safeAreaHeight = Math.max(1, viewportHeight - safeAreaTop - safeAreaBottom)
