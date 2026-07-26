@@ -725,6 +725,16 @@ textarea {
   color: var(--text-secondary);
 }
 
+.dom-tutorial-hint {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #d7b04e;
+  border-radius: 12px;
+  background: #fff6dc;
+  color: #4b3a05;
+  font-weight: 700;
+}
+
 .dom-target-sheet {
   position: sticky;
   bottom: 0;

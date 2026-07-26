@@ -4,7 +4,7 @@ import type { GameRecordFile } from './game-recording'
 import type { AdventureOpponentDeck, AdventureOpponentKind, AdventureRunStatus } from './adventure'
 import type { CardVisualStyle } from './card-visual-styles'
 
-export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join'
+export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join' | 'tutorial'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 export type RendererKind = 'dom' | 'phaser'
 // Canonical `AiLevel` definition lives in `src/game/ai-levels.ts` so the
@@ -186,6 +186,11 @@ export interface AppViewModel {
   animationSpeed: AnimationSpeed
   p2pConnected: boolean
   p2pStarted: boolean
+  tutorial: {
+    active: boolean
+    stepId: string | null
+    hint: string | null
+  }
   adventure: AdventureUiState
   game: GameUiState | null
   recording: {

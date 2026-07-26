@@ -173,6 +173,7 @@ export function renderLobby(view: AppViewModel): string {
         </div>
       </div>
       <div class="modes dom-cardgame__mode-grid" aria-label="Game modes">
+        <button data-mode="tutorial">Tutorial (Learn to Play)</button>
         <button data-mode="local-hvh">Local Human vs Human</button>
         <button data-mode="local-hvai">Local Human vs AI</button>
         <button data-mode="local-aivai">Local AI vs AI</button>

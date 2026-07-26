@@ -36,6 +36,11 @@ function makeView(): AppViewModel {
     animationSpeed: 'normal',
     p2pConnected: false,
     p2pStarted: false,
+    tutorial: {
+      active: false,
+      stepId: null,
+      hint: null,
+    },
     adventure: {
       baseSeed: 0,
       currentRound: 0,
@@ -164,6 +169,12 @@ describe('DOM lobby layout', () => {
     // `justify-content: center` / `text-align: center` rules in style.css.
     expect(html).toMatch(/class="[^"]*\bpanel\b[^"]*\blobby\b/)
     expect(html).toContain('dom-cardgame__lobby')
+  })
+
+  it('renders a tutorial mode button in the lobby mode list', () => {
+    const html = renderLobby(makeView())
+    expect(html).toContain('data-mode="tutorial"')
+    expect(html).toContain('Tutorial (Learn to Play)')
   })
 
   it('does not duplicate element ids across lobby and in-game menu shells', () => {
