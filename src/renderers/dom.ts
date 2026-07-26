@@ -187,37 +187,37 @@ function renderResponseControls(game: GameUiState, view: AppViewModel): string {
   `
 }
 
+function renderSwampDiscardControls(game: GameUiState, view: AppViewModel): string {
+  if (!game.canInput || game.phase !== 'swamp_target') {
+    return ''
+  }
+  const mode = resolveSwampDiscardTargetSelectionMode(game)
+  if (mode === 'popup_cards' && game.legal.swampDiscardOptions.length > 1) {
+    const grouped = groupCardTargetOptions(game, { kind: 'swamp_discard' }, game.legal.swampDiscardOptions.map((option) => ({
+      effectTargetId: option.action.effectTargetId,
+      label: option.label,
+    })))
+    return renderTargetSheet('Choose Swamp discard target', grouped.map((option) => ({ ...option, action: 'swamp_discard_target' as const })), view.cardVisualStyle, false)
+  }
+  return `
+    <div class="controls dom-action-tray" aria-label="Swamp discard targets">
+      <h3>Swamp Discard</h3>
+      <p>Choose a card to discard.</p>
+      <div class="action-row">
+        ${game.legal.swampDiscardOptions.map((option) => {
+          const targetAttr = option.action.effectTargetId
+            ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
+            : ''
+          return `<button data-action="resolve_swamp_discard"${targetAttr}>${renderActionIcon('Swamp', view.cardVisualStyle)}${escapeHtml(option.label)}</button>`
+        }).join('')}
+      </div>
+    </div>
+  `
+}
+
 function renderPlainsReuseControls(game: GameUiState, view: AppViewModel): string {
   if (!game.canInput || game.phase !== 'plains_target') {
     return ''
-  }
-
-  function renderSwampDiscardControls(game: GameUiState, view: AppViewModel): string {
-    if (!game.canInput || game.phase !== 'swamp_target') {
-      return ''
-    }
-    const mode = resolveSwampDiscardTargetSelectionMode(game)
-    if (mode === 'popup_cards' && game.legal.swampDiscardOptions.length > 1) {
-      const grouped = groupCardTargetOptions(game, { kind: 'swamp_discard' }, game.legal.swampDiscardOptions.map((option) => ({
-        effectTargetId: option.action.effectTargetId,
-        label: option.label,
-      })))
-      return renderTargetSheet('Choose Swamp discard target', grouped.map((option) => ({ ...option, action: 'swamp_discard_target' as const })), view.cardVisualStyle, false)
-    }
-    return `
-      <div class="controls dom-action-tray" aria-label="Swamp discard targets">
-        <h3>Swamp Discard</h3>
-        <p>Choose a card to discard.</p>
-        <div class="action-row">
-          ${game.legal.swampDiscardOptions.map((option) => {
-            const targetAttr = option.action.effectTargetId
-              ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
-              : ''
-            return `<button data-action="resolve_swamp_discard"${targetAttr}>${renderActionIcon('Swamp', view.cardVisualStyle)}${escapeHtml(option.label)}</button>`
-          }).join('')}
-        </div>
-      </div>
-    `
   }
   const mode = resolvePlainsReuseTargetSelectionMode(game)
   if (mode === 'popup_cards' && game.legal.plainsReuseOptions.length > 1) {

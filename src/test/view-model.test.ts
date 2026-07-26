@@ -202,8 +202,8 @@ describe('buildViewModel hand-redaction', () => {
 
     const vm = buildViewModel(state, false)
     const labels = vm.game!.legal.swampDiscardOptions.map((o) => o.label).join('|')
-    expect(labels).toMatch(/discard Mountain/)
-    expect(labels).toMatch(/discard Forest/)
+    expect(labels).toMatch(/Discard Mountain/)
+    expect(labels).toMatch(/Discard Forest/)
     expect(labels).not.toMatch(/hidden card/)
     // The reveal is exposed on the view model so renderers can show the
     // real card art in the target picker.
@@ -249,7 +249,7 @@ describe('buildViewModel hand-redaction', () => {
 
     const vm = buildViewModel(state, false)
     const labels = vm.game!.legal.swampDiscardOptions.map((o) => o.label).join('|')
-    expect(labels).toMatch(/discard Mountain/)
+    expect(labels).toMatch(/Discard Mountain/)
     expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain'])
   })
 

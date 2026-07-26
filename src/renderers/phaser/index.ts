@@ -5,7 +5,6 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolvePlainsReuseTargetSelectionMode,
   resolveSwampDiscardAction,
-  resolveSwampDiscardTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
@@ -1963,26 +1962,8 @@ class CardgameScene extends Phaser.Scene {
       }
       return
     }
-
     if (game.canInput && game.phase === 'swamp_target') {
       if (!this.pendingTargetPicker) {
-        if (game.legal.swampDiscardOptions.length === 1) {
-          const [onlyOption] = game.legal.swampDiscardOptions
-          this.showTargetPicker(
-            [{ effectTargetId: onlyOption.action.effectTargetId ?? 'swamp-only-target', label: onlyOption.label }],
-            () => onlyOption.action,
-            false,
-            {
-              title: 'Confirm Swamp discard target',
-              allowCancel: false,
-            },
-          )
-          return
-        }
-        const mode = resolveSwampDiscardTargetSelectionMode(game)
-        if (mode !== 'popup_cards') {
-          return
-        }
         const grouped = groupCardTargetOptions(
           game,
           { kind: 'swamp_discard' },
@@ -2007,7 +1988,6 @@ class CardgameScene extends Phaser.Scene {
       }
       return
     }
-
     if (game.canInput && game.phase === 'respond') {
       if (!this.pendingTargetPicker) {
         const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.counterOptions.map((option, index) => ({

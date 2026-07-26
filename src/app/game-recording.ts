@@ -207,18 +207,6 @@ function isGameStateLike(value: unknown): value is GameState {
     if (!isRecordObject(pendingPlainsReuse)) {
       return false
     }
-
-    const pendingSwampDiscard = (value as Record<string, unknown>).pendingSwampDiscard
-    if (value.phase === 'swamp_target') {
-      if (pendingSwampDiscard === undefined || pendingSwampDiscard === null || !isRecordObject(pendingSwampDiscard)) {
-        return false
-      }
-      if (pendingSwampDiscard.actor !== 0 && pendingSwampDiscard.actor !== 1) {
-        return false
-      }
-    } else if (pendingSwampDiscard !== undefined && pendingSwampDiscard !== null) {
-      return false
-    }
     const pendingReuse = pendingPlainsReuse as Record<string, unknown>
     if ((pendingReuse.actor !== 0 && pendingReuse.actor !== 1)
       || typeof pendingReuse.reusedInstanceId !== 'string'
@@ -227,6 +215,18 @@ function isGameStateLike(value: unknown): value is GameState {
       || !BASIC_LANDS.includes(pendingReuse.reusedCardName as BasicLand)) {
       return false
     }
+  }
+
+  const pendingSwampDiscard = (value as Record<string, unknown>).pendingSwampDiscard
+  if (value.phase === 'swamp_target') {
+    if (pendingSwampDiscard === undefined || pendingSwampDiscard === null || !isRecordObject(pendingSwampDiscard)) {
+      return false
+    }
+    if (pendingSwampDiscard.actor !== 0 && pendingSwampDiscard.actor !== 1) {
+      return false
+    }
+  } else if (pendingSwampDiscard !== undefined && pendingSwampDiscard !== null) {
+    return false
   }
 
   return isNonNegativeInteger(value.turn)

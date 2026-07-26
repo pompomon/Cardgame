@@ -333,22 +333,6 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
     if (!pendingReuse) {
       return actions
     }
-
-    if (state.phase === 'swamp_target') {
-      const pending = state.pendingSwampDiscard
-      if (!pending || pending.actor !== actor) {
-        return actions
-      }
-      const enemy = state.players[actor === 0 ? 1 : 0]
-      if (enemy.hand.length === 0) {
-        actions.push({ type: 'resolve_swamp_discard', actor })
-        return actions
-      }
-      for (const card of enemy.hand) {
-        actions.push({ type: 'resolve_swamp_discard', actor, effectTargetId: card.id })
-      }
-      return actions
-    }
     const targets = enumerateEffectTargetIds(state, actor, pendingReuse.reusedCardName)
     if (pendingReuse.reusedCardName === 'Island' || targets.length === 0) {
       actions.push({ type: 'resolve_plains_reuse', actor })
@@ -356,6 +340,22 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
     }
     for (const targetId of targets) {
       actions.push({ type: 'resolve_plains_reuse', actor, effectTargetId: targetId })
+    }
+    return actions
+  }
+
+  if (state.phase === 'swamp_target') {
+    const pending = state.pendingSwampDiscard
+    if (!pending || pending.actor !== actor) {
+      return actions
+    }
+    const enemy = state.players[actor === 0 ? 1 : 0]
+    if (enemy.hand.length === 0) {
+      actions.push({ type: 'resolve_swamp_discard', actor })
+      return actions
+    }
+    for (const card of enemy.hand) {
+      actions.push({ type: 'resolve_swamp_discard', actor, effectTargetId: card.id })
     }
     return actions
   }
@@ -443,14 +443,14 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     return state
   }
 
+  if (action.type === 'resolve_swamp_discard' && state.phase === 'swamp_target') {
+    resolvePendingSwampDiscard(state, action.actor, action.effectTargetId)
+    return state
+  }
+
   if (action.type === 'resolve_plains_reuse' && state.phase === 'plains_target' && state.pendingPlainsReuse) {
     const pendingReuse = state.pendingPlainsReuse
     if (pendingReuse.actor !== action.actor) {
-      return state
-    }
-
-    if (action.type === 'resolve_swamp_discard' && state.phase === 'swamp_target') {
-      resolvePendingSwampDiscard(state, action.actor, action.effectTargetId)
       return state
     }
     pushLog(state, `Plains reuses ${pendingReuse.reusedCardName}.`, { kind: 'ability_plains_reuse', actor: action.actor, reusedName: pendingReuse.reusedCardName })
