@@ -7,7 +7,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { ALL_CARD_ART, CARD_BACK_KEY, cardArtKey, cardBackUrl } from '../../app/card-art'
+import { CARD_BACK_KEY, cardArtKey, cardBackUrl } from '../../app/card-art'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixelRects } from '../../app/card-visuals'
@@ -18,7 +18,11 @@ import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
 import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
-import { canRenderCardBackTexture, resolveRasterCardArtTextureKey } from './card-rendering'
+import {
+  canRenderCardBackTexture,
+  preloadCardArtEntriesForStyle,
+  resolveRasterCardArtTextureKey,
+} from './card-rendering'
 import {
   DEPTH_BOARD,
   DEPTH_HEADER,
@@ -163,8 +167,8 @@ function colorHexToNumber(hex: string): number {
 // from invisible into an actionable warning per missing asset.
 const cardArtLoadErrorKeys = new Set<string>()
 
-function preloadCardArt(scene: Phaser.Scene): void {
-  for (const entry of ALL_CARD_ART) {
+function preloadCardArt(scene: Phaser.Scene, style: AppViewModel['cardVisualStyle']): void {
+  for (const entry of preloadCardArtEntriesForStyle(style)) {
     if (!scene.textures.exists(entry.key)) {
       scene.load.image(entry.key, entry.url)
     }
@@ -342,7 +346,8 @@ class LobbyScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadCardArt(this)
+    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    preloadCardArt(this, selectedStyle)
   }
 
   create(): void {
@@ -637,7 +642,8 @@ class CardgameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadCardArt(this)
+    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    preloadCardArt(this, selectedStyle)
   }
 
   create(): void {

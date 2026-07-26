@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CARD_BACK_KEY } from '../app/card-art'
 import {
   canRenderCardBackTexture,
+  preloadCardArtEntriesForStyle,
   rasterCardArtTextureCandidates,
   resolveRasterCardArtTextureKey,
 } from '../renderers/phaser/card-rendering'
@@ -27,5 +28,22 @@ describe('phaser card rendering helpers', () => {
   it('detects whether the shared card-back texture can render hidden cards', () => {
     expect(canRenderCardBackTexture((key) => key === CARD_BACK_KEY)).toBe(true)
     expect(canRenderCardBackTexture(() => false)).toBe(false)
+  })
+
+  it('selects only entries for the requested art style when preloading', () => {
+    const classicEntries = preloadCardArtEntriesForStyle('classic')
+    expect(classicEntries).toHaveLength(5)
+    expect(classicEntries.every((entry) => entry.style === 'classic')).toBe(true)
+
+    const monochromeEntries = preloadCardArtEntriesForStyle('monochrome')
+    expect(monochromeEntries).toHaveLength(5)
+    expect(monochromeEntries.every((entry) => entry.style === 'monochrome')).toBe(true)
+  })
+
+  it('keeps HD fallback metadata on selected HD preload entries', () => {
+    const hdEntries = preloadCardArtEntriesForStyle('hd')
+    expect(hdEntries).toHaveLength(5)
+    expect(hdEntries.every((entry) => entry.style === 'hd')).toBe(true)
+    expect(hdEntries.every((entry) => entry.fallbackKey !== undefined && entry.fallbackUrl !== undefined)).toBe(true)
   })
 })
