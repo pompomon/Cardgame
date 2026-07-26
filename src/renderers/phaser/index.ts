@@ -29,7 +29,7 @@ import {
 } from './depth'
 import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
-import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
+import { buildLayout, clamp, orientationFromViewport, type LayoutSafeAreaInsets, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
 import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
@@ -227,6 +227,32 @@ function parseFontPx(fontSize: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function parseCssPixels(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function measureSafeAreaInsets(container: HTMLElement): LayoutSafeAreaInsets {
+  const probe = document.createElement('div')
+  probe.style.position = 'absolute'
+  probe.style.visibility = 'hidden'
+  probe.style.pointerEvents = 'none'
+  probe.style.paddingTop = 'env(safe-area-inset-top, 0px)'
+  probe.style.paddingRight = 'env(safe-area-inset-right, 0px)'
+  probe.style.paddingBottom = 'env(safe-area-inset-bottom, 0px)'
+  probe.style.paddingLeft = 'env(safe-area-inset-left, 0px)'
+  container.appendChild(probe)
+  const style = window.getComputedStyle(probe)
+  const insets: LayoutSafeAreaInsets = {
+    top: parseCssPixels(style.paddingTop),
+    right: parseCssPixels(style.paddingRight),
+    bottom: parseCssPixels(style.paddingBottom),
+    left: parseCssPixels(style.paddingLeft),
+  }
+  probe.remove()
+  return insets
+}
+
 type InstallButtonState = MenuOverlayInstallEntry & {
   label: string
   onClick: () => void
@@ -349,7 +375,8 @@ class LobbyScene extends Phaser.Scene {
     const width = this.scale.gameSize.width ?? this.scale.width ?? BASE_WIDTH
     const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
     const orientation = orientationFromViewport(width, height)
-    this.currentLayout = buildLayout(width, height, orientation)
+    const insets = this.rendererRef.safeAreaInsetsForViewport(width, height)
+    this.currentLayout = buildLayout(width, height, orientation, insets)
     const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}`
     const changed = signature !== this.lastLayoutSignature
     this.lastLayoutSignature = signature
@@ -363,10 +390,9 @@ class LobbyScene extends Phaser.Scene {
     }
     this.rootContainer.removeAll(true)
 
-    const left = this.currentLayout.margin
     const top = this.currentLayout.headerTop
-    const centerX = this.currentLayout.width / 2
-    const wrapWidth = Math.max(40, this.currentLayout.width - left * 2)
+    const centerX = this.currentLayout.safeAreaCenterX
+    const wrapWidth = Math.max(40, this.currentLayout.safeAreaWidth - this.currentLayout.margin * 2)
 
     this.rootContainer.add(this.add.text(centerX, top, 'Basic Land Game (Phaser Renderer)', {
       color: UI_THEME.primaryText,
@@ -483,7 +509,7 @@ class LobbyScene extends Phaser.Scene {
       })
     }
 
-    const buttonWidth = Math.min(this.currentLayout.width - left * 2, this.currentLayout.isCompact ? 330 : 360)
+    const buttonWidth = Math.min(this.currentLayout.safeAreaWidth - this.currentLayout.margin * 2, this.currentLayout.isCompact ? 330 : 360)
     const subtitleBottom = top + this.currentLayout.actionButtonHeight + 6
       + Math.max(this.currentLayout.actionButtonHeight, 28)
       + Math.max(0, adventureStatusText.height) + 8
@@ -726,7 +752,8 @@ class CardgameScene extends Phaser.Scene {
     const width = this.scale.gameSize.width ?? this.scale.width ?? BASE_WIDTH
     const height = this.scale.gameSize.height ?? this.scale.height ?? BASE_HEIGHT
     const orientation = orientationFromViewport(width, height)
-    this.currentLayout = buildLayout(width, height, orientation)
+    const insets = this.rendererRef.safeAreaInsetsForViewport(width, height)
+    this.currentLayout = buildLayout(width, height, orientation, insets)
     const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}:${this.currentLayout.isCollapsed ? 'collapsed' : 'split'}`
     const changed = signature !== this.lastLayoutSignature
     this.lastLayoutSignature = signature
@@ -736,7 +763,7 @@ class CardgameScene extends Phaser.Scene {
   private setStatus(message: string): void {
     if (this.statusText) {
       this.statusText.setText(message)
-      this.statusText.setPosition(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset)
+      this.statusText.setPosition(this.currentLayout.safeAreaLeft + this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset)
       this.statusText.setFontSize(this.currentLayout.bodyFontSize)
     }
   }
@@ -1162,7 +1189,7 @@ class CardgameScene extends Phaser.Scene {
       return
     }
 
-    const left = this.currentLayout.margin
+    const left = this.currentLayout.safeAreaLeft + this.currentLayout.margin
 
     // Header strip background: a solid rectangle behind the Menu button and
     // turn/phase label. Even if a future regression breaks the log mask, the
@@ -1170,9 +1197,9 @@ class CardgameScene extends Phaser.Scene {
     // ☰ Menu button and the Winner banner stay readable on top.
     const headerStripHeight = Math.max(this.currentLayout.headerHeight, this.currentLayout.actionButtonHeight + 4)
     const headerStrip = this.add.rectangle(
-      this.currentLayout.width / 2,
+      this.currentLayout.safeAreaCenterX,
       this.currentLayout.headerTop + headerStripHeight / 2,
-      this.currentLayout.width,
+      this.currentLayout.safeAreaWidth,
       headerStripHeight,
       COLOR_APP_BACKGROUND,
       1,
@@ -1190,7 +1217,8 @@ class CardgameScene extends Phaser.Scene {
     this.rootContainer?.add(menuButton)
 
     const headerTextX = left + menuButtonWidth + 16
-    const headerTextWidth = Math.max(40, this.currentLayout.width - this.currentLayout.margin - headerTextX)
+    const headerTextRight = this.currentLayout.safeAreaLeft + this.currentLayout.safeAreaWidth - this.currentLayout.margin
+    const headerTextWidth = Math.max(40, headerTextRight - headerTextX)
     // Header label: once the game ends, show ONLY the winner (most important
     // information). Otherwise show the turn/phase string. Inlining both into
     // a single header row caused phone-width viewports to wrap+truncate the
@@ -2415,7 +2443,18 @@ export class PhaserRenderer implements AppRenderer {
   private a11yNavKeySignature: string | null = null
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
+  private safeAreaInsets: LayoutSafeAreaInsets = {}
   currentView: AppViewModel | null = null
+
+  safeAreaInsetsForViewport(width: number, height: number): LayoutSafeAreaInsets {
+    // Clamp insets against the current viewport so stale CSS env readings
+    // cannot consume the entire scene if orientation changes mid-session.
+    const left = clamp(this.safeAreaInsets.left ?? 0, 0, Math.max(0, width - 1))
+    const right = clamp(this.safeAreaInsets.right ?? 0, 0, Math.max(0, width - left - 1))
+    const top = clamp(this.safeAreaInsets.top ?? 0, 0, Math.max(0, height - 1))
+    const bottom = clamp(this.safeAreaInsets.bottom ?? 0, 0, Math.max(0, height - top - 1))
+    return { top, right, bottom, left }
+  }
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -2426,6 +2465,7 @@ export class PhaserRenderer implements AppRenderer {
     canvasHost.className = 'phaser-host'
     container.innerHTML = ''
     container.appendChild(canvasHost)
+    this.safeAreaInsets = measureSafeAreaInsets(container)
 
     // Hidden file input for "Load from File" recorder action. Phaser lobby and
     // menu entry points both trigger it via openRecordingFilePicker().
@@ -2966,6 +3006,7 @@ export class PhaserRenderer implements AppRenderer {
     this.a11yNavOverlay = null
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
+    this.safeAreaInsets = {}
 
     this.game?.destroy(true)
     this.game = null

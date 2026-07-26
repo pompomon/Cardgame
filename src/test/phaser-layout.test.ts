@@ -232,6 +232,16 @@ describe('phaser buildLayout', () => {
     expect(layout.logColumnHeight).toBeGreaterThanOrEqual(88)
   })
 
+  it('caps collapsed log height share so gameplay rows keep most portrait space', () => {
+    const layout = buildLayout(360, 740, 'vertical')
+    expect(layout.isCollapsed).toBe(true)
+    // Body area excludes the top and bottom log gutters in collapsed mode.
+    const availableForLog = Math.max(0, layout.bodyHeight - 12 - 12)
+    const maxShare = Math.max(Math.min(88, availableForLog), layout.bodyHeight * 0.34)
+    expect(layout.logColumnHeight).toBeLessThanOrEqual(maxShare + 0.5)
+    expect(layout.boardColumnHeight).toBeGreaterThan(layout.logColumnHeight)
+  })
+
   it('uses opaque popup layers while keeping scrim dimming configurable', () => {
     const layout = buildLayout(1024, 480, 'horizontal')
     expect(layout.popupPanelAlpha).toBe(1)
@@ -287,5 +297,38 @@ describe('phaser buildLayout', () => {
     expect(px(wideLayout.popupButtonFontSize)).toBeGreaterThanOrEqual(px(compactLayout.popupButtonFontSize))
     expect(px(wideLayout.popupTitleFontSize)).toBeGreaterThanOrEqual(px(compactLayout.popupTitleFontSize))
     expect(px(wideLayout.popupButtonFontSize)).toBeLessThanOrEqual(24)
+  })
+
+  it('offsets the content region by top and bottom safe-area insets', () => {
+    const layout = buildLayout(390, 844, 'vertical', {
+      top: 44,
+      bottom: 34,
+      left: 0,
+      right: 0,
+    })
+    expect(layout.safeAreaTop).toBe(44)
+    expect(layout.safeAreaBottom).toBe(34)
+    expect(layout.safeAreaHeight).toBe(844 - 44 - 34)
+    // Header and body begin inside the safe area instead of hugging viewport y=0.
+    expect(layout.headerTop).toBeGreaterThanOrEqual(layout.safeAreaTop)
+    expect(layout.bodyTop).toBeGreaterThan(layout.headerTop)
+    // Status baseline reserve includes the bottom inset budget.
+    expect(layout.statusBottomOffset).toBeGreaterThanOrEqual(layout.safeAreaBottom)
+  })
+
+  it('keeps split columns inside left and right safe-area insets', () => {
+    const layout = buildLayout(932, 430, 'horizontal', {
+      left: 47,
+      right: 47,
+      top: 0,
+      bottom: 21,
+    })
+    const safeRight = layout.width - layout.safeAreaRight
+    expect(layout.safeAreaLeft).toBe(47)
+    expect(layout.safeAreaRight).toBe(47)
+    expect(layout.safeAreaWidth).toBe(932 - 47 - 47)
+    expect(layout.logColumnLeft).toBeGreaterThanOrEqual(layout.safeAreaLeft)
+    expect(layout.boardColumnLeft).toBeGreaterThan(layout.logColumnLeft)
+    expect(layout.boardColumnLeft + layout.boardColumnWidth).toBeLessThanOrEqual(safeRight + 0.5)
   })
 })
