@@ -12,7 +12,7 @@ describe('card-visual-styles', () => {
       'hd',
       'monochrome',
     ])
-    expect(DEFAULT_CARD_VISUAL_STYLE).toBe('classic')
+    expect(DEFAULT_CARD_VISUAL_STYLE).toBe('hd')
   })
 
   it('validates style values', () => {

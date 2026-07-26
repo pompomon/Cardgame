@@ -28,7 +28,7 @@ describe('controller card visual style', () => {
 
   it('updates card visual style in view model', () => {
     const controller = new AppController('dom')
-    expect(controller.getViewModel().cardVisualStyle).toBe('classic')
+    expect(controller.getViewModel().cardVisualStyle).toBe('hd')
     controller.setCardVisualStyle('hd')
     expect(controller.getViewModel().cardVisualStyle).toBe('hd')
   })
