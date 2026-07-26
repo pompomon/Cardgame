@@ -12,7 +12,6 @@ import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../../app/animation
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { bucketIconSize, cardVisualPaletteFor, isRasterCardVisualStyle, landPixelRects } from '../../app/card-visuals'
 import type { ControllerApi } from '../../app/controller'
-import { getInstallUiState, promptInstall } from '../../app/install-support'
 import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
@@ -37,7 +36,7 @@ import { buildLayout, clamp, orientationFromViewport, type LayoutSafeAreaInsets,
 import { formatLogEventText, formatLogEventTile } from './log-events'
 import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
-import { createMenuOverlay, type MenuOverlayInstallEntry } from './menu-overlay'
+import { createMenuOverlay } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
 import { buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
 import {
@@ -51,6 +50,7 @@ import {
   type EffectDescriptor,
   type EffectQueueState,
 } from './effects'
+import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx } from './ui-utils'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -147,20 +147,6 @@ type BattlefieldTargetEntry = {
 
 type LobbySubmenu = 'root' | 'settings' | 'recording'
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
-function colorHexToNumber(hex: string): number {
-  const parsed = Number.parseInt(hex.replace('#', ''), 16)
-  return Number.isFinite(parsed) ? parsed : 0xffffff
-}
-
 // Per-key tracking so each (style, land) load failure is logged exactly
 // once instead of swallowing all subsequent errors after the first. This
 // turns "every HD card silently fell back to the procedural pixel icon"
@@ -219,76 +205,6 @@ function cardStyleForLand(name: string, visualStyle: AppViewModel['cardVisualSty
     fill: colorHexToNumber(palette.cardFill),
     stroke: colorHexToNumber(palette.cardStroke),
     text: palette.cardText,
-  }
-}
-
-function parseFontPx(fontSize: string, fallback: number): number {
-  const match = /^\s*(\d+(?:\.\d+)?)\s*px\s*$/.exec(fontSize)
-  if (!match) {
-    return fallback
-  }
-  const parsed = Number.parseFloat(match[1])
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
-
-function parseCssPixels(value: string): number {
-  const parsed = Number.parseFloat(value)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
-function measureSafeAreaInsets(container: HTMLElement): LayoutSafeAreaInsets {
-  const probe = document.createElement('div')
-  probe.style.position = 'absolute'
-  probe.style.visibility = 'hidden'
-  probe.style.pointerEvents = 'none'
-  probe.style.paddingTop = 'env(safe-area-inset-top, 0px)'
-  probe.style.paddingRight = 'env(safe-area-inset-right, 0px)'
-  probe.style.paddingBottom = 'env(safe-area-inset-bottom, 0px)'
-  probe.style.paddingLeft = 'env(safe-area-inset-left, 0px)'
-  container.appendChild(probe)
-  const style = window.getComputedStyle(probe)
-  const insets: LayoutSafeAreaInsets = {
-    top: parseCssPixels(style.paddingTop),
-    right: parseCssPixels(style.paddingRight),
-    bottom: parseCssPixels(style.paddingBottom),
-    left: parseCssPixels(style.paddingLeft),
-  }
-  probe.remove()
-  return insets
-}
-
-type InstallButtonState = MenuOverlayInstallEntry & {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-}
-
-function installButtonState(): InstallButtonState {
-  const installState = getInstallUiState()
-  if (installState.canPromptInstall) {
-    return {
-      label: 'Install App',
-      onClick: () => { void promptInstall() },
-    }
-  }
-  if (installState.showIosInstallHint) {
-    return {
-      label: 'iOS: Share → Add to Home Screen',
-      onClick: () => {},
-      disabled: true,
-    }
-  }
-  if (installState.isStandalone) {
-    return {
-      label: 'Installed app mode active',
-      onClick: () => {},
-      disabled: true,
-    }
-  }
-  return {
-    label: 'Install unavailable in this browser',
-    onClick: () => {},
-    disabled: true,
   }
 }
 

@@ -141,7 +141,7 @@ export function buildLayout(
   const subtitleFontSize = `${Math.round(subtitleFontPx)}px`
   const bodyFontSize = `${Math.round(bodyFontPx)}px`
   const smallFontSize = `${Math.round(smallFontPx)}px`
-  const minActionButtonHeight = isCollapsed ? 44 : 32
+  const minActionButtonHeight = 44
   const maxActionButtonHeight = isCollapsed ? 52 : 48
   const actionButtonHeight = clamp(minDimension * 0.05, minActionButtonHeight, maxActionButtonHeight)
   const actionButtonFontPx = clamp(actionButtonHeight * 0.42, 12, 20)
@@ -362,7 +362,7 @@ export function buildLayout(
   const popupAvailableWidth = Math.max(0, safeWidth - margin * 2)
   const popupTargetWidth = Math.min(popupAvailableWidth, orientation === 'vertical' ? 520 : 760)
   const popupMaxWidth = Math.min(popupAvailableWidth, Math.max(POPUP_MIN_WIDTH, popupTargetWidth))
-  const minPopupButtonHeight = isCollapsed ? 44 : 36
+  const minPopupButtonHeight = 44
   const maxPopupButtonHeight = isCollapsed ? 52 : 48
   const popupButtonHeight = clamp(actionButtonHeight * 1.05, minPopupButtonHeight, maxPopupButtonHeight)
   const popupButtonFontPx = clamp(popupButtonHeight * 0.42, 12, 20)
