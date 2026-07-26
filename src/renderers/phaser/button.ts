@@ -29,6 +29,7 @@ export function buildButton(
   onClick: () => void,
   theme: ButtonTheme,
 ): Phaser.GameObjects.Container {
+  const isTouchPointer = (pointer: Phaser.Input.Pointer | undefined): boolean => pointer?.wasTouch === true
   const requestedPx = Number.parseFloat(fontSize)
   const derivedPx = clamp(height * BUTTON_TEXT_HEIGHT_RATIO, MIN_BUTTON_FONT_PX, MAX_BUTTON_FONT_PX)
   const widthScale = width < BUTTON_TEXT_NARROW_WIDTH_THRESHOLD ? BUTTON_TEXT_NARROW_WIDTH_SCALE : 1
@@ -58,16 +59,30 @@ export function buildButton(
   const button = scene.add.container(x, y, [background, text])
   button.setSize(width, height)
   button.setInteractive({ useHandCursor: true })
-  button.on('pointerover', () => {
+  button.on('pointerover', (pointer: Phaser.Input.Pointer) => {
+    if (isTouchPointer(pointer)) {
+      return
+    }
     button.setScale(1.015)
   })
-  button.on('pointerout', () => {
+  button.on('pointerout', (pointer: Phaser.Input.Pointer) => {
+    if (isTouchPointer(pointer)) {
+      return
+    }
     button.setScale(1)
   })
-  button.on('pointerdown', () => {
+  button.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    if (isTouchPointer(pointer)) {
+      button.setScale(1)
+      return
+    }
     button.setScale(0.985)
   })
-  button.on('pointerup', () => {
+  button.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+    if (isTouchPointer(pointer)) {
+      button.setScale(1)
+      return
+    }
     button.setScale(1.015)
   })
   button.on('pointerup', onClick)

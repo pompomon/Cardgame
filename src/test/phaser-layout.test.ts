@@ -175,6 +175,13 @@ describe('phaser buildLayout', () => {
     expect(layout.boardColumnTop + layout.boardColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
   })
 
+  it('enforces larger touch-target button heights on collapsed mobile portrait', () => {
+    const layout = buildLayout(390, 844, 'vertical')
+    expect(layout.isCollapsed).toBe(true)
+    expect(layout.actionButtonHeight).toBeGreaterThanOrEqual(44)
+    expect(layout.popupButtonHeight).toBeGreaterThanOrEqual(44)
+  })
+
   it('keeps the replay-log column fully below the header strip on mobile portrait', () => {
     const layout = buildLayout(360, 800, 'vertical')
     const headerBottom = layout.headerTop + layout.headerHeight

@@ -1,7 +1,24 @@
-import { CARD_BACK_KEY, cardArtFallbackKey, cardArtKey } from '../../app/card-art'
-import { isRasterCardVisualStyle } from '../../app/card-visual-styles'
+import {
+  ALL_CARD_ART,
+  CARD_BACK_KEY,
+  cardArtFallbackKey,
+  cardArtKey,
+  type CardArtEntry,
+} from '../../app/card-art'
+import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../../app/card-visual-styles'
 import type { CardVisualStyle } from '../../app/types'
 import type { BasicLand } from '../../game/types'
+
+const CARD_ART_ENTRIES_BY_STYLE = new Map<CardVisualStyle, readonly CardArtEntry[]>(
+  CARD_VISUAL_STYLES.map((style) => [
+    style,
+    ALL_CARD_ART.filter((entry) => entry.style === style),
+  ]),
+)
+
+export function preloadCardArtEntriesForStyle(style: CardVisualStyle): readonly CardArtEntry[] {
+  return CARD_ART_ENTRIES_BY_STYLE.get(style) ?? []
+}
 
 export function rasterCardArtTextureCandidates(
   land: BasicLand,
