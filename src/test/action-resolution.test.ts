@@ -3,6 +3,8 @@ import {
   groupCardTargetOptions,
   resolvePlainsReuseAction,
   resolvePlainsReuseTargetSelectionMode,
+  resolveSwampDiscardAction,
+  resolveSwampDiscardTargetSelectionMode,
   resolvePlayLandDrop,
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
@@ -150,6 +152,12 @@ describe('action-resolution', () => {
     ]
     vm = buildViewModel(state, false)
     expect(resolvePlainsReuseTargetSelectionMode(vm.game!)).toBe('popup_cards')
+
+    state.game!.phase = 'swamp_target'
+    state.game!.pendingPlainsReuse = null
+    state.game!.pendingSwampDiscard = { actor: 0 }
+    vm = buildViewModel(state, false)
+    expect(resolveSwampDiscardTargetSelectionMode(vm.game!)).toBe('popup_cards')
   })
 
   it('returns invalid for cards without legal play action', () => {
@@ -161,14 +169,12 @@ describe('action-resolution', () => {
     expect(resolution.kind).toBe('invalid')
   })
 
-  it('groups Swamp popup targets by revealed enemy card name (hvai)', () => {
+  it('groups Swamp discard popup targets by revealed enemy card name (hvai)', () => {
     const state = createState(56)
     state.mode = 'local-hvai'
     state.controllers = ['human', 'ai']
-    state.game!.players[0].hand = [{ id: 'p0-swamp', name: 'Swamp', type: 'land' }]
-    state.game!.players[0].battlefield = [
-      { instanceId: 'bf-1', card: { id: 'pre-swamp', name: 'Swamp', type: 'land' } },
-    ]
+    state.game!.phase = 'swamp_target'
+    state.game!.pendingSwampDiscard = { actor: 0 }
     state.game!.players[1].hand = [
       { id: 'ai-1', name: 'Mountain', type: 'land' },
       { id: 'ai-2', name: 'Mountain', type: 'land' },
@@ -177,17 +183,28 @@ describe('action-resolution', () => {
 
     const vm = buildViewModel(state, false)
     const game = vm.game!
-    const resolution = resolvePlayLandDrop(game, 'p0-swamp')
-    expect(resolution.kind).toBe('needs_target')
-    if (resolution.kind !== 'needs_target') {
-      return
-    }
-
-    const grouped = groupCardTargetOptions(game, { kind: 'play_land', cardId: 'p0-swamp' }, resolution.options)
+    const grouped = groupCardTargetOptions(game, { kind: 'swamp_discard' }, game.legal.swampDiscardOptions.map((option) => ({
+      effectTargetId: option.action.effectTargetId,
+      label: option.label,
+    })))
     // The popup should surface one entry per distinct revealed card name
     // (with counts), not a single collapsed `"Hidden card X3"` group.
     expect(grouped.map((entry) => entry.label)).toEqual(['Mountain X2', 'Forest'])
     expect(grouped.map((entry) => entry.cardName)).toEqual(['Mountain', 'Forest'])
+  })
+
+  it('resolves swamp discard target selection action', () => {
+    const state = createState(57)
+    state.game!.phase = 'swamp_target'
+    state.game!.pendingSwampDiscard = { actor: 0 }
+    state.game!.players[1].hand = [
+      { id: 'opp-1', name: 'Forest', type: 'land' },
+      { id: 'opp-2', name: 'Mountain', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+    const action = resolveSwampDiscardAction(vm.game!, 'opp-2')
+    expect(action).toEqual({ type: 'resolve_swamp_discard', actor: 0, effectTargetId: 'opp-2' })
   })
 
   it('resolves plains reuse target selection action', () => {

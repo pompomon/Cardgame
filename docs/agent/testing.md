@@ -41,9 +41,9 @@ npm run test    # vitest run
 - **Asserted actions must be legal under the engine's exact equality
   rule.** `AppController` enforces actions through `isLegalActionForState`,
   which compares fields like `effectTargetId` exactly. When the opponent
-  hand is non-empty, `getLegalActions` produces one action per target
-  card; an "untargeted" Swamp play is not legal and will be rejected.
-  Assert against an action shape that `getLegalActions` actually emits.
+  hand is non-empty in `swamp_target`, `getLegalActions` produces one
+  `resolve_swamp_discard` action per target card. Assert against an action
+  shape that `getLegalActions` actually emits.
 - **Don't assert on internal AI tie-breaking.** Heuristics evolve. Assert
   that the chosen action is in the legal set and matches the strategic
   intent (e.g. disrupts a near-win opponent), not that it equals a

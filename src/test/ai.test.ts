@@ -50,7 +50,7 @@ describe('ai', () => {
     expect(action).toMatchObject({ actor: 0, cardId: 'p0-disrupt' })
   })
 
-  it('hard level uses opponent hand information for targeted disruption', () => {
+  it('hard level uses opponent hand information for deferred Swamp discard targeting', () => {
     let state = createInitialGame(77)
     state.players[0].hand = [{ id: 'ai-swamp', name: 'Swamp', type: 'land' }]
     state.players[1].hand = [
@@ -66,15 +66,18 @@ describe('ai', () => {
 
     const advancedAction = chooseAiAction(state, 0, { level: 'advanced' })
     const hardAction = chooseAiAction(state, 0, { level: 'hard' })
-    const legal = getLegalActions(state, 0)
 
     expect(advancedAction).toMatchObject({ type: 'play_land', actor: 0, cardId: 'ai-swamp' })
     expect(hardAction).toMatchObject({ type: 'play_land', actor: 0, cardId: 'ai-swamp' })
-    if (advancedAction?.type === 'play_land' && hardAction?.type === 'play_land') {
-      expect(advancedAction.effectTargetId).toBeDefined()
-      expect(legal).toContainEqual(advancedAction)
-      expect(hardAction.effectTargetId).toBe('winning-card')
+    if (!advancedAction || !hardAction) {
+      return
     }
+    state = applyAction(state, hardAction)
+    expect(state.phase).toBe('swamp_target')
+    const advancedDiscard = chooseAiAction(state, 0, { level: 'advanced' })
+    const hardDiscard = chooseAiAction(state, 0, { level: 'hard' })
+    expect(advancedDiscard?.type).toBe('resolve_swamp_discard')
+    expect(hardDiscard).toEqual({ type: 'resolve_swamp_discard', actor: 0, effectTargetId: 'winning-card' })
   })
 
   it('ai picks resolve_plains_reuse action during plains_target phase', () => {

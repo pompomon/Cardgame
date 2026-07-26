@@ -44,6 +44,14 @@ function findPlayAction(state: GameState, name: BasicLand, targetId?: string): G
   return action
 }
 
+function findSwampDiscardAction(state: GameState): GameAction {
+  const action = getLegalActions(state, 0).find((candidate) => candidate.type === 'resolve_swamp_discard')
+  if (!action) {
+    throw new Error('Expected swamp discard resolution action')
+  }
+  return action
+}
+
 function takeAiAction(state: GameState): GameState {
   const actor = state.currentPlayer === 1 || state.phase === 'respond' ? 1 : 0
   const actions = getLegalActions(state, actor)
@@ -178,6 +186,8 @@ describe('tutorial mode', () => {
     expect(getCurrentTutorialStep(state)?.id).toBe('play-swamp')
 
     state = applyAction(state, findPlayAction(state, 'Swamp'))
+    expect(getCurrentTutorialStep(state)?.id).toBe('swamp-target')
+    state = applyAction(state, findSwampDiscardAction(state))
     state = applyAction(state, { type: 'end_turn', actor: 0 })
     state = playAiTurn(state)
     expect(getCurrentTutorialStep(state)?.id).toBe('play-plains')

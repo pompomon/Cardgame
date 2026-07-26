@@ -99,6 +99,7 @@ function makeGameView(): AppViewModel {
       legal: {
         playLandByCard: {},
         counterOptions: [],
+        swampDiscardOptions: [],
         plainsReuseOptions: [],
         canEndTurn: false,
         canPassResponse: false,

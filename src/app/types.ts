@@ -135,6 +135,11 @@ export interface CounterOption {
   label: string
 }
 
+export interface SwampDiscardOption {
+  action: Extract<GameAction, { type: 'resolve_swamp_discard' }>
+  label: string
+}
+
 export interface GameUiState {
   turn: number
   phase: GamePhase
@@ -148,6 +153,7 @@ export interface GameUiState {
   legal: {
     playLandByCard: Record<string, PlayLandOption[]>
     counterOptions: CounterOption[]
+    swampDiscardOptions: SwampDiscardOption[]
     plainsReuseOptions: Array<{
       action: Extract<GameAction, { type: 'resolve_plains_reuse' }>
       label: string

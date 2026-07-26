@@ -58,12 +58,17 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-swamp',
-    hint: "Play Swamp to make your opponent discard a card from hand. Choose the card to discard.",
+    hint: "Play Swamp to make your opponent discard a card from hand.",
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Swamp')
       && game.players[1].hand.length > 0
       && battlefieldHas(game, 0, 'Mountain')
       && !battlefieldHas(game, 0, 'Swamp'),
+  },
+  {
+    id: 'swamp-target',
+    hint: 'Choose the opponent card to discard.',
+    condition: (game) => game.phase === 'swamp_target',
   },
   {
     id: 'play-plains',

@@ -152,7 +152,7 @@ function isPlayerLike(value: unknown): boolean {
 }
 
 function isPhase(value: unknown): value is GamePhase {
-  return value === 'main' || value === 'respond' || value === 'plains_target' || value === 'gameOver'
+  return value === 'main' || value === 'respond' || value === 'plains_target' || value === 'swamp_target' || value === 'gameOver'
 }
 
 function isWinner(value: unknown): value is Winner {
@@ -217,6 +217,18 @@ function isGameStateLike(value: unknown): value is GameState {
     }
   }
 
+  const pendingSwampDiscard = (value as Record<string, unknown>).pendingSwampDiscard
+  if (value.phase === 'swamp_target') {
+    if (pendingSwampDiscard === undefined || pendingSwampDiscard === null || !isRecordObject(pendingSwampDiscard)) {
+      return false
+    }
+    if (pendingSwampDiscard.actor !== 0 && pendingSwampDiscard.actor !== 1) {
+      return false
+    }
+  } else if (pendingSwampDiscard !== undefined && pendingSwampDiscard !== null) {
+    return false
+  }
+
   return isNonNegativeInteger(value.turn)
     && (value.currentPlayer === 0 || value.currentPlayer === 1)
     && isNonNegativeInteger(value.nextInstanceId)
@@ -245,6 +257,7 @@ function normalizeStateSchema(state: GameState): GameState {
   return {
     ...state,
     pendingPlainsReuse: state.pendingPlainsReuse ?? null,
+    pendingSwampDiscard: state.pendingSwampDiscard ?? null,
     events: sanitizeLogEvents(rawEvents),
   }
 }

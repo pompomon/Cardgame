@@ -26,7 +26,7 @@ export interface PlayerState {
   landsPlayedThisTurn: number
 }
 
-export type GamePhase = 'main' | 'respond' | 'plains_target' | 'gameOver'
+export type GamePhase = 'main' | 'respond' | 'plains_target' | 'swamp_target' | 'gameOver'
 
 export type Winner = number | 'draw' | null
 
@@ -42,6 +42,10 @@ export interface PendingPlainsReuse {
   reusedCardName: BasicLand
 }
 
+export interface PendingSwampDiscard {
+  actor: number
+}
+
 export interface GameState {
   players: [PlayerState, PlayerState]
   turn: number
@@ -50,6 +54,7 @@ export interface GameState {
   phase: GamePhase
   pendingLandPlay: PendingLandPlay | null
   pendingPlainsReuse: PendingPlainsReuse | null
+  pendingSwampDiscard: PendingSwampDiscard | null
   winner: Winner
   log: string[]
   events: LogEvent[]
@@ -76,6 +81,7 @@ export type LogEvent =
 export type GameAction =
   | { type: 'play_land'; actor: number; cardId: string; effectTargetId?: string }
   | { type: 'resolve_plains_reuse'; actor: number; effectTargetId?: string }
+  | { type: 'resolve_swamp_discard'; actor: number; effectTargetId?: string }
   | { type: 'end_turn'; actor: number }
   | { type: 'counter_land'; actor: number; discardCardId?: string }
   | { type: 'pass_response'; actor: number }

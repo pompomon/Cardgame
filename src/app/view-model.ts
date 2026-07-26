@@ -2,7 +2,16 @@ import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
 import { getCurrentTutorialStep } from './tutorial'
-import type { AdventureUiState, AppState, AppViewModel, ControllerKind, CounterOption, PlayLandOption, UiCard } from './types'
+import type {
+  AdventureUiState,
+  AppState,
+  AppViewModel,
+  ControllerKind,
+  CounterOption,
+  PlayLandOption,
+  SwampDiscardOption,
+  UiCard,
+} from './types'
 import { HIDDEN_HAND_CARD_NAME } from './types'
 
 function projectAdventureUiState(state: AppState): AdventureUiState {
@@ -234,8 +243,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
   // Determine whether the local human is currently choosing a Swamp discard
   // target. Two qualifying contexts:
-  //   1. main phase, the human is about to play a Swamp from hand with at
-  //      least one legal `effectTargetId` (enemy hand non-empty).
+  //   1. swamp_target phase, resolving a direct Swamp play from hand.
   //   2. plains_target phase, the pending Plains-reuse resolves to Swamp
   //      and the reuse actor is the local human.
   // When true, the picker/labels surface the real enemy hand. The check
@@ -244,19 +252,12 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   const isHumanActor = actorControl === 'human' && !replayActive
   let revealEnemyHandForSwamp = false
   if (isHumanActor) {
-    if (game.phase === 'plains_target' && game.pendingPlainsReuse?.reusedCardName === 'Swamp' && game.pendingPlainsReuse.actor === actor) {
+    if (game.phase === 'swamp_target') {
       revealEnemyHandForSwamp = true
-    } else if (game.phase === 'main') {
-      for (const action of legalActions) {
-        if (action.type !== 'play_land' || !action.effectTargetId) {
-          continue
-        }
-        const card = game.players[actor].hand.find((entry) => entry.id === action.cardId)
-        if (card?.name === 'Swamp') {
-          revealEnemyHandForSwamp = true
-          break
-        }
-      }
+    } else if (game.phase === 'plains_target'
+      && game.pendingPlainsReuse?.reusedCardName === 'Swamp'
+      && game.pendingPlainsReuse.actor === actor) {
+      revealEnemyHandForSwamp = true
     }
   }
   const enemyIndex = actor === 0 ? 1 : 0
@@ -266,6 +267,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
   const playLandByCard: Record<string, PlayLandOption[]> = {}
   const counterOptions: CounterOption[] = []
+  const swampDiscardOptions: SwampDiscardOption[] = []
   const plainsReuseOptions: Array<{
     action: Extract<GameAction, { type: 'resolve_plains_reuse' }>
     label: string
@@ -284,6 +286,17 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
     if (action.type === 'counter_land') {
       counterOptions.push({ action, label: counterLabelFor(game, actor, action) })
+      continue
+    }
+
+    if (action.type === 'resolve_swamp_discard') {
+      const target = action.effectTargetId
+        ? game.players[actor === 0 ? 1 : 0].hand.find((card) => card.id === action.effectTargetId)
+        : undefined
+      swampDiscardOptions.push({
+        action,
+        label: target ? `Discard ${target.name}` : 'Resolve Swamp discard',
+      })
       continue
     }
 
@@ -339,6 +352,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       legal: {
         playLandByCard,
         counterOptions,
+        swampDiscardOptions,
         plainsReuseOptions,
         canEndTurn: legalActions.some((action) => action.type === 'end_turn'),
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),

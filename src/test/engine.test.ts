@@ -186,6 +186,12 @@ describe('engine', () => {
       type: 'play_land',
       actor: 0,
       cardId: 'swamp-play',
+    })
+    expect(state.phase).toBe('swamp_target')
+
+    state = applyAction(state, {
+      type: 'resolve_swamp_discard',
+      actor: 0,
       effectTargetId: 'opp-2',
     })
 
@@ -334,6 +340,28 @@ describe('engine', () => {
     expect(state.phase).toBe('main')
     expect(state.pendingPlainsReuse).toBeNull()
     expect(state.players[0].graveyard.some((card) => card.id === 'plains-play')).toBe(true)
+  })
+
+  it('countering swamp prevents swamp_target prompt and discard resolution', () => {
+    let state = createInitialGame(33)
+    state.players[0].hand = [{ id: 'swamp-play', name: 'Swamp', type: 'land' }]
+    state.players[1].hand = [
+      { id: 'opp-island', name: 'Island', type: 'land' },
+      { id: 'opp-discard', name: 'Forest', type: 'land' },
+      { id: 'opp-keep', name: 'Mountain', type: 'land' },
+    ]
+
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: 'swamp-play' })
+    expect(state.phase).toBe('respond')
+
+    state = applyAction(state, { type: 'counter_land', actor: 1, discardCardId: 'opp-discard' })
+    expect(state.phase).toBe('main')
+    expect(state.pendingSwampDiscard).toBeNull()
+    expect(state.players[0].graveyard.some((card) => card.id === 'swamp-play')).toBe(true)
+    expect(state.players[1].hand.some((card) => card.id === 'opp-keep')).toBe(true)
+    expect(state.players[1].hand.some((card) => card.id === 'opp-discard')).toBe(false)
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-discard')).toBe(true)
+    expect(state.players[1].graveyard.some((card) => card.id === 'opp-island')).toBe(true)
   })
 
   it('only active plains caster can act during plains_target', () => {

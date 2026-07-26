@@ -25,7 +25,8 @@ The selected renderer is also stored in `localStorage` for later visits.
 ### Phaser drag-and-drop controls
 
 - In main phase, when it is your human turn, drag a card from your hand to the battlefield drop zone.
-- If the card has multiple legal targets (for example Forest/Swamp/Mountain/Plains target variants), an in-scene picker appears before action commit.
+- If the card has multiple legal targets (for example Forest/Mountain/Plains target variants), an in-scene picker appears before action commit.
+- Direct Swamp plays now choose discard targets after the response window closes (so Island counters do not force a pre-response target pick).
 - In response phase, use explicit response buttons (counter/pass).
 - Phaser renderer fills the full available viewport and continuously reflows on resize.
 - Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
