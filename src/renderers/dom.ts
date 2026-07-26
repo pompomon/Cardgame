@@ -4,6 +4,8 @@ import {
   HIDDEN_HAND_DISPLAY_NAME,
   resolvePlainsReuseAction,
   resolvePlainsReuseTargetSelectionMode,
+  resolveSwampDiscardAction,
+  resolveSwampDiscardTargetSelectionMode,
   resolvePlayLandDrop,
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
@@ -185,6 +187,34 @@ function renderResponseControls(game: GameUiState, view: AppViewModel): string {
   `
 }
 
+function renderSwampDiscardControls(game: GameUiState, view: AppViewModel): string {
+  if (!game.canInput || game.phase !== 'swamp_target') {
+    return ''
+  }
+  const mode = resolveSwampDiscardTargetSelectionMode(game)
+  if (mode === 'popup_cards' && game.legal.swampDiscardOptions.length > 1) {
+    const grouped = groupCardTargetOptions(game, { kind: 'swamp_discard' }, game.legal.swampDiscardOptions.map((option) => ({
+      effectTargetId: option.action.effectTargetId,
+      label: option.label,
+    })))
+    return renderTargetSheet('Choose Swamp discard target', grouped.map((option) => ({ ...option, action: 'swamp_discard_target' as const })), view.cardVisualStyle, false)
+  }
+  return `
+    <div class="controls dom-action-tray" aria-label="Swamp discard targets">
+      <h3>Swamp Discard</h3>
+      <p>Choose a card to discard.</p>
+      <div class="action-row">
+        ${game.legal.swampDiscardOptions.map((option) => {
+          const targetAttr = option.action.effectTargetId
+            ? ` data-target-id="${escapeHtml(option.action.effectTargetId)}"`
+            : ''
+          return `<button data-action="resolve_swamp_discard"${targetAttr}>${renderActionIcon('Swamp', view.cardVisualStyle)}${escapeHtml(option.label)}</button>`
+        }).join('')}
+      </div>
+    </div>
+  `
+}
+
 function renderPlainsReuseControls(game: GameUiState, view: AppViewModel): string {
   if (!game.canInput || game.phase !== 'plains_target') {
     return ''
@@ -212,7 +242,7 @@ function renderPlainsReuseControls(game: GameUiState, view: AppViewModel): strin
 
 function renderTargetSheet(
   title: string,
-  options: Array<{ effectTargetId?: string; label: string; cardName: string; action: 'play_land_target' | 'plains_reuse_target' }>,
+  options: Array<{ effectTargetId?: string; label: string; cardName: string; action: 'play_land_target' | 'plains_reuse_target' | 'swamp_discard_target' }>,
   style: AppViewModel['cardVisualStyle'],
   cancellable: boolean,
 ): string {
@@ -347,6 +377,7 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
       </div>
       ${renderMainActionTray(game, activeState, view)}
       ${renderResponseControls(game, view)}
+      ${renderSwampDiscardControls(game, view)}
       ${renderPlainsReuseControls(game, view)}
       ${renderPendingPlayLandTargetPicker(game, pendingTargetSelection, view)}
     </section>
@@ -477,6 +508,19 @@ export class DomRenderer implements AppRenderer {
     const action = resolvePlainsReuseAction(game, effectTargetId)
     if (!action) {
       this.controller?.reportStatus('Invalid target. Choose a highlighted target.')
+      return
+    }
+    this.controller?.submitAction(action)
+  }
+
+  private submitSwampDiscardTarget(effectTargetId?: string): void {
+    const game = this.view?.game
+    if (!game) {
+      return
+    }
+    const action = resolveSwampDiscardAction(game, effectTargetId)
+    if (!action) {
+      this.controller?.reportStatus('Invalid target. Choose a discard target.')
       return
     }
     this.controller?.submitAction(action)
@@ -717,11 +761,16 @@ export class DomRenderer implements AppRenderer {
           action = { type: 'pass_response', actor }
         } else if (dataAction === 'resolve_plains_reuse') {
           action = { type: 'resolve_plains_reuse', actor, effectTargetId }
+        } else if (dataAction === 'resolve_swamp_discard') {
+          action = { type: 'resolve_swamp_discard', actor, effectTargetId }
         } else if (dataAction === 'play_land_target') {
           this.submitPendingTarget(effectTargetId)
           return
         } else if (dataAction === 'plains_reuse_target') {
           this.submitPlainsReuseTarget(effectTargetId)
+          return
+        } else if (dataAction === 'swamp_discard_target') {
+          this.submitSwampDiscardTarget(effectTargetId)
           return
         } else if (dataAction === 'cancel-target-picker') {
           this.pendingTargetSelection = null

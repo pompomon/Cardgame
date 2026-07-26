@@ -183,7 +183,7 @@ describe('buildViewModel hand-redaction', () => {
     expect(vm.game?.players[1].handCards[0].name).toBe('Swamp')
   })
 
-  it('reveals real AI hand names in Swamp play-land button labels while the human is choosing the discard target (hvai)', () => {
+  it('reveals real AI hand names during direct Swamp discard targeting (hvai)', () => {
     // This test was deliberately reversed: previously the design hid the AI
     // hand here to mirror the AI's information set when *it* plays Swamp.
     // Players expect to see the discard candidates when *they* play Swamp,
@@ -193,22 +193,17 @@ describe('buildViewModel hand-redaction', () => {
     const state = createState(105)
     state.mode = 'local-hvai'
     state.controllers = ['human', 'ai']
-    // Human (actor=0) has a Swamp to play.
-    state.game!.players[0].hand = [{ id: 'p0-swamp', name: 'Swamp', type: 'land' }]
-    // Need lands on the active side for the cost; cards.ts requires a battlefield
-    // entry for each color cost. Give P0 a Swamp on the battlefield so Swamp is playable.
-    state.game!.players[0].battlefield = [
-      { instanceId: 'bf-1', card: { id: 'pre-swamp', name: 'Swamp', type: 'land' } },
-    ]
+    state.game!.phase = 'swamp_target'
+    state.game!.pendingSwampDiscard = { actor: 0 }
     state.game!.players[1].hand = [
       { id: 'ai-1', name: 'Mountain', type: 'land' },
       { id: 'ai-2', name: 'Forest', type: 'land' },
     ]
 
     const vm = buildViewModel(state, false)
-    const labels = Object.values(vm.game!.legal.playLandByCard).flat().map((o) => o.label).join('|')
-    expect(labels).toMatch(/discard Mountain/)
-    expect(labels).toMatch(/discard Forest/)
+    const labels = vm.game!.legal.swampDiscardOptions.map((o) => o.label).join('|')
+    expect(labels).toMatch(/Discard Mountain/)
+    expect(labels).toMatch(/Discard Forest/)
     expect(labels).not.toMatch(/hidden card/)
     // The reveal is exposed on the view model so renderers can show the
     // real card art in the target picker.
@@ -248,15 +243,13 @@ describe('buildViewModel hand-redaction', () => {
     const state = createState(107)
     state.mode = 'adventure-hvai'
     state.controllers = ['human', 'ai']
-    state.game!.players[0].hand = [{ id: 'p0-swamp', name: 'Swamp', type: 'land' }]
-    state.game!.players[0].battlefield = [
-      { instanceId: 'bf-1', card: { id: 'pre-swamp', name: 'Swamp', type: 'land' } },
-    ]
+    state.game!.phase = 'swamp_target'
+    state.game!.pendingSwampDiscard = { actor: 0 }
     state.game!.players[1].hand = [{ id: 'ai-1', name: 'Mountain', type: 'land' }]
 
     const vm = buildViewModel(state, false)
-    const labels = Object.values(vm.game!.legal.playLandByCard).flat().map((o) => o.label).join('|')
-    expect(labels).toMatch(/discard Mountain/)
+    const labels = vm.game!.legal.swampDiscardOptions.map((o) => o.label).join('|')
+    expect(labels).toMatch(/Discard Mountain/)
     expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain'])
   })
 

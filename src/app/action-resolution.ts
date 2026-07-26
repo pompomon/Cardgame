@@ -17,6 +17,7 @@ export type TargetSelectionMode = 'popup_cards' | 'battlefield_highlight'
 export type TargetSelectionContext =
   | { kind: 'play_land'; cardId: string }
   | { kind: 'plains_reuse' }
+  | { kind: 'swamp_discard' }
 
 export interface GroupedCardTargetOption {
   effectTargetId?: string
@@ -28,6 +29,9 @@ export interface GroupedCardTargetOption {
 function sourceCardNameForContext(game: GameUiState, context: TargetSelectionContext): string | null {
   if (context.kind === 'plains_reuse') {
     return game.pendingPlainsReuseName
+  }
+  if (context.kind === 'swamp_discard') {
+    return 'Swamp'
   }
   const actor = game.actor
   const source = game.players[actor].handCards.find((card) => card.id === context.cardId)
@@ -118,6 +122,13 @@ export function resolvePlainsReuseTargetSelectionMode(game: GameUiState): Target
   return selectionModeForSourceCard(sourceCardNameForContext(game, { kind: 'plains_reuse' }))
 }
 
+export function resolveSwampDiscardTargetSelectionMode(game: GameUiState): TargetSelectionMode | null {
+  if (game.legal.swampDiscardOptions.length <= 1) {
+    return null
+  }
+  return selectionModeForSourceCard(sourceCardNameForContext(game, { kind: 'swamp_discard' }))
+}
+
 export function groupCardTargetOptions(
   game: GameUiState,
   context: TargetSelectionContext,
@@ -165,5 +176,13 @@ export function resolvePlainsReuseAction(
   effectTargetId?: string,
 ): Extract<GameAction, { type: 'resolve_plains_reuse' }> | null {
   const match = game.legal.plainsReuseOptions.find((option) => option.action.effectTargetId === effectTargetId)
+  return match?.action ?? null
+}
+
+export function resolveSwampDiscardAction(
+  game: GameUiState,
+  effectTargetId?: string,
+): Extract<GameAction, { type: 'resolve_swamp_discard' }> | null {
+  const match = game.legal.swampDiscardOptions.find((option) => option.action.effectTargetId === effectTargetId)
   return match?.action ?? null
 }

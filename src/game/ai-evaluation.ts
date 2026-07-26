@@ -65,6 +65,9 @@ function disruptionHintForAction(state: GameState, actor: number, action: GameAc
   if (action.type === 'counter_land') {
     return 4
   }
+  if (action.type === 'resolve_swamp_discard') {
+    return 2
+  }
   if (action.type === 'resolve_plains_reuse') {
     const reusedLand = reusedCardNameForPlainsReuseAction(state, action)
     if (reusedLand === 'Mountain') {

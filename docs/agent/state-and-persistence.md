@@ -108,7 +108,8 @@ These patterns come up repeatedly:
   `HIDDEN_HAND_CARD_NAME` in hvai / adventure-hvai modes. The view model
   may *narrowly* widen visibility for a specific decision (e.g.
   `revealedEnemyHandForSwamp` is populated only while the local human is
-  choosing a Swamp discard target, in `main` or `plains_target` phase).
+  choosing a Swamp discard target, in `swamp_target` or `plains_target`
+  phase).
   The reveal must (a) read from the real `GameState`, not the redacted
   projection, (b) be exposed as its own field — never by un-redacting
   `players[].handCards`, which other surfaces (battlefield panels,

@@ -11,6 +11,9 @@ export function normalizeActionForVisibility(
   if (context.visibility.kind === 'full') {
     return action
   }
+  if (action.type === 'resolve_swamp_discard') {
+    return { ...action, effectTargetId: undefined }
+  }
   if (action.type !== 'play_land' && action.type !== 'resolve_plains_reuse') {
     return action
   }
