@@ -315,6 +315,14 @@ function isPendingPlainsReuseSnapshot(value: unknown): boolean {
   return true
 }
 
+function isPendingSwampDiscardSnapshot(value: unknown): boolean {
+  if (value === undefined) return true
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const pending = value as { actor?: unknown }
+  return pending.actor === 0 || pending.actor === 1
+}
+
 function isGameStateSnapshot(value: unknown): value is GameState {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -327,6 +335,7 @@ function isGameStateSnapshot(value: unknown): value is GameState {
     phase?: unknown
     pendingLandPlay?: unknown
     pendingPlainsReuse?: unknown
+    pendingSwampDiscard?: unknown
     winner?: unknown
     log?: unknown
   }
@@ -336,7 +345,7 @@ function isGameStateSnapshot(value: unknown): value is GameState {
   if (!Number.isInteger(candidate.turn) || (candidate.turn as number) < 1) return false
   if (candidate.currentPlayer !== 0 && candidate.currentPlayer !== 1) return false
   if (!Number.isInteger(candidate.nextInstanceId) || (candidate.nextInstanceId as number) < 1) return false
-  if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'gameOver') return false
+  if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'swamp_target' && candidate.phase !== 'gameOver') return false
   if (!isPendingLandPlaySnapshot(candidate.pendingLandPlay)) return false
   if (candidate.phase === 'plains_target') {
     if (candidate.pendingPlainsReuse === null) return false
@@ -344,6 +353,12 @@ function isGameStateSnapshot(value: unknown): value is GameState {
     return false
   }
   if (!isPendingPlainsReuseSnapshot(candidate.pendingPlainsReuse)) return false
+  if (candidate.phase === 'swamp_target') {
+    if (candidate.pendingSwampDiscard === null || candidate.pendingSwampDiscard === undefined) return false
+  } else if (candidate.pendingSwampDiscard !== null && candidate.pendingSwampDiscard !== undefined) {
+    return false
+  }
+  if (!isPendingSwampDiscardSnapshot(candidate.pendingSwampDiscard)) return false
   if (candidate.winner !== null && candidate.winner !== 'draw' && candidate.winner !== 0 && candidate.winner !== 1) return false
   if (!Array.isArray(candidate.log) || !candidate.log.every((entry) => typeof entry === 'string')) return false
   return true
@@ -364,5 +379,9 @@ export function readStoredAdventureGameSnapshot(): GameState | null {
   // freeze the visual log on iteration. Keep raw `log` strings so the
   // legacy fallback path can still render them.
   const snapshot = parsed as GameState & { events?: unknown }
-  return { ...snapshot, events: sanitizeLogEvents(snapshot.events) }
+  return {
+    ...snapshot,
+    pendingSwampDiscard: snapshot.pendingSwampDiscard ?? null,
+    events: sanitizeLogEvents(snapshot.events),
+  }
 }

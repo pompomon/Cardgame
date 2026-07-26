@@ -639,6 +639,14 @@ describe('game-recording', () => {
         reusedCardName: 'Plains',
       }
     }],
+    ['pending Swamp discard outside swamp_target', (state: Record<string, unknown>) => {
+      state.phase = 'main'
+      state.pendingSwampDiscard = { actor: 0 }
+    }],
+    ['missing pending Swamp discard during swamp_target', (state: Record<string, unknown>) => {
+      state.phase = 'swamp_target'
+      state.pendingSwampDiscard = null
+    }],
   ])('rejects malformed initial game state: %s', (_label, mutate) => {
     const payload = payloadForValidRecord()
     mutate(initialStateOf(payload))

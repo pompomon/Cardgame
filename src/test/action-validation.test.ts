@@ -67,6 +67,11 @@ describe('action-validation', () => {
       expect(isGameAction({ type: 'resolve_plains_reuse', actor: 0 })).toBe(true)
       expect(isGameAction({ type: 'resolve_plains_reuse', actor: 1, effectTargetId: 't1' })).toBe(true)
     })
+    it('accepts resolve_swamp_discard with optional effectTargetId', () => {
+      expect(isGameAction({ type: 'resolve_swamp_discard', actor: 0 })).toBe(true)
+      expect(isGameAction({ type: 'resolve_swamp_discard', actor: 1, effectTargetId: 't1' })).toBe(true)
+      expect(isGameAction({ type: 'resolve_swamp_discard', actor: 0, effectTargetId: 5 })).toBe(false)
+    })
     it('rejects resolve_plains_reuse when effectTargetId is not a string', () => {
       expect(isGameAction({ type: 'resolve_plains_reuse', actor: 0, effectTargetId: 5 })).toBe(false)
       expect(isGameAction({ type: 'resolve_plains_reuse', actor: 0, effectTargetId: null })).toBe(false)
@@ -104,6 +109,16 @@ describe('action-validation', () => {
       expect(isSameAction(
         { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 't1' },
         { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 't2' },
+      )).toBe(false)
+    })
+    it('distinguishes resolve_swamp_discard by effectTargetId', () => {
+      expect(isSameAction(
+        { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 't1' },
+        { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 't1' },
+      )).toBe(true)
+      expect(isSameAction(
+        { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 't1' },
+        { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 't2' },
       )).toBe(false)
     })
   })

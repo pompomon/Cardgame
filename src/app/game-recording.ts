@@ -152,7 +152,7 @@ function isPlayerLike(value: unknown): boolean {
 }
 
 function isPhase(value: unknown): value is GamePhase {
-  return value === 'main' || value === 'respond' || value === 'plains_target' || value === 'gameOver'
+  return value === 'main' || value === 'respond' || value === 'plains_target' || value === 'swamp_target' || value === 'gameOver'
 }
 
 function isWinner(value: unknown): value is Winner {
@@ -207,6 +207,18 @@ function isGameStateLike(value: unknown): value is GameState {
     if (!isRecordObject(pendingPlainsReuse)) {
       return false
     }
+
+    const pendingSwampDiscard = (value as Record<string, unknown>).pendingSwampDiscard
+    if (value.phase === 'swamp_target') {
+      if (pendingSwampDiscard === undefined || pendingSwampDiscard === null || !isRecordObject(pendingSwampDiscard)) {
+        return false
+      }
+      if (pendingSwampDiscard.actor !== 0 && pendingSwampDiscard.actor !== 1) {
+        return false
+      }
+    } else if (pendingSwampDiscard !== undefined && pendingSwampDiscard !== null) {
+      return false
+    }
     const pendingReuse = pendingPlainsReuse as Record<string, unknown>
     if ((pendingReuse.actor !== 0 && pendingReuse.actor !== 1)
       || typeof pendingReuse.reusedInstanceId !== 'string'
@@ -245,6 +257,7 @@ function normalizeStateSchema(state: GameState): GameState {
   return {
     ...state,
     pendingPlainsReuse: state.pendingPlainsReuse ?? null,
+    pendingSwampDiscard: state.pendingSwampDiscard ?? null,
     events: sanitizeLogEvents(rawEvents),
   }
 }

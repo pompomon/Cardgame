@@ -31,6 +31,7 @@ function drawCard(state: GameState, playerId: number): void {
     state.phase = 'gameOver'
     state.pendingLandPlay = null
     state.pendingPlainsReuse = null
+    state.pendingSwampDiscard = null
     pushLog(state, `Player ${playerId + 1} loses by drawing from empty deck.`, { kind: 'deck_empty_loss', actor: playerId })
     return
   }
@@ -115,6 +116,7 @@ function finalizeWinnerIfAny(state: GameState): void {
   state.phase = 'gameOver'
   state.pendingLandPlay = null
   state.pendingPlainsReuse = null
+  state.pendingSwampDiscard = null
   pushLog(
     state,
     winner === 'draw' ? 'Game ends in a draw.' : `Player ${winner + 1} wins.`,
@@ -180,7 +182,7 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
   }
 
   if (playedCard.name === 'Swamp') {
-    const target = effectTargetId ? enemy.hand.find((card) => card.id === effectTargetId) : enemy.hand[0]
+    const target = effectTargetId ? enemy.hand.find((card) => card.id === effectTargetId) : undefined
     if (target) {
       removeFromHand(enemy, target.id)
       enemy.graveyard.push(target)
@@ -233,13 +235,38 @@ function resolvePendingLandPlay(state: GameState): void {
     return
   }
   const me = state.players[pending.actor]
+  const enemy = state.players[pending.actor === 0 ? 1 : 0]
   addToBattlefield(state, me, pending.card)
   pushLog(state, `Player ${pending.actor + 1} plays ${pending.card.name}.`, { kind: 'play_land', actor: pending.actor, cardName: pending.card.name })
   state.pendingLandPlay = null
+  if (pending.card.name === 'Swamp' && pending.effectTargetId === undefined && enemy.hand.length > 0) {
+    state.pendingSwampDiscard = { actor: pending.actor }
+    state.phase = 'swamp_target'
+    return
+  }
   applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
   if (state.phase === 'main') {
     finalizeWinnerIfAny(state)
   }
+}
+
+function resolvePendingSwampDiscard(state: GameState, actor: number, effectTargetId?: string): void {
+  const pending = state.pendingSwampDiscard
+  if (!pending || pending.actor !== actor) {
+    return
+  }
+  const enemy = state.players[actor === 0 ? 1 : 0]
+  const target = effectTargetId
+    ? enemy.hand.find((card) => card.id === effectTargetId)
+    : enemy.hand[0]
+  if (target) {
+    removeFromHand(enemy, target.id)
+    enemy.graveyard.push(target)
+    pushLog(state, `Swamp makes Player ${enemy.id + 1} discard ${target.name}.`, { kind: 'ability_swamp_discard', actor, target: enemy.id, cardName: target.name })
+  }
+  state.pendingSwampDiscard = null
+  state.phase = 'main'
+  finalizeWinnerIfAny(state)
 }
 
 function responseActorFor(state: GameState): number | null {
@@ -259,6 +286,7 @@ export function createInitialGame(seed = Date.now(), decks?: [Card[] | undefined
     phase: 'main',
     pendingLandPlay: null,
     pendingPlainsReuse: null,
+    pendingSwampDiscard: null,
     winner: null,
     log: ['Game started.'],
     events: [{ kind: 'game_started' }],
@@ -286,6 +314,9 @@ export function canAct(state: GameState, actor: number): boolean {
   if (state.phase === 'plains_target') {
     return actor === state.pendingPlainsReuse?.actor
   }
+  if (state.phase === 'swamp_target') {
+    return actor === state.pendingSwampDiscard?.actor
+  }
   return actor === responseActorFor(state)
 }
 
@@ -302,6 +333,22 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
     if (!pendingReuse) {
       return actions
     }
+
+    if (state.phase === 'swamp_target') {
+      const pending = state.pendingSwampDiscard
+      if (!pending || pending.actor !== actor) {
+        return actions
+      }
+      const enemy = state.players[actor === 0 ? 1 : 0]
+      if (enemy.hand.length === 0) {
+        actions.push({ type: 'resolve_swamp_discard', actor })
+        return actions
+      }
+      for (const card of enemy.hand) {
+        actions.push({ type: 'resolve_swamp_discard', actor, effectTargetId: card.id })
+      }
+      return actions
+    }
     const targets = enumerateEffectTargetIds(state, actor, pendingReuse.reusedCardName)
     if (pendingReuse.reusedCardName === 'Island' || targets.length === 0) {
       actions.push({ type: 'resolve_plains_reuse', actor })
@@ -316,7 +363,11 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
   if (state.phase === 'main') {
     if (me.landsPlayedThisTurn < 1) {
       for (const card of me.hand) {
-        if (card.name === 'Forest' || card.name === 'Mountain' || card.name === 'Swamp') {
+        if (card.name === 'Swamp') {
+          actions.push({ type: 'play_land', actor, cardId: card.id })
+          continue
+        }
+        if (card.name === 'Forest' || card.name === 'Mountain') {
           const targets = enumerateEffectTargetIds(state, actor, card.name)
           if (targets.length > 0) {
             for (const targetId of targets) {
@@ -397,6 +448,11 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     if (pendingReuse.actor !== action.actor) {
       return state
     }
+
+    if (action.type === 'resolve_swamp_discard' && state.phase === 'swamp_target') {
+      resolvePendingSwampDiscard(state, action.actor, action.effectTargetId)
+      return state
+    }
     pushLog(state, `Plains reuses ${pendingReuse.reusedCardName}.`, { kind: 'ability_plains_reuse', actor: action.actor, reusedName: pendingReuse.reusedCardName })
     const reusedCard: Card = {
       id: `reused-${pendingReuse.reusedInstanceId}`,
@@ -424,6 +480,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     pushLog(state, `Player ${action.actor + 1} counters ${pending.card.name}.`, { kind: 'counter_resolved', actor: action.actor, cardName: pending.card.name })
     state.pendingLandPlay = null
     state.pendingPlainsReuse = null
+    state.pendingSwampDiscard = null
     state.phase = 'main'
     return state
   }

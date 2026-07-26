@@ -4,6 +4,8 @@ import {
   resolvePlayLandDrop,
   resolvePlayLandTargetSelectionMode,
   resolvePlainsReuseTargetSelectionMode,
+  resolveSwampDiscardAction,
+  resolveSwampDiscardTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
@@ -1252,7 +1254,7 @@ class CardgameScene extends Phaser.Scene {
     // During response/plains-target phases we show a dedicated prompt above the
     // controls, so hide the active-info summary lines to avoid text overlap on
     // short split layouts.
-    const allowedActiveLines = game.phase === 'respond' || game.phase === 'plains_target'
+    const allowedActiveLines = game.phase === 'respond' || game.phase === 'plains_target' || game.phase === 'swamp_target'
       ? 0
       : Math.max(0, Math.min(activeLines.length, this.currentLayout.activeInfoTextLines))
     const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
@@ -1958,6 +1960,50 @@ class CardgameScene extends Phaser.Scene {
         } else if (mode === 'battlefield_highlight' && options.length > 0) {
           this.setStatus('Choose a highlighted battlefield target.')
         }
+      }
+      return
+    }
+
+    if (game.canInput && game.phase === 'swamp_target') {
+      if (!this.pendingTargetPicker) {
+        if (game.legal.swampDiscardOptions.length === 1) {
+          const [onlyOption] = game.legal.swampDiscardOptions
+          this.showTargetPicker(
+            [{ effectTargetId: onlyOption.action.effectTargetId ?? 'swamp-only-target', label: onlyOption.label }],
+            () => onlyOption.action,
+            false,
+            {
+              title: 'Confirm Swamp discard target',
+              allowCancel: false,
+            },
+          )
+          return
+        }
+        const mode = resolveSwampDiscardTargetSelectionMode(game)
+        if (mode !== 'popup_cards') {
+          return
+        }
+        const grouped = groupCardTargetOptions(
+          game,
+          { kind: 'swamp_discard' },
+          game.legal.swampDiscardOptions.map((option) => ({
+            effectTargetId: option.action.effectTargetId,
+            label: option.label,
+          })),
+        )
+        this.showTargetPicker(
+          grouped.map((option) => ({
+            effectTargetId: option.effectTargetId,
+            label: option.label,
+            cardName: option.cardName,
+          })),
+          (effectTargetId) => resolveSwampDiscardAction(game, effectTargetId),
+          false,
+          {
+            title: 'Choose Swamp discard target',
+            allowCancel: false,
+          },
+        )
       }
       return
     }
@@ -2858,6 +2904,14 @@ export class PhaserRenderer implements AppRenderer {
                 onClick: () => controller.submitAction({ type: 'pass_response', actor: game.actor }),
               })
             }
+          } else if (game.phase === 'swamp_target') {
+            game.legal.swampDiscardOptions.forEach((option, index) => {
+              entries.push({
+                key: `swamp-discard:${index}:${option.action.effectTargetId ?? 'default'}`,
+                label: option.label,
+                onClick: () => controller.submitAction(option.action),
+              })
+            })
           } else if (game.phase === 'plains_target') {
             const battlefieldTargets = this.cardgameScene?.getBattlefieldTargetA11yEntries() ?? []
             if (battlefieldTargets.length > 0) {
