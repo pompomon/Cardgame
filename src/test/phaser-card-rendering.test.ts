@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CARD_BACK_KEY } from '../app/card-art'
+import { CARD_VISUAL_STYLES } from '../app/card-visual-styles'
 import {
   canRenderCardBackTexture,
   preloadCardArtEntriesForStyle,
@@ -31,13 +32,11 @@ describe('phaser card rendering helpers', () => {
   })
 
   it('selects only entries for the requested art style when preloading', () => {
-    const classicEntries = preloadCardArtEntriesForStyle('classic')
-    expect(classicEntries).toHaveLength(5)
-    expect(classicEntries.every((entry) => entry.style === 'classic')).toBe(true)
-
-    const monochromeEntries = preloadCardArtEntriesForStyle('monochrome')
-    expect(monochromeEntries).toHaveLength(5)
-    expect(monochromeEntries.every((entry) => entry.style === 'monochrome')).toBe(true)
+    for (const style of CARD_VISUAL_STYLES) {
+      const entries = preloadCardArtEntriesForStyle(style)
+      expect(entries).toHaveLength(5)
+      expect(entries.every((entry) => entry.style === style)).toBe(true)
+    }
   })
 
   it('keeps HD fallback metadata on selected HD preload entries', () => {

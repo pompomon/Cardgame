@@ -346,7 +346,9 @@ class LobbyScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle
+      ?? this.rendererRef.controller?.getViewModel().cardVisualStyle
+      ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
   }
 
@@ -642,7 +644,9 @@ class CardgameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle
+      ?? this.rendererRef.controller?.getViewModel().cardVisualStyle
+      ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
   }
 
