@@ -14,7 +14,7 @@ export const CARD_VISUAL_STYLES = ['classic', 'hd', 'monochrome'] as const
 
 export type CardVisualStyle = typeof CARD_VISUAL_STYLES[number]
 
-export const DEFAULT_CARD_VISUAL_STYLE: CardVisualStyle = 'classic'
+export const DEFAULT_CARD_VISUAL_STYLE: CardVisualStyle = 'hd'
 
 const CARD_VISUAL_STYLE_LABELS: Record<CardVisualStyle, string> = {
   classic: 'Classic',
