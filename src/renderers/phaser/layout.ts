@@ -3,9 +3,24 @@
 
 export type OrientationMode = 'vertical' | 'horizontal'
 
+export interface LayoutSafeAreaInsets {
+  top?: number
+  right?: number
+  bottom?: number
+  left?: number
+}
+
 export interface SceneLayout {
   width: number
   height: number
+  safeAreaTop: number
+  safeAreaRight: number
+  safeAreaBottom: number
+  safeAreaLeft: number
+  safeAreaWidth: number
+  safeAreaHeight: number
+  safeAreaCenterX: number
+  safeAreaCenterY: number
   orientation: OrientationMode
   isCompact: boolean
   isCollapsed: boolean
@@ -91,9 +106,28 @@ export function orientationFromViewport(width: number, height: number): Orientat
   return width >= height ? 'horizontal' : 'vertical'
 }
 
-export function buildLayout(width: number, height: number, orientation: OrientationMode): SceneLayout {
-  const safeWidth = width > 0 ? width : 1
-  const safeHeight = height > 0 ? height : 1
+function normalizeInset(value: number | undefined): number {
+  return Number.isFinite(value) && value !== undefined && value > 0 ? value : 0
+}
+
+export function buildLayout(
+  width: number,
+  height: number,
+  orientation: OrientationMode,
+  insets: LayoutSafeAreaInsets = {},
+): SceneLayout {
+  const viewportWidth = width > 0 ? width : 1
+  const viewportHeight = height > 0 ? height : 1
+  const safeAreaLeft = clamp(normalizeInset(insets.left), 0, viewportWidth)
+  const safeAreaRight = clamp(normalizeInset(insets.right), 0, Math.max(0, viewportWidth - safeAreaLeft - 1))
+  const safeAreaTop = clamp(normalizeInset(insets.top), 0, viewportHeight)
+  const safeAreaBottom = clamp(normalizeInset(insets.bottom), 0, Math.max(0, viewportHeight - safeAreaTop - 1))
+  const safeAreaWidth = Math.max(1, viewportWidth - safeAreaLeft - safeAreaRight)
+  const safeAreaHeight = Math.max(1, viewportHeight - safeAreaTop - safeAreaBottom)
+  const safeAreaCenterX = safeAreaLeft + safeAreaWidth / 2
+  const safeAreaCenterY = safeAreaTop + safeAreaHeight / 2
+  const safeWidth = safeAreaWidth
+  const safeHeight = safeAreaHeight
   const minDimension = Math.min(safeWidth, safeHeight)
   const isCompact = minDimension < COMPACT_DIMENSION_THRESHOLD
   const isCollapsed = safeWidth < RESPONSIVE_COLLAPSE_WIDTH
@@ -122,11 +156,11 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   const cardHeight = clamp(cardWidth * 1.35, 84, 162)
   const cardGap = clamp(cardWidth * 1.08, 66, 156)
 
-  const headerTop = margin
+  const headerTop = safeAreaTop + margin
   const headerHeight = actionButtonHeight + clamp(minDimension * 0.012, 6, 14)
   const bodyTop = headerTop + headerHeight + clamp(minDimension * 0.01, 6, 14)
-  const statusBottomOffset = clamp(minDimension * 0.018, 14, 24)
-  const bodyBottom = safeHeight - margin - statusBottomOffset - 8
+  const statusBottomOffset = safeAreaBottom + clamp(minDimension * 0.018, 14, 24)
+  const bodyBottom = viewportHeight - margin - statusBottomOffset - 8
   const bodyHeight = Math.max(0, bodyBottom - bodyTop)
 
   // Log column: capped at 25% viewport width, with a sensible minimum.
@@ -157,28 +191,38 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   if (isCollapsed) {
     // Single-column stacked layout: log on top, board below (mirrors DOM
     // `@media (max-width: 720px)` rule that flattens the grid to one column).
-    logColumnLeft = margin
+    logColumnLeft = safeAreaLeft + margin
     logColumnTop = bodyTop + logColumnGapTop
     logColumnWidth = Math.max(120, contentWidth)
-    const collapsedDesiredHeight = Math.min(collapsedLogHeight, Math.max(80, bodyHeight * 0.28))
+    const collapsedDesiredHeight = Math.min(collapsedLogHeight, Math.max(80, bodyHeight * 0.24))
     // Don't let the gutters shrink the log below the readable minimum unless
     // the available body really is that small.
     const availableForLog = Math.max(0, bodyHeight - logColumnGapTop - logColumnGapBottom)
+    // In collapsed portrait we prioritize gameplay surfaces (battlefields +
+    // hand controls), so cap how much of the body the replay log may consume.
+    const collapsedMaxShareHeight = Math.max(
+      Math.min(collapsedLogMinHeight, availableForLog),
+      bodyHeight * 0.34,
+    )
+    const collapsedTargetHeight = Math.max(
+      Math.min(collapsedLogMinHeight, availableForLog),
+      collapsedDesiredHeight,
+    )
     logColumnHeight = Math.min(
       availableForLog,
-      Math.max(Math.min(collapsedLogMinHeight, availableForLog), collapsedDesiredHeight),
+      Math.min(collapsedMaxShareHeight, collapsedTargetHeight),
     )
-    boardColumnLeft = margin
+    boardColumnLeft = safeAreaLeft + margin
     boardColumnWidth = Math.max(160, contentWidth)
     boardColumnTop = logColumnTop + logColumnHeight + logColumnGapBottom
     boardColumnHeight = Math.max(0, bodyBottom - boardColumnTop)
   } else {
-    logColumnLeft = margin
+    logColumnLeft = safeAreaLeft + margin
     logColumnTop = bodyTop + logColumnGapTop
     logColumnWidth = Math.max(160, Math.min(desiredLogWidth, contentWidth - 200))
     logColumnHeight = Math.max(0, bodyHeight - logColumnGapTop - logColumnGapBottom)
-    boardColumnLeft = margin + logColumnWidth + logColumnGap
-    boardColumnWidth = Math.max(200, safeWidth - margin - boardColumnLeft)
+    boardColumnLeft = safeAreaLeft + margin + logColumnWidth + logColumnGap
+    boardColumnWidth = Math.max(200, safeAreaLeft + safeWidth - margin - boardColumnLeft)
     boardColumnTop = bodyTop
     boardColumnHeight = Math.max(0, bodyHeight)
   }
@@ -370,8 +414,16 @@ export function buildLayout(width: number, height: number, orientation: Orientat
   )
 
   return {
-    width: safeWidth,
-    height: safeHeight,
+    width: viewportWidth,
+    height: viewportHeight,
+    safeAreaTop,
+    safeAreaRight,
+    safeAreaBottom,
+    safeAreaLeft,
+    safeAreaWidth,
+    safeAreaHeight,
+    safeAreaCenterX,
+    safeAreaCenterY,
     orientation,
     isCompact,
     isCollapsed,
