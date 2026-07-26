@@ -24,7 +24,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     hint: 'Play Island. Your opponent has an Island and will counter your first play — this demonstrates the counter mechanic.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Island')
-      && game.players[0].battlefield.length === 0,
+      && game.players[0].battlefield.length === 0
+      && game.players[0].graveyard.length === 0,
   },
   {
     id: 'island-countered',
@@ -36,21 +37,24 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     hint: 'Your Island is in your graveyard. Play Forest to return it to your hand.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Forest')
-      && game.players[0].graveyard.length > 0,
+      && game.players[0].graveyard.length > 0
+      && !battlefieldHas(game, 0, 'Forest'),
   },
   {
     id: 'play-island-draw',
     hint: "You retrieved Island. Play it now to draw an extra card with Island's ability.",
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Island')
-      && battlefieldHas(game, 0, 'Forest'),
+      && battlefieldHas(game, 0, 'Forest')
+      && !battlefieldHas(game, 0, 'Island'),
   },
   {
     id: 'play-mountain',
     hint: "Play Mountain to destroy one of your opponent's battlefield lands.",
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Mountain')
-      && game.players[1].battlefield.length > 0,
+      && game.players[1].battlefield.length > 0
+      && !battlefieldHas(game, 0, 'Mountain'),
   },
   {
     id: 'play-swamp',
@@ -58,14 +62,16 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Swamp')
       && game.players[1].hand.length > 0
-      && battlefieldHas(game, 0, 'Mountain'),
+      && battlefieldHas(game, 0, 'Mountain')
+      && !battlefieldHas(game, 0, 'Swamp'),
   },
   {
     id: 'play-plains',
     hint: 'Play Plains to reuse one of your battlefield land abilities. You will pick the target land.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Plains')
-      && battlefieldHas(game, 0, 'Swamp'),
+      && battlefieldHas(game, 0, 'Swamp')
+      && !battlefieldHas(game, 0, 'Plains'),
   },
   {
     id: 'plains-target',

@@ -61,12 +61,29 @@ function takeAiAction(state: GameState): GameState {
 
 function playAiTurn(state: GameState): GameState {
   let next = state
-  while (canAct(next, 1) && (next.currentPlayer === 1 || next.phase === 'respond')) {
-    const updated = takeAiAction(next)
-    if (updated === next) {
+  while (!(next.phase === 'main' && next.currentPlayer === 0 && canAct(next, 0))) {
+    if (next.phase === 'respond') {
+      if (canAct(next, 1)) {
+        const updated = takeAiAction(next)
+        if (updated === next) break
+        next = updated
+        continue
+      }
+      if (canAct(next, 0)) {
+        const pass = getLegalActions(next, 0).find((action) => action.type === 'pass_response')
+        if (!pass) break
+        next = applyAction(next, pass)
+        continue
+      }
       break
     }
-    next = updated
+    if (next.currentPlayer === 1 && canAct(next, 1)) {
+      const updated = takeAiAction(next)
+      if (updated === next) break
+      next = updated
+      continue
+    }
+    break
   }
   return next
 }
@@ -139,7 +156,7 @@ describe('tutorial mode', () => {
     expect(getCurrentTutorialStep(state)?.id).toBe('island-countered')
     state = takeAiAction(state)
     expect(state.players[0].graveyard.some((card) => card.name === 'Island')).toBe(true)
-    expect(getCurrentTutorialStep(state)?.id).toBeNull()
+    expect(getCurrentTutorialStep(state)?.id).toBeUndefined()
 
     state = applyAction(state, { type: 'end_turn', actor: 0 })
     state = playAiTurn(state)

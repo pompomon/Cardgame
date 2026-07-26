@@ -75,9 +75,6 @@ function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiSt
       ${actionButtons}
     </article>
   `
-  const tutorialHint = view.tutorial.active && view.tutorial.hint
-    ? `<aside class="dom-tutorial-hint" role="status" aria-live="polite">${escapeHtml(view.tutorial.hint)}</aside>`
-    : ''
 }
 
 function optionTargetIds(options: Array<{ effectTargetId?: string }>): Set<string> {
@@ -322,6 +319,9 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
         : ''}
     </div>
   `
+  const tutorialHint = view.tutorial.active && view.tutorial.hint
+    ? `<aside class="dom-tutorial-hint" role="status" aria-live="polite">${escapeHtml(view.tutorial.hint)}</aside>`
+    : ''
 
   return `
     <section class="panel game-scene dom-cardgame dom-game" data-dom-layout="mobile-first" data-animation-speed="${view.animationSpeed}">
