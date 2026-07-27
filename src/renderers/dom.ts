@@ -349,8 +349,8 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
         : ''}
     </div>
   `
-  const tutorialHint = view.tutorial.active && view.tutorial.hint
-    ? `<aside class="dom-tutorial-hint" role="status" aria-live="polite">${escapeHtml(view.tutorial.hint)}</aside>`
+  const tutorialHint = view.tutorial.active
+    ? `<aside class="dom-tutorial-hint" role="status" aria-live="polite">${escapeHtml(view.tutorial.hint ?? 'Keep playing to continue the tutorial.')}</aside>`
     : ''
 
   return `

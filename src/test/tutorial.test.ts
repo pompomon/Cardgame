@@ -162,6 +162,7 @@ describe('tutorial mode', () => {
 
     state = applyAction(state, findPlayAction(state, 'Island'))
     expect(getCurrentTutorialStep(state)?.id).toBe('island-countered')
+    expect(getCurrentTutorialStep(state)?.hint).toContain('can counter your Island now')
     state = takeAiAction(state)
     expect(state.players[0].graveyard.some((card) => card.name === 'Island')).toBe(true)
     expect(getCurrentTutorialStep(state)?.id).toBeUndefined()

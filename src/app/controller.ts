@@ -1024,12 +1024,12 @@ export class AppController implements ControllerApi {
       return
     }
     this.clearAiTimeout()
-    this.state.seed = newSeed
     if (this.state.mode === 'tutorial') {
       this.state.seed = TUTORIAL_SEED
       this.state.game = createInitialGame(this.state.seed, createTutorialDecks())
       this.state.recording = null
     } else {
+      this.state.seed = newSeed
       this.state.game = createInitialGame(this.state.seed)
       this.initializeRecording(this.state.mode)
     }

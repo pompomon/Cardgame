@@ -209,6 +209,17 @@ describe('DOM lobby layout', () => {
     expect(html).toContain('dom-board__hand')
   })
 
+  it('keeps the tutorial hint panel visible between scripted steps', () => {
+    const gameView = makeGameView()
+    gameView.mode = 'tutorial'
+    gameView.tutorial = { active: true, stepId: null, hint: null }
+
+    const html = renderGame(gameView, false)
+
+    expect(html).toContain('class="dom-tutorial-hint"')
+    expect(html).toContain('Keep playing to continue the tutorial.')
+  })
+
   it('marks playable active-hand cards as draggable while preserving button fallback', () => {
     const gameView = makeGameView()
     gameView.game!.canInput = true

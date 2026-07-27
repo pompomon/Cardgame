@@ -29,7 +29,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'island-countered',
-    hint: 'The opponent used Island to counter your land! They discard Island plus one other card, and your Island goes to your graveyard.',
+    hint: 'Your opponent can counter your Island now. If they do, they discard Island plus one other card, and your Island goes to your graveyard.',
     condition: (game) => game.phase === 'respond',
   },
   {
