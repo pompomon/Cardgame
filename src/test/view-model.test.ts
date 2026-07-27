@@ -60,6 +60,21 @@ describe('buildViewModel', () => {
     // renderers (Phaser visual log, ability animations) can consume it.
     expect(Array.isArray(vm.game?.events)).toBe(true)
     expect(vm.game?.events[0]).toEqual({ kind: 'game_started' })
+    expect(vm.tutorial).toEqual({ active: false, stepId: null, hint: null })
+  })
+
+  it('projects tutorial hint state when in tutorial mode', () => {
+    const state = createState(56)
+    state.mode = 'tutorial'
+    state.controllers = ['human', 'ai']
+    state.game!.players[0].hand = [{ id: 'tutorial-island', name: 'Island', type: 'land' }]
+    state.game!.players[0].battlefield = []
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.tutorial.active).toBe(true)
+    expect(vm.tutorial.stepId).toBe('play-island-first')
+    expect(vm.tutorial.hint).toBeTruthy()
   })
 
   it('exposes plains reuse options and pending reused card name', () => {

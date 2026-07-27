@@ -317,8 +317,8 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
             ${view.mode === 'adventure-hvai'
               ? `<button id="pause-adventure">Pause Adventure</button>
                  <button data-action="abandon-adventure">Reset Adventure Run</button>`
-              : `<button id="back-to-lobby">Back to Lobby</button>
-                 <button id="rematch">Rematch</button>`}
+              : `<button id="back-to-lobby">${view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby'}</button>
+                 ${view.mode === 'tutorial' ? '' : '<button id="rematch">Rematch</button>'}`}
           </div>
           <div class="menu-section">${renderInstallControls()}</div>
           <div class="menu-section">
@@ -349,6 +349,9 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
         : ''}
     </div>
   `
+  const tutorialHint = view.tutorial.active
+    ? `<aside class="dom-tutorial-hint" role="status" aria-live="polite">${escapeHtml(view.tutorial.hint ?? 'Keep playing to continue the tutorial.')}</aside>`
+    : ''
 
   return `
     <section class="panel game-scene dom-cardgame dom-game" data-dom-layout="mobile-first" data-animation-speed="${view.animationSpeed}">
@@ -375,6 +378,7 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
         </div>
         ${renderLogDrawer(game)}
       </div>
+      ${tutorialHint}
       ${renderMainActionTray(game, activeState, view)}
       ${renderResponseControls(game, view)}
       ${renderSwampDiscardControls(game, view)}

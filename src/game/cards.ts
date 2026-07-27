@@ -31,3 +31,34 @@ export function createStarterDeck(playerId: number, seed: number): Card[] {
 
   return shuffle(lands, seed + playerId * 97)
 }
+
+function makeCard(owner: string, land: BasicLand, index: number): Card {
+  return {
+    id: `${owner}-${land.toLowerCase()}-${index}`,
+    name: land,
+    type: 'land',
+  }
+}
+
+export function createTutorialDecks(): [Card[], Card[]] {
+  const playerDeck: Card[] = [
+    makeCard('tutorial-p0', 'Island', 0),
+    makeCard('tutorial-p0', 'Forest', 0),
+    makeCard('tutorial-p0', 'Mountain', 0),
+    makeCard('tutorial-p0', 'Swamp', 0),
+    makeCard('tutorial-p0', 'Plains', 0),
+  ]
+  const playerPattern: BasicLand[] = ['Island', 'Forest', 'Mountain', 'Swamp', 'Plains']
+  for (let i = 0; i < 9; i += 1) {
+    for (const land of playerPattern) {
+      playerDeck.push(makeCard('tutorial-p0', land, i + 1))
+    }
+  }
+
+  const aiDeck: Card[] = [makeCard('tutorial-p1', 'Island', 0)]
+  for (let index = 0; index < 49; index += 1) {
+    aiDeck.push(makeCard('tutorial-p1', 'Plains', index))
+  }
+
+  return [playerDeck, aiDeck]
+}
