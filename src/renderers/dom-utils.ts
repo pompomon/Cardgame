@@ -314,7 +314,7 @@ function domEffectInfoForEvent(event: LogEvent): DomEffectInfo | null {
     case 'ability_plains_reuse':
       return { kind: 'plains_reuse', targetSelector: '.battlefield-active', particleCount: 6 }
     case 'counter_resolved':
-      return { kind: 'counter_resolved', targetSelector: '.battlefield-non-active', particleCount: 7 }
+      return { kind: 'counter_resolved', targetSelector: '.battlefield-active', particleCount: 7 }
     default:
       return null
   }

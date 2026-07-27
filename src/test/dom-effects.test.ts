@@ -42,6 +42,16 @@ describe('scheduleDomEffect', () => {
     expect(raf).toHaveBeenCalledOnce()
   })
 
+  it('anchors resolved counter effects to the active battlefield', () => {
+    const querySelector = vi.fn().mockReturnValue(null)
+    const raf = vi.fn((callback: FrameRequestCallback) => callback(0))
+    vi.stubGlobal('document', { querySelector })
+    vi.stubGlobal('requestAnimationFrame', raf)
+    const event: LogEvent = { kind: 'counter_resolved', actor: 1, cardName: 'Forest' }
+    scheduleDomEffect(event, 'normal', 'classic')
+    expect(querySelector).toHaveBeenCalledWith('.battlefield-active')
+  })
+
   it('is a no-op for game_started events', () => {
     const raf = vi.fn()
     vi.stubGlobal('requestAnimationFrame', raf)

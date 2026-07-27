@@ -1039,8 +1039,8 @@ textarea {
 
 /* --- forest_return: leaves converging inward + contracting ring ------------ */
 @keyframes dom-effect-in {
-  0%   { opacity: 0.88; }
-  100% { transform: translate(-50%, -50%); opacity: 0; }
+  0%   { transform: rotate(var(--angle)) translateX(48px); opacity: 0.88; }
+  100% { transform: rotate(var(--angle)) translateX(0); opacity: 0; }
 }
 
 @keyframes dom-effect-ring-contract {
@@ -1054,11 +1054,6 @@ textarea {
   width: 8px;
   height: 10px;
   background: #7fd194;
-  transform:
-    translate(
-      calc(cos(var(--angle)) * 38%),
-      calc(sin(var(--angle)) * 45%)
-    );
   animation: dom-effect-in var(--dom-effect-duration, 350ms)
     calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.06))
     ease-in both;
@@ -1163,21 +1158,11 @@ textarea {
 /* --- counter_resolved: hex-vertex particles + ripple ring ----------------- */
 @keyframes dom-effect-hex-vertex {
   0%   {
-    transform:
-      translate(
-        calc(cos(var(--angle)) * 24%),
-        calc(sin(var(--angle)) * 22%)
-      )
-      scale(0.8);
+    transform: rotate(var(--angle)) translateY(-24px) scale(0.8);
     opacity: 0.92;
   }
   100% {
-    transform:
-      translate(
-        calc(cos(var(--angle)) * 46%),
-        calc(sin(var(--angle)) * 44%)
-      )
-      scale(1.6);
+    transform: rotate(var(--angle)) translateY(-46px) scale(1.6);
     opacity: 0;
   }
 }
