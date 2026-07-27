@@ -17,6 +17,7 @@ import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
+import { createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
 import {
   canRenderCardBackTexture,
@@ -549,6 +550,7 @@ class CardgameScene extends Phaser.Scene {
   // Maps instanceId → EffectAnchor for every card currently visible in both
   // battlefields. Populated (and cleared) on every renderBattlefields pass.
   private cardPositionRegistry = new Map<string, EffectAnchor>()
+  private cardPreview: CardPreviewController | null = null
 
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
@@ -573,10 +575,20 @@ class CardgameScene extends Phaser.Scene {
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
-    // Reset per-match scroll state. The Phaser game keeps a single
-    // CardgameScene instance and re-runs create() on each scene start, so any
-    // log scroll offset from a previous game would otherwise persist and open
-    // the next match scrolled away from the newest log entries.
+    this.cardPreview = createCardPreviewController({
+      scene: this,
+      getRoot: () => this.rootContainer,
+      getLayout: () => this.currentLayout,
+      getContext: () => {
+        const game = this.rendererRef.currentView?.game
+        return game ? {
+          phase: game.phase,
+          pendingPlayLandTargetSelection: this.pendingPlayLandTargetSelection !== null,
+          menuOpen: this.menuOpen,
+        } : null
+      },
+      renderCard: (label) => this.renderStaticCard(0, 0, label),
+    })
     this.inSceneLogScrollOffset = null
     this.inSceneLogPinnedToBottom = true
     this.lastRenderedSeed = null
@@ -674,6 +686,8 @@ class CardgameScene extends Phaser.Scene {
       this.input.off('drag', onDrag)
       this.input.off('dragend', onDragEnd)
       this.input.off('drop', onDrop)
+      this.cardPreview?.destroy()
+      this.cardPreview = null
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -702,6 +716,7 @@ class CardgameScene extends Phaser.Scene {
   private clearRoot(): void {
     const wasMenuOpen = this.menuOpen
     this.menuOverlay = null
+    this.cardPreview?.clear()
     this.rootContainer?.removeAll(true)
     this.pendingTargetPicker = null
     this.pendingTargetPickerA11yEntries = []
@@ -1296,7 +1311,7 @@ class CardgameScene extends Phaser.Scene {
       this.cardPositionRegistry.set(card.instanceId, {
         x: cardX, y: nonActiveCardY, width: this.currentLayout.cardWidth, height: this.currentLayout.cardHeight,
       })
-      this.rootContainer?.add(this.renderStaticCard(
+      const renderedCard = this.renderStaticCard(
         cardX,
         nonActiveCardY,
         card.name,
@@ -1304,7 +1319,11 @@ class CardgameScene extends Phaser.Scene {
           highlight: targetEntry !== null,
           onClick: targetEntry?.onSelect,
         },
-      ))
+      )
+      if (!targetEntry) {
+        this.cardPreview?.bind(renderedCard, card.name)
+      }
+      this.rootContainer?.add(renderedCard)
     }
 
     // Active battlefield (below non-active, drop zone enabled, parchment with green tint).
@@ -1354,7 +1373,7 @@ class CardgameScene extends Phaser.Scene {
       this.cardPositionRegistry.set(card.instanceId, {
         x: cardX, y: activeCardY, width: this.currentLayout.cardWidth, height: this.currentLayout.cardHeight,
       })
-      this.rootContainer?.add(this.renderStaticCard(
+      const renderedCard = this.renderStaticCard(
         cardX,
         activeCardY,
         card.name,
@@ -1362,7 +1381,11 @@ class CardgameScene extends Phaser.Scene {
           highlight: targetEntry !== null,
           onClick: targetEntry?.onSelect,
         },
-      ))
+      )
+      if (!targetEntry) {
+        this.cardPreview?.bind(renderedCard, card.name)
+      }
+      this.rootContainer?.add(renderedCard)
     }
   }
 
@@ -1888,6 +1911,7 @@ class CardgameScene extends Phaser.Scene {
         cardObject.setInteractive({ draggable: true, useHandCursor: true })
         this.input.setDraggable(cardObject)
       }
+      this.cardPreview?.bind(cardObject, card.name)
       this.rootContainer?.add(cardObject)
     })
 
@@ -2067,6 +2091,7 @@ class CardgameScene extends Phaser.Scene {
       return
     }
 
+    this.cardPreview?.clear()
     this.pendingTargetPicker?.destroy(true)
     this.pendingPlayLandTargetSelection = null
     this.battlefieldTargetEntries = []
@@ -2132,6 +2157,7 @@ class CardgameScene extends Phaser.Scene {
     showAllTargets = false,
     config: TargetPickerConfig = {},
   ): void {
+    this.cardPreview?.clear()
     if (this.menuOpen) {
       return
     }

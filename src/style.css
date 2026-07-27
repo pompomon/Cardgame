@@ -783,6 +783,30 @@ textarea {
   --dom-card-width: 100%;
 }
 
+.dom-card-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0)) max(16px, env(safe-area-inset-right, 0)) max(16px, env(safe-area-inset-bottom, 0)) max(16px, env(safe-area-inset-left, 0));
+  pointer-events: none;
+}
+
+.dom-card-preview[hidden] {
+  display: none;
+}
+
+.dom-card-preview__card {
+  --dom-card-width: min(80vw, calc((100dvh - 32px) / 1.38), 360px);
+  filter: drop-shadow(0 24px 42px rgba(0, 0, 0, 0.62));
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.dom-card-preview__card .dom-card {
+  --dom-card-height: calc(var(--dom-card-width) * 1.38);
+}
+
 @keyframes dom-sheet-in {
   from {
     transform: translateY(18px);
@@ -797,6 +821,10 @@ textarea {
 @media (min-width: 760px) {
   .dom-cardgame {
     --dom-card-width: clamp(126px, 14vw, 174px);
+  }
+
+  .dom-card-preview__card {
+    --dom-card-width: min(42vw, calc((100dvh - 32px) / 1.38), 360px);
   }
 
   .dom-cardgame__lobby-grid,
@@ -829,6 +857,10 @@ textarea {
     transition: none;
     animation: none;
   }
+
+  .dom-card-preview__card {
+    transition: none;
+  }
 }
 
 .dom-game[data-animation-speed="off"] .dom-card-drag,
@@ -836,6 +868,10 @@ textarea {
 .dom-game[data-animation-speed="off"] .dom-target-sheet {
   transition: none;
   animation: none;
+}
+
+.dom-game[data-animation-speed="off"] .dom-card-preview__card {
+  transition: none;
 }
 
 .phaser-host {

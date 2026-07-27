@@ -14,6 +14,7 @@ The cardgame scene anchors render order on constants and a z-order map in
 - default `0` — cards, buttons, battlefields
 - `DEPTH_HEADER_STRIP = 9` — header strip
 - `DEPTH_HEADER = 10` — Menu button, Turn/Phase label, Winner banner
+- `DEPTH_CARD_PREVIEW_OVERLAY = 15` — enlarged card preview
 - `DEPTH_MENU_OVERLAY = 20` — in-game menu overlay
 - `DEPTH_TARGET_PICKER_OVERLAY = 30` — target picker overlay
 
