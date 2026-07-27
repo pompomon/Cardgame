@@ -1,5 +1,7 @@
 import { chooseAiAction } from '../game/ai'
-import { applyAction, canAct, createInitialGame } from '../game/engine'
+import { tutorialPolicy } from '../game/ai-policies/tutorial'
+import { createTutorialDecks } from '../game/cards'
+import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
 import type { GameAction, GameState } from '../game/types'
 import { P2PLink } from '../net/p2p'
 import { activeActor } from './active-actor'
@@ -35,6 +37,7 @@ import type { AdventureState, AiLevel, AnimationSpeed, AppState, AppViewModel, C
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
+const TUTORIAL_SEED = 1
 
 // Factory for the "inactive" adventure baseline. Centralized so the
 // constructor, storage refresh, and reset paths cannot drift out of sync as
@@ -585,7 +588,20 @@ export class AppController implements ControllerApi {
       if (this.state.controllers[actor] !== 'ai') {
         return
       }
-      const action = chooseAiAction(game, actor, { level: this.state.aiLevel })
+      const action = this.state.mode === 'tutorial'
+        ? tutorialPolicy({
+          state: game,
+          actor,
+          actions: getLegalActions(game, actor),
+          context: {
+            level: 'basic',
+            visibility: {
+              kind: 'partial',
+              canInspectOpponentHand: false,
+            },
+          },
+        })
+        : chooseAiAction(game, actor, { level: this.state.aiLevel })
       if (!action) {
         return
       }
@@ -793,8 +809,10 @@ export class AppController implements ControllerApi {
       this.p2p = null
     }
     this.state.mode = mode
-    this.state.seed = Date.now()
-    this.state.game = createInitialGame(this.state.seed)
+    this.state.seed = mode === 'tutorial' ? TUTORIAL_SEED : Date.now()
+    this.state.game = mode === 'tutorial'
+      ? createInitialGame(this.state.seed, createTutorialDecks())
+      : createInitialGame(this.state.seed)
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
@@ -829,6 +847,13 @@ export class AppController implements ControllerApi {
       if (adventurePersisted) {
         this.state.status = 'Local AI vs AI simulation started.'
       }
+    } else if (mode === 'tutorial') {
+      this.state.controllers = ['human', 'ai']
+      if (adventurePersisted) {
+        this.state.status = 'Tutorial started. Follow the hint panel to learn each land ability.'
+      }
+      this.state.offer = ''
+      this.state.answer = ''
     } else if (mode === 'p2p-host') {
       this.setupP2P()
       this.state.controllers = ['human', 'remote']
@@ -847,7 +872,11 @@ export class AppController implements ControllerApi {
       this.state.answer = ''
     }
 
-    this.initializeRecording(mode)
+    if (mode === 'tutorial') {
+      this.state.recording = null
+    } else {
+      this.initializeRecording(mode)
+    }
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -995,9 +1024,15 @@ export class AppController implements ControllerApi {
       return
     }
     this.clearAiTimeout()
-    this.state.seed = newSeed
-    this.state.game = createInitialGame(this.state.seed)
-    this.initializeRecording(this.state.mode)
+    if (this.state.mode === 'tutorial') {
+      this.state.seed = TUTORIAL_SEED
+      this.state.game = createInitialGame(this.state.seed, createTutorialDecks())
+      this.state.recording = null
+    } else {
+      this.state.seed = newSeed
+      this.state.game = createInitialGame(this.state.seed)
+      this.initializeRecording(this.state.mode)
+    }
     this.state.status = 'Rematch started.'
     this.notify()
     this.scheduleAiIfNeeded()

@@ -1,6 +1,7 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
+import { getCurrentTutorialStep } from './tutorial'
 import type {
   AdventureUiState,
   AppState,
@@ -38,6 +39,18 @@ function projectAdventureUiState(state: AppState): AdventureUiState {
 
 function cloneLogEvent(event: LogEvent): LogEvent {
   return { ...event }
+}
+
+function projectTutorialState(state: AppState): AppViewModel['tutorial'] {
+  if (state.mode !== 'tutorial' || !state.game) {
+    return { active: false, stepId: null, hint: null }
+  }
+  const step = getCurrentTutorialStep(state.game)
+  return {
+    active: true,
+    stepId: step?.id ?? null,
+    hint: step?.hint ?? null,
+  }
 }
 
 function winnerTextFor(game: GameState): string {
@@ -204,6 +217,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       animationSpeed: state.animationSpeed,
       p2pConnected,
       p2pStarted,
+      tutorial: projectTutorialState(state),
       adventure: projectAdventureUiState(state),
       game: null,
       recording: {
@@ -304,6 +318,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     animationSpeed: state.animationSpeed,
     p2pConnected,
     p2pStarted,
+    tutorial: projectTutorialState(state),
     adventure: projectAdventureUiState(state),
     game: {
       turn: game.turn,

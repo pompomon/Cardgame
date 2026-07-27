@@ -39,8 +39,8 @@ import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
-import { buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
 import { computeEffectAnchorFromLayout } from './effect-anchoring'
+import { buildBattlefieldBackdrop, buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -83,12 +83,12 @@ const CARD_FACE_ICON_MIN_SIZE = 22
 
 // Color palette. Tokenized to match the CSS custom properties in
 // src/style.css so the DOM and Phaser renderers stay visually consistent.
-// To re-skin the UI, update both this block and the :root tokens in
-// src/style.css together.
-const COLOR_BATTLEFIELD_ACTIVE_FILL = 0x1f6b3e
-const COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x46d27a
-const COLOR_BATTLEFIELD_NON_ACTIVE_FILL = 0x7a1f33
-const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xff6b8a
+// Battlefield backdrop parchment colours (base, tints, vignette) live in
+// src/renderers/phaser/visual-primitives.ts alongside buildBattlefieldBackdrop.
+// To re-skin: update the BATTLEFIELD_* constants there AND the :root tokens in
+// src/style.css together, including the entries below.
+const COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x72b048    // sage green  = --battlefield-active-stroke
+const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xb46878 // muted rose  = --battlefield-nonactive-stroke
 const COLOR_PLAYER_ACTIVE_FILL = 0x1e4f7a
 const COLOR_PLAYER_NON_ACTIVE_FILL = 0x4a1f5e
 const COLOR_BORDER_SUBTLE = 0x3a4a8a
@@ -1258,25 +1258,15 @@ class CardgameScene extends Phaser.Scene {
     // previous game or rematch don't leave ghost anchors in the registry.
     this.cardPositionRegistry.clear()
 
-    // Non-active battlefield (top, no drop zone, red tint).
+    // Non-active battlefield (top, no drop zone, parchment with crimson tint).
     const nonActiveX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
     const nonActiveY = this.currentLayout.nonActiveBattlefieldY + this.currentLayout.nonActiveBattlefieldHeight / 2
-    const nonActiveBg = buildPolishedPanel(
-      this,
-      nonActiveX,
-      nonActiveY,
-      {
-        fill: COLOR_BATTLEFIELD_NON_ACTIVE_FILL,
-        stroke: COLOR_BATTLEFIELD_NON_ACTIVE_STROKE,
-        width: this.currentLayout.boardColumnWidth,
-        height: this.currentLayout.nonActiveBattlefieldHeight,
-        radius: 12,
-        strokeWidth: 2,
-        shadow: true,
-        shadowAlpha: 0.2,
-        shadowOffset: 4,
-      },
-    )
+    const nonActiveBg = buildBattlefieldBackdrop(this, nonActiveX, nonActiveY, {
+      width: this.currentLayout.boardColumnWidth,
+      height: this.currentLayout.nonActiveBattlefieldHeight,
+      kind: 'non-active',
+      stroke: COLOR_BATTLEFIELD_NON_ACTIVE_STROKE,
+    })
     this.rootContainer?.add(nonActiveBg)
     this.rootContainer?.add(this.add.text(
       this.currentLayout.boardColumnLeft + 8,
@@ -1317,25 +1307,15 @@ class CardgameScene extends Phaser.Scene {
       ))
     }
 
-    // Active battlefield (below non-active, drop zone enabled, green tint).
+    // Active battlefield (below non-active, drop zone enabled, parchment with green tint).
     const activeX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
     const activeY = this.currentLayout.activeBattlefieldY + this.currentLayout.activeBattlefieldHeight / 2
-    const activeBg = buildPolishedPanel(
-      this,
-      activeX,
-      activeY,
-      {
-        fill: COLOR_BATTLEFIELD_ACTIVE_FILL,
-        stroke: COLOR_BATTLEFIELD_ACTIVE_STROKE,
-        width: this.currentLayout.boardColumnWidth,
-        height: this.currentLayout.activeBattlefieldHeight,
-        radius: 12,
-        strokeWidth: 2,
-        shadow: true,
-        shadowAlpha: 0.24,
-        shadowOffset: 4,
-      },
-    )
+    const activeBg = buildBattlefieldBackdrop(this, activeX, activeY, {
+      width: this.currentLayout.boardColumnWidth,
+      height: this.currentLayout.activeBattlefieldHeight,
+      kind: 'active',
+      stroke: COLOR_BATTLEFIELD_ACTIVE_STROKE,
+    })
     this.rootContainer?.add(activeBg)
     this.rootContainer?.add(this.add.text(
       this.currentLayout.boardColumnLeft + 8,

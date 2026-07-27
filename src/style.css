@@ -27,11 +27,13 @@
   --button-bg-hover: #3a4ec0;
   --button-border: #5d7cff;
 
-  /* Status */
-  --battlefield-active-bg: #1f6b3e;
-  --battlefield-active-stroke: #46d27a;
-  --battlefield-nonactive-bg: #7a1f33;
-  --battlefield-nonactive-stroke: #ff6b8a;
+  /* Status — parchment backdrops. The --battlefield-active-bg token stays as
+     a plain colour so color-mix() in .dom-drop-zone--over continues to work. Gradient
+     layers are composed directly in the .battlefield-* rules below. */
+  --parchment-base: #c4a060;
+  --battlefield-active-bg: #7a5c2e;
+  --battlefield-active-stroke: #72b048;
+  --battlefield-nonactive-stroke: #b46878;
   --player-active-bg: #1e4f7a;
   --player-nonactive-bg: #4a1f5e;
 
@@ -279,13 +281,22 @@ textarea {
   image-rendering: auto;
 }
 
+/* Parchment backdrops (fantasy style): warm tan base with directional light,
+   edge vignette, and a status tint layer. The --battlefield-*-bg tokens
+   remain plain colours so color-mix() in .dom-drop-zone--over still works. */
 .battlefield-active {
-  background: var(--battlefield-active-bg);
+  background:
+    radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.28) 100%),
+    linear-gradient(160deg, rgba(46, 110, 30, 0.40) 0%, rgba(15, 65, 8, 0.62) 100%),
+    linear-gradient(130deg, #c4a060 0%, #9e7e3a 48%, #b89050 100%);
   border-color: var(--battlefield-active-stroke);
 }
 
 .battlefield-non-active {
-  background: var(--battlefield-nonactive-bg);
+  background:
+    radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.28) 100%),
+    linear-gradient(160deg, rgba(110, 30, 45, 0.40) 0%, rgba(75, 12, 25, 0.62) 100%),
+    linear-gradient(130deg, #c4a060 0%, #9e7e3a 48%, #b89050 100%);
   border-color: var(--battlefield-nonactive-stroke);
 }
 
@@ -723,6 +734,16 @@ textarea {
   border-radius: 999px;
   background: var(--surface-log-viewport);
   color: var(--text-secondary);
+}
+
+.dom-tutorial-hint {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #d7b04e;
+  border-radius: 12px;
+  background: #fff6dc;
+  color: #4b3a05;
+  font-weight: 700;
 }
 
 .dom-target-sheet {

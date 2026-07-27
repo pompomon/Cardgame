@@ -36,6 +36,11 @@ function makeView(): AppViewModel {
     animationSpeed: 'normal',
     p2pConnected: false,
     p2pStarted: false,
+    tutorial: {
+      active: false,
+      stepId: null,
+      hint: null,
+    },
     adventure: {
       baseSeed: 0,
       currentRound: 0,
@@ -167,6 +172,12 @@ describe('DOM lobby layout', () => {
     expect(html).toContain('dom-cardgame__lobby')
   })
 
+  it('renders a tutorial mode button in the lobby mode list', () => {
+    const html = renderLobby(makeView())
+    expect(html).toContain('data-mode="tutorial"')
+    expect(html).toContain('Tutorial (Learn to Play)')
+  })
+
   it('does not duplicate element ids across lobby and in-game menu shells', () => {
     const lobbyHtml = renderLobby(makeView())
     const gameView = makeGameView()
@@ -196,6 +207,17 @@ describe('DOM lobby layout', () => {
     expect(html).toContain('<summary>Replay Log</summary>')
     expect(html).toContain('dom-board__opponent')
     expect(html).toContain('dom-board__hand')
+  })
+
+  it('keeps the tutorial hint panel visible between scripted steps', () => {
+    const gameView = makeGameView()
+    gameView.mode = 'tutorial'
+    gameView.tutorial = { active: true, stepId: null, hint: null }
+
+    const html = renderGame(gameView, false)
+
+    expect(html).toContain('class="dom-tutorial-hint"')
+    expect(html).toContain('Keep playing to continue the tutorial.')
   })
 
   it('marks playable active-hand cards as draggable while preserving button fallback', () => {
