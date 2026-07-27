@@ -133,3 +133,112 @@ export function buildCardFrame(
   }
   return frame
 }
+
+// Parchment battlefield backdrop palette. Keep in sync with the CSS tokens in
+// src/style.css (e.g. --parchment-base, --battlefield-*-stroke) and with the
+// COLOR_BATTLEFIELD_*_STROKE constants in src/renderers/phaser/index.ts.
+const BATTLEFIELD_PARCHMENT_BASE = 0xc4a060  // warm aged tan (= --parchment-base)
+const BATTLEFIELD_PARCHMENT_LIGHT = 0xd8bc80 // upper-left highlight shimmer
+const BATTLEFIELD_PARCHMENT_DARK = 0x7a5c2e  // lower-right depth shadow
+const BATTLEFIELD_ACTIVE_TINT = 0x3a7a28     // forest green tint (= active status)
+const BATTLEFIELD_ACTIVE_TINT_ALPHA = 0.38
+const BATTLEFIELD_NON_ACTIVE_TINT = 0x8a1c30 // deep crimson tint (= non-active status)
+const BATTLEFIELD_NON_ACTIVE_TINT_ALPHA = 0.38
+
+export interface BattlefieldBackdropConfig {
+  width: number
+  height: number
+  kind: 'active' | 'non-active'
+  /** Border stroke colour — should match the CSS --battlefield-*-stroke token. */
+  stroke: number
+}
+
+/**
+ * Builds a layered parchment-style backdrop for a battlefield panel.
+ *
+ * Visual layers (bottom → top):
+ *   1. Drop shadow
+ *   2. Warm tan parchment base
+ *   3. Upper-left diagonal highlight (simulates curled-page brightening)
+ *   4. Lower-right darkening zone (depth)
+ *   5. Edge vignette strips (top + bottom)
+ *   6. Status tint (forest-green for active, deep-crimson for non-active)
+ *   7. Decorative stroke
+ *
+ * Entirely procedural — no external texture assets required.
+ */
+export function buildBattlefieldBackdrop(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  config: BattlefieldBackdropConfig,
+): Phaser.GameObjects.Container {
+  const { width, height, kind, stroke } = config
+  const radius = 12
+  const isActive = kind === 'active'
+  const hw = width / 2
+  const hh = height / 2
+  const container = scene.add.container(x, y)
+
+  // Layer 1: Drop shadow
+  const shadow = scene.add.graphics()
+  shadow.fillStyle(0x000000, 0.26)
+  shadow.fillRoundedRect(-hw + 4, -hh + 4, width, height, radius)
+  container.add(shadow)
+
+  // Layer 2: Parchment base
+  const base = scene.add.graphics()
+  base.fillStyle(BATTLEFIELD_PARCHMENT_BASE, 1)
+  base.fillRoundedRect(-hw, -hh, width, height, radius)
+  container.add(base)
+
+  // Layer 3: Upper-left diagonal highlight (parchment curl / light source)
+  const highlight = scene.add.graphics()
+  highlight.fillStyle(BATTLEFIELD_PARCHMENT_LIGHT, 0.2)
+  highlight.fillRoundedRect(
+    -hw + 2, -hh + 2,
+    width * 0.62, Math.min(height * 0.48, height - 4),
+    radius - 2,
+  )
+  container.add(highlight)
+
+  // Layer 4: Lower-right depth shadow
+  const darkCorner = scene.add.graphics()
+  darkCorner.fillStyle(BATTLEFIELD_PARCHMENT_DARK, 0.24)
+  darkCorner.fillRoundedRect(
+    -hw + width * 0.38, -hh + height * 0.52,
+    width * 0.62, height * 0.48,
+    { tl: 0, tr: 0, bl: 0, br: radius },
+  )
+  container.add(darkCorner)
+
+  // Layer 5a: Top-edge vignette
+  const vigEdge = Math.max(4, height * 0.16)
+  const vigTop = scene.add.graphics()
+  vigTop.fillStyle(0x000000, 0.2)
+  vigTop.fillRoundedRect(-hw, -hh, width, vigEdge, { tl: radius, tr: radius, bl: 0, br: 0 })
+  container.add(vigTop)
+
+  // Layer 5b: Bottom-edge vignette
+  const vigBottom = scene.add.graphics()
+  vigBottom.fillStyle(0x000000, 0.16)
+  vigBottom.fillRoundedRect(-hw, hh - vigEdge, width, vigEdge, { tl: 0, tr: 0, bl: radius, br: radius })
+  container.add(vigBottom)
+
+  // Layer 6: Status tint overlay
+  const tintColor = isActive ? BATTLEFIELD_ACTIVE_TINT : BATTLEFIELD_NON_ACTIVE_TINT
+  const tintAlpha = isActive ? BATTLEFIELD_ACTIVE_TINT_ALPHA : BATTLEFIELD_NON_ACTIVE_TINT_ALPHA
+  const tint = scene.add.graphics()
+  tint.fillStyle(tintColor, tintAlpha)
+  tint.fillRoundedRect(-hw, -hh, width, height, radius)
+  container.add(tint)
+
+  // Layer 7: Decorative stroke
+  const strokeLine = scene.add.graphics()
+  strokeLine.lineStyle(2, stroke, 0.88)
+  strokeLine.strokeRoundedRect(-hw, -hh, width, height, radius)
+  container.add(strokeLine)
+
+  container.setSize(width, height)
+  return container
+}
