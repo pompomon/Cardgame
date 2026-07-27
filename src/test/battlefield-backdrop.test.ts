@@ -34,12 +34,6 @@ describe('battlefield parchment backdrops', () => {
       expect(value).toMatch(/^#[0-9a-fA-F]{3,8}$/)
     })
 
-    it('--battlefield-nonactive-bg is a plain colour', () => {
-      const match = styleCss.match(/--battlefield-nonactive-bg:\s*([^;]+);/)
-      expect(match).not.toBeNull()
-      const value = (match?.[1] ?? '').trim()
-      expect(value).toMatch(/^#[0-9a-fA-F]{3,8}$/)
-    })
   })
 
   describe('gradient backgrounds', () => {

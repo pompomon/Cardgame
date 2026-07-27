@@ -27,13 +27,12 @@
   --button-bg-hover: #3a4ec0;
   --button-border: #5d7cff;
 
-  /* Status — parchment backdrops. The --battlefield-*-bg tokens stay as plain
-     colours so color-mix() in .dom-drop-zone--over continues to work. Gradient
+  /* Status — parchment backdrops. The --battlefield-active-bg token stays as
+     a plain colour so color-mix() in .dom-drop-zone--over continues to work. Gradient
      layers are composed directly in the .battlefield-* rules below. */
   --parchment-base: #c4a060;
   --battlefield-active-bg: #7a5c2e;
   --battlefield-active-stroke: #72b048;
-  --battlefield-nonactive-bg: #5a3820;
   --battlefield-nonactive-stroke: #b46878;
   --player-active-bg: #1e4f7a;
   --player-nonactive-bg: #4a1f5e;
