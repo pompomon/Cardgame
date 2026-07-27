@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEPTH_BOARD,
+  DEPTH_EFFECT_OVERLAY,
   DEPTH_GAMEPLAY,
   DEPTH_HEADER,
   DEPTH_HEADER_STRIP,
@@ -22,7 +23,8 @@ describe('phaser scene depths', () => {
     expect(DEPTH_REPLAY_LOG).toBeLessThan(DEPTH_REPLAY_LOG_HEADING)
     expect(DEPTH_REPLAY_LOG_HEADING).toBeLessThan(DEPTH_BOARD)
     expect(DEPTH_BOARD).toBeLessThan(DEPTH_GAMEPLAY)
-    expect(DEPTH_GAMEPLAY).toBeLessThan(DEPTH_HEADER_STRIP)
+    expect(DEPTH_GAMEPLAY).toBeLessThan(DEPTH_EFFECT_OVERLAY)
+    expect(DEPTH_EFFECT_OVERLAY).toBeLessThan(DEPTH_HEADER_STRIP)
     expect(DEPTH_HEADER_STRIP).toBeLessThan(DEPTH_HEADER)
     expect(DEPTH_HEADER).toBeLessThan(DEPTH_MENU_OVERLAY)
     expect(DEPTH_MENU_OVERLAY).toBeLessThan(DEPTH_TARGET_PICKER_OVERLAY)
@@ -34,6 +36,7 @@ describe('phaser scene depths', () => {
       replayLogHeading: DEPTH_REPLAY_LOG_HEADING,
       board: DEPTH_BOARD,
       gameplay: DEPTH_GAMEPLAY,
+      effectOverlay: DEPTH_EFFECT_OVERLAY,
       headerStrip: DEPTH_HEADER_STRIP,
       header: DEPTH_HEADER,
       menuOverlay: DEPTH_MENU_OVERLAY,

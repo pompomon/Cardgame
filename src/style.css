@@ -962,3 +962,228 @@ textarea {
   }
 
 }
+
+
+/* ---------------------------------------------------------------------------
+ * DOM particle-effect overlays (position:fixed, appended to <body> by JS)
+ * All keyframes animate only transform and opacity so Chromium composites
+ * them on the GPU thread — critical for Fold 4 / Edge performance.
+ * ---------------------------------------------------------------------------*/
+
+.dom-effect {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.dom-effect__particle {
+  position: absolute;
+  border-radius: 2px;
+  will-change: transform, opacity;
+}
+
+/* Respect the system accessibility setting even when animationSpeed is not
+ * explicitly set to 'off' by the user. */
+@media (prefers-reduced-motion: reduce) {
+  .dom-effect {
+    display: none;
+  }
+}
+
+/* --- play_land: ripple rings expanding outward ----------------------------- */
+@keyframes dom-effect-play-land-ring {
+  0%   { transform: scale(0.55); opacity: 0.85; }
+  100% { transform: scale(1.65); opacity: 0; }
+}
+
+.dom-effect--play_land .dom-effect__particle {
+  top: 10%;
+  left: 10%;
+  width: 80%;
+  height: 80%;
+  border-radius: 4px;
+  border: 2px solid #d4edff;
+  background: transparent;
+  animation: dom-effect-play-land-ring var(--dom-effect-duration, 350ms) ease-out both;
+}
+
+.dom-effect--play_land .dom-effect__particle--1 {
+  animation-delay: calc(var(--dom-effect-duration, 350ms) * 0.12);
+}
+
+.dom-effect--play_land .dom-effect__particle--2 {
+  animation-delay: calc(var(--dom-effect-duration, 350ms) * 0.24);
+}
+
+/* --- forest_return: leaves converging inward + contracting ring ------------ */
+@keyframes dom-effect-in {
+  0%   { opacity: 0.88; }
+  100% { transform: translate(-50%, -50%); opacity: 0; }
+}
+
+@keyframes dom-effect-ring-contract {
+  0%   { transform: scale(1.28); opacity: 0.78; }
+  100% { transform: scale(0.52); opacity: 0; }
+}
+
+.dom-effect--forest_return .dom-effect__particle {
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 10px;
+  background: #7fd194;
+  transform:
+    translate(
+      calc(cos(var(--angle)) * 38%),
+      calc(sin(var(--angle)) * 45%)
+    );
+  animation: dom-effect-in var(--dom-effect-duration, 350ms)
+    calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.06))
+    ease-in both;
+}
+
+.dom-effect--forest_return .dom-effect__particle--5 {
+  top: 10%;
+  left: 10%;
+  width: 80%;
+  height: 80%;
+  border: 2px solid #7fd194;
+  background: transparent;
+  border-radius: 3px;
+  animation: dom-effect-ring-contract var(--dom-effect-duration, 350ms) ease-in both;
+}
+
+/* --- swamp_discard: droplets floating upward ------------------------------ */
+@keyframes dom-effect-float-up {
+  0%   { opacity: 0.82; }
+  100% { transform: translateY(-42%); opacity: 0; }
+}
+
+.dom-effect--swamp_discard .dom-effect__particle {
+  bottom: 10%;
+  left: calc(18% + var(--i) * 20%);
+  width: 7px;
+  height: 9px;
+  background: #b694e6;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  animation: dom-effect-float-up var(--dom-effect-duration, 350ms)
+    calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.07))
+    ease-out both;
+}
+
+/* --- mountain_destroy: embers + flash ------------------------------------- */
+@keyframes dom-effect-ember {
+  0%   { opacity: 0.92; }
+  100% {
+    transform:
+      rotate(var(--angle))
+      translateY(-56%);
+    opacity: 0;
+  }
+}
+
+@keyframes dom-effect-flash {
+  0%   { opacity: 0.44; }
+  100% { opacity: 0; }
+}
+
+.dom-effect--mountain_destroy .dom-effect__particle {
+  top: calc(50% - 3px);
+  left: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  background: #ff7b52;
+  animation: dom-effect-ember var(--dom-effect-duration, 350ms)
+    calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.04))
+    ease-out both;
+}
+
+.dom-effect--mountain_destroy .dom-effect__flash {
+  position: absolute;
+  inset: 5%;
+  background: #fff;
+  border-radius: 3px;
+  animation: dom-effect-flash calc(var(--dom-effect-duration, 350ms) * 0.28) ease-out both;
+}
+
+/* --- plains_reuse: beams radiating + contracting ring --------------------- */
+@keyframes dom-effect-beam {
+  0%   { transform: rotate(var(--angle)) scaleY(0.4); opacity: 0.9; }
+  100% {
+    transform: rotate(var(--angle)) translateY(-55%) scaleY(1.85);
+    opacity: 0;
+  }
+}
+
+.dom-effect--plains_reuse .dom-effect__particle {
+  top: calc(50% - 20px);
+  left: calc(50% - 2px);
+  width: 3px;
+  height: 40%;
+  background: #f2dc8b;
+  transform-origin: bottom center;
+  animation: dom-effect-beam var(--dom-effect-duration, 350ms)
+    calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.06))
+    ease-out both;
+}
+
+.dom-effect--plains_reuse .dom-effect__particle--5 {
+  top: 10%;
+  left: 10%;
+  width: 80%;
+  height: 80%;
+  border: 2px solid #f2dc8b;
+  background: transparent;
+  border-radius: 3px;
+  animation: dom-effect-ring-contract var(--dom-effect-duration, 350ms) ease-in both;
+}
+
+/* --- counter_resolved: hex-vertex particles + ripple ring ----------------- */
+@keyframes dom-effect-hex-vertex {
+  0%   {
+    transform:
+      translate(
+        calc(cos(var(--angle)) * 24%),
+        calc(sin(var(--angle)) * 22%)
+      )
+      scale(0.8);
+    opacity: 0.92;
+  }
+  100% {
+    transform:
+      translate(
+        calc(cos(var(--angle)) * 46%),
+        calc(sin(var(--angle)) * 44%)
+      )
+      scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes dom-effect-ring-burst {
+  0%   { transform: scale(0.82); opacity: 0.78; }
+  100% { transform: scale(1.62); opacity: 0; }
+}
+
+.dom-effect--counter_resolved .dom-effect__particle {
+  top: calc(50% - 4px);
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  background: #8ebeff;
+  animation: dom-effect-hex-vertex var(--dom-effect-duration, 350ms)
+    calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.05))
+    ease-out both;
+}
+
+.dom-effect--counter_resolved .dom-effect__particle--6 {
+  top: 5%;
+  left: 5%;
+  width: 90%;
+  height: 90%;
+  border: 2px solid #8ebeff;
+  background: transparent;
+  border-radius: 4px;
+  animation: dom-effect-ring-burst var(--dom-effect-duration, 350ms) ease-out both;
+}

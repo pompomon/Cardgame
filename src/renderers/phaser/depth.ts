@@ -5,6 +5,9 @@ export const DEPTH_REPLAY_LOG = -10
 export const DEPTH_REPLAY_LOG_HEADING = -9
 export const DEPTH_BOARD = -5
 export const DEPTH_GAMEPLAY = 0
+// Ability / play-land particle effects sit just above cards and battlefields
+// but below the persistent header strip so they never obscure game controls.
+export const DEPTH_EFFECT_OVERLAY = 1
 export const DEPTH_HEADER_STRIP = 9
 export const DEPTH_HEADER = 10
 export const DEPTH_MENU_OVERLAY = 20
@@ -15,6 +18,7 @@ export const SCENE_DEPTHS = {
   replayLogHeading: DEPTH_REPLAY_LOG_HEADING,
   board: DEPTH_BOARD,
   gameplay: DEPTH_GAMEPLAY,
+  effectOverlay: DEPTH_EFFECT_OVERLAY,
   headerStrip: DEPTH_HEADER_STRIP,
   header: DEPTH_HEADER,
   menuOverlay: DEPTH_MENU_OVERLAY,

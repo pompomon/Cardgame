@@ -4,6 +4,7 @@ import {
   createEffectQueue,
   effectDescriptorForEvent,
   enqueueEffect,
+  playAbilityEffect,
   pumpEffectQueue,
   type EffectDescriptor,
 } from '../renderers/phaser/effects'
@@ -23,7 +24,7 @@ describe('phaser effects queue', () => {
       { event: { kind: 'ability_mountain_destroy', actor: 0, target: 1, cardName: 'Island' }, expected: 'mountain_destroy' },
       { event: { kind: 'ability_plains_reuse', actor: 0, reusedName: 'Forest' }, expected: 'plains_reuse' },
       { event: { kind: 'counter_resolved', actor: 1, cardName: 'Forest' }, expected: 'counter_resolved' },
-      { event: { kind: 'play_land', actor: 0, cardName: 'Forest' }, expected: null },
+      { event: { kind: 'play_land', actor: 0, cardName: 'Forest' }, expected: 'play_land' },
       { event: { kind: 'turn_start', turn: 1, actor: 0 }, expected: null },
       { event: { kind: 'game_started' }, expected: null },
     ]
@@ -160,4 +161,35 @@ describe('phaser effects queue', () => {
     expect(runs).toBe(1)
     expect(queue.queue).toHaveLength(0)
   })
+})
+
+// Minimal stub Phaser scene that satisfies playAbilityEffect's guards.
+// When durationMs = 0, playAbilityEffect must call onDone() synchronously
+// for all 6 kinds without touching .add or .tweens.
+const stubScene = {} as unknown as import('phaser').Scene
+
+describe('playAbilityEffect', () => {
+  const allKinds: EffectDescriptor['kind'][] = [
+    'play_land',
+    'forest_return',
+    'swamp_discard',
+    'mountain_destroy',
+    'plains_reuse',
+    'counter_resolved',
+  ]
+  const anchor = { x: 100, y: 100, width: 80, height: 60 }
+
+  for (const kind of allKinds) {
+    it(`calls onDone synchronously for kind="${kind}" when durationMs=0`, () => {
+      let called = 0
+      playAbilityEffect(
+        stubScene,
+        anchor,
+        { kind, actor: 0, cardName: 'Forest', visualStyle: 'classic' },
+        0,
+        () => { called += 1 },
+      )
+      expect(called).toBe(1)
+    })
+  }
 })

@@ -40,6 +40,7 @@ import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
 import { buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
+import { computeEffectAnchorFromLayout } from './effect-anchoring'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -545,6 +546,9 @@ class CardgameScene extends Phaser.Scene {
   // MAX_QUEUED_EFFECTS to prevent backlog during AI-vs-AI sessions.
   private effectQueue: EffectQueueState = createEffectQueue()
   private lastAnimatedEventCount = 0
+  // Maps instanceId → EffectAnchor for every card currently visible in both
+  // battlefields. Populated (and cleared) on every renderBattlefields pass.
+  private cardPositionRegistry = new Map<string, EffectAnchor>()
 
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
@@ -1087,27 +1091,7 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private computeEffectAnchor(view: AppViewModel, descriptor: EffectDescriptor): EffectAnchor {
-    // Anchor effects to the relevant battlefield row (active vs non-active)
-    // so flourishes appear near the affected cards, not in dead screen
-    // space. The descriptor `actor` is the actor that initiated the effect.
-    const game = view.game
-    const layout = this.currentLayout
-    const activeIndex = game?.actor ?? 0
-    const nonActiveIndex = activeIndex === 0 ? 1 : 0
-    const targetsNonActive = descriptor.kind === 'mountain_destroy'
-      || descriptor.kind === 'swamp_discard'
-      || descriptor.kind === 'counter_resolved'
-    const useNonActive = targetsNonActive
-      ? descriptor.actor === activeIndex
-      : descriptor.actor === nonActiveIndex
-    const x = layout.boardColumnLeft + layout.boardColumnWidth / 2
-    const rowHeight = useNonActive ? layout.nonActiveBattlefieldHeight : layout.activeBattlefieldHeight
-    const y = useNonActive
-      ? layout.nonActiveBattlefieldY + layout.nonActiveBattlefieldHeight / 2
-      : layout.activeBattlefieldY + layout.activeBattlefieldHeight / 2
-    const width = Math.max(80, Math.min(layout.boardColumnWidth - 24, layout.cardWidth * 2.4))
-    const height = Math.max(60, Math.min(rowHeight - 12, layout.cardHeight + 16))
-    return { x, y, width, height }
+    return computeEffectAnchorFromLayout(view, descriptor, this.currentLayout, this.cardPositionRegistry)
   }
 
   private renderGame(view: AppViewModel): void {
@@ -1270,6 +1254,9 @@ class CardgameScene extends Phaser.Scene {
   private renderBattlefields(game: GameUiState): void {
     const activeIndex = game.actor
     const nonActiveIndex = activeIndex === 0 ? 1 : 0
+    // Clear stale positions from the previous render pass so cards from a
+    // previous game or rematch don't leave ghost anchors in the registry.
+    this.cardPositionRegistry.clear()
 
     // Non-active battlefield (top, no drop zone, red tint).
     const nonActiveX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
@@ -1315,8 +1302,12 @@ class CardgameScene extends Phaser.Scene {
     for (let index = 0; index < nonActiveBattlefield.length; index += 1) {
       const card = nonActiveBattlefield[index]
       const targetEntry = this.findBattlefieldTargetEntry('non-active', card.instanceId)
+      const cardX = this.xForCardInBoardColumn(index, nonActiveBattlefield.length)
+      this.cardPositionRegistry.set(card.instanceId, {
+        x: cardX, y: nonActiveCardY, width: this.currentLayout.cardWidth, height: this.currentLayout.cardHeight,
+      })
       this.rootContainer?.add(this.renderStaticCard(
-        this.xForCardInBoardColumn(index, nonActiveBattlefield.length),
+        cardX,
         nonActiveCardY,
         card.name,
         {
@@ -1379,8 +1370,12 @@ class CardgameScene extends Phaser.Scene {
     for (let index = 0; index < activeBattlefield.length; index += 1) {
       const card = activeBattlefield[index]
       const targetEntry = this.findBattlefieldTargetEntry('active', card.instanceId)
+      const cardX = this.xForCardInBoardColumn(index, activeBattlefield.length)
+      this.cardPositionRegistry.set(card.instanceId, {
+        x: cardX, y: activeCardY, width: this.currentLayout.cardWidth, height: this.currentLayout.cardHeight,
+      })
       this.rootContainer?.add(this.renderStaticCard(
-        this.xForCardInBoardColumn(index, activeBattlefield.length),
+        cardX,
         activeCardY,
         card.name,
         {
