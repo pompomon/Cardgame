@@ -346,6 +346,7 @@ export function scheduleDomEffect(
   visualStyle: CardVisualStyle,
   activeActor = 'actor' in event && typeof event.actor === 'number' ? event.actor : 0,
   onDone: () => void = () => {},
+  shouldRun: () => boolean = () => true,
 ): void {
   if (animationSpeed === 'off') {
     onDone()
@@ -366,6 +367,10 @@ export function scheduleDomEffect(
     return
   }
   requestAnimationFrame(() => {
+    if (!shouldRun()) {
+      onDone()
+      return
+    }
     if (typeof document === 'undefined') {
       onDone()
       return

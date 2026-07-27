@@ -14,6 +14,7 @@ import { isAiLevel } from '../app/ai-levels'
 import { isAnimationSpeed, MAX_QUEUED_EFFECTS } from '../app/animation-settings'
 import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
+import { visualEffectForEvent } from '../app/visual-effects'
 import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { isBasicLand, type GameAction, type LogEvent } from '../game/types'
@@ -506,6 +507,9 @@ export class DomRenderer implements AppRenderer {
       return
     }
     for (let i = this.lastDomAnimatedEventCount; i < events.length; i += 1) {
+      if (!visualEffectForEvent(events[i], view.cardVisualStyle)) {
+        continue
+      }
       this.domEffectQueue.push(events[i])
       while (this.domEffectQueue.length > MAX_QUEUED_EFFECTS) {
         this.domEffectQueue.shift()
@@ -534,13 +538,20 @@ export class DomRenderer implements AppRenderer {
     }
     this.domEffectPlaying = true
     const generation = this.domEffectGeneration
-    scheduleDomEffect(event, view.animationSpeed, view.cardVisualStyle, game.actor, () => {
-      if (generation !== this.domEffectGeneration) {
-        return
-      }
-      this.domEffectPlaying = false
-      this.pumpDomEffectQueue()
-    })
+    scheduleDomEffect(
+      event,
+      view.animationSpeed,
+      view.cardVisualStyle,
+      game.actor,
+      () => {
+        if (generation !== this.domEffectGeneration) {
+          return
+        }
+        this.domEffectPlaying = false
+        this.pumpDomEffectQueue()
+      },
+      () => generation === this.domEffectGeneration,
+    )
   }
 
   private resolveDroppedCard(cardId: string): void {

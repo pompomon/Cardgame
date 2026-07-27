@@ -1274,7 +1274,10 @@ class CardgameScene extends Phaser.Scene {
     const nonActiveIndex = activeIndex === 0 ? 1 : 0
     // Clear stale positions from the previous render pass so cards from a
     // previous game or rematch don't leave ghost anchors in the registry.
-    this.previousCardPositionRegistry = new Map(this.cardPositionRegistry)
+    this.previousCardPositionRegistry = new Map([
+      ...this.previousCardPositionRegistry,
+      ...this.cardPositionRegistry,
+    ])
     this.cardPositionRegistry.clear()
 
     // Non-active battlefield (top, no drop zone, parchment with crimson tint).

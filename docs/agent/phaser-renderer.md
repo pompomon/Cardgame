@@ -90,9 +90,10 @@ the bottom of the visible strip".
   selection, actor/target ownership, identifiers, and palette derivation there;
   renderer modules own only drawing and lifecycle.
 - **Prefer exact anchors, then fall back safely.** Current battlefield card
-  positions resolve newly played/source cards. The previous position registry
-  resolves cards removed by an effect, such as a Mountain target. Legacy
-  recordings without identifiers fall back to the correct actor row.
+  positions resolve newly played/source cards. The bounded per-game position
+  history resolves cards removed by an effect, such as a queued Mountain
+  target. Legacy recordings without identifiers fall back to the correct actor
+  row; clear the history whenever the game seed changes.
 - **Use the reduced quality tier on phone-sized viewports.** It lowers particle
   counts and overdraw but must not alter queue ordering, duration, completion,
   or disabled-animation semantics.

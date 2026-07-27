@@ -42,6 +42,26 @@ describe('scheduleDomEffect', () => {
     expect(raf).toHaveBeenCalledOnce()
   })
 
+  it('does not create an overlay when the queued render becomes stale before RAF', () => {
+    let callback: FrameRequestCallback | null = null
+    const querySelector = vi.fn()
+    vi.stubGlobal('document', { querySelector })
+    vi.stubGlobal('requestAnimationFrame', vi.fn((next: FrameRequestCallback) => {
+      callback = next
+      return 1
+    }))
+    scheduleDomEffect(
+      { kind: 'play_land', actor: 0, cardName: 'Forest' },
+      'normal',
+      'classic',
+      0,
+      () => {},
+      () => false,
+    )
+    callback!(0)
+    expect(querySelector).not.toHaveBeenCalled()
+  })
+
   it('anchors resolved counter effects to the active battlefield', () => {
     const querySelector = vi.fn().mockReturnValue(null)
     const raf = vi.fn((callback: FrameRequestCallback) => callback(0))
