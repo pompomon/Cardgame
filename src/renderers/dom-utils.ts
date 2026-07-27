@@ -316,18 +316,20 @@ function escapeCssAttribute(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\n\r\f]/g, ' ')
 }
 
-function selectorForEffect(descriptor: VisualEffectDescriptor, activeActor: number): string {
+function selectorsForEffect(descriptor: VisualEffectDescriptor, activeActor: number): string[] {
+  const selectors: string[] = []
   if (descriptor.targetInstanceId) {
-    return `[data-battlefield-card-id="${escapeCssAttribute(descriptor.targetInstanceId)}"]`
+    selectors.push(`[data-battlefield-card-id="${escapeCssAttribute(descriptor.targetInstanceId)}"]`)
   }
   if (descriptor.targetCardId) {
-    return `[data-card-id="${escapeCssAttribute(descriptor.targetCardId)}"]`
+    selectors.push(`[data-card-id="${escapeCssAttribute(descriptor.targetCardId)}"]`)
   }
-  if (descriptor.sourceInstanceId) {
-    return `[data-battlefield-card-id="${escapeCssAttribute(descriptor.sourceInstanceId)}"]`
+  if (selectors.length === 0 && descriptor.sourceInstanceId) {
+    selectors.push(`[data-battlefield-card-id="${escapeCssAttribute(descriptor.sourceInstanceId)}"]`)
   }
   const owner = descriptor.targetActor ?? descriptor.actor
-  return owner === activeActor ? '.battlefield-active' : '.battlefield-non-active'
+  selectors.push(owner === activeActor ? '.battlefield-active' : '.battlefield-non-active')
+  return selectors
 }
 
 function isReducedDomEffectQuality(): boolean {
@@ -368,7 +370,13 @@ export function scheduleDomEffect(
       onDone()
       return
     }
-    const target = document.querySelector<HTMLElement>(selectorForEffect(descriptor, activeActor))
+    let target: HTMLElement | null = null
+    for (const selector of selectorsForEffect(descriptor, activeActor)) {
+      target = document.querySelector<HTMLElement>(selector)
+      if (target) {
+        break
+      }
+    }
     if (!target) {
       onDone()
       return

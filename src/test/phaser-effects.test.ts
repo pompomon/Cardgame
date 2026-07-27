@@ -198,4 +198,35 @@ describe('playAbilityEffect', () => {
       expect(called).toBe(1)
     })
   }
+
+  it('uses fewer particles in the reduced mobile quality tier', () => {
+    let rectangles = 0
+    const scene = {
+      add: {
+        rectangle: (x: number, y: number) => {
+          rectangles += 1
+          return {
+            x,
+            y,
+            setStrokeStyle() { return this },
+            setScale() { return this },
+            setAlpha() { return this },
+            setDepth() { return this },
+            setRotation() { return this },
+            destroy() {},
+          }
+        },
+      },
+      tweens: {
+        add: (config: { onComplete?: () => void }) => {
+          config.onComplete?.()
+          return {}
+        },
+      },
+    } as unknown as import('phaser').Scene
+    let completed = 0
+    playAbilityEffect(scene, anchor, descriptor('play_land'), 100, () => { completed += 1 }, 'reduced')
+    expect(rectangles).toBe(2)
+    expect(completed).toBe(1)
+  })
 })

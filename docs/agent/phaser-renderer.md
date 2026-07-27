@@ -85,6 +85,20 @@ the bottom of the visible strip".
 
 ## Effect queue (`effects.ts`)
 
+- **Effect semantics are shared.** `src/app/visual-effects.ts` maps structured
+  log events to style-aware descriptors consumed by both renderers. Keep event
+  selection, actor/target ownership, identifiers, and palette derivation there;
+  renderer modules own only drawing and lifecycle.
+- **Prefer exact anchors, then fall back safely.** Current battlefield card
+  positions resolve newly played/source cards. The previous position registry
+  resolves cards removed by an effect, such as a Mountain target. Legacy
+  recordings without identifiers fall back to the correct actor row.
+- **Use the reduced quality tier on phone-sized viewports.** It lowers particle
+  counts and overdraw but must not alter queue ordering, duration, completion,
+  or disabled-animation semantics.
+- **Every recipe completes and cleans up exactly once.** Coordinated trails and
+  bursts share a completion counter; every temporary GameObject is destroyed by
+  its terminal tween.
 - **Read options via a thunk on every drain.** `pumpEffectQueue` takes a
   `getOptions: () => PumpEffectQueueOptions` and re-invokes it on each
   recursion. Capturing `options` at queue start means mid-queue
@@ -96,6 +110,11 @@ the bottom of the visible strip".
   `state.playing` back to `false`. Don't reset `playing` here — doing so
   would let a follow-up `pumpEffectQueue` start a new effect concurrently
   with the still-running tween and double up rings on screen.
+
+The DOM renderer uses the same descriptor source and a separately bounded FIFO
+queue. It prefers exact `data-battlefield-card-id` / `data-card-id` anchors,
+falls back to actor rows, derives CSS variables from the selected card style,
+and removes active overlays on unmount or game changes.
 
 ## Log rendering rules
 

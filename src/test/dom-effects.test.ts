@@ -52,6 +52,23 @@ describe('scheduleDomEffect', () => {
     expect(querySelector).toHaveBeenCalledWith('.battlefield-active')
   })
 
+  it('tries an exact removed-card anchor before the battlefield fallback', () => {
+    const querySelector = vi.fn().mockReturnValue(null)
+    const raf = vi.fn((callback: FrameRequestCallback) => callback(0))
+    vi.stubGlobal('document', { querySelector })
+    vi.stubGlobal('requestAnimationFrame', raf)
+    const event: LogEvent = {
+      kind: 'ability_mountain_destroy',
+      actor: 0,
+      target: 1,
+      cardName: 'Forest',
+      targetInstanceId: 'p1-4',
+    }
+    scheduleDomEffect(event, 'normal', 'classic', 0)
+    expect(querySelector).toHaveBeenNthCalledWith(1, '[data-battlefield-card-id="p1-4"]')
+    expect(querySelector).toHaveBeenNthCalledWith(2, '.battlefield-non-active')
+  })
+
   it('is a no-op for game_started events', () => {
     const raf = vi.fn()
     vi.stubGlobal('requestAnimationFrame', raf)
