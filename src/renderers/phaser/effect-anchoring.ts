@@ -21,18 +21,14 @@ export function computeEffectAnchorFromLayout(
   descriptor: EffectDescriptor,
   layout: SceneLayout,
   registry: ReadonlyMap<string, EffectAnchor>,
+  previousRegistry: ReadonlyMap<string, EffectAnchor> = registry,
 ): EffectAnchor {
   const game = view.game
   const activeIndex = game?.actor ?? 0
   const nonActiveIndex = activeIndex === 0 ? 1 : 0
 
-  // Determine whether the visual effect targets the non-active row.
-  const targetsNonActive = descriptor.kind === 'mountain_destroy'
-    || descriptor.kind === 'swamp_discard'
-    || descriptor.kind === 'counter_resolved'
-  const useNonActive = targetsNonActive
-    ? descriptor.actor === activeIndex
-    : descriptor.actor === nonActiveIndex
+  const anchorOwner = descriptor.targetActor ?? descriptor.actor
+  const useNonActive = anchorOwner === nonActiveIndex
 
   // Row-center fallback dimensions.
   const rowCenterX = layout.boardColumnLeft + layout.boardColumnWidth / 2
@@ -44,29 +40,33 @@ export function computeEffectAnchorFromLayout(
   const anchorHeight = Math.max(60, Math.min(rowHeight - 12, layout.cardHeight + 16))
   const rowCenter: EffectAnchor = { x: rowCenterX, y: rowCenterY, width: anchorWidth, height: anchorHeight }
 
-  // Card-level anchoring for play_land (last matching card in actor's
-  // battlefield — the one just played) and plains_reuse (first matching
-  // card — already on the battlefield).
-  if (!game || !descriptor.cardName) {
-    return rowCenter
-  }
-
-  let cardAnchor: EffectAnchor | null = null
-  if (descriptor.kind === 'play_land' || descriptor.kind === 'plains_reuse') {
-    const battlefield = game.players[descriptor.actor]?.battlefield ?? []
-    const matchingCards = battlefield.filter(c => c.name === descriptor.cardName)
-    // play_land → most recently played card (last match)
-    // plains_reuse → first matching card (already on board)
-    const targetCard = descriptor.kind === 'play_land'
-      ? matchingCards[matchingCards.length - 1]
-      : matchingCards[0]
-    if (targetCard) {
-      const registered = registry.get(targetCard.instanceId)
-      if (registered) {
-        cardAnchor = registered
-      }
+  if (descriptor.targetInstanceId) {
+    const target = registry.get(descriptor.targetInstanceId)
+      ?? previousRegistry.get(descriptor.targetInstanceId)
+    if (target) {
+      return target
     }
   }
 
-  return cardAnchor ?? rowCenter
+  if (descriptor.sourceInstanceId && descriptor.targetActor === undefined) {
+    const source = registry.get(descriptor.sourceInstanceId)
+      ?? previousRegistry.get(descriptor.sourceInstanceId)
+    if (source) {
+      return source
+    }
+  }
+
+  return rowCenter
+}
+
+export function computeEffectSourceAnchor(
+  descriptor: EffectDescriptor,
+  registry: ReadonlyMap<string, EffectAnchor>,
+  previousRegistry: ReadonlyMap<string, EffectAnchor> = registry,
+): EffectAnchor | undefined {
+  if (!descriptor.sourceInstanceId) {
+    return undefined
+  }
+  return registry.get(descriptor.sourceInstanceId)
+    ?? previousRegistry.get(descriptor.sourceInstanceId)
 }

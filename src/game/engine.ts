@@ -165,7 +165,13 @@ function enumerateEffectTargetIds(state: GameState, actor: number, cardName: Car
   return []
 }
 
-function applyLandEffect(state: GameState, actor: number, playedCard: Card, effectTargetId?: string): void {
+function applyLandEffect(
+  state: GameState,
+  actor: number,
+  playedCard: Card,
+  effectTargetId?: string,
+  sourceInstanceId?: string,
+): void {
   const me = state.players[actor]
   const enemy = state.players[actor === 0 ? 1 : 0]
 
@@ -176,7 +182,13 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     const target = targetIndex >= 0 ? me.graveyard.splice(targetIndex, 1)[0] : undefined
     if (target) {
       me.hand.push(target)
-      pushLog(state, `Forest returns ${target.name} from graveyard to hand.`, { kind: 'ability_forest_return', actor, cardName: target.name })
+      pushLog(state, `Forest returns ${target.name} from graveyard to hand.`, {
+        kind: 'ability_forest_return',
+        actor,
+        cardName: target.name,
+        sourceInstanceId,
+        targetCardId: target.id,
+      })
     }
     return
   }
@@ -186,7 +198,14 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
     if (target) {
       removeFromHand(enemy, target.id)
       enemy.graveyard.push(target)
-      pushLog(state, `Swamp makes Player ${enemy.id + 1} discard ${target.name}.`, { kind: 'ability_swamp_discard', actor, target: enemy.id, cardName: target.name })
+      pushLog(state, `Swamp makes Player ${enemy.id + 1} discard ${target.name}.`, {
+        kind: 'ability_swamp_discard',
+        actor,
+        target: enemy.id,
+        cardName: target.name,
+        sourceInstanceId,
+        targetCardId: target.id,
+      })
     }
     return
   }
@@ -197,7 +216,14 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
       : enemy.battlefield[0]
     if (target) {
       moveBattlefieldCardToGraveyard(enemy, target.instanceId)
-      pushLog(state, `Mountain destroys Player ${enemy.id + 1}'s ${target.card.name}.`, { kind: 'ability_mountain_destroy', actor, target: enemy.id, cardName: target.card.name })
+      pushLog(state, `Mountain destroys Player ${enemy.id + 1}'s ${target.card.name}.`, {
+        kind: 'ability_mountain_destroy',
+        actor,
+        target: enemy.id,
+        cardName: target.card.name,
+        sourceInstanceId,
+        targetInstanceId: target.instanceId,
+      })
     }
     return
   }
@@ -216,8 +242,13 @@ function applyLandEffect(state: GameState, actor: number, playedCard: Card, effe
 
   const nestedTargets = enumerateEffectTargetIds(state, actor, target.card.name)
   if (target.card.name === 'Island' || nestedTargets.length === 0) {
-    pushLog(state, `Plains reuses ${target.card.name}.`, { kind: 'ability_plains_reuse', actor, reusedName: target.card.name })
-    applyLandEffect(state, actor, target.card)
+    pushLog(state, `Plains reuses ${target.card.name}.`, {
+      kind: 'ability_plains_reuse',
+      actor,
+      reusedName: target.card.name,
+      sourceInstanceId: target.instanceId,
+    })
+    applyLandEffect(state, actor, target.card, undefined, target.instanceId)
     return
   }
 
@@ -236,15 +267,20 @@ function resolvePendingLandPlay(state: GameState): void {
   }
   const me = state.players[pending.actor]
   const enemy = state.players[pending.actor === 0 ? 1 : 0]
-  addToBattlefield(state, me, pending.card)
-  pushLog(state, `Player ${pending.actor + 1} plays ${pending.card.name}.`, { kind: 'play_land', actor: pending.actor, cardName: pending.card.name })
+  const playedInstance = addToBattlefield(state, me, pending.card)
+  pushLog(state, `Player ${pending.actor + 1} plays ${pending.card.name}.`, {
+    kind: 'play_land',
+    actor: pending.actor,
+    cardName: pending.card.name,
+    sourceInstanceId: playedInstance.instanceId,
+  })
   state.pendingLandPlay = null
   if (pending.card.name === 'Swamp' && pending.effectTargetId === undefined && enemy.hand.length > 0) {
     state.pendingSwampDiscard = { actor: pending.actor }
     state.phase = 'swamp_target'
     return
   }
-  applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId)
+  applyLandEffect(state, pending.actor, pending.card, pending.effectTargetId, playedInstance.instanceId)
   if (state.phase === 'main') {
     finalizeWinnerIfAny(state)
   }
@@ -262,7 +298,15 @@ function resolvePendingSwampDiscard(state: GameState, actor: number, effectTarge
   if (target) {
     removeFromHand(enemy, target.id)
     enemy.graveyard.push(target)
-    pushLog(state, `Swamp makes Player ${enemy.id + 1} discard ${target.name}.`, { kind: 'ability_swamp_discard', actor, target: enemy.id, cardName: target.name })
+    const source = state.players[actor].battlefield.findLast((entry) => entry.card.name === 'Swamp')
+    pushLog(state, `Swamp makes Player ${enemy.id + 1} discard ${target.name}.`, {
+      kind: 'ability_swamp_discard',
+      actor,
+      target: enemy.id,
+      cardName: target.name,
+      sourceInstanceId: source?.instanceId,
+      targetCardId: target.id,
+    })
   }
   state.pendingSwampDiscard = null
   state.phase = 'main'
@@ -453,7 +497,12 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     if (pendingReuse.actor !== action.actor) {
       return state
     }
-    pushLog(state, `Plains reuses ${pendingReuse.reusedCardName}.`, { kind: 'ability_plains_reuse', actor: action.actor, reusedName: pendingReuse.reusedCardName })
+    pushLog(state, `Plains reuses ${pendingReuse.reusedCardName}.`, {
+      kind: 'ability_plains_reuse',
+      actor: action.actor,
+      reusedName: pendingReuse.reusedCardName,
+      sourceInstanceId: pendingReuse.reusedInstanceId,
+    })
     const reusedCard: Card = {
       id: `reused-${pendingReuse.reusedInstanceId}`,
       name: pendingReuse.reusedCardName,
@@ -461,7 +510,7 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
     }
     state.pendingPlainsReuse = null
     state.phase = 'main'
-    applyLandEffect(state, action.actor, reusedCard, action.effectTargetId)
+    applyLandEffect(state, action.actor, reusedCard, action.effectTargetId, pendingReuse.reusedInstanceId)
     if (state.phase === 'main') {
       finalizeWinnerIfAny(state)
     }

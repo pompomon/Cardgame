@@ -12,7 +12,13 @@ import { MAX_QUEUED_EFFECTS } from '../app/animation-settings'
 import type { LogEvent } from '../game/types'
 
 function descriptor(kind: EffectDescriptor['kind'], actor = 0): EffectDescriptor {
-  return { kind, actor, cardName: 'Forest', visualStyle: 'classic' }
+  return {
+    kind,
+    actor,
+    land: 'Forest',
+    visualStyle: 'classic',
+    palette: { primary: '#b9f1c5', secondary: '#7fd194', glow: '#53a772' },
+  }
 }
 
 describe('phaser effects queue', () => {
@@ -185,7 +191,7 @@ describe('playAbilityEffect', () => {
       playAbilityEffect(
         stubScene,
         anchor,
-        { kind, actor: 0, cardName: 'Forest', visualStyle: 'classic' },
+        descriptor(kind),
         0,
         () => { called += 1 },
       )

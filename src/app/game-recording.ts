@@ -57,6 +57,10 @@ function isActorIndex(value: unknown): value is 0 | 1 {
   return value === 0 || value === 1
 }
 
+function hasOptionalIdentifier(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || (typeof value[key] === 'string' && value[key].length > 0)
+}
+
 // Cap defends against malicious recordings inflating the structured stream
 // (renderers iterate the whole array on every frame for the visual log /
 // effect queue).
@@ -78,15 +82,26 @@ function isLogEventLike(value: unknown): value is LogEvent {
     case 'turn_start':
       return isNonNegativeInteger(value.turn) && isActorIndex(value.actor)
     case 'draw':
-    case 'play_land':
-    case 'ability_forest_return':
     case 'counter_resolved':
       return isActorIndex(value.actor) && isBasicLandName(value.cardName)
+    case 'play_land':
+      return isActorIndex(value.actor) && isBasicLandName(value.cardName)
+        && hasOptionalIdentifier(value, 'sourceInstanceId')
+    case 'ability_forest_return':
+      return isActorIndex(value.actor) && isBasicLandName(value.cardName)
+        && hasOptionalIdentifier(value, 'sourceInstanceId')
+        && hasOptionalIdentifier(value, 'targetCardId')
     case 'ability_swamp_discard':
+      return isActorIndex(value.actor) && isActorIndex(value.target) && isBasicLandName(value.cardName)
+        && hasOptionalIdentifier(value, 'sourceInstanceId')
+        && hasOptionalIdentifier(value, 'targetCardId')
     case 'ability_mountain_destroy':
       return isActorIndex(value.actor) && isActorIndex(value.target) && isBasicLandName(value.cardName)
+        && hasOptionalIdentifier(value, 'sourceInstanceId')
+        && hasOptionalIdentifier(value, 'targetInstanceId')
     case 'ability_plains_reuse':
       return isActorIndex(value.actor) && isBasicLandName(value.reusedName)
+        && hasOptionalIdentifier(value, 'sourceInstanceId')
     case 'counter_offered':
       return isActorIndex(value.responder) && isBasicLandName(value.cardName)
     case 'deck_empty_loss':
