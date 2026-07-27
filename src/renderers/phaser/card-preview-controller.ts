@@ -28,6 +28,7 @@ export function createCardPreviewController(options: {
     overlay?.destroy(true)
     overlay = null
     pinnedLabel = null
+    sourcePointerActive = false
   }
   const show = (label: string, pinned: boolean): void => {
     const context = options.getContext()

@@ -551,7 +551,6 @@ class CardgameScene extends Phaser.Scene {
   // battlefields. Populated (and cleared) on every renderBattlefields pass.
   private cardPositionRegistry = new Map<string, EffectAnchor>()
   private cardPreview: CardPreviewController | null = null
-
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
     const oy = card.getData('originY')
