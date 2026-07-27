@@ -1,11 +1,11 @@
-import type { AppViewModel, RendererKind } from '../app/types'
+import type { AppViewModel, AnimationSpeed, CardVisualStyle, RendererKind } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
-import { ANIMATION_SPEED_OPTIONS } from '../app/animation-settings'
+import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../app/card-visual-styles'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { getInstallUiState } from '../app/install-support'
-import { isBasicLand, type BasicLand } from '../game/types'
+import { isBasicLand, type BasicLand, type LogEvent } from '../game/types'
 
 const failedRasterCardArtUrls = new Set<string>()
 
@@ -275,4 +275,130 @@ export function renderCardTile(name: string, style: AppViewModel['cardVisualStyl
 
 if (typeof window !== 'undefined') {
   window.__cardgameNoteRasterCardArtLoadFailure = noteRasterCardArtLoadFailure
+}
+
+// ---------------------------------------------------------------------------
+// DOM ability-effect overlay system
+// Renders CSS-animated particle overlays anchored to battlefield rows.
+// Effects are appended to document.body (position:fixed) so they survive
+// this.container.innerHTML replacements and self-remove via animationend.
+// ---------------------------------------------------------------------------
+
+// Effect kinds recognised by the DOM particle system.
+type DomEffectKind =
+  | 'play_land'
+  | 'forest_return'
+  | 'swamp_discard'
+  | 'mountain_destroy'
+  | 'plains_reuse'
+  | 'counter_resolved'
+
+interface DomEffectInfo {
+  kind: DomEffectKind
+  // CSS selector for the target element. When null, the effect is skipped.
+  targetSelector: string
+  particleCount: number
+}
+
+// Maps an event to effect info, or null when no animation applies.
+function domEffectInfoForEvent(event: LogEvent): DomEffectInfo | null {
+  switch (event.kind) {
+    case 'play_land':
+      return { kind: 'play_land', targetSelector: '.battlefield-active', particleCount: 3 }
+    case 'ability_forest_return':
+      return { kind: 'forest_return', targetSelector: '.battlefield-active', particleCount: 6 }
+    case 'ability_swamp_discard':
+      return { kind: 'swamp_discard', targetSelector: '.battlefield-non-active', particleCount: 4 }
+    case 'ability_mountain_destroy':
+      return { kind: 'mountain_destroy', targetSelector: '.battlefield-non-active', particleCount: 6 }
+    case 'ability_plains_reuse':
+      return { kind: 'plains_reuse', targetSelector: '.battlefield-active', particleCount: 6 }
+    case 'counter_resolved':
+      return { kind: 'counter_resolved', targetSelector: '.battlefield-active', particleCount: 7 }
+    default:
+      return null
+  }
+}
+
+// Build the particle <div> children for an effect element.
+function buildParticles(kind: DomEffectKind, count: number): string {
+  let html = ''
+  for (let i = 0; i < count; i += 1) {
+    const angle = (360 * i) / count
+    // Per-particle directional offsets expressed as CSS custom properties so
+    // the keyframes can translate relative to each particle's origin. Using
+    // only transform+opacity keeps animations on the GPU compositor.
+    html += `<div class="dom-effect__particle dom-effect__particle--${i}" style="--angle:${angle}deg;--i:${i}"></div>`
+  }
+  if (kind === 'mountain_destroy') {
+    // Extra flash child that fades in the first 25% of the animation.
+    html += '<div class="dom-effect__flash"></div>'
+  }
+  return html
+}
+
+// Schedule a single DOM particle effect for the given event. Appends a
+// position:fixed overlay div to document.body and removes it after the
+// animation completes. Guards: no-op when `animationSpeed === 'off'`, when
+// no target element is found, or when RAF is unavailable (SSR/test env).
+export function scheduleDomEffect(
+  event: LogEvent,
+  animationSpeed: AnimationSpeed,
+  _visualStyle: CardVisualStyle,
+): void {
+  if (animationSpeed === 'off') {
+    return
+  }
+  if (typeof requestAnimationFrame !== 'function') {
+    return
+  }
+  const info = domEffectInfoForEvent(event)
+  if (!info) {
+    return
+  }
+  const durationMs = durationMsForSpeed(animationSpeed)
+  if (durationMs <= 0) {
+    return
+  }
+  requestAnimationFrame(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+    const target = document.querySelector<HTMLElement>(info.targetSelector)
+    if (!target) {
+      return
+    }
+    const rect = target.getBoundingClientRect()
+    const el = document.createElement('div')
+    el.className = `dom-effect dom-effect--${info.kind}`
+    el.style.cssText = [
+      'position:fixed',
+      `left:${rect.left}px`,
+      `top:${rect.top}px`,
+      `width:${rect.width}px`,
+      `height:${rect.height}px`,
+      `--dom-effect-duration:${durationMs}ms`,
+      'pointer-events:none',
+      'z-index:9999',
+      'overflow:hidden',
+    ].join(';')
+    el.innerHTML = buildParticles(info.kind, info.particleCount)
+    document.body.appendChild(el)
+    // Self-remove: track animationend events from all particle children plus
+    // the flash child (if any). Use a counter so we wait for the last one.
+    const particleDivs = el.querySelectorAll<HTMLElement>('.dom-effect__particle,.dom-effect__flash')
+    let remaining = particleDivs.length > 0 ? particleDivs.length : 1
+    const remove = (): void => {
+      remaining -= 1
+      if (remaining <= 0) {
+        el.remove()
+      }
+    }
+    for (const p of particleDivs) {
+      p.addEventListener('animationend', remove, { once: true })
+    }
+    // Fallback timeout: remove even if animationend never fires (e.g. effect
+    // hidden by prefers-reduced-motion: reduce or missing keyframe).
+    setTimeout(() => { el.remove() }, durationMs + 500)
+  })
 }

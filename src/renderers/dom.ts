@@ -27,6 +27,7 @@ import {
   renderLobby,
   renderP2P,
   resetRasterCardArtLoadFailuresForTests,
+  scheduleDomEffect,
 } from './dom-utils'
 
 export {
@@ -398,6 +399,11 @@ export class DomRenderer implements AppRenderer {
   private pendingTargetSelection: PendingPlayLandTargetSelection | null = null
   private draggedCardId: string | null = null
   private containerListenersBound = false
+  // DOM effect animation cursor — tracks how many log events have already
+  // been animated so only new events since the last render are scheduled.
+  private lastDomAnimatedEventCount = 0
+  // Seed of the last render pass; resets the event cursor on new game.
+  private lastDomEffectSeed: number | null = null
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -446,6 +452,7 @@ export class DomRenderer implements AppRenderer {
     `
 
     this.bindEvents()
+    this.runDomEffects(view)
   }
 
   unmount(): void {
@@ -460,12 +467,40 @@ export class DomRenderer implements AppRenderer {
     this.menuOpen = false
     this.pendingTargetSelection = null
     this.draggedCardId = null
+    this.lastDomAnimatedEventCount = 0
+    this.lastDomEffectSeed = null
   }
 
   private rerender(): void {
     if (this.view) {
       this.render(this.view)
     }
+  }
+
+  private runDomEffects(view: AppViewModel): void {
+    const game = view.game
+    if (!game) {
+      // No active game — reset cursor so a new game starts fresh.
+      this.lastDomAnimatedEventCount = 0
+      this.lastDomEffectSeed = null
+      return
+    }
+    // When the seed changes (rematch or replay), reset the cursor so we
+    // don't attempt to re-animate events from a previous game.
+    if (this.lastDomEffectSeed !== view.seed) {
+      this.lastDomEffectSeed = view.seed
+      this.lastDomAnimatedEventCount = 0
+    }
+    const events = game.events
+    if (view.animationSpeed === 'off') {
+      // Skip all queued effects and advance cursor so we never catch up.
+      this.lastDomAnimatedEventCount = events.length
+      return
+    }
+    for (let i = this.lastDomAnimatedEventCount; i < events.length; i += 1) {
+      scheduleDomEffect(events[i], view.animationSpeed, view.cardVisualStyle)
+    }
+    this.lastDomAnimatedEventCount = events.length
   }
 
   private resolveDroppedCard(cardId: string): void {
