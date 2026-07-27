@@ -134,9 +134,9 @@ export function buildCardFrame(
   return frame
 }
 
-// Parchment battlefield backdrop palette. Keep in sync with the
-// --parchment-base / --battlefield-*-bg tokens in src/style.css and with
-// COLOR_BATTLEFIELD_*_STROKE in src/renderers/phaser/index.ts.
+// Parchment battlefield backdrop palette. Keep in sync with the CSS tokens in
+// src/style.css (e.g. --parchment-base, --battlefield-*-stroke) and with the
+// COLOR_BATTLEFIELD_*_STROKE constants in src/renderers/phaser/index.ts.
 const BATTLEFIELD_PARCHMENT_BASE = 0xc4a060  // warm aged tan (= --parchment-base)
 const BATTLEFIELD_PARCHMENT_LIGHT = 0xd8bc80 // upper-left highlight shimmer
 const BATTLEFIELD_PARCHMENT_DARK = 0x7a5c2e  // lower-right depth shadow
