@@ -34,8 +34,14 @@ describe('engine LogEvent stream', () => {
     state = applyAction(state, { type: 'play_land', actor: 0, cardId: firstForest.id, effectTargetId: 'gy-forest' })
     const newEvents = state.events.slice(before)
     expect(newEvents).toEqual([
-      { kind: 'play_land', actor: 0, cardName: 'Forest' },
-      { kind: 'ability_forest_return', actor: 0, cardName: 'Forest' },
+      { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 'p0-1' },
+      {
+        kind: 'ability_forest_return',
+        actor: 0,
+        cardName: 'Forest',
+        sourceInstanceId: 'p0-1',
+        targetCardId: 'gy-forest',
+      },
     ])
   })
 

@@ -68,11 +68,11 @@ export type LogEvent =
   | { kind: 'game_start_skip_draw'; actor: number }
   | { kind: 'turn_start'; turn: number; actor: number }
   | { kind: 'draw'; actor: number; cardName: BasicLand }
-  | { kind: 'play_land'; actor: number; cardName: BasicLand }
-  | { kind: 'ability_forest_return'; actor: number; cardName: BasicLand }
-  | { kind: 'ability_swamp_discard'; actor: number; target: number; cardName: BasicLand }
-  | { kind: 'ability_mountain_destroy'; actor: number; target: number; cardName: BasicLand }
-  | { kind: 'ability_plains_reuse'; actor: number; reusedName: BasicLand }
+  | { kind: 'play_land'; actor: number; cardName: BasicLand; sourceInstanceId?: string }
+  | { kind: 'ability_forest_return'; actor: number; cardName: BasicLand; sourceInstanceId?: string; targetCardId?: string }
+  | { kind: 'ability_swamp_discard'; actor: number; target: number; cardName: BasicLand; sourceInstanceId?: string; targetCardId?: string }
+  | { kind: 'ability_mountain_destroy'; actor: number; target: number; cardName: BasicLand; sourceInstanceId?: string; targetInstanceId?: string }
+  | { kind: 'ability_plains_reuse'; actor: number; reusedName: BasicLand; sourceInstanceId?: string }
   | { kind: 'counter_offered'; responder: number; cardName: BasicLand }
   | { kind: 'counter_resolved'; actor: number; cardName: BasicLand }
   | { kind: 'deck_empty_loss'; actor: number }

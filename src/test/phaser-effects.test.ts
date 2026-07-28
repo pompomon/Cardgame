@@ -12,7 +12,13 @@ import { MAX_QUEUED_EFFECTS } from '../app/animation-settings'
 import type { LogEvent } from '../game/types'
 
 function descriptor(kind: EffectDescriptor['kind'], actor = 0): EffectDescriptor {
-  return { kind, actor, cardName: 'Forest', visualStyle: 'classic' }
+  return {
+    kind,
+    actor,
+    land: 'Forest',
+    visualStyle: 'classic',
+    palette: { primary: '#b9f1c5', secondary: '#7fd194', glow: '#53a772' },
+  }
 }
 
 describe('phaser effects queue', () => {
@@ -185,11 +191,42 @@ describe('playAbilityEffect', () => {
       playAbilityEffect(
         stubScene,
         anchor,
-        { kind, actor: 0, cardName: 'Forest', visualStyle: 'classic' },
+        descriptor(kind),
         0,
         () => { called += 1 },
       )
       expect(called).toBe(1)
     })
   }
+
+  it('uses fewer particles in the reduced mobile quality tier', () => {
+    let rectangles = 0
+    const scene = {
+      add: {
+        rectangle: (x: number, y: number) => {
+          rectangles += 1
+          return {
+            x,
+            y,
+            setStrokeStyle() { return this },
+            setScale() { return this },
+            setAlpha() { return this },
+            setDepth() { return this },
+            setRotation() { return this },
+            destroy() {},
+          }
+        },
+      },
+      tweens: {
+        add: (config: { onComplete?: () => void }) => {
+          config.onComplete?.()
+          return {}
+        },
+      },
+    } as unknown as import('phaser').Scene
+    let completed = 0
+    playAbilityEffect(scene, anchor, descriptor('play_land'), 100, () => { completed += 1 }, 'reduced')
+    expect(rectangles).toBe(2)
+    expect(completed).toBe(1)
+  })
 })

@@ -1001,6 +1001,7 @@ textarea {
 .dom-effect__particle {
   position: absolute;
   border-radius: 2px;
+  box-shadow: 0 0 8px var(--effect-glow, transparent);
   will-change: transform, opacity;
 }
 
@@ -1024,7 +1025,7 @@ textarea {
   width: 80%;
   height: 80%;
   border-radius: 4px;
-  border: 2px solid #d4edff;
+  border: 2px solid var(--effect-primary, #d4edff);
   background: transparent;
   animation: dom-effect-play-land-ring var(--dom-effect-duration, 350ms) ease-out both;
 }
@@ -1053,7 +1054,7 @@ textarea {
   left: 50%;
   width: 8px;
   height: 10px;
-  background: #7fd194;
+  background: var(--effect-secondary, #7fd194);
   animation: dom-effect-in var(--dom-effect-duration, 350ms)
     calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.06))
     ease-in both;
@@ -1064,7 +1065,7 @@ textarea {
   left: 10%;
   width: 80%;
   height: 80%;
-  border: 2px solid #7fd194;
+  border: 2px solid var(--effect-primary, #7fd194);
   background: transparent;
   border-radius: 3px;
   animation: dom-effect-ring-contract var(--dom-effect-duration, 350ms) ease-in both;
@@ -1081,7 +1082,7 @@ textarea {
   left: calc(18% + var(--i) * 20%);
   width: 7px;
   height: 9px;
-  background: #b694e6;
+  background: var(--effect-secondary, #b694e6);
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   animation: dom-effect-float-up var(--dom-effect-duration, 350ms)
     calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.07))
@@ -1109,7 +1110,7 @@ textarea {
   left: calc(50% - 3px);
   width: 6px;
   height: 6px;
-  background: #ff7b52;
+  background: var(--effect-secondary, #ff7b52);
   animation: dom-effect-ember var(--dom-effect-duration, 350ms)
     calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.04))
     ease-out both;
@@ -1137,7 +1138,7 @@ textarea {
   left: calc(50% - 2px);
   width: 3px;
   height: 40%;
-  background: #f2dc8b;
+  background: var(--effect-secondary, #f2dc8b);
   transform-origin: bottom center;
   animation: dom-effect-beam var(--dom-effect-duration, 350ms)
     calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.06))
@@ -1149,7 +1150,7 @@ textarea {
   left: 10%;
   width: 80%;
   height: 80%;
-  border: 2px solid #f2dc8b;
+  border: 2px solid var(--effect-primary, #f2dc8b);
   background: transparent;
   border-radius: 3px;
   animation: dom-effect-ring-contract var(--dom-effect-duration, 350ms) ease-in both;
@@ -1177,7 +1178,7 @@ textarea {
   left: calc(50% - 4px);
   width: 8px;
   height: 8px;
-  background: #8ebeff;
+  background: var(--effect-secondary, #8ebeff);
   animation: dom-effect-hex-vertex var(--dom-effect-duration, 350ms)
     calc(var(--i) * calc(var(--dom-effect-duration, 350ms) * 0.05))
     ease-out both;
@@ -1188,7 +1189,7 @@ textarea {
   left: 5%;
   width: 90%;
   height: 90%;
-  border: 2px solid #8ebeff;
+  border: 2px solid var(--effect-primary, #8ebeff);
   background: transparent;
   border-radius: 4px;
   animation: dom-effect-ring-burst var(--dom-effect-duration, 350ms) ease-out both;

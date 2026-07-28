@@ -90,7 +90,7 @@ Ship a focused Phaser-renderer improvement pass for mobile devices that:
   Files:
   - [src/renderers/phaser/index.ts](../src/renderers/phaser/index.ts)
 
-- [ ] Add a lower-cost mobile effects tier.
+- [x] Add a lower-cost mobile effects tier.
   Acceptance criteria:
   - Narrow or mobile layouts use reduced overdraw or lower visual density.
   - Queue ordering and disabled-animation semantics remain unchanged.

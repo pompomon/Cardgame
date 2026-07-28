@@ -1,7 +1,12 @@
 import type Phaser from 'phaser'
-import type { CardVisualStyle, AnimationSpeed } from '../../app/types'
+import type { AnimationSpeed } from '../../app/types'
 import type { LogEvent } from '../../game/types'
 import { MAX_EFFECT_MS, MAX_QUEUED_EFFECTS } from '../../app/animation-settings'
+import {
+  visualEffectForEvent,
+  type VisualEffectDescriptor,
+  type VisualEffectKind,
+} from '../../app/visual-effects'
 import { DEPTH_EFFECT_OVERLAY } from './depth'
 
 // Bounded ability-resolution effect pipeline. Each `LogEvent` that has a
@@ -10,13 +15,7 @@ import { DEPTH_EFFECT_OVERLAY } from './depth'
 // is bounded (oldest entries are dropped past `MAX_QUEUED_EFFECTS`) so visual
 // effects can never block gameplay during AI-vs-AI bursts.
 
-export type EffectKind =
-  | 'play_land'
-  | 'forest_return'
-  | 'swamp_discard'
-  | 'mountain_destroy'
-  | 'plains_reuse'
-  | 'counter_resolved'
+export type EffectKind = VisualEffectKind
 
 export interface EffectAnchor {
   x: number
@@ -25,50 +24,26 @@ export interface EffectAnchor {
   height: number
 }
 
-export interface EffectDescriptor {
-  kind: EffectKind
-  actor: number
-  cardName?: string
-  // Optional anchor — when known, the recipe pulses the matching battlefield
-  // card. Otherwise the recipe falls back to a center burst.
-  instanceId?: string | null
-  visualStyle: CardVisualStyle
+export interface EffectDescriptor extends VisualEffectDescriptor {
   // When provided by the caller (e.g. Phaser card-position registry lookup),
   // supersedes the generic battlefield-row anchor passed to playAbilityEffect.
   anchorOverride?: EffectAnchor
+  sourceAnchor?: EffectAnchor
 }
+
+export type EffectQuality = 'full' | 'reduced'
 
 // Map a structured LogEvent into an EffectDescriptor when there is a visual
 // recipe for it. Returns `null` for events that should not animate.
 export function effectDescriptorForEvent(
   event: LogEvent,
-  visualStyle: CardVisualStyle,
+  visualStyle: EffectDescriptor['visualStyle'],
 ): EffectDescriptor | null {
-  switch (event.kind) {
-    case 'play_land':
-      return { kind: 'play_land', actor: event.actor, cardName: event.cardName, visualStyle }
-    case 'ability_forest_return':
-      return { kind: 'forest_return', actor: event.actor, cardName: event.cardName, visualStyle }
-    case 'ability_swamp_discard':
-      return { kind: 'swamp_discard', actor: event.actor, cardName: event.cardName, visualStyle }
-    case 'ability_mountain_destroy':
-      return { kind: 'mountain_destroy', actor: event.actor, cardName: event.cardName, visualStyle }
-    case 'ability_plains_reuse':
-      return { kind: 'plains_reuse', actor: event.actor, cardName: event.reusedName, visualStyle }
-    case 'counter_resolved':
-      return { kind: 'counter_resolved', actor: event.actor, cardName: event.cardName, visualStyle }
-    default:
-      return null
-  }
+  return visualEffectForEvent(event, visualStyle)
 }
 
-const KIND_TINTS: Readonly<Record<EffectKind, number>> = {
-  play_land: 0xd4edff,
-  forest_return: 0x7fd194,
-  swamp_discard: 0xb694e6,
-  mountain_destroy: 0xff7b52,
-  plains_reuse: 0xf2dc8b,
-  counter_resolved: 0x8ebeff,
+function colorToNumber(value: string, fallback: number): number {
+  return /^#[0-9a-f]{6}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -88,15 +63,52 @@ function makeCounter(total: number, onDone: () => void): () => void {
   }
 }
 
+function recipeLinkTrail(
+  scene: Phaser.Scene,
+  source: EffectAnchor,
+  target: EffectAnchor,
+  tint: number,
+  cappedDuration: number,
+  onDone: () => void,
+): void {
+  const dx = target.x - source.x
+  const dy = target.y - source.y
+  const distance = Math.hypot(dx, dy)
+  if (distance < 4) {
+    onDone()
+    return
+  }
+  const trail = scene.add.rectangle(
+    source.x + dx / 2,
+    source.y + dy / 2,
+    distance,
+    4,
+    tint,
+    0.72,
+  )
+  trail.setRotation(Math.atan2(dy, dx))
+  trail.setScale(0.15, 1)
+  trail.setDepth(DEPTH_EFFECT_OVERLAY)
+  scene.tweens.add({
+    targets: trail,
+    scaleX: 1,
+    alpha: 0,
+    duration: Math.max(1, Math.floor(cappedDuration * 0.7)),
+    ease: 'Sine.easeOut',
+    onComplete: () => { trail.destroy(); onDone() },
+  })
+}
+
 function recipePlayLand(
   scene: Phaser.Scene,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
+  quality: EffectQuality,
   onDone: () => void,
 ): void {
   // 3 concentric rings expanding outward — land-enters-play ripple.
-  const ringCount = 3
+  const ringCount = quality === 'reduced' ? 2 : 3
   const tick = makeCounter(ringCount, onDone)
   for (let i = 0; i < ringCount; i += 1) {
     const startScale = 0.55 + i * 0.15
@@ -123,10 +135,11 @@ function recipeForestReturn(
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
+  quality: EffectQuality,
   onDone: () => void,
 ): void {
   // 5 leaf particles orbiting inward + a contracting ring.
-  const leafCount = 5
+  const leafCount = quality === 'reduced' ? 3 : 5
   const tick = makeCounter(leafCount + 1, onDone)
   // Contracting ring
   const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
@@ -171,10 +184,11 @@ function recipeSwampDiscard(
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
+  quality: EffectQuality,
   onDone: () => void,
 ): void {
   // 4 droplets floating upward + a fading cloud base.
-  const dropletCount = 4
+  const dropletCount = quality === 'reduced' ? 2 : 4
   const tick = makeCounter(dropletCount + 1, onDone)
   // Cloud base
   const cloud = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.88, anchor.height * 0.88, tint, 0.18)
@@ -219,10 +233,11 @@ function recipeMountainDestroy(
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
+  quality: EffectQuality,
   onDone: () => void,
 ): void {
   // 6 embers sprayed upward in 140° arc + white flash + expanding ring.
-  const emberCount = 6
+  const emberCount = quality === 'reduced' ? 3 : 6
   const tick = makeCounter(emberCount + 2, onDone)
   // White flash
   const flash = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, 0xffffff, 0.44)
@@ -275,10 +290,11 @@ function recipePlainsReuse(
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
+  quality: EffectQuality,
   onDone: () => void,
 ): void {
   // 5 beams radiating outward + a contracting golden ring.
-  const beamCount = 5
+  const beamCount = quality === 'reduced' ? 3 : 5
   const tick = makeCounter(beamCount + 1, onDone)
   // Contracting ring
   const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
@@ -325,10 +341,11 @@ function recipeCounterResolved(
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
+  quality: EffectQuality,
   onDone: () => void,
 ): void {
   // 6 hexagon-vertex particles expanding + a blue ripple ring.
-  const vertexCount = 6
+  const vertexCount = quality === 'reduced' ? 3 : 6
   const tick = makeCounter(vertexCount + 1, onDone)
   // Ripple ring
   const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, tint, 0)
@@ -378,6 +395,7 @@ export function playAbilityEffect(
   descriptor: EffectDescriptor,
   durationMs: number,
   onDone: () => void,
+  quality: EffectQuality = 'full',
 ): void {
   if (durationMs <= 0 || !scene.add || !scene.tweens) {
     onDone()
@@ -385,28 +403,34 @@ export function playAbilityEffect(
   }
   const effectAnchor = descriptor.anchorOverride ?? anchor
   const cappedDuration = Math.min(durationMs, MAX_EFFECT_MS)
-  const tint = KIND_TINTS[descriptor.kind] ?? 0xffffff
+  const tint = colorToNumber(descriptor.palette.secondary, 0xffffff)
+  const hasLink = descriptor.sourceAnchor !== undefined
+    && (descriptor.sourceAnchor.x !== effectAnchor.x || descriptor.sourceAnchor.y !== effectAnchor.y)
+  const finish = hasLink ? makeCounter(2, onDone) : onDone
+  if (hasLink) {
+    recipeLinkTrail(scene, descriptor.sourceAnchor!, effectAnchor, tint, cappedDuration, finish)
+  }
   switch (descriptor.kind) {
     case 'play_land':
-      recipePlayLand(scene, effectAnchor, tint, cappedDuration, onDone)
+      recipePlayLand(scene, effectAnchor, tint, cappedDuration, quality, finish)
       return
     case 'forest_return':
-      recipeForestReturn(scene, effectAnchor, tint, cappedDuration, onDone)
+      recipeForestReturn(scene, effectAnchor, tint, cappedDuration, quality, finish)
       return
     case 'swamp_discard':
-      recipeSwampDiscard(scene, effectAnchor, tint, cappedDuration, onDone)
+      recipeSwampDiscard(scene, effectAnchor, tint, cappedDuration, quality, finish)
       return
     case 'mountain_destroy':
-      recipeMountainDestroy(scene, effectAnchor, tint, cappedDuration, onDone)
+      recipeMountainDestroy(scene, effectAnchor, tint, cappedDuration, quality, finish)
       return
     case 'plains_reuse':
-      recipePlainsReuse(scene, effectAnchor, tint, cappedDuration, onDone)
+      recipePlainsReuse(scene, effectAnchor, tint, cappedDuration, quality, finish)
       return
     case 'counter_resolved':
-      recipeCounterResolved(scene, effectAnchor, tint, cappedDuration, onDone)
+      recipeCounterResolved(scene, effectAnchor, tint, cappedDuration, quality, finish)
       return
     default:
-      onDone()
+      finish()
   }
 }
 

@@ -727,4 +727,18 @@ describe('game-recording', () => {
     expect(parsed.record.timeline[0].state.events[0]).toEqual({ kind: 'turn_start', turn: 1, actor: 0 })
     expect(parsed.record.timeline[0].state.events.some((event) => event.kind === 'turn_start' && event.turn === 0)).toBe(false)
   })
+
+  it('accepts legacy visual events without optional anchor identifiers', () => {
+    expect(sanitizeLogEvents([
+      { kind: 'play_land', actor: 0, cardName: 'Forest' },
+      { kind: 'ability_mountain_destroy', actor: 0, target: 1, cardName: 'Island' },
+    ])).toHaveLength(2)
+  })
+
+  it('rejects malformed optional visual-effect identifiers', () => {
+    expect(sanitizeLogEvents([
+      { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 42 },
+      { kind: 'ability_mountain_destroy', actor: 0, target: 1, cardName: 'Island', targetInstanceId: '' },
+    ])).toEqual([])
+  })
 })

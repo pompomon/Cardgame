@@ -42,6 +42,26 @@ describe('scheduleDomEffect', () => {
     expect(raf).toHaveBeenCalledOnce()
   })
 
+  it('does not create an overlay when the queued render becomes stale before RAF', () => {
+    let callback: FrameRequestCallback | null = null
+    const querySelector = vi.fn()
+    vi.stubGlobal('document', { querySelector })
+    vi.stubGlobal('requestAnimationFrame', vi.fn((next: FrameRequestCallback) => {
+      callback = next
+      return 1
+    }))
+    scheduleDomEffect(
+      { kind: 'play_land', actor: 0, cardName: 'Forest' },
+      'normal',
+      'classic',
+      0,
+      () => {},
+      () => false,
+    )
+    callback!(0)
+    expect(querySelector).not.toHaveBeenCalled()
+  })
+
   it('anchors resolved counter effects to the active battlefield', () => {
     const querySelector = vi.fn().mockReturnValue(null)
     const raf = vi.fn((callback: FrameRequestCallback) => callback(0))
@@ -50,6 +70,23 @@ describe('scheduleDomEffect', () => {
     const event: LogEvent = { kind: 'counter_resolved', actor: 1, cardName: 'Forest' }
     scheduleDomEffect(event, 'normal', 'classic')
     expect(querySelector).toHaveBeenCalledWith('.battlefield-active')
+  })
+
+  it('tries an exact removed-card anchor before the battlefield fallback', () => {
+    const querySelector = vi.fn().mockReturnValue(null)
+    const raf = vi.fn((callback: FrameRequestCallback) => callback(0))
+    vi.stubGlobal('document', { querySelector })
+    vi.stubGlobal('requestAnimationFrame', raf)
+    const event: LogEvent = {
+      kind: 'ability_mountain_destroy',
+      actor: 0,
+      target: 1,
+      cardName: 'Forest',
+      targetInstanceId: 'p1-4',
+    }
+    scheduleDomEffect(event, 'normal', 'classic', 0)
+    expect(querySelector).toHaveBeenNthCalledWith(1, '[data-battlefield-card-id="p1-4"]')
+    expect(querySelector).toHaveBeenNthCalledWith(2, '.battlefield-non-active')
   })
 
   it('is a no-op for game_started events', () => {
