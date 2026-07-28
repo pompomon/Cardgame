@@ -17,7 +17,7 @@ import type { AppViewModel, GameUiState, Mode } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isBasicLand, type BasicLand, type GameAction, type LogEvent } from '../../game/types'
 import type { AppRenderer } from '../types'
-import { createCardPreviewController, type CardPreviewController } from './card-preview-controller'
+import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
 import {
   canRenderCardBackTexture,
@@ -34,7 +34,7 @@ import {
 } from './depth'
 import { computeHeaderLabel } from './header-label'
 import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
-import { buildLayout, clamp, orientationFromViewport, type LayoutSafeAreaInsets, type SceneLayout } from './layout'
+import { buildLayout, clamp, orientationFromViewport, xForCardInBoardColumn, type LayoutSafeAreaInsets, type SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
 import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
@@ -54,7 +54,7 @@ import {
   type EffectDescriptor,
   type EffectQueueState,
 } from './effects'
-import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx } from './ui-utils'
+import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx, snapCardToOrigin } from './ui-utils'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -553,14 +553,6 @@ class CardgameScene extends Phaser.Scene {
   private cardPositionRegistry = new Map<string, EffectAnchor>()
   private cardPreview: CardPreviewController | null = null
   private previousCardPositionRegistry = new Map<string, EffectAnchor>()
-  private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
-    const ox = card.getData('originX')
-    const oy = card.getData('originY')
-    if (typeof ox === 'number' && typeof oy === 'number') {
-      card.x = ox
-      card.y = oy
-    }
-  }
 
   constructor(rendererRef: PhaserRenderer) {
     super(CARDGAME_SCENE_KEY)
@@ -580,14 +572,11 @@ class CardgameScene extends Phaser.Scene {
       scene: this,
       getRoot: () => this.rootContainer,
       getLayout: () => this.currentLayout,
-      getContext: () => {
-        const game = this.rendererRef.currentView?.game
-        return game ? {
-          phase: game.phase,
-          pendingPlayLandTargetSelection: this.pendingPlayLandTargetSelection !== null,
-          menuOpen: this.menuOpen,
-        } : null
-      },
+      getContext: () => buildCardPreviewContext(
+        this.rendererRef.currentView?.game?.phase ?? null,
+        this.pendingPlayLandTargetSelection !== null,
+        this.menuOpen,
+      ),
       renderCard: (label) => this.renderStaticCard(0, 0, label),
     })
     this.inSceneLogScrollOffset = null
@@ -612,11 +601,11 @@ class CardgameScene extends Phaser.Scene {
     const onDragEnd = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
       const card = object as Phaser.GameObjects.Container
       if (this.menuOpen) {
-        this.snapCardToOrigin(card)
+        snapCardToOrigin(card)
         return
       }
       if (!dropped) {
-        this.snapCardToOrigin(card)
+        snapCardToOrigin(card)
       }
     }
     this.input.on('dragend', onDragEnd)
@@ -639,7 +628,7 @@ class CardgameScene extends Phaser.Scene {
       const resolution = resolvePlayLandDrop(game, cardId)
       if (resolution.kind === 'invalid') {
         this.setStatus('Invalid drop. Choose a playable card.')
-        this.snapCardToOrigin(card)
+        snapCardToOrigin(card)
         return
       }
 
@@ -649,7 +638,7 @@ class CardgameScene extends Phaser.Scene {
         return
       }
 
-      this.snapCardToOrigin(card)
+      snapCardToOrigin(card)
       const mode = resolvePlayLandTargetSelectionMode(game, cardId)
       if (mode === 'battlefield_highlight') {
         this.pendingPlayLandTargetSelection = {
@@ -724,24 +713,6 @@ class CardgameScene extends Phaser.Scene {
     this.battlefieldDropZone = null
     this.battlefieldTargetEntries = []
     this.menuOpen = wasMenuOpen
-  }
-
-  private xForCardInBoardColumn(index: number, count: number): number {
-    if (count <= 1) {
-      return this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth / 2
-    }
-
-    const minX = this.currentLayout.boardColumnLeft + this.currentLayout.cardWidth / 2 + 4
-    const maxX = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - this.currentLayout.cardWidth / 2 - 4
-    if (maxX <= minX) {
-      return (minX + maxX) / 2
-    }
-    const maxGap = (maxX - minX) / (count - 1)
-    const gap = Math.min(this.currentLayout.cardGap, maxGap)
-    const usedWidth = gap * (count - 1)
-    const availableWidth = maxX - minX
-    const startX = minX + (availableWidth - usedWidth) / 2 // Center the card spread inside the available column.
-    return startX + index * gap
   }
 
   renderView(view: AppViewModel | null): void {
@@ -1328,7 +1299,7 @@ class CardgameScene extends Phaser.Scene {
     for (let index = 0; index < nonActiveBattlefield.length; index += 1) {
       const card = nonActiveBattlefield[index]
       const targetEntry = this.findBattlefieldTargetEntry('non-active', card.instanceId)
-      const cardX = this.xForCardInBoardColumn(index, nonActiveBattlefield.length)
+      const cardX = xForCardInBoardColumn(this.currentLayout, index, nonActiveBattlefield.length)
       this.cardPositionRegistry.set(card.instanceId, {
         x: cardX, y: nonActiveCardY, width: this.currentLayout.cardWidth, height: this.currentLayout.cardHeight,
       })
@@ -1390,7 +1361,7 @@ class CardgameScene extends Phaser.Scene {
     for (let index = 0; index < activeBattlefield.length; index += 1) {
       const card = activeBattlefield[index]
       const targetEntry = this.findBattlefieldTargetEntry('active', card.instanceId)
-      const cardX = this.xForCardInBoardColumn(index, activeBattlefield.length)
+      const cardX = xForCardInBoardColumn(this.currentLayout, index, activeBattlefield.length)
       this.cardPositionRegistry.set(card.instanceId, {
         x: cardX, y: activeCardY, width: this.currentLayout.cardWidth, height: this.currentLayout.cardHeight,
       })
@@ -1921,7 +1892,7 @@ class CardgameScene extends Phaser.Scene {
     const canDrag = game.canInput && game.phase === 'main' && this.pendingPlayLandTargetSelection === null
 
     actorCards.forEach((card, index) => {
-      const x = this.xForCardInBoardColumn(index, actorCards.length)
+      const x = xForCardInBoardColumn(this.currentLayout, index, actorCards.length)
       const y = this.currentLayout.handCardsY
       const cardObject = this.renderStaticCard(x, y, card.name)
       cardObject.setData('cardId', card.id)

@@ -13,6 +13,14 @@ export interface CardPreviewController {
   destroy(): void
 }
 
+export function buildCardPreviewContext(
+  phase: CardPreviewContext['phase'] | null,
+  pendingPlayLandTargetSelection: boolean,
+  menuOpen: boolean,
+): CardPreviewContext | null {
+  return phase ? { phase, pendingPlayLandTargetSelection, menuOpen } : null
+}
+
 export function createCardPreviewController(options: {
   scene: Phaser.Scene
   getRoot: () => Phaser.GameObjects.Container | null

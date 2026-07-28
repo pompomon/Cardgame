@@ -102,6 +102,21 @@ export function clamp(value: number, minValue: number, maxValue: number): number
   return Math.min(upper, Math.max(lower, value))
 }
 
+export function xForCardInBoardColumn(layout: SceneLayout, index: number, count: number): number {
+  if (count <= 1) {
+    return layout.boardColumnLeft + layout.boardColumnWidth / 2
+  }
+  const minX = layout.boardColumnLeft + layout.cardWidth / 2 + 4
+  const maxX = layout.boardColumnLeft + layout.boardColumnWidth - layout.cardWidth / 2 - 4
+  if (maxX <= minX) {
+    return (minX + maxX) / 2
+  }
+  const gap = Math.min(layout.cardGap, (maxX - minX) / (count - 1))
+  const usedWidth = gap * (count - 1)
+  const startX = minX + (maxX - minX - usedWidth) / 2
+  return startX + index * gap
+}
+
 export function orientationFromViewport(width: number, height: number): OrientationMode {
   return width >= height ? 'horizontal' : 'vertical'
 }
