@@ -40,7 +40,8 @@ import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
-import { computeEffectAnchorFromLayout } from './effect-anchoring'
+import { computeEffectAnchorFromLayout, computeEffectSourceAnchor } from './effect-anchoring'
+import { isPhoneSizedViewport } from './quality'
 import { buildBattlefieldBackdrop, buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
 import {
   clearEffectQueue,
@@ -551,6 +552,7 @@ class CardgameScene extends Phaser.Scene {
   // battlefields. Populated (and cleared) on every renderBattlefields pass.
   private cardPositionRegistry = new Map<string, EffectAnchor>()
   private cardPreview: CardPreviewController | null = null
+  private previousCardPositionRegistry = new Map<string, EffectAnchor>()
   private snapCardToOrigin(card: Phaser.GameObjects.Container): void {
     const ox = card.getData('originX')
     const oy = card.getData('originY')
@@ -758,12 +760,16 @@ class CardgameScene extends Phaser.Scene {
         // animations queued from a previous match.
         clearEffectQueue(this.effectQueue)
         this.lastAnimatedEventCount = 0
+        this.previousCardPositionRegistry.clear()
+        this.cardPositionRegistry.clear()
       }
       this.lastRenderedSeed = currentSeed
     } else {
       this.lastRenderedSeed = null
       clearEffectQueue(this.effectQueue)
       this.lastAnimatedEventCount = 0
+      this.previousCardPositionRegistry.clear()
+      this.cardPositionRegistry.clear()
     }
     const currentMenuSignature = this.menuOpen && view && game
       ? this.computeMenuSignature(view)
@@ -1098,14 +1104,26 @@ class CardgameScene extends Phaser.Scene {
         durationMs: durationMsForSpeed(speed),
         run: (descriptor, durationMs, done) => {
           const anchor = this.computeEffectAnchor(latest, descriptor)
-          playAbilityEffect(this, anchor, descriptor, durationMs, done)
+          descriptor.sourceAnchor = computeEffectSourceAnchor(
+            descriptor,
+            this.cardPositionRegistry,
+            this.previousCardPositionRegistry,
+          )
+          const quality = isPhoneSizedViewport(this.scale.width, this.scale.height) ? 'reduced' : 'full'
+          playAbilityEffect(this, anchor, descriptor, durationMs, done, quality)
         },
       }
     })
   }
 
   private computeEffectAnchor(view: AppViewModel, descriptor: EffectDescriptor): EffectAnchor {
-    return computeEffectAnchorFromLayout(view, descriptor, this.currentLayout, this.cardPositionRegistry)
+    return computeEffectAnchorFromLayout(
+      view,
+      descriptor,
+      this.currentLayout,
+      this.cardPositionRegistry,
+      this.previousCardPositionRegistry,
+    )
   }
 
   private renderGame(view: AppViewModel): void {
@@ -1270,6 +1288,10 @@ class CardgameScene extends Phaser.Scene {
     const nonActiveIndex = activeIndex === 0 ? 1 : 0
     // Clear stale positions from the previous render pass so cards from a
     // previous game or rematch don't leave ghost anchors in the registry.
+    this.previousCardPositionRegistry = new Map([
+      ...this.previousCardPositionRegistry,
+      ...this.cardPositionRegistry,
+    ])
     this.cardPositionRegistry.clear()
 
     // Non-active battlefield (top, no drop zone, parchment with crimson tint).

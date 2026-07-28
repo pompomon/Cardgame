@@ -4,6 +4,7 @@ import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../app/animation-settings'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../app/card-visual-styles'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
+import { visualEffectForEvent, type VisualEffectDescriptor } from '../app/visual-effects'
 import { getInstallUiState } from '../app/install-support'
 import { isBasicLand, type BasicLand, type LogEvent } from '../game/types'
 
@@ -284,44 +285,17 @@ if (typeof window !== 'undefined') {
 // this.container.innerHTML replacements and self-remove via animationend.
 // ---------------------------------------------------------------------------
 
-// Effect kinds recognised by the DOM particle system.
-type DomEffectKind =
-  | 'play_land'
-  | 'forest_return'
-  | 'swamp_discard'
-  | 'mountain_destroy'
-  | 'plains_reuse'
-  | 'counter_resolved'
-
-interface DomEffectInfo {
-  kind: DomEffectKind
-  // CSS selector for the target element. When null, the effect is skipped.
-  targetSelector: string
-  particleCount: number
-}
-
-// Maps an event to effect info, or null when no animation applies.
-function domEffectInfoForEvent(event: LogEvent): DomEffectInfo | null {
-  switch (event.kind) {
-    case 'play_land':
-      return { kind: 'play_land', targetSelector: '.battlefield-active', particleCount: 3 }
-    case 'ability_forest_return':
-      return { kind: 'forest_return', targetSelector: '.battlefield-active', particleCount: 6 }
-    case 'ability_swamp_discard':
-      return { kind: 'swamp_discard', targetSelector: '.battlefield-non-active', particleCount: 4 }
-    case 'ability_mountain_destroy':
-      return { kind: 'mountain_destroy', targetSelector: '.battlefield-non-active', particleCount: 6 }
-    case 'ability_plains_reuse':
-      return { kind: 'plains_reuse', targetSelector: '.battlefield-active', particleCount: 6 }
-    case 'counter_resolved':
-      return { kind: 'counter_resolved', targetSelector: '.battlefield-active', particleCount: 7 }
-    default:
-      return null
-  }
+const DOM_EFFECT_PARTICLES: Readonly<Record<VisualEffectDescriptor['kind'], number>> = {
+  play_land: 3,
+  forest_return: 6,
+  swamp_discard: 4,
+  mountain_destroy: 6,
+  plains_reuse: 6,
+  counter_resolved: 7,
 }
 
 // Build the particle <div> children for an effect element.
-function buildParticles(kind: DomEffectKind, count: number): string {
+function buildParticles(kind: VisualEffectDescriptor['kind'], count: number): string {
   let html = ''
   for (let i = 0; i < count; i += 1) {
     const angle = (360 * i) / count
@@ -330,11 +304,36 @@ function buildParticles(kind: DomEffectKind, count: number): string {
     // only transform+opacity keeps animations on the GPU compositor.
     html += `<div class="dom-effect__particle dom-effect__particle--${i}" style="--angle:${angle}deg;--i:${i}"></div>`
   }
+
   if (kind === 'mountain_destroy') {
     // Extra flash child that fades in the first 25% of the animation.
     html += '<div class="dom-effect__flash"></div>'
   }
   return html
+}
+
+function escapeCssAttribute(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\n\r\f]/g, ' ')
+}
+
+function selectorsForEffect(descriptor: VisualEffectDescriptor, activeActor: number): string[] {
+  const selectors: string[] = []
+  if (descriptor.targetInstanceId) {
+    selectors.push(`[data-battlefield-card-id="${escapeCssAttribute(descriptor.targetInstanceId)}"]`)
+  }
+  if (descriptor.targetCardId) {
+    selectors.push(`[data-card-id="${escapeCssAttribute(descriptor.targetCardId)}"]`)
+  }
+  if (selectors.length === 0 && descriptor.sourceInstanceId) {
+    selectors.push(`[data-battlefield-card-id="${escapeCssAttribute(descriptor.sourceInstanceId)}"]`)
+  }
+  const owner = descriptor.targetActor ?? descriptor.actor
+  selectors.push(owner === activeActor ? '.battlefield-active' : '.battlefield-non-active')
+  return selectors
+}
+
+function isReducedDomEffectQuality(): boolean {
+  return typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) <= 480
 }
 
 // Schedule a single DOM particle effect for the given event. Appends a
@@ -344,33 +343,52 @@ function buildParticles(kind: DomEffectKind, count: number): string {
 export function scheduleDomEffect(
   event: LogEvent,
   animationSpeed: AnimationSpeed,
-  _visualStyle: CardVisualStyle,
+  visualStyle: CardVisualStyle,
+  activeActor = 'actor' in event && typeof event.actor === 'number' ? event.actor : 0,
+  onDone: () => void = () => {},
+  shouldRun: () => boolean = () => true,
 ): void {
   if (animationSpeed === 'off') {
+    onDone()
     return
   }
   if (typeof requestAnimationFrame !== 'function') {
+    onDone()
     return
   }
-  const info = domEffectInfoForEvent(event)
-  if (!info) {
+  const descriptor = visualEffectForEvent(event, visualStyle)
+  if (!descriptor) {
+    onDone()
     return
   }
   const durationMs = durationMsForSpeed(animationSpeed)
   if (durationMs <= 0) {
+    onDone()
     return
   }
   requestAnimationFrame(() => {
-    if (typeof document === 'undefined') {
+    if (!shouldRun()) {
+      onDone()
       return
     }
-    const target = document.querySelector<HTMLElement>(info.targetSelector)
+    if (typeof document === 'undefined') {
+      onDone()
+      return
+    }
+    let target: HTMLElement | null = null
+    for (const selector of selectorsForEffect(descriptor, activeActor)) {
+      target = document.querySelector<HTMLElement>(selector)
+      if (target) {
+        break
+      }
+    }
     if (!target) {
+      onDone()
       return
     }
     const rect = target.getBoundingClientRect()
     const el = document.createElement('div')
-    el.className = `dom-effect dom-effect--${info.kind}`
+    el.className = `dom-effect dom-effect--${descriptor.kind}`
     el.style.cssText = [
       'position:fixed',
       `left:${rect.left}px`,
@@ -378,20 +396,34 @@ export function scheduleDomEffect(
       `width:${rect.width}px`,
       `height:${rect.height}px`,
       `--dom-effect-duration:${durationMs}ms`,
+      `--effect-primary:${descriptor.palette.primary}`,
+      `--effect-secondary:${descriptor.palette.secondary}`,
+      `--effect-glow:${descriptor.palette.glow}`,
       'pointer-events:none',
       'z-index:9999',
       'overflow:hidden',
     ].join(';')
-    el.innerHTML = buildParticles(info.kind, info.particleCount)
+    const baseCount = DOM_EFFECT_PARTICLES[descriptor.kind]
+    const particleCount = isReducedDomEffectQuality() ? Math.max(2, Math.ceil(baseCount / 2)) : baseCount
+    el.innerHTML = buildParticles(descriptor.kind, particleCount)
     document.body.appendChild(el)
     // Self-remove: track animationend events from all particle children plus
     // the flash child (if any). Use a counter so we wait for the last one.
     const particleDivs = el.querySelectorAll<HTMLElement>('.dom-effect__particle,.dom-effect__flash')
     let remaining = particleDivs.length > 0 ? particleDivs.length : 1
+    let completed = false
+    const complete = (): void => {
+      if (completed) {
+        return
+      }
+      completed = true
+      el.remove()
+      onDone()
+    }
     const remove = (): void => {
       remaining -= 1
       if (remaining <= 0) {
-        el.remove()
+        complete()
       }
     }
     for (const p of particleDivs) {
@@ -399,6 +431,15 @@ export function scheduleDomEffect(
     }
     // Fallback timeout: remove even if animationend never fires (e.g. effect
     // hidden by prefers-reduced-motion: reduce or missing keyframe).
-    setTimeout(() => { el.remove() }, durationMs + 500)
+    setTimeout(complete, durationMs + 500)
   })
+}
+
+export function clearDomEffects(): void {
+  if (typeof document === 'undefined') {
+    return
+  }
+  for (const effect of document.querySelectorAll<HTMLElement>('.dom-effect')) {
+    effect.remove()
+  }
 }

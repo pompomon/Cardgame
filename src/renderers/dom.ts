@@ -11,15 +11,17 @@ import {
   resolveTargetedPlayLandAction,
 } from '../app/action-resolution'
 import { isAiLevel } from '../app/ai-levels'
-import { isAnimationSpeed } from '../app/animation-settings'
+import { isAnimationSpeed, MAX_QUEUED_EFFECTS } from '../app/animation-settings'
 import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
+import { visualEffectForEvent } from '../app/visual-effects'
 import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
-import { isBasicLand, type GameAction } from '../game/types'
+import { isBasicLand, type GameAction, type LogEvent } from '../game/types'
 import { canPreviewCard, isCardPreviewSuppressed } from './card-preview'
 import type { AppRenderer } from './types'
 import {
+  clearDomEffects,
   escapeHtml,
   noteRasterCardArtLoadFailure,
   renderCardTile,
@@ -424,6 +426,9 @@ export class DomRenderer implements AppRenderer {
   private lastDomAnimatedEventCount = 0
   // Seed of the last render pass; resets the event cursor on new game.
   private lastDomEffectSeed: number | null = null
+  private domEffectQueue: LogEvent[] = []
+  private domEffectPlaying = false
+  private domEffectGeneration = 0
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -492,6 +497,7 @@ export class DomRenderer implements AppRenderer {
     this.suppressPreviewClickUntil = 0
     this.lastDomAnimatedEventCount = 0
     this.lastDomEffectSeed = null
+    this.resetDomEffectQueue()
   }
 
   private rerender(): void {
@@ -506,6 +512,7 @@ export class DomRenderer implements AppRenderer {
       // No active game — reset cursor so a new game starts fresh.
       this.lastDomAnimatedEventCount = 0
       this.lastDomEffectSeed = null
+      this.resetDomEffectQueue()
       return
     }
     // When the seed changes (rematch or replay), reset the cursor so we
@@ -513,17 +520,61 @@ export class DomRenderer implements AppRenderer {
     if (this.lastDomEffectSeed !== view.seed) {
       this.lastDomEffectSeed = view.seed
       this.lastDomAnimatedEventCount = 0
+      this.resetDomEffectQueue()
     }
     const events = game.events
     if (view.animationSpeed === 'off') {
       // Skip all queued effects and advance cursor so we never catch up.
       this.lastDomAnimatedEventCount = events.length
+      this.resetDomEffectQueue()
       return
     }
     for (let i = this.lastDomAnimatedEventCount; i < events.length; i += 1) {
-      scheduleDomEffect(events[i], view.animationSpeed, view.cardVisualStyle)
+      if (!visualEffectForEvent(events[i], view.cardVisualStyle)) {
+        continue
+      }
+      this.domEffectQueue.push(events[i])
+      while (this.domEffectQueue.length > MAX_QUEUED_EFFECTS) {
+        this.domEffectQueue.shift()
+      }
     }
     this.lastDomAnimatedEventCount = events.length
+    this.pumpDomEffectQueue()
+  }
+
+  private resetDomEffectQueue(): void {
+    this.domEffectQueue.length = 0
+    this.domEffectPlaying = false
+    this.domEffectGeneration += 1
+    clearDomEffects()
+  }
+
+  private pumpDomEffectQueue(): void {
+    const view = this.view
+    const game = view?.game
+    if (!view || !game || view.animationSpeed === 'off' || this.domEffectPlaying) {
+      return
+    }
+    const event = this.domEffectQueue.shift()
+    if (!event) {
+      return
+    }
+    this.domEffectPlaying = true
+    const generation = this.domEffectGeneration
+    scheduleDomEffect(
+      event,
+      view.animationSpeed,
+      view.cardVisualStyle,
+      game.actor,
+      () => {
+        if (generation !== this.domEffectGeneration) {
+          return
+        }
+        this.domEffectPlaying = false
+        this.pumpDomEffectQueue()
+      },
+      () => generation === this.domEffectGeneration,
+    )
   }
 
   private resolveDroppedCard(cardId: string): void {
