@@ -706,7 +706,7 @@ export class DomRenderer implements AppRenderer {
         this.hideCardPreview()
       }, { passive: true })
       this.container.addEventListener('click', (event) => {
-        if (!(event.target as Element).closest('[data-preview-card], [data-card-preview-overlay]')) {
+        if (!(event.target instanceof Element) || !event.target.closest('[data-preview-card], [data-card-preview-overlay]')) {
           this.hideCardPreview()
         }
       })

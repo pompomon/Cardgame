@@ -1,5 +1,5 @@
 import { getInstallUiState, promptInstall } from '../../app/install-support'
-import Phaser from 'phaser'
+import type Phaser from 'phaser'
 import type { LayoutSafeAreaInsets } from './layout'
 import type { MenuOverlayInstallEntry } from './menu-overlay'
 
