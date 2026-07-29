@@ -234,6 +234,34 @@ describe('DOM lobby layout', () => {
     expect(html).toContain('draggable="true"')
     expect(html).toContain('data-action="play_land"')
     expect(html).toContain('data-drop-zone="play-land"')
+    expect(html).toContain('data-preview-card="card-1"')
+  })
+
+  it('suppresses card previews while choosing a play-land target', () => {
+    const gameView = makeGameView()
+    gameView.game!.canInput = true
+    gameView.game!.players[0].handCards = [{ id: 'card-1', name: 'Mountain' }]
+    gameView.game!.players[1].battlefield = [{ instanceId: 'target-1', name: 'Forest' }]
+    gameView.game!.legal.playLandByCard = {
+      'card-1': [
+        { action: { type: 'play_land', actor: 0, cardId: 'card-1', effectTargetId: 'target-1' }, label: 'Destroy Forest' },
+        { action: { type: 'play_land', actor: 0, cardId: 'card-1', effectTargetId: 'target-2' }, label: 'Destroy another land' },
+      ],
+    }
+
+    const html = renderGame(gameView, false, { cardId: 'card-1' })
+
+    expect(html).not.toContain('data-preview-card=')
+    expect(html).toContain('dom-battlefield-card--target')
+  })
+
+  it('suppresses card previews in target-resolution phases', () => {
+    const gameView = makeGameView()
+    gameView.game!.canInput = true
+    gameView.game!.phase = 'swamp_target'
+    gameView.game!.players[0].handCards = [{ id: 'card-1', name: 'Swamp' }]
+
+    expect(renderGame(gameView, false)).not.toContain('data-preview-card=')
   })
 
   it('renders hidden enemy hand placeholders without revealing real card names', () => {
