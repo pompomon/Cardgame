@@ -1,4 +1,5 @@
 import { getInstallUiState, promptInstall } from '../../app/install-support'
+import type Phaser from 'phaser'
 import type { LayoutSafeAreaInsets } from './layout'
 import type { MenuOverlayInstallEntry } from './menu-overlay'
 
@@ -21,8 +22,17 @@ export function parseFontPx(fontSize: string, fallback: number): number {
   if (!match) {
     return fallback
   }
+
   const parsed = Number.parseFloat(match[1])
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+export function snapCardToOrigin(card: Phaser.GameObjects.Container): void {
+  const originX = card.getData('originX')
+  const originY = card.getData('originY')
+  if (typeof originX === 'number' && typeof originY === 'number') {
+    card.setPosition(originX, originY)
+  }
 }
 
 function parseCssPixels(value: string): number {

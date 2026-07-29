@@ -18,6 +18,7 @@ import { visualEffectForEvent } from '../app/visual-effects'
 import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { isBasicLand, type GameAction, type LogEvent } from '../game/types'
+import { canPreviewCard, isCardPreviewSuppressed } from './card-preview'
 import type { AppRenderer } from './types'
 import {
   clearDomEffects,
@@ -59,7 +60,7 @@ function renderPlayLandButton(option: PlayLandOption, cardName: string, style: A
   return `<button data-action="play_land" data-card-id="${escapeHtml(option.action.cardId)}"${targetAttr}>${renderActionIcon(cardName, style)}${escapeHtml(option.label)}</button>`
 }
 
-function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiState, style: AppViewModel['cardVisualStyle'], isActiveHand: boolean): string {
+function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiState, style: AppViewModel['cardVisualStyle'], isActiveHand: boolean, previewAllowed: boolean): string {
   const options = game.legal.playLandByCard[card.id] ?? []
   const playable = isActiveHand && game.canInput && game.phase === 'main' && options.length > 0
   const draggable = playable ? 'true' : 'false'
@@ -72,9 +73,12 @@ function renderHandCard(card: PlayerUiState['handCards'][number], game: GameUiSt
     : card.name === HIDDEN_HAND_CARD_NAME
       ? HIDDEN_HAND_DISPLAY_NAME
       : `${escapeHtml(card.name)} card`
+  const previewAttrs = previewAllowed
+    ? ` data-preview-card="${escapeHtml(card.id)}" data-preview-card-name="${escapeHtml(card.name)}"`
+    : ''
   return `
     <article class="dom-card-shell${cardStateClass}" data-card-id="${escapeHtml(card.id)}">
-      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}" role="button" tabindex="${playable ? '0' : '-1'}" aria-label="${dragHandleLabel}" aria-disabled="${playable ? 'false' : 'true'}">
+      <div class="dom-card-drag" draggable="${draggable}" data-draggable-card="${escapeHtml(card.id)}"${previewAttrs} role="button" tabindex="${previewAllowed || playable ? '0' : '-1'}" aria-label="${dragHandleLabel}" aria-disabled="${playable ? 'false' : 'true'}">
         ${renderCardTile(card.name, style)}
       </div>
       ${actionButtons}
@@ -109,12 +113,16 @@ function renderBattlefieldCard(
   style: AppViewModel['cardVisualStyle'],
   playableTargetIds: Set<string>,
   targetAction: 'play_land_target' | 'plains_reuse_target',
+  previewContext: Parameters<typeof canPreviewCard>[0],
 ): string {
   const isTarget = playableTargetIds.has(entry.instanceId)
+  const previewAttrs = canPreviewCard(previewContext, isTarget)
+    ? ` data-preview-card="${escapeHtml(entry.instanceId)}" data-preview-card-name="${escapeHtml(entry.name)}" tabindex="0" role="button" aria-label="View ${escapeHtml(entry.name)} card"`
+    : ''
   const targetButton = isTarget
     ? `<button class="dom-target-hotspot" data-action="${targetAction}" data-target-id="${escapeHtml(entry.instanceId)}" aria-label="Choose ${escapeHtml(entry.name)} as target">Choose target</button>`
     : ''
-  return `<div class="dom-battlefield-card ${isTarget ? 'dom-battlefield-card--target' : ''}" data-battlefield-card-id="${escapeHtml(entry.instanceId)}">${renderCardTile(entry.name, style)}${targetButton}</div>`
+  return `<div class="dom-battlefield-card ${isTarget ? 'dom-battlefield-card--target' : ''}" data-battlefield-card-id="${escapeHtml(entry.instanceId)}"${previewAttrs}>${renderCardTile(entry.name, style)}${targetButton}</div>`
 }
 
 function renderPlayerSummary(player: PlayerUiState, playerIndex: number, controller: string, kind: 'active' | 'non-active'): string {
@@ -133,6 +141,7 @@ function renderBattlefield(
   view: AppViewModel,
   targetIds: Set<string>,
   targetAction: 'play_land_target' | 'plains_reuse_target',
+  previewContext: Parameters<typeof canPreviewCard>[0],
 ): string {
   const isActiveDropZone = kind === 'active' && view.game?.canInput && view.game.phase === 'main'
   return `
@@ -142,7 +151,7 @@ function renderBattlefield(
         ${kind === 'active' ? '<span class="dom-pill">Active side</span>' : ''}
       </div>
       <div class="card-tile-row dom-battlefield-row">
-        ${player.battlefield.length > 0 ? player.battlefield.map((entry) => renderBattlefieldCard(entry, view.cardVisualStyle, targetIds, targetAction)).join('') : '<span class="dom-empty">None</span>'}
+        ${player.battlefield.length > 0 ? player.battlefield.map((entry) => renderBattlefieldCard(entry, view.cardVisualStyle, targetIds, targetAction, previewContext)).join('') : '<span class="dom-empty">None</span>'}
       </div>
     </article>
   `
@@ -308,6 +317,12 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
     : new Set<string>()
   const battlefieldTargetIds = playTargetIds.size > 0 ? playTargetIds : plainsTargetIds
   const battlefieldTargetAction = playTargetIds.size > 0 ? 'play_land_target' : 'plains_reuse_target'
+  const previewContext = {
+    phase: game.phase,
+    pendingPlayLandTargetSelection: pendingTargetSelection !== null,
+    menuOpen,
+  }
+  const previewAllowed = !isCardPreviewSuppressed(previewContext)
   const recordingMeta = view.recording.metadata
   const recordingMetaText = recordingMeta
     ? `Seed ${recordingMeta.seed} • Mode ${recordingMeta.mode} • AI ${recordingMeta.aiLevel} • Controllers ${recordingMeta.controllers[0]}/${recordingMeta.controllers[1]} • Completed ${recordingMeta.completed ? 'Yes' : 'No'}`
@@ -369,14 +384,14 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
         <div class="board dom-board">
           <section class="dom-board__opponent">
             ${renderPlayerSummary(nonActiveState, nonActiveIndex, view.controllers[nonActiveIndex], 'non-active')}
-            ${renderBattlefield(nonActiveState, nonActiveIndex, 'non-active', view, battlefieldTargetIds, battlefieldTargetAction)}
+            ${renderBattlefield(nonActiveState, nonActiveIndex, 'non-active', view, battlefieldTargetIds, battlefieldTargetAction, previewContext)}
           </section>
           <section class="dom-board__middle">
-            ${renderBattlefield(activeState, activeIndex, 'active', view, battlefieldTargetIds, battlefieldTargetAction)}
+            ${renderBattlefield(activeState, activeIndex, 'active', view, battlefieldTargetIds, battlefieldTargetAction, previewContext)}
           </section>
           <section class="dom-board__hand" aria-label="Active hand">
             ${renderPlayerSummary(activeState, activeIndex, view.controllers[activeIndex], 'active')}
-            <div class="card-tile-row dom-hand-row">${activeState.handCards.length > 0 ? activeState.handCards.map((card) => renderHandCard(card, game, view.cardVisualStyle, true)).join('') : '<span class="dom-empty">No cards</span>'}</div>
+            <div class="card-tile-row dom-hand-row">${activeState.handCards.length > 0 ? activeState.handCards.map((card) => renderHandCard(card, game, view.cardVisualStyle, true, previewAllowed)).join('') : '<span class="dom-empty">No cards</span>'}</div>
           </section>
         </div>
         ${renderLogDrawer(game)}
@@ -387,6 +402,9 @@ export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetS
       ${renderSwampDiscardControls(game, view)}
       ${renderPlainsReuseControls(game, view)}
       ${renderPendingPlayLandTargetPicker(game, pendingTargetSelection, view)}
+      <div class="dom-card-preview" data-card-preview-overlay hidden role="status" aria-live="polite" aria-label="Card preview">
+        <div class="dom-card-preview__card" data-card-preview-content></div>
+      </div>
     </section>
   `
 }
@@ -400,6 +418,8 @@ export class DomRenderer implements AppRenderer {
   private menuOpen = false
   private pendingTargetSelection: PendingPlayLandTargetSelection | null = null
   private draggedCardId: string | null = null
+  private previewPinnedKey: string | null = null
+  private suppressPreviewClickUntil = 0
   private containerListenersBound = false
   // DOM effect animation cursor — tracks how many log events have already
   // been animated so only new events since the last render are scheduled.
@@ -442,6 +462,7 @@ export class DomRenderer implements AppRenderer {
     } else if (this.pendingTargetSelection && !view.game.legal.playLandByCard[this.pendingTargetSelection.cardId]) {
       this.pendingTargetSelection = null
     }
+    this.previewPinnedKey = null
 
     const isP2PMode = view.mode === 'p2p-host' || view.mode === 'p2p-join'
     const p2pReady = !isP2PMode || view.p2pStarted
@@ -472,6 +493,8 @@ export class DomRenderer implements AppRenderer {
     this.menuOpen = false
     this.pendingTargetSelection = null
     this.draggedCardId = null
+    this.previewPinnedKey = null
+    this.suppressPreviewClickUntil = 0
     this.lastDomAnimatedEventCount = 0
     this.lastDomEffectSeed = null
     this.resetDomEffectQueue()
@@ -628,12 +651,14 @@ export class DomRenderer implements AppRenderer {
           return
         }
         this.draggedCardId = cardId
+        this.hideCardPreview()
         event.dataTransfer?.setData('text/plain', cardId)
         event.dataTransfer?.setData('application/x-cardgame-card-id', cardId)
         event.dataTransfer?.setDragImage?.(element, 40, 60)
       })
       element.addEventListener('dragend', () => {
         this.draggedCardId = null
+        this.suppressPreviewClickUntil = Date.now() + 250
       })
       element.addEventListener('keydown', (event) => {
         if ((event.key === 'Enter' || event.key === ' ') && element.dataset.draggableCard && element.getAttribute('draggable') === 'true' && !this.pendingTargetSelection) {
@@ -668,6 +693,7 @@ export class DomRenderer implements AppRenderer {
       this.container.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
           this.draggedCardId = null
+          this.hideCardPreview()
           if (this.pendingTargetSelection) {
             this.pendingTargetSelection = null
             this.controller?.reportStatus('Target selection cancelled.')
@@ -677,15 +703,81 @@ export class DomRenderer implements AppRenderer {
       })
       this.container.addEventListener('scroll', () => {
         this.draggedCardId = null
+        this.hideCardPreview()
       }, { passive: true })
+      this.container.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element) || !event.target.closest('[data-preview-card], [data-card-preview-overlay]')) {
+          this.hideCardPreview()
+        }
+      })
       this.containerListenersBound = true
     }
+  }
+
+  private showCardPreview(element: HTMLElement, pinned: boolean): void {
+    const overlay = this.container?.querySelector<HTMLElement>('[data-card-preview-overlay]')
+    const content = overlay?.querySelector<HTMLElement>('[data-card-preview-content]')
+    const cardName = element.dataset.previewCardName
+    const key = element.dataset.previewCard
+    if (!overlay || !content || !cardName || !key || !this.view) {
+      return
+    }
+    content.innerHTML = renderCardTile(cardName, this.view.cardVisualStyle)
+    overlay.hidden = false
+    overlay.dataset.pinned = pinned ? 'true' : 'false'
+    this.previewPinnedKey = pinned ? key : null
+  }
+
+  private hideCardPreview(): void {
+    const overlay = this.container?.querySelector<HTMLElement>('[data-card-preview-overlay]')
+    if (overlay) {
+      overlay.hidden = true
+      delete overlay.dataset.pinned
+    }
+    this.previewPinnedKey = null
+  }
+
+  private bindCardPreviews(): void {
+    this.container?.querySelectorAll<HTMLElement>('[data-preview-card]').forEach((element) => {
+      element.addEventListener('pointerenter', (event) => {
+        if (event.pointerType !== 'touch' && this.previewPinnedKey === null) {
+          this.showCardPreview(element, false)
+        }
+      })
+      element.addEventListener('pointerleave', () => {
+        if (this.previewPinnedKey === null) {
+          this.hideCardPreview()
+        }
+      })
+      element.addEventListener('focus', () => {
+        if (this.previewPinnedKey === null) {
+          this.showCardPreview(element, false)
+        }
+      })
+      element.addEventListener('blur', () => {
+        if (this.previewPinnedKey === null) {
+          this.hideCardPreview()
+        }
+      })
+      element.addEventListener('click', () => {
+        if (Date.now() < this.suppressPreviewClickUntil) {
+          return
+        }
+        const key = element.dataset.previewCard
+        if (key && this.previewPinnedKey === key) {
+          this.hideCardPreview()
+        } else {
+          this.showCardPreview(element, true)
+        }
+      })
+    })
   }
 
   private bindEvents(): void {
     if (!this.container || !this.controller || !this.view) {
       return
     }
+    this.bindCardPreviews()
 
     this.container.querySelector('#menu-toggle')?.addEventListener('click', () => {
       this.menuOpen = !this.menuOpen
