@@ -54,6 +54,7 @@ import {
   type EffectQueueState,
 } from './effects'
 import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx } from './ui-utils'
+import { buildResponsePickerOptions } from './response-options'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -1987,21 +1988,10 @@ class CardgameScene extends Phaser.Scene {
     }
     if (game.canInput && game.phase === 'respond') {
       if (!this.pendingTargetPicker) {
-        const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.counterOptions.map((option, index) => ({
-          effectTargetId: `respond-counter-${index}`,
-          label: option.label,
-          action: option.action,
-        }))
-        if (game.legal.canPassResponse) {
-          options.push({
-            effectTargetId: 'respond-pass',
-            label: 'Pass',
-            action: { type: 'pass_response', actor: game.actor },
-          })
-        }
+        const options = buildResponsePickerOptions(game)
         if (options.length > 0) {
           this.showTargetPicker(
-            options.map((option) => ({ effectTargetId: option.effectTargetId, label: option.label })),
+            options.map(({ effectTargetId, label, a11yLabel }) => ({ effectTargetId, label, a11yLabel })),
             (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
             false,
             {
@@ -2149,7 +2139,7 @@ class CardgameScene extends Phaser.Scene {
   }
 
   private showTargetPicker(
-    options: Array<{ effectTargetId?: string; label: string; cardName?: string }>,
+    options: Array<{ effectTargetId?: string; label: string; a11yLabel?: string; cardName?: string }>,
     resolver: (effectTargetId?: string) => GameAction | null,
     showAllTargets = false,
     config: TargetPickerConfig = {},
@@ -2278,7 +2268,7 @@ class CardgameScene extends Phaser.Scene {
       optionsList.add(button)
       this.pendingTargetPickerA11yEntries.push({
         key: `target:${option.effectTargetId ?? `fallback-index-${index}`}`,
-        label: option.label,
+        label: option.a11yLabel ?? option.label,
         onSelect: selectOption,
       })
     })
