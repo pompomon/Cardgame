@@ -26,7 +26,7 @@ function compactCounterLabel(
 }
 
 export function buildResponsePickerOptions(game: ResponsePickerGame): ResponsePickerOption[] {
-  const options = game.legal.counterOptions.map((option, index) => ({
+  const options: ResponsePickerOption[] = game.legal.counterOptions.map((option, index) => ({
     effectTargetId: `respond-counter-${index}`,
     label: compactCounterLabel(game, option),
     a11yLabel: option.label,
