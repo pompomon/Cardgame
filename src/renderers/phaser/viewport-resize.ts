@@ -37,7 +37,7 @@ export function createViewportResizeScheduler(
       frame = requestFrame(() => {
         frame = null
         const size = readSize()
-        if (!size || (size.width === lastSize?.width && size.height === lastSize.height)) {
+        if (!size || (size.width === lastSize?.width && size.height === lastSize?.height)) {
           return
         }
         lastSize = size
