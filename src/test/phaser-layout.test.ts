@@ -8,6 +8,17 @@ import {
 describe('phaser buildLayout', () => {
   const px = (value: string): number => Number.parseFloat(value)
 
+  it('restores the original layout after a phone rotates to landscape and back', () => {
+    const portrait = buildLayout(673, 842, 'vertical')
+    const landscape = buildLayout(842, 673, 'horizontal')
+    const restored = buildLayout(673, 842, 'vertical')
+
+    expect(portrait.isCollapsed).toBe(true)
+    expect(landscape.isCollapsed).toBe(false)
+    expect(restored).toEqual(portrait)
+    expect(landscape.boardColumnLeft).toBeGreaterThan(landscape.logColumnLeft + landscape.logColumnWidth)
+  })
+
   it('caps the log column at ~25% of viewport width on wide screens', () => {
     const layout = buildLayout(1280, 820, 'horizontal')
     expect(layout.isCollapsed).toBe(false)

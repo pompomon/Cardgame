@@ -909,8 +909,6 @@ textarea {
 }
 
 #app.phaser-root .phaser-host canvas {
-  width: 100% !important;
-  height: 100% !important;
   max-width: none;
   display: block;
   touch-action: none;

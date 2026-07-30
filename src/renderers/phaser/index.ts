@@ -55,6 +55,7 @@ import {
   type EffectQueueState,
 } from './effects'
 import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx, snapCardToOrigin } from './ui-utils'
+import { installViewportResizeSync } from './viewport-resize'
 import { buildResponsePickerOptions } from './response-options'
 
 const BASE_WIDTH = 1280
@@ -2379,8 +2380,8 @@ export class PhaserRenderer implements AppRenderer {
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
   private safeAreaInsets: LayoutSafeAreaInsets = {}
+  private removeViewportResizeSync: (() => void) | null = null
   currentView: AppViewModel | null = null
-
   safeAreaInsetsForViewport(width: number, height: number): LayoutSafeAreaInsets {
     // Clamp insets against the current viewport so stale CSS env readings
     // cannot consume the entire scene if orientation changes mid-session.
@@ -2469,6 +2470,10 @@ export class PhaserRenderer implements AppRenderer {
       input: {
         activePointers: 3,
       },
+    })
+    this.removeViewportResizeSync = installViewportResizeSync(canvasHost, ({ width, height }) => {
+      this.safeAreaInsets = measureSafeAreaInsets(container)
+      this.game?.scale.resize(width, height)
     })
   }
 
@@ -2941,6 +2946,8 @@ export class PhaserRenderer implements AppRenderer {
   }
 
   unmount(): void {
+    this.removeViewportResizeSync?.()
+    this.removeViewportResizeSync = null
     this.fileInput?.remove()
     this.fileInput = null
     this.lobbyP2POverlay?.remove()
