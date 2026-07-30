@@ -95,6 +95,28 @@ describe('buildViewModel', () => {
     expect(vm.game?.legal.plainsReuseOptions.map((entry) => entry.action.effectTargetId)).toEqual(['g-1', 'g-2'])
   })
 
+  it('keeps detailed counter labels distinct by additional discarded card', () => {
+    const state = createState(57)
+    state.game!.phase = 'respond'
+    state.game!.pendingLandPlay = {
+      actor: 1,
+      card: { id: 'target-swamp', name: 'Swamp', type: 'land' },
+    }
+    state.game!.players[0].hand = [
+      { id: 'counter-island', name: 'Island', type: 'land' },
+      { id: 'discard-forest', name: 'Forest', type: 'land' },
+      { id: 'discard-mountain', name: 'Mountain', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.game?.pendingLandName).toBe('Swamp')
+    expect(vm.game?.legal.counterOptions.map((option) => option.label)).toEqual([
+      'Counter with Island (discard Island + Forest)',
+      'Counter with Island (discard Island + Mountain)',
+    ])
+  })
+
   it('projects game and adventure snapshots without sharing controller-owned references', () => {
     const state = createState(55)
     state.game!.log = ['entry-0', 'entry-1']
