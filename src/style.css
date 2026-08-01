@@ -1033,6 +1033,16 @@ textarea {
   overflow: hidden;
 }
 
+.dom-effect-retained-target {
+  pointer-events: none;
+  z-index: 9998;
+}
+
+.dom-effect-retained-target .dom-card {
+  width: 100%;
+  height: 100%;
+}
+
 .dom-effect__particle {
   position: absolute;
   border-radius: 2px;

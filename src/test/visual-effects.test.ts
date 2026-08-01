@@ -20,6 +20,7 @@ describe('visual effect descriptors', () => {
       land: 'Mountain',
       sourceInstanceId: 'p0-2',
       targetInstanceId: 'p1-4',
+      targetCardName: 'Forest',
       visualStyle: 'monochrome',
     })
     expect(result?.palette).toEqual({
