@@ -56,7 +56,8 @@ import {
 } from './effects'
 import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx, snapCardToOrigin } from './ui-utils'
 import { installViewportResizeSync } from './viewport-resize'
-import { buildResponsePickerOptions } from './response-options'
+import { buildCounterHandOptions } from './response-options'
+import { renderResponseControls } from './response-controls'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -1892,11 +1893,21 @@ class CardgameScene extends Phaser.Scene {
     const actor = game.actor
     const actorCards = game.players[actor].handCards
     const canDrag = game.canInput && game.phase === 'main' && this.pendingPlayLandTargetSelection === null
+    const response = game.canInput && game.phase === 'respond'
+      ? buildCounterHandOptions(game)
+      : null
+    const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
 
     actorCards.forEach((card, index) => {
       const x = xForCardInBoardColumn(this.currentLayout, index, actorCards.length)
       const y = this.currentLayout.handCardsY
-      const cardObject = this.renderStaticCard(x, y, card.name)
+      const responseChoice = responseChoices.get(card.id)
+      const cardObject = this.renderStaticCard(x, y, card.name, {
+        highlight: response?.requiredIslandId === card.id || responseChoice !== undefined,
+        onClick: responseChoice
+          ? () => this.rendererRef.controller?.submitAction(responseChoice.action)
+          : undefined,
+      })
       cardObject.setData('cardId', card.id)
       cardObject.setData('originX', x)
       cardObject.setData('originY', y)
@@ -1905,7 +1916,9 @@ class CardgameScene extends Phaser.Scene {
         cardObject.setInteractive({ draggable: true, useHandCursor: true })
         this.input.setDraggable(cardObject)
       }
-      this.cardPreview?.bind(cardObject, card.name)
+      if (!response) {
+        this.cardPreview?.bind(cardObject, card.name)
+      }
       this.rootContainer?.add(cardObject)
     })
 
@@ -1982,19 +1995,16 @@ class CardgameScene extends Phaser.Scene {
       return
     }
     if (game.canInput && game.phase === 'respond') {
-      if (!this.pendingTargetPicker) {
-        const options = buildResponsePickerOptions(game)
-        if (options.length > 0) {
-          this.showTargetPicker(
-            options.map(({ effectTargetId, label, a11yLabel }) => ({ effectTargetId, label, a11yLabel })),
-            (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
-            false,
-            {
-              title: 'Choose response',
-              allowCancel: false,
-            },
-          )
-        }
+      if (response && this.rootContainer) {
+        renderResponseControls({
+          scene: this,
+          root: this.rootContainer,
+          layout: this.currentLayout,
+          response,
+          textColor: UI_THEME.primaryText,
+          createButton: (...args) => this.createButton(...args),
+          onPass: () => this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor }),
+        })
       }
       return
     }
