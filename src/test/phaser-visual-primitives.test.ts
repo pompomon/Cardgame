@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('phaser', () => ({ default: {} }))
+
+import { buildRoundedCoverImage } from '../renderers/phaser/visual-primitives'
 import {
   computeCoverCrop,
   computeRoundedCoverTextureSize,
@@ -7,6 +11,29 @@ import {
 } from '../renderers/phaser/rounded-cover'
 
 describe('Phaser rounded cover artwork', () => {
+  it('falls back to the cover image when source artwork is unavailable', () => {
+    const image = {
+      setCrop: vi.fn(),
+      setScale: vi.fn(),
+    }
+    const scene = {
+      add: {
+        image: vi.fn(() => image),
+      },
+      textures: {
+        createCanvas: vi.fn(),
+        exists: vi.fn(),
+        get: vi.fn(() => ({
+          getSourceImage: vi.fn(() => null),
+        })),
+      },
+    }
+
+    expect(buildRoundedCoverImage(scene as never, 'missing-art', 72, 100, 8, 64)).toBe(image)
+    expect(scene.textures.createCanvas).not.toHaveBeenCalled()
+    expect(scene.add.image).toHaveBeenCalledWith(0, 0, 'missing-art')
+  })
+
   it('center-crops square artwork to portrait card dimensions', () => {
     expect(computeCoverCrop(1024, 1024, 72, 100)).toEqual({
       sourceX: 143.36,

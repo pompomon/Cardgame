@@ -120,9 +120,14 @@ export function buildRoundedCoverImage(
   const targetWidth = Math.max(1, Math.round(width))
   const targetHeight = Math.max(1, Math.round(height))
   const targetRadius = Math.max(0, Math.round(radius))
-  const source = scene.textures.get(sourceKey).getSourceImage()
-  const sourceWidth = source.width > 0 ? source.width : fallbackSize
-  const sourceHeight = source.height > 0 ? source.height : fallbackSize
+  const source = scene.textures.get(sourceKey).getSourceImage() as
+    | (CanvasImageSource & { width?: number; height?: number })
+    | null
+  if (!source) {
+    return buildCoverImage(scene, sourceKey, targetWidth, targetHeight, fallbackSize)
+  }
+  const sourceWidth = typeof source.width === 'number' && source.width > 0 ? source.width : fallbackSize
+  const sourceHeight = typeof source.height === 'number' && source.height > 0 ? source.height : fallbackSize
   const textureSize = computeRoundedCoverTextureSize(
     sourceWidth,
     sourceHeight,
@@ -136,7 +141,7 @@ export function buildRoundedCoverImage(
     if (texture) {
       paintRoundedCover(
         texture.getContext(),
-        source as CanvasImageSource,
+        source,
         sourceWidth,
         sourceHeight,
         textureSize.width,
