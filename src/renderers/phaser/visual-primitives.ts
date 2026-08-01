@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { computeRoundedCoverTextureSize, paintRoundedCover, roundedCoverTextureKey } from './rounded-cover'
 
 export interface PolishedPanelConfig {
   fill: number
@@ -106,6 +107,49 @@ export function buildCoverImage(
     cropH,
   )
   return image
+}
+
+export function buildRoundedCoverImage(
+  scene: Phaser.Scene,
+  sourceKey: string,
+  width: number,
+  height: number,
+  radius: number,
+  fallbackSize: number,
+): Phaser.GameObjects.Image {
+  const targetWidth = Math.max(1, Math.round(width))
+  const targetHeight = Math.max(1, Math.round(height))
+  const targetRadius = Math.max(0, Math.round(radius))
+  const source = scene.textures.get(sourceKey).getSourceImage()
+  const sourceWidth = source.width > 0 ? source.width : fallbackSize
+  const sourceHeight = source.height > 0 ? source.height : fallbackSize
+  const textureSize = computeRoundedCoverTextureSize(
+    sourceWidth,
+    sourceHeight,
+    targetWidth,
+    targetHeight,
+    targetRadius,
+  )
+  const textureKey = roundedCoverTextureKey(sourceKey, textureSize.width, textureSize.height, textureSize.radius)
+  if (!scene.textures.exists(textureKey)) {
+    const texture = scene.textures.createCanvas(textureKey, textureSize.width, textureSize.height)
+    if (texture) {
+      paintRoundedCover(
+        texture.getContext(),
+        source as CanvasImageSource,
+        sourceWidth,
+        sourceHeight,
+        textureSize.width,
+        textureSize.height,
+        textureSize.radius,
+      )
+      texture.refresh()
+    }
+  }
+  if (!scene.textures.exists(textureKey)) {
+    return buildCoverImage(scene, sourceKey, targetWidth, targetHeight, fallbackSize)
+  }
+  return scene.add.image(0, 0, textureKey).setDisplaySize(targetWidth, targetHeight)
 }
 
 export function buildCardFrame(

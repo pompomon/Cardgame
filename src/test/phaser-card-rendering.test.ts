@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CARD_BACK_KEY } from '../app/card-art'
 import { CARD_VISUAL_STYLES } from '../app/card-visual-styles'
 import {
+  cardRenderContentForMode,
   canRenderCardBackTexture,
   preloadCardArtEntriesForStyle,
   rasterCardArtTextureCandidates,
@@ -9,6 +10,17 @@ import {
 } from '../renderers/phaser/card-rendering'
 
 describe('phaser card rendering helpers', () => {
+  it('shows labels on normal cards but only rounded artwork in previews', () => {
+    expect(cardRenderContentForMode('standard')).toEqual({
+      showLabel: true,
+      roundArtwork: false,
+    })
+    expect(cardRenderContentForMode('preview')).toEqual({
+      showLabel: false,
+      roundArtwork: true,
+    })
+  })
+
   it('prefers HD primary art before the HD raster fallback', () => {
     expect(rasterCardArtTextureCandidates('Forest', 'hd')).toEqual([
       'card-art:hd:Forest',
