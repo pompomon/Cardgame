@@ -347,6 +347,7 @@ export function scheduleDomEffect(
   activeActor = 'actor' in event && typeof event.actor === 'number' ? event.actor : 0,
   onDone: () => void = () => {},
   shouldRun: () => boolean = () => true,
+  retainedTargetAnchors: ReadonlyMap<string, DomEffectAnchor> = new Map(),
 ): void {
   if (animationSpeed === 'off') {
     onDone()
@@ -376,17 +377,43 @@ export function scheduleDomEffect(
       return
     }
     let target: HTMLElement | null = null
-    for (const selector of selectorsForEffect(descriptor, activeActor)) {
-      target = document.querySelector<HTMLElement>(selector)
-      if (target) {
-        break
+    let retainedTarget: HTMLElement | null = null
+    const retainedAnchor = descriptor.kind === 'mountain_destroy' && descriptor.targetInstanceId
+      ? retainedTargetAnchors.get(descriptor.targetInstanceId)
+      : undefined
+    if (retainedAnchor && descriptor.targetCardName && descriptor.targetInstanceId) {
+      target = document.querySelector<HTMLElement>(
+        `[data-battlefield-card-id="${escapeCssAttribute(descriptor.targetInstanceId)}"]`,
+      )
+    }
+    if (!target && retainedAnchor && descriptor.targetCardName) {
+      retainedTarget = document.createElement('div')
+      retainedTarget.className = 'dom-effect-retained-target'
+      retainedTarget.setAttribute('aria-hidden', 'true')
+      retainedTarget.style.cssText = [
+        'position:fixed',
+        `left:${retainedAnchor.left}px`,
+        `top:${retainedAnchor.top}px`,
+        `width:${retainedAnchor.width}px`,
+        `height:${retainedAnchor.height}px`,
+      ].join(';')
+      retainedTarget.innerHTML = renderCardTile(descriptor.targetCardName, descriptor.visualStyle)
+      document.body.appendChild(retainedTarget)
+      target = retainedTarget
+    }
+    if (!target) {
+      for (const selector of selectorsForEffect(descriptor, activeActor)) {
+        target = document.querySelector<HTMLElement>(selector)
+        if (target) {
+          break
+        }
       }
     }
     if (!target) {
       onDone()
       return
     }
-    const rect = target.getBoundingClientRect()
+    const rect = retainedTarget ? retainedAnchor! : target.getBoundingClientRect()
     const el = document.createElement('div')
     el.className = `dom-effect dom-effect--${descriptor.kind}`
     el.style.cssText = [
@@ -418,6 +445,7 @@ export function scheduleDomEffect(
       }
       completed = true
       el.remove()
+      retainedTarget?.remove()
       onDone()
     }
     const remove = (): void => {
@@ -435,11 +463,18 @@ export function scheduleDomEffect(
   })
 }
 
+export interface DomEffectAnchor {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export function clearDomEffects(): void {
   if (typeof document === 'undefined') {
     return
   }
-  for (const effect of document.querySelectorAll<HTMLElement>('.dom-effect')) {
+  for (const effect of document.querySelectorAll<HTMLElement>('.dom-effect,.dom-effect-retained-target')) {
     effect.remove()
   }
 }

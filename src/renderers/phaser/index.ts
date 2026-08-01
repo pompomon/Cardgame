@@ -41,6 +41,7 @@ import { computeLogScrollLayout } from './log-scroll'
 import { createMenuOverlay } from './menu-overlay'
 import { bindScrollableViewport } from './scrollable-viewport'
 import { computeEffectAnchorFromLayout, computeEffectSourceAnchor } from './effect-anchoring'
+import { EffectTargetRetention } from './effect-target-retention'
 import { isPhoneSizedViewport } from './quality'
 import { buildBattlefieldBackdrop, buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
 import {
@@ -51,14 +52,12 @@ import {
   playAbilityEffect,
   pumpEffectQueue,
   type EffectAnchor,
-  type EffectDescriptor,
   type EffectQueueState,
 } from './effects'
 import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx, snapCardToOrigin } from './ui-utils'
 import { installViewportResizeSync } from './viewport-resize'
 import { buildCounterHandOptions } from './response-options'
 import { renderResponseControls } from './response-controls'
-
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
 const DEFAULT_TARGET_OPTIONS = 5
@@ -556,6 +555,7 @@ class CardgameScene extends Phaser.Scene {
   private cardPositionRegistry = new Map<string, EffectAnchor>()
   private cardPreview: CardPreviewController | null = null
   private previousCardPositionRegistry = new Map<string, EffectAnchor>()
+  private retainedEffectTargets = new EffectTargetRetention()
 
   constructor(rendererRef: PhaserRenderer) {
     super(CARDGAME_SCENE_KEY)
@@ -680,6 +680,7 @@ class CardgameScene extends Phaser.Scene {
       this.input.off('dragend', onDragEnd)
       this.input.off('drop', onDrop)
       this.cardPreview?.destroy()
+      this.retainedEffectTargets.clear()
       this.cardPreview = null
     })
 
@@ -733,6 +734,7 @@ class CardgameScene extends Phaser.Scene {
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
         // animations queued from a previous match.
         clearEffectQueue(this.effectQueue)
+        this.retainedEffectTargets.clear()
         this.lastAnimatedEventCount = 0
         this.previousCardPositionRegistry.clear()
         this.cardPositionRegistry.clear()
@@ -741,6 +743,7 @@ class CardgameScene extends Phaser.Scene {
     } else {
       this.lastRenderedSeed = null
       clearEffectQueue(this.effectQueue)
+      this.retainedEffectTargets.clear()
       this.lastAnimatedEventCount = 0
       this.previousCardPositionRegistry.clear()
       this.cardPositionRegistry.clear()
@@ -1047,6 +1050,7 @@ class CardgameScene extends Phaser.Scene {
       // Engine state went backwards (e.g. replay rewind). Reset and wait
       // for renderView to seed `lastAnimatedEventCount = events.length`.
       clearEffectQueue(this.effectQueue)
+      this.retainedEffectTargets.clear()
       this.lastAnimatedEventCount = events.length
       return
     }
@@ -1054,6 +1058,7 @@ class CardgameScene extends Phaser.Scene {
       // Drop any pending visuals immediately and snap the marker forward so
       // toggling the setting on later doesn't replay backlog.
       clearEffectQueue(this.effectQueue)
+      this.retainedEffectTargets.clear()
       this.lastAnimatedEventCount = events.length
       return
     }
@@ -1077,27 +1082,22 @@ class CardgameScene extends Phaser.Scene {
         animationSpeed: speed,
         durationMs: durationMsForSpeed(speed),
         run: (descriptor, durationMs, done) => {
-          const anchor = this.computeEffectAnchor(latest, descriptor)
+          const anchor = computeEffectAnchorFromLayout(latest, descriptor, this.currentLayout, this.cardPositionRegistry, this.previousCardPositionRegistry)
           descriptor.sourceAnchor = computeEffectSourceAnchor(
             descriptor,
             this.cardPositionRegistry,
             this.previousCardPositionRegistry,
           )
           const quality = isPhoneSizedViewport(this.scale.width, this.scale.height) ? 'reduced' : 'full'
-          playAbilityEffect(this, anchor, descriptor, durationMs, done, quality)
+          const releaseTarget = this.retainedEffectTargets.retainMountainTarget(
+            descriptor,
+            this.previousCardPositionRegistry,
+            (x, y, cardName, visualStyle) => this.renderStaticCard(x, y, cardName, { visualStyle }),
+          )
+          playAbilityEffect(this, anchor, descriptor, durationMs, () => { releaseTarget(); done() }, quality)
         },
       }
     })
-  }
-
-  private computeEffectAnchor(view: AppViewModel, descriptor: EffectDescriptor): EffectAnchor {
-    return computeEffectAnchorFromLayout(
-      view,
-      descriptor,
-      this.currentLayout,
-      this.cardPositionRegistry,
-      this.previousCardPositionRegistry,
-    )
   }
 
   private renderGame(view: AppViewModel): void {
@@ -1786,7 +1786,7 @@ class CardgameScene extends Phaser.Scene {
     label: string,
     config: {
       onClick?: () => void
-      highlight?: boolean
+      highlight?: boolean; visualStyle?: AppViewModel['cardVisualStyle']
     } = {},
   ): Phaser.GameObjects.Container {
     // Hidden-hand sentinel: render a face-down card so the local human
@@ -1795,7 +1795,7 @@ class CardgameScene extends Phaser.Scene {
     if (label === HIDDEN_HAND_CARD_NAME) {
       return this.renderHiddenCard(x, y)
     }
-    const visualStyle = this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+    const visualStyle = config.visualStyle ?? this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
     const strokeColor = config.highlight ? COLOR_CARD_HIGHLIGHT_STROKE : style.stroke
