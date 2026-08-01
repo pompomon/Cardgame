@@ -57,6 +57,7 @@ import {
 import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx, snapCardToOrigin } from './ui-utils'
 import { installViewportResizeSync } from './viewport-resize'
 import { buildCounterHandOptions } from './response-options'
+import { renderResponseControls } from './response-controls'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -1994,36 +1995,16 @@ class CardgameScene extends Phaser.Scene {
       return
     }
     if (game.canInput && game.phase === 'respond') {
-      if (response) {
-        const passWidth = Math.min(140, Math.max(72, this.currentLayout.boardColumnWidth * 0.24))
-        const passHeight = Math.min(
-          this.currentLayout.actionButtonHeight,
-          Math.max(20, this.currentLayout.activeInfoControlsHeight),
-        )
-        const controlsLeft = this.currentLayout.boardColumnLeft + 4
-        const controlsRight = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - 4
-        const instructionWidth = Math.max(40, controlsRight - controlsLeft - (response.canPass ? passWidth + 8 : 0))
-        this.rootContainer?.add(this.add.text(
-          controlsLeft,
-          this.currentLayout.controlsStartY,
-          response.instruction,
-          {
-            color: UI_THEME.primaryText,
-            fontSize: this.currentLayout.smallFontSize,
-            wordWrap: { width: instructionWidth },
-          },
-        ).setOrigin(0, 0.5))
-        if (response.canPass) {
-          this.rootContainer?.add(this.createButton(
-            'Pass',
-            controlsRight - passWidth / 2,
-            this.currentLayout.controlsStartY,
-            () => this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor }),
-            passWidth,
-            passHeight,
-            this.currentLayout.actionButtonFontSize,
-          ))
-        }
+      if (response && this.rootContainer) {
+        renderResponseControls({
+          scene: this,
+          root: this.rootContainer,
+          layout: this.currentLayout,
+          response,
+          textColor: UI_THEME.primaryText,
+          createButton: (...args) => this.createButton(...args),
+          onPass: () => this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor }),
+        })
       }
       return
     }
