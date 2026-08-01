@@ -24,6 +24,7 @@ export interface VisualEffectDescriptor {
   sourceInstanceId?: string
   targetInstanceId?: string
   targetCardId?: string
+  targetCardName?: BasicLand
   visualStyle: CardVisualStyle
   palette: VisualEffectPalette
 }
@@ -44,7 +45,7 @@ function descriptor(
   visualStyle: CardVisualStyle,
   details: Partial<Pick<
     VisualEffectDescriptor,
-    'targetActor' | 'sourceInstanceId' | 'targetInstanceId' | 'targetCardId'
+    'targetActor' | 'sourceInstanceId' | 'targetInstanceId' | 'targetCardId' | 'targetCardName'
   >> = {},
 ): VisualEffectDescriptor {
   return { kind, actor, land, visualStyle, palette: paletteFor(land, visualStyle), ...details }
@@ -75,6 +76,7 @@ export function visualEffectForEvent(
         targetActor: event.target,
         sourceInstanceId: event.sourceInstanceId,
         targetInstanceId: event.targetInstanceId,
+        targetCardName: event.cardName,
       })
     case 'ability_plains_reuse':
       return descriptor('plains_reuse', event.actor, 'Plains', visualStyle, {

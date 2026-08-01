@@ -95,6 +95,11 @@ the bottom of the visible strip".
   history resolves cards removed by an effect, such as a queued Mountain
   target. Legacy recordings without identifiers fall back to the correct actor
   row; clear the history whenever the game seed changes.
+- **Keep Mountain targets visible through destruction effects.** Renderers retain
+  an inert visual copy at the removed card's last exact position until the
+  effect completion callback runs. The retained visual is renderer-owned and
+  must also be cleared on queue reset, game changes, unmount, or scene shutdown;
+  position history remains only the fallback for anchoring particles.
 - **Use the reduced quality tier on phone-sized viewports.** It lowers particle
   counts and overdraw but must not alter queue ordering, duration, completion,
   or disabled-animation semantics.

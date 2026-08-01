@@ -31,6 +31,7 @@ import {
   renderP2P,
   resetRasterCardArtLoadFailuresForTests,
   scheduleDomEffect,
+  type DomEffectAnchor,
 } from './dom-utils'
 
 export {
@@ -429,6 +430,7 @@ export class DomRenderer implements AppRenderer {
   private domEffectQueue: LogEvent[] = []
   private domEffectPlaying = false
   private domEffectGeneration = 0
+  private domCardAnchorHistory = new Map<string, DomEffectAnchor>()
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -448,6 +450,13 @@ export class DomRenderer implements AppRenderer {
     const joinOfferField = this.container.querySelector<HTMLTextAreaElement>('#join-offer-text')
     if (joinOfferField) {
       this.joinOfferDraft = joinOfferField.value
+    }
+    for (const card of this.container.querySelectorAll<HTMLElement>('[data-battlefield-card-id]')) {
+      const instanceId = card.dataset.battlefieldCardId
+      if (instanceId) {
+        const { left, top, width, height } = card.getBoundingClientRect()
+        this.domCardAnchorHistory.set(instanceId, { left, top, width, height })
+      }
     }
     if (view.mode !== 'p2p-host') {
       this.hostAnswerDraft = ''
@@ -497,6 +506,7 @@ export class DomRenderer implements AppRenderer {
     this.suppressPreviewClickUntil = 0
     this.lastDomAnimatedEventCount = 0
     this.lastDomEffectSeed = null
+    this.domCardAnchorHistory.clear()
     this.resetDomEffectQueue()
   }
 
@@ -512,6 +522,7 @@ export class DomRenderer implements AppRenderer {
       // No active game — reset cursor so a new game starts fresh.
       this.lastDomAnimatedEventCount = 0
       this.lastDomEffectSeed = null
+      this.domCardAnchorHistory.clear()
       this.resetDomEffectQueue()
       return
     }
@@ -520,6 +531,7 @@ export class DomRenderer implements AppRenderer {
     if (this.lastDomEffectSeed !== view.seed) {
       this.lastDomEffectSeed = view.seed
       this.lastDomAnimatedEventCount = 0
+      this.domCardAnchorHistory.clear()
       this.resetDomEffectQueue()
     }
     const events = game.events
@@ -574,6 +586,7 @@ export class DomRenderer implements AppRenderer {
         this.pumpDomEffectQueue()
       },
       () => generation === this.domEffectGeneration,
+      this.domCardAnchorHistory,
     )
   }
 

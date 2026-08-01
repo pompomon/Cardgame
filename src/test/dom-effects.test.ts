@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { scheduleDomEffect } from '../renderers/dom-utils'
+import { clearDomEffects, scheduleDomEffect } from '../renderers/dom-utils'
 import type { LogEvent } from '../game/types'
+import { withFakeTimers } from './helpers/timers'
 
 // DOM effect guard tests: verify that scheduleDomEffect is a no-op in the
 // right conditions, and schedules requestAnimationFrame for animatable events.
@@ -89,6 +90,56 @@ describe('scheduleDomEffect', () => {
     expect(querySelector).toHaveBeenNthCalledWith(2, '.battlefield-non-active')
   })
 
+  it('keeps a reconstructed Mountain target visible until the effect completes', () => {
+    withFakeTimers(() => {
+      const appended: FakeEffectElement[] = []
+      const animationEnds: Array<() => void> = []
+      const createElement = vi.fn(() => new FakeEffectElement(animationEnds))
+      vi.stubGlobal('document', {
+        body: { appendChild: (element: FakeEffectElement) => appended.push(element) },
+        createElement,
+        querySelector: vi.fn().mockReturnValue(null),
+      })
+      vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      }))
+      const done = vi.fn()
+      scheduleDomEffect(
+        {
+          kind: 'ability_mountain_destroy',
+          actor: 0,
+          target: 1,
+          cardName: 'Forest',
+          targetInstanceId: 'p1-4',
+        },
+        'normal',
+        'classic',
+        0,
+        done,
+        () => true,
+        new Map([['p1-4', { left: 10, top: 20, width: 70, height: 100 }]]),
+      )
+
+      const retained = appended.find((element) => element.className === 'dom-effect-retained-target')
+      expect(retained?.style.cssText).toContain('left:10px')
+      expect(retained?.innerHTML).toContain('Forest')
+      expect(retained?.removed).toBe(false)
+      animationEnds.forEach((complete) => complete())
+      expect(retained?.removed).toBe(true)
+      expect(done).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('clears retained targets with other DOM effects', () => {
+    const retained = { remove: vi.fn() }
+    vi.stubGlobal('document', {
+      querySelectorAll: vi.fn().mockReturnValue([retained]),
+    })
+    clearDomEffects()
+    expect(retained.remove).toHaveBeenCalledOnce()
+  })
+
   it('is a no-op for game_started events', () => {
     const raf = vi.fn()
     vi.stubGlobal('requestAnimationFrame', raf)
@@ -96,4 +147,31 @@ describe('scheduleDomEffect', () => {
     scheduleDomEffect(event, 'normal', 'classic')
     expect(raf).not.toHaveBeenCalled()
   })
+
+  class FakeEffectElement {
+    className = ''
+    style = { cssText: '' }
+    innerHTML = ''
+    removed = false
+    private readonly animationEnds: Array<() => void>
+
+    constructor(animationEnds: Array<() => void>) {
+      this.animationEnds = animationEnds
+    }
+
+    setAttribute(): void {}
+
+    querySelectorAll(): Array<{ addEventListener: (_name: string, callback: () => void) => void }> {
+      if (!this.className.includes('dom-effect--')) {
+        return []
+      }
+      return [{
+        addEventListener: (_name, callback) => { this.animationEnds.push(callback) },
+      }]
+    }
+
+    remove(): void {
+      this.removed = true
+    }
+  }
 })
