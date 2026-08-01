@@ -1053,7 +1053,8 @@ textarea {
 /* Respect the system accessibility setting even when animationSpeed is not
  * explicitly set to 'off' by the user. */
 @media (prefers-reduced-motion: reduce) {
-  .dom-effect {
+  .dom-effect,
+  .dom-effect-retained-target {
     display: none;
   }
 }
