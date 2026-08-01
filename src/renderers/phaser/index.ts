@@ -20,9 +20,11 @@ import type { AppRenderer } from '../types'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
 import {
+  cardRenderContentForMode,
   canRenderCardBackTexture,
   preloadCardArtEntriesForStyle,
   resolveRasterCardArtTextureKey,
+  type CardRenderMode,
 } from './card-rendering'
 import {
   DEPTH_BOARD,
@@ -43,7 +45,7 @@ import { bindScrollableViewport } from './scrollable-viewport'
 import { computeEffectAnchorFromLayout, computeEffectSourceAnchor } from './effect-anchoring'
 import { EffectTargetRetention } from './effect-target-retention'
 import { isPhoneSizedViewport } from './quality'
-import { buildBattlefieldBackdrop, buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel } from './visual-primitives'
+import { buildBattlefieldBackdrop, buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel, buildRoundedCoverImage } from './visual-primitives'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -580,7 +582,7 @@ class CardgameScene extends Phaser.Scene {
         this.pendingPlayLandTargetSelection !== null,
         this.menuOpen,
       ),
-      renderCard: (label) => this.renderStaticCard(0, 0, label),
+      renderCard: (label) => this.renderStaticCard(0, 0, label, { mode: 'preview' }),
     })
     this.inSceneLogScrollOffset = null
     this.inSceneLogPinnedToBottom = true
@@ -1786,12 +1788,10 @@ class CardgameScene extends Phaser.Scene {
     label: string,
     config: {
       onClick?: () => void
-      highlight?: boolean; visualStyle?: AppViewModel['cardVisualStyle']
+      highlight?: boolean
+      mode?: CardRenderMode; visualStyle?: AppViewModel['cardVisualStyle']
     } = {},
   ): Phaser.GameObjects.Container {
-    // Hidden-hand sentinel: render a face-down card so the local human
-    // viewer cannot read the AI player's hand. The cardId is still attached
-    // by the caller so the slot stays stable across renders.
     if (label === HIDDEN_HAND_CARD_NAME) {
       return this.renderHiddenCard(x, y)
     }
@@ -1799,12 +1799,9 @@ class CardgameScene extends Phaser.Scene {
     const style = cardStyleForLand(label, visualStyle)
     const strokeWidth = config.highlight ? 3 : 1
     const strokeColor = config.highlight ? COLOR_CARD_HIGHLIGHT_STROKE : style.stroke
+    const content = cardRenderContentForMode(config.mode ?? 'standard')
     const cardWidth = this.currentLayout.cardWidth
     const cardHeight = this.currentLayout.cardHeight
-    // For raster (HD) styles the shipped PNG already includes its own
-    // background; draw an unfilled rectangle so the painted art is not
-    // covered by the neon palette swatch. Keep the stroke so the card
-    // boundary stays visible (and so the highlight outline still works).
     const willUseRasterArt = isBasicLand(label) && resolveRasterCardArtTextureKey(
       label,
       visualStyle,
@@ -1831,12 +1828,18 @@ class CardgameScene extends Phaser.Scene {
     const card = this.add.container(x, y, [fillRect])
     if (isBasicLand(label)) {
       if (willUseRasterArt) {
-        // HD: cover-fill the whole card face with the painted art.
-        this.addCardArtToContainer(label, visualStyle, 0, 0, Math.max(cardWidth, cardHeight), card, {
-          fit: 'cover',
-          coverWidth: cardWidth,
-          coverHeight: cardHeight,
-        })
+        if (content.roundArtwork) {
+          const rasterKey = resolveRasterCardArtTextureKey(label, visualStyle, (key) => this.textures?.exists(key) ?? false)
+          if (rasterKey) {
+            card.add(buildRoundedCoverImage(this, rasterKey, cardWidth, cardHeight, 8, Math.max(cardWidth, cardHeight)))
+          }
+        } else {
+          this.addCardArtToContainer(label, visualStyle, 0, 0, Math.max(cardWidth, cardHeight), card, {
+            fit: 'cover',
+            coverWidth: cardWidth,
+            coverHeight: cardHeight,
+          })
+        }
       } else {
         // Procedural styles: keep the existing ~66% centered icon layout so
         // the small pixel template stays readable above the card title.
@@ -1851,27 +1854,24 @@ class CardgameScene extends Phaser.Scene {
       }
     }
     if (willUseRasterArt) {
-      // HD: overlay the label at the bottom of the card on a translucent
-      // dark backdrop strip so the per-land pastel text stays legible over
-      // bright skies, dark caves, or anything in between.
-      const fontPx = parseFontPx(this.currentLayout.bodyFontSize, 14)
-      const stripHeight = Math.max(fontPx + 8, 18)
-      const stripWidth = Math.max(0, cardWidth - 4)
-      const stripY = cardHeight / 2 - stripHeight / 2 - 2
-      const backdrop = buildLabelStrip(this, stripY, stripWidth, stripHeight)
-      card.add(backdrop)
-      const text = this.add.text(0, stripY, label, {
-        color: style.text,
-        fontSize: this.currentLayout.bodyFontSize,
-        align: 'center',
-        wordWrap: { width: cardWidth - 12 },
-      }).setOrigin(0.5, 0.5)
-      text.setShadow(0, 1, '#000000', 2, false, true)
-      card.add(text)
-      // Stroke overlay so the card border is not covered by the cover-fit
-      // image. Use an unfilled rectangle of the same size; alpha 0 fill.
+      if (content.showLabel) {
+        const fontPx = parseFontPx(this.currentLayout.bodyFontSize, 14)
+        const stripHeight = Math.max(fontPx + 8, 18)
+        const stripWidth = Math.max(0, cardWidth - 4)
+        const stripY = cardHeight / 2 - stripHeight / 2 - 2
+        const backdrop = buildLabelStrip(this, stripY, stripWidth, stripHeight)
+        card.add(backdrop)
+        const text = this.add.text(0, stripY, label, {
+          color: style.text,
+          fontSize: this.currentLayout.bodyFontSize,
+          align: 'center',
+          wordWrap: { width: cardWidth - 12 },
+        }).setOrigin(0.5, 0.5)
+        text.setShadow(0, 1, '#000000', 2, false, true)
+        card.add(text)
+      }
       card.add(buildCardFrame(this, cardWidth, cardHeight, strokeColor, strokeWidth, { highlight: config.highlight }))
-    } else {
+    } else if (content.showLabel) {
       const text = this.add.text(0, 0, label, {
         color: style.text,
         fontSize: this.currentLayout.bodyFontSize,

@@ -9,6 +9,20 @@ import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../../app/card-visu
 import type { CardVisualStyle } from '../../app/types'
 import type { BasicLand } from '../../game/types'
 
+export type CardRenderMode = 'standard' | 'preview'
+
+export interface CardRenderContent {
+  readonly showLabel: boolean
+  readonly roundArtwork: boolean
+}
+
+export function cardRenderContentForMode(mode: CardRenderMode): CardRenderContent {
+  return {
+    showLabel: mode === 'standard',
+    roundArtwork: mode === 'preview',
+  }
+}
+
 const CARD_ART_ENTRIES_BY_STYLE = new Map<CardVisualStyle, readonly CardArtEntry[]>(
   CARD_VISUAL_STYLES.map((style) => [
     style,

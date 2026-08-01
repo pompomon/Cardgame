@@ -53,4 +53,23 @@ describe('Phaser card preview layout', () => {
 
     expect(preview.scale).toBe(1)
   })
+
+  it('keeps the preview inside a landscape safe area', () => {
+    const preview = computeCardPreviewLayout({
+      viewportWidth: 2000,
+      viewportHeight: 748,
+      safeAreaLeft: 76,
+      safeAreaTop: 68,
+      safeAreaWidth: 1924,
+      safeAreaHeight: 680,
+      cardWidth: 72,
+      cardHeight: 100,
+      margin: 16,
+    })
+
+    expect(preview.centerX).toBe(1038)
+    expect(preview.centerY).toBe(408)
+    expect(72 * preview.scale).toBeLessThanOrEqual(1892)
+    expect(100 * preview.scale).toBeLessThanOrEqual(648)
+  })
 })
