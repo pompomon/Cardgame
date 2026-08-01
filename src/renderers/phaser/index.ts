@@ -56,7 +56,7 @@ import {
 } from './effects'
 import { colorHexToNumber, escapeHtml, installButtonState, measureSafeAreaInsets, parseFontPx, snapCardToOrigin } from './ui-utils'
 import { installViewportResizeSync } from './viewport-resize'
-import { buildResponsePickerOptions } from './response-options'
+import { buildCounterHandOptions } from './response-options'
 
 const BASE_WIDTH = 1280
 const BASE_HEIGHT = 820
@@ -1892,11 +1892,21 @@ class CardgameScene extends Phaser.Scene {
     const actor = game.actor
     const actorCards = game.players[actor].handCards
     const canDrag = game.canInput && game.phase === 'main' && this.pendingPlayLandTargetSelection === null
+    const response = game.canInput && game.phase === 'respond'
+      ? buildCounterHandOptions(game)
+      : null
+    const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
 
     actorCards.forEach((card, index) => {
       const x = xForCardInBoardColumn(this.currentLayout, index, actorCards.length)
       const y = this.currentLayout.handCardsY
-      const cardObject = this.renderStaticCard(x, y, card.name)
+      const responseChoice = responseChoices.get(card.id)
+      const cardObject = this.renderStaticCard(x, y, card.name, {
+        highlight: response?.requiredIslandId === card.id || responseChoice !== undefined,
+        onClick: responseChoice
+          ? () => this.rendererRef.controller?.submitAction(responseChoice.action)
+          : undefined,
+      })
       cardObject.setData('cardId', card.id)
       cardObject.setData('originX', x)
       cardObject.setData('originY', y)
@@ -1905,7 +1915,9 @@ class CardgameScene extends Phaser.Scene {
         cardObject.setInteractive({ draggable: true, useHandCursor: true })
         this.input.setDraggable(cardObject)
       }
-      this.cardPreview?.bind(cardObject, card.name)
+      if (!response) {
+        this.cardPreview?.bind(cardObject, card.name)
+      }
       this.rootContainer?.add(cardObject)
     })
 
@@ -1982,18 +1994,35 @@ class CardgameScene extends Phaser.Scene {
       return
     }
     if (game.canInput && game.phase === 'respond') {
-      if (!this.pendingTargetPicker) {
-        const options = buildResponsePickerOptions(game)
-        if (options.length > 0) {
-          this.showTargetPicker(
-            options.map(({ effectTargetId, label, a11yLabel }) => ({ effectTargetId, label, a11yLabel })),
-            (effectTargetId) => options.find((option) => option.effectTargetId === effectTargetId)?.action ?? null,
-            false,
-            {
-              title: 'Choose response',
-              allowCancel: false,
-            },
-          )
+      if (response) {
+        const passWidth = Math.min(140, Math.max(72, this.currentLayout.boardColumnWidth * 0.24))
+        const passHeight = Math.min(
+          this.currentLayout.actionButtonHeight,
+          Math.max(20, this.currentLayout.activeInfoControlsHeight),
+        )
+        const controlsLeft = this.currentLayout.boardColumnLeft + 4
+        const controlsRight = this.currentLayout.boardColumnLeft + this.currentLayout.boardColumnWidth - 4
+        const instructionWidth = Math.max(40, controlsRight - controlsLeft - (response.canPass ? passWidth + 8 : 0))
+        this.rootContainer?.add(this.add.text(
+          controlsLeft,
+          this.currentLayout.controlsStartY,
+          response.instruction,
+          {
+            color: UI_THEME.primaryText,
+            fontSize: this.currentLayout.smallFontSize,
+            wordWrap: { width: instructionWidth },
+          },
+        ).setOrigin(0, 0.5))
+        if (response.canPass) {
+          this.rootContainer?.add(this.createButton(
+            'Pass',
+            controlsRight - passWidth / 2,
+            this.currentLayout.controlsStartY,
+            () => this.rendererRef.controller?.submitAction({ type: 'pass_response', actor: game.actor }),
+            passWidth,
+            passHeight,
+            this.currentLayout.actionButtonFontSize,
+          ))
         }
       }
       return
