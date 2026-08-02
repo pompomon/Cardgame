@@ -52,8 +52,8 @@ function projectedRecord(
 // Compute the anchor rectangle for the given descriptor, consulting
 // `registry` for card-specific positions when applicable.
 //
-// `registry` maps instanceId → EffectAnchor and is populated (and cleared)
-// by CardgameScene.renderBattlefields on every render pass.
+// `registry` maps instanceId → BattlefieldCardPlacement and is populated
+// (and cleared) by CardgameScene.renderBattlefields on every render pass.
 export function computeEffectAnchorFromLayout(
   view: AppViewModel,
   descriptor: EffectDescriptor,

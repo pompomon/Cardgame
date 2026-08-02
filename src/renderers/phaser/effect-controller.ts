@@ -49,8 +49,8 @@ export class EffectController {
   private readonly ctx: EffectControllerContext
   private readonly effectQueue: EffectQueueState = createEffectQueue()
   private lastAnimatedEventCount = 0
-  // Maps instanceId → EffectAnchor for every card currently visible in both
-  // battlefields. Populated (and cleared) on every renderBattlefields pass.
+  // Maps instanceId → BattlefieldCardPlacement for every card currently visible
+  // in both battlefields. Populated (and cleared) on every renderBattlefields pass.
   private cardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private previousCardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private readonly retainedEffectTargets = new EffectTargetRetention()
