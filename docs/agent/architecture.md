@@ -38,7 +38,32 @@ src/
 ├── renderers/
 │   ├── dom.ts             DOM renderer
 │   └── phaser/            Phaser 4 renderer
-│       ├── index.ts       Lobby + Cardgame scenes
+│       ├── index.ts       Composition root: PhaserRenderer (mount/render/
+│       │                  unmount), wires scenes + DOM overlays together
+│       ├── renderer-host.ts  PhaserRendererHost interface shared by the
+│       │                  scenes so they never import the composition root
+│       ├── scene-config.ts   Scene-wide numeric constants + scene keys
+│       ├── theme.ts       Color palette, CardStyle, cardStyleForLand
+│       ├── scene-host.ts  Phaser.Game bootstrap + canvas host element
+│       ├── card-art-loader.ts  Card art texture preloading
+│       ├── card-factory.ts   Card GameObject factory (uses already-loaded textures)
+│       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
+│       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)
+│       ├── cardgame-scene.ts CardgameScene: lifecycle/input wiring, menu
+│       │                  overlay, composes the subsystems below
+│       ├── gameplay-presenter.ts  Sequences the render-pass modules below
+│       ├── game-header.ts    Header strip (☰ Menu button, turn/winner label)
+│       ├── player-info.ts    Active/non-active player info panels
+│       ├── battlefield-view.ts  Both battlefields + card position registration
+│       ├── hand-controls.ts  Hand rendering + phase-specific controls
+│       ├── in-scene-log.ts   Replay Log panel/scroll host
+│       ├── log-tiles.ts   Log tile cap/legacy-fallback/empty/a11y content (pure, tested)
+│       ├── battlefield-targets.ts  Battlefield target pure state/a11y (tested)
+│       ├── target-picker.ts  Target-picker popup UI (explicit WebGL-safe culling)
+│       ├── effect-controller.ts  Effect queue + card position registries
+│       ├── p2p-overlay.ts    Lobby P2P manual-signaling HTML overlay
+│       ├── a11y-navigation.ts  Keyboard/screen-reader nav mirroring Phaser UI
+│       ├── recording-file-actions.ts  Hidden file input + recording download
 │       ├── layout.ts      Shared layout math + clamp
 │       ├── log-scroll.ts  Scroll math for in-scene + menu logs
 │       ├── log-events.ts  formatLogEventTile/Text

@@ -10,7 +10,7 @@ function normalizeCssWhitespace(value: string): string {
 }
 
 const styleCss = normalizeCssWhitespace(readFileSync(join(REPO_ROOT, 'src/style.css'), 'utf8'))
-const phaserIndex = readFileSync(join(REPO_ROOT, 'src/renderers/phaser/index.ts'), 'utf8')
+const phaserTheme = readFileSync(join(REPO_ROOT, 'src/renderers/phaser/theme.ts'), 'utf8')
 
 function ruleBody(selector: string): string {
   const normalizedSelector = normalizeCssWhitespace(selector)
@@ -69,13 +69,13 @@ describe('battlefield parchment backdrops', () => {
     it('CSS active stroke matches Phaser COLOR_BATTLEFIELD_ACTIVE_STROKE', () => {
       // Hex #72b048 in CSS ↔ 0x72b048 in Phaser
       expect(styleCss).toContain('--battlefield-active-stroke: #72b048')
-      expect(phaserIndex).toContain('COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x72b048')
+      expect(phaserTheme).toContain('COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x72b048')
     })
 
     it('CSS non-active stroke matches Phaser COLOR_BATTLEFIELD_NON_ACTIVE_STROKE', () => {
       // Hex #b46878 in CSS ↔ 0xb46878 in Phaser
       expect(styleCss).toContain('--battlefield-nonactive-stroke: #b46878')
-      expect(phaserIndex).toContain('COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xb46878')
+      expect(phaserTheme).toContain('COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xb46878')
     })
   })
 })

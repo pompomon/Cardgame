@@ -3,6 +3,37 @@
 Phaser 4 specific pitfalls observed in review. The renderer lives in
 `src/renderers/phaser/`.
 
+## Module layout
+
+`index.ts` is a thin composition root (`PhaserRenderer`: mount/render/unmount)
+that wires together `lobby-scene.ts` and `cardgame-scene.ts` plus the DOM
+overlays Phaser can't host itself (`p2p-overlay.ts`, `a11y-navigation.ts`,
+`recording-file-actions.ts`). `cardgame-scene.ts` owns scene lifecycle/input
+wiring and composes the extracted subsystems: `gameplay-presenter.ts`
+sequences the board render pass across `game-header.ts`, `player-info.ts`,
+`battlefield-view.ts`, and `hand-controls.ts`; `in-scene-log.ts` hosts the
+Replay Log panel/scroll state and delegates tile content (cap/legacy-
+fallback/empty/a11y rules) to the pure, unit-tested `log-tiles.ts`; target
+selection splits into `battlefield-targets.ts` (pure pending-selection state
+and the a11y label derivation, unit-tested without Phaser) and
+`target-picker.ts` (the modal popup UI); and `effect-controller.ts` owns the
+effect queue + card position registries. Card art loading (`card-art-loader.ts`)
+is separate from the card GameObject factory (`card-factory.ts`) that assumes
+textures are already loaded. Lobby row/action content and predicates
+(`isAdventureResumable`, `selectedAiLevelLabel`, …) live in the pure, tested
+`lobby-actions.ts`, consumed by both `lobby-scene.ts` and
+`a11y-navigation.ts` so the two surfaces can't drift apart. Shared low-level
+pieces live in `theme.ts` (colors/CardStyle), `scene-config.ts` (numeric
+constants/scene keys), and `scene-host.ts` (Phaser.Game bootstrap). See
+`docs/agent/architecture.md` for the full module map, and
+`src/test/phaser-module-architecture.test.ts` for the guard that asserts
+every module above still exists.
+
+Because `lobby-scene.ts` and `cardgame-scene.ts` must never import the
+composition root (that would create a cycle), they depend on the structural
+`PhaserRendererHost` interface in `renderer-host.ts` instead of the concrete
+`PhaserRenderer` class.
+
 ## Scene depth contract
 
 The cardgame scene anchors render order on constants and a z-order map in
@@ -42,8 +73,13 @@ Options:
 - **Scrollable list:** manual viewport culling through
   `cullRowsToViewport` in `src/renderers/phaser/log-row-visibility.ts`.
   Use `mode: 'contained'` when partial rows would render outside a panel
-  without masking (both replay-log viewports use this today), and
-  `mode: 'overlap'` only where partial rows are acceptable.
+  without masking (both replay-log viewports **and** the target-picker
+  options list in `target-picker.ts` use this today), and `mode: 'overlap'`
+  only where partial rows are acceptable. `target-picker.ts` tags each
+  option button with `rowTop`/`rowHeight` data (mirroring the log tiles) and
+  re-runs `cullRowsToViewport` both on initial render and after every scroll
+  step, so its `GeometryMask` is a Canvas-only convenience, not the thing
+  actually keeping scrolled-out buttons from painting over the title/footer.
 
 ## Coordinate-space discipline
 

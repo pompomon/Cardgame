@@ -67,6 +67,13 @@ type InstallButtonState = MenuOverlayInstallEntry & {
   disabled?: boolean
 }
 
+// Clamps a popup action button (Cancel, Show all, …) to a ratio of the
+// popup's content width while never shrinking below `minWidth`, so labels
+// stay readable on narrow phone-width popups.
+export function popupActionWidth(maxWidth: number, ratio: number, minWidth: number): number {
+  return Math.min(maxWidth, Math.max(minWidth, maxWidth * ratio))
+}
+
 export function installButtonState(): InstallButtonState {
   const installState = getInstallUiState()
   if (installState.canPromptInstall) {
