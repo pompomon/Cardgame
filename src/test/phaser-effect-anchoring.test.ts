@@ -4,7 +4,8 @@ import {
   computeEffectAnchorFromLayout,
   computeEffectSourceAnchor,
 } from '../renderers/phaser/effect-anchoring'
-import type { EffectAnchor, EffectDescriptor } from '../renderers/phaser/effects'
+import type { BattlefieldCardPlacement } from '../renderers/phaser/effect-anchoring'
+import type { EffectDescriptor } from '../renderers/phaser/effects'
 import type { SceneLayout } from '../renderers/phaser/layout'
 
 const layout = {
@@ -16,6 +17,7 @@ const layout = {
   activeBattlefieldHeight: 180,
   cardWidth: 90,
   cardHeight: 120,
+  cardGap: 100,
 } as SceneLayout
 
 const view = {
@@ -39,7 +41,15 @@ function descriptor(overrides: Partial<EffectDescriptor>): EffectDescriptor {
 
 describe('Phaser effect anchoring', () => {
   it('uses the previous registry for a card removed by an effect', () => {
-    const removed: EffectAnchor = { x: 250, y: 180, width: 90, height: 120 }
+    const removed: BattlefieldCardPlacement = {
+      x: 250,
+      y: 180,
+      width: 90,
+      height: 120,
+      playerIndex: 1,
+      cardIndex: 1,
+      cardCount: 3,
+    }
     const result = computeEffectAnchorFromLayout(
       view,
       descriptor({ targetInstanceId: 'p1-4' }),
@@ -47,15 +57,50 @@ describe('Phaser effect anchoring', () => {
       new Map(),
       new Map([['p1-4', removed]]),
     )
-    expect(result).toBe(removed)
+    expect(result).toEqual({ x: 400, y: 186, width: 90, height: 120 })
   })
 
   it('resolves the source independently for source-to-target trails', () => {
-    const source: EffectAnchor = { x: 420, y: 490, width: 90, height: 120 }
+    const source: BattlefieldCardPlacement = {
+      x: 420,
+      y: 490,
+      width: 90,
+      height: 120,
+      playerIndex: 0,
+      cardIndex: 0,
+      cardCount: 1,
+    }
     expect(computeEffectSourceAnchor(
       descriptor({ sourceInstanceId: 'p0-2' }),
+      layout,
+      0,
       new Map([['p0-2', source]]),
     )).toBe(source)
+  })
+
+  it('reprojects a captured AI target after the active battlefield side changes', () => {
+    const placement: BattlefieldCardPlacement = {
+      x: 250,
+      y: 180,
+      width: 90,
+      height: 120,
+      playerIndex: 0,
+      cardIndex: 1,
+      cardCount: 3,
+    }
+    const aiView = {
+      game: { actor: 1, players: [{ battlefield: [] }, { battlefield: [] }] },
+    } as unknown as AppViewModel
+
+    const result = computeEffectAnchorFromLayout(
+      aiView,
+      descriptor({ actor: 1, targetActor: 0, targetInstanceId: 'p0-4', targetPlacement: placement }),
+      layout,
+      new Map(),
+      new Map(),
+    )
+
+    expect(result).toEqual({ x: 400, y: 186, width: 90, height: 120 })
   })
 
   it('falls back to the target actor battlefield row', () => {

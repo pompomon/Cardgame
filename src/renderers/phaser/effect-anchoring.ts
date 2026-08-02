@@ -9,7 +9,45 @@
 
 import type { AppViewModel } from '../../app/types'
 import type { EffectAnchor, EffectDescriptor } from './effects'
-import type { SceneLayout } from './layout'
+import { xForCardInBoardColumn, type SceneLayout } from './layout'
+import { DEFAULT_BATTLEFIELD_HEADER_BAND } from './scene-config'
+
+export interface BattlefieldCardPlacement extends EffectAnchor {
+  playerIndex: number
+  cardIndex: number
+  cardCount: number
+}
+
+function cardYForRow(layout: SceneLayout, useNonActive: boolean): number {
+  const rowY = useNonActive ? layout.nonActiveBattlefieldY : layout.activeBattlefieldY
+  const rowHeight = useNonActive ? layout.nonActiveBattlefieldHeight : layout.activeBattlefieldHeight
+  const headerBand = Math.min(
+    DEFAULT_BATTLEFIELD_HEADER_BAND,
+    Math.max(0, rowHeight - layout.cardHeight),
+  )
+  return rowY + headerBand + Math.max(0, rowHeight - headerBand) / 2
+}
+
+export function projectBattlefieldCardPlacement(
+  placement: BattlefieldCardPlacement,
+  layout: SceneLayout,
+  activeIndex: number,
+): EffectAnchor {
+  return {
+    x: xForCardInBoardColumn(layout, placement.cardIndex, placement.cardCount),
+    y: cardYForRow(layout, placement.playerIndex !== activeIndex),
+    width: layout.cardWidth,
+    height: layout.cardHeight,
+  }
+}
+
+function projectedRecord(
+  record: BattlefieldCardPlacement | undefined,
+  layout: SceneLayout,
+  activeIndex: number,
+): EffectAnchor | undefined {
+  return record ? projectBattlefieldCardPlacement(record, layout, activeIndex) : undefined
+}
 
 // Compute the anchor rectangle for the given descriptor, consulting
 // `registry` for card-specific positions when applicable.
@@ -20,8 +58,8 @@ export function computeEffectAnchorFromLayout(
   view: AppViewModel,
   descriptor: EffectDescriptor,
   layout: SceneLayout,
-  registry: ReadonlyMap<string, EffectAnchor>,
-  previousRegistry: ReadonlyMap<string, EffectAnchor> = registry,
+  registry: ReadonlyMap<string, BattlefieldCardPlacement>,
+  previousRegistry: ReadonlyMap<string, BattlefieldCardPlacement> = registry,
 ): EffectAnchor {
   const game = view.game
   const activeIndex = game?.actor ?? 0
@@ -42,9 +80,14 @@ export function computeEffectAnchorFromLayout(
 
   if (descriptor.targetInstanceId) {
     const target = registry.get(descriptor.targetInstanceId)
+    const historicalTarget = descriptor.targetPlacement
       ?? previousRegistry.get(descriptor.targetInstanceId)
     if (target) {
       return target
+    }
+    const projectedTarget = projectedRecord(historicalTarget, layout, activeIndex)
+    if (projectedTarget) {
+      return projectedTarget
     }
   }
 
@@ -61,12 +104,18 @@ export function computeEffectAnchorFromLayout(
 
 export function computeEffectSourceAnchor(
   descriptor: EffectDescriptor,
-  registry: ReadonlyMap<string, EffectAnchor>,
-  previousRegistry: ReadonlyMap<string, EffectAnchor> = registry,
+  layout: SceneLayout,
+  activeIndex: number,
+  registry: ReadonlyMap<string, BattlefieldCardPlacement>,
+  previousRegistry: ReadonlyMap<string, BattlefieldCardPlacement> = registry,
 ): EffectAnchor | undefined {
   if (!descriptor.sourceInstanceId) {
     return undefined
   }
   return registry.get(descriptor.sourceInstanceId)
-    ?? previousRegistry.get(descriptor.sourceInstanceId)
+    ?? projectedRecord(
+      descriptor.sourcePlacement ?? previousRegistry.get(descriptor.sourceInstanceId),
+      layout,
+      activeIndex,
+    )
 }
