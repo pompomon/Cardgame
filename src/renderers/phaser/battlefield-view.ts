@@ -8,6 +8,7 @@ import type { BattlefieldTargetsController } from './battlefield-targets'
 import { renderStaticCard } from './card-factory'
 import type { CardPreviewController } from './card-preview-controller'
 import type { EffectController } from './effect-controller'
+import type { BattlefieldCardPlacement } from './effect-anchoring'
 import { xForCardInBoardColumn, type SceneLayout } from './layout'
 import { buildBattlefieldBackdrop } from './visual-primitives'
 import { COLOR_BATTLEFIELD_ACTIVE_STROKE, COLOR_BATTLEFIELD_NON_ACTIVE_STROKE, COLOR_ERROR_TEXT, COLOR_SUCCESS_TEXT } from './theme'
@@ -71,9 +72,13 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
     const card = nonActiveBattlefield[index]
     const targetEntry = battlefieldTargets.findBattlefieldTargetEntry('non-active', card.instanceId)
     const cardX = xForCardInBoardColumn(layout, index, nonActiveBattlefield.length)
-    effectController.recordCardPosition(card.instanceId, {
+    const placement: BattlefieldCardPlacement = {
       x: cardX, y: nonActiveCardY, width: layout.cardWidth, height: layout.cardHeight,
-    })
+      playerIndex: nonActiveIndex,
+      cardIndex: index,
+      cardCount: nonActiveBattlefield.length,
+    }
+    effectController.recordCardPosition(card.instanceId, placement)
     const renderedCard = renderStaticCard(
       scene,
       layout,
@@ -131,9 +136,13 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
     const card = activeBattlefield[index]
     const targetEntry = battlefieldTargets.findBattlefieldTargetEntry('active', card.instanceId)
     const cardX = xForCardInBoardColumn(layout, index, activeBattlefield.length)
-    effectController.recordCardPosition(card.instanceId, {
+    const placement: BattlefieldCardPlacement = {
       x: cardX, y: activeCardY, width: layout.cardWidth, height: layout.cardHeight,
-    })
+      playerIndex: activeIndex,
+      cardIndex: index,
+      cardCount: activeBattlefield.length,
+    }
+    effectController.recordCardPosition(card.instanceId, placement)
     const renderedCard = renderStaticCard(
       scene,
       layout,

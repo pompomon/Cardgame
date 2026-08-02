@@ -9,8 +9,14 @@ import type Phaser from 'phaser'
 import { durationMsForSpeed } from '../../app/animation-settings'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import type { AppViewModel } from '../../app/types'
+import type { BasicLand } from '../../game/types'
 import { renderStaticCard } from './card-factory'
-import { computeEffectAnchorFromLayout, computeEffectSourceAnchor } from './effect-anchoring'
+import {
+  computeEffectAnchorFromLayout,
+  computeEffectSourceAnchor,
+  projectBattlefieldCardPlacement,
+  type BattlefieldCardPlacement,
+} from './effect-anchoring'
 import { EffectTargetRetention } from './effect-target-retention'
 import {
   clearEffectQueue,
@@ -19,26 +25,34 @@ import {
   enqueueEffect,
   playAbilityEffect,
   pumpEffectQueue,
-  type EffectAnchor,
   type EffectQueueState,
 } from './effects'
 import type { SceneLayout } from './layout'
 import { isPhoneSizedViewport } from './quality'
 
+const MAX_CARD_POSITION_HISTORY = 200
+
 export interface EffectControllerContext {
   scene: Phaser.Scene
   getLayout: () => SceneLayout
   getCurrentView: () => AppViewModel | null
+  renderRetainedCard?: (
+    x: number,
+    y: number,
+    cardName: BasicLand,
+    visualStyle: AppViewModel['cardVisualStyle'],
+  ) => Phaser.GameObjects.Container
+  playEffect?: typeof playAbilityEffect
 }
 
 export class EffectController {
   private readonly ctx: EffectControllerContext
   private readonly effectQueue: EffectQueueState = createEffectQueue()
   private lastAnimatedEventCount = 0
-  // Maps instanceId → EffectAnchor for every card currently visible in both
-  // battlefields. Populated (and cleared) on every renderBattlefields pass.
-  private cardPositionRegistry = new Map<string, EffectAnchor>()
-  private previousCardPositionRegistry = new Map<string, EffectAnchor>()
+  // Maps instanceId → BattlefieldCardPlacement for every card currently visible
+  // in both battlefields. Populated (and cleared) on every renderBattlefields pass.
+  private cardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
+  private previousCardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private readonly retainedEffectTargets = new EffectTargetRetention()
 
   constructor(ctx: EffectControllerContext) {
@@ -57,15 +71,22 @@ export class EffectController {
   // positions from the previous render don't leave ghost anchors in the
   // registry across a rematch/new game.
   beginBattlefieldRenderPass(): void {
-    this.previousCardPositionRegistry = new Map([
-      ...this.previousCardPositionRegistry,
-      ...this.cardPositionRegistry,
-    ])
+    for (const [instanceId, placement] of this.cardPositionRegistry) {
+      this.previousCardPositionRegistry.delete(instanceId)
+      this.previousCardPositionRegistry.set(instanceId, placement)
+    }
+    while (this.previousCardPositionRegistry.size > MAX_CARD_POSITION_HISTORY) {
+      const oldest = this.previousCardPositionRegistry.keys().next().value
+      if (oldest === undefined) {
+        break
+      }
+      this.previousCardPositionRegistry.delete(oldest)
+    }
     this.cardPositionRegistry.clear()
   }
 
-  recordCardPosition(instanceId: string, anchor: EffectAnchor): void {
-    this.cardPositionRegistry.set(instanceId, anchor)
+  recordCardPosition(instanceId: string, placement: BattlefieldCardPlacement): void {
+    this.cardPositionRegistry.set(instanceId, placement)
   }
 
   processAbilityEffects(view: AppViewModel): void {
@@ -73,6 +94,10 @@ export class EffectController {
     if (!game) {
       return
     }
+    const layout = this.ctx.getLayout()
+    this.retainedEffectTargets.update((placement) => (
+      projectBattlefieldCardPlacement(placement, layout, game.actor)
+    ))
     const events = game.events
     if (this.lastAnimatedEventCount > events.length) {
       // Engine state went backwards (e.g. replay rewind). Reset and wait
@@ -94,7 +119,37 @@ export class EffectController {
     for (let index = this.lastAnimatedEventCount; index < events.length; index += 1) {
       const descriptor = effectDescriptorForEvent(events[index], visualStyle)
       if (descriptor) {
-        enqueueEffect(this.effectQueue, descriptor)
+        if (descriptor.sourceInstanceId) {
+          const sourcePlacement = this.cardPositionRegistry.get(descriptor.sourceInstanceId)
+            ?? this.previousCardPositionRegistry.get(descriptor.sourceInstanceId)
+          descriptor.sourcePlacement = sourcePlacement ? { ...sourcePlacement } : undefined
+        }
+        if (descriptor.targetInstanceId) {
+          const targetPlacement = this.cardPositionRegistry.get(descriptor.targetInstanceId)
+            ?? this.previousCardPositionRegistry.get(descriptor.targetInstanceId)
+          descriptor.targetPlacement = targetPlacement ? { ...targetPlacement } : undefined
+        }
+        const dropped = enqueueEffect(this.effectQueue, descriptor)
+        for (const droppedDescriptor of dropped) {
+          this.retainedEffectTargets.releaseMountainTarget(droppedDescriptor)
+        }
+        if (!dropped.includes(descriptor) && descriptor.targetPlacement) {
+          const targetAnchor = projectBattlefieldCardPlacement(descriptor.targetPlacement, layout, game.actor)
+          this.retainedEffectTargets.retainMountainTarget(
+            descriptor,
+            descriptor.targetPlacement,
+            targetAnchor,
+            this.ctx.renderRetainedCard
+              ?? ((x, y, cardName, cardVisualStyle) => renderStaticCard(
+                this.ctx.scene,
+                layout,
+                x,
+                y,
+                cardName,
+                { visualStyle: cardVisualStyle },
+              )),
+          )
+        }
       }
     }
     this.lastAnimatedEventCount = events.length
@@ -115,16 +170,17 @@ export class EffectController {
           const anchor = computeEffectAnchorFromLayout(latest, descriptor, layout, this.cardPositionRegistry, this.previousCardPositionRegistry)
           descriptor.sourceAnchor = computeEffectSourceAnchor(
             descriptor,
+            layout,
+            latest.game?.actor ?? descriptor.actor,
             this.cardPositionRegistry,
             this.previousCardPositionRegistry,
           )
           const quality = isPhoneSizedViewport(scene.scale.width, scene.scale.height) ? 'reduced' : 'full'
-          const releaseTarget = this.retainedEffectTargets.retainMountainTarget(
-            descriptor,
-            this.previousCardPositionRegistry,
-            (x, y, cardName, cardVisualStyle) => renderStaticCard(scene, layout, x, y, cardName, { visualStyle: cardVisualStyle }),
-          )
-          playAbilityEffect(scene, anchor, descriptor, durationMs, () => { releaseTarget(); done() }, quality)
+          const playEffect = this.ctx.playEffect ?? playAbilityEffect
+          playEffect(scene, anchor, descriptor, durationMs, () => {
+            this.retainedEffectTargets.releaseMountainTarget(descriptor)
+            done()
+          }, quality)
         },
       }
     })

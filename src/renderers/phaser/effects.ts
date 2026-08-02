@@ -8,6 +8,7 @@ import {
   type VisualEffectKind,
 } from '../../app/visual-effects'
 import { DEPTH_EFFECT_OVERLAY } from './depth'
+import type { BattlefieldCardPlacement } from './effect-anchoring'
 
 // Bounded ability-resolution effect pipeline. Each `LogEvent` that has a
 // visual recipe maps to one `EffectDescriptor`; descriptors are queued and
@@ -29,6 +30,8 @@ export interface EffectDescriptor extends VisualEffectDescriptor {
   // supersedes the generic battlefield-row anchor passed to playAbilityEffect.
   anchorOverride?: EffectAnchor
   sourceAnchor?: EffectAnchor
+  sourcePlacement?: BattlefieldCardPlacement
+  targetPlacement?: BattlefieldCardPlacement
 }
 
 export type EffectQuality = 'full' | 'reduced'
@@ -445,13 +448,18 @@ export function createEffectQueue(): EffectQueueState {
   return { queue: [], playing: false }
 }
 
-export function enqueueEffect(state: EffectQueueState, descriptor: EffectDescriptor): void {
+export function enqueueEffect(state: EffectQueueState, descriptor: EffectDescriptor): EffectDescriptor[] {
+  const dropped: EffectDescriptor[] = []
   state.queue.push(descriptor)
   // Drop oldest pending entries past the cap so a long resolution chain
   // (e.g. AI-vs-AI Plains reuse storms) never falls behind gameplay.
   while (state.queue.length > MAX_QUEUED_EFFECTS) {
-    state.queue.shift()
+    const removed = state.queue.shift()
+    if (removed) {
+      dropped.push(removed)
+    }
   }
+  return dropped
 }
 
 // Drops every pending descriptor but intentionally leaves `playing` alone:
