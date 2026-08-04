@@ -44,14 +44,17 @@ describe('phaser effects queue', () => {
     const queue = createEffectQueue()
     enqueueEffect(queue, descriptor('forest_return'))
     let runs = 0
+    let drained = 0
     pumpEffectQueue(queue, () => ({
       animationSpeed: 'off',
       durationMs: 0,
+      onDrained: () => { drained += 1 },
       run: () => { runs += 1 },
     }))
     expect(runs).toBe(0)
     expect(queue.queue).toHaveLength(0)
     expect(queue.playing).toBe(false)
+    expect(drained).toBe(1)
   })
 
   it('drains the queue in FIFO order, one effect at a time', () => {
@@ -59,9 +62,11 @@ describe('phaser effects queue', () => {
     enqueueEffect(queue, descriptor('forest_return', 0))
     enqueueEffect(queue, descriptor('mountain_destroy', 1))
     const runOrder: EffectDescriptor['kind'][] = []
+    let drained = 0
     pumpEffectQueue(queue, () => ({
       animationSpeed: 'normal',
       durationMs: 50,
+      onDrained: () => { drained += 1 },
       run: (desc, _ms, done) => {
         runOrder.push(desc.kind)
         done()
@@ -70,6 +75,7 @@ describe('phaser effects queue', () => {
     expect(runOrder).toEqual(['forest_return', 'mountain_destroy'])
     expect(queue.queue).toHaveLength(0)
     expect(queue.playing).toBe(false)
+    expect(drained).toBe(1)
   })
 
   it('flips playing state during async runs', () => {

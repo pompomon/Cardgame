@@ -55,14 +55,14 @@ function renderInfoPanel(
   rootContainer?.add(text)
 }
 
-export function renderPlayerInfoBlocks(ctx: PlayerInfoContext, view: AppViewModel): void {
+export function renderPlayerInfoBlocks(ctx: PlayerInfoContext, view: AppViewModel, presentedActor = view.game?.actor ?? 0): void {
   const game = view.game
   if (!game) {
     return
   }
   const layout = ctx.getLayout()
 
-  const activeIndex = game.actor
+  const activeIndex = presentedActor
   const nonActiveIndex = activeIndex === 0 ? 1 : 0
   const activePlayer = game.players[activeIndex]
   const nonActivePlayer = game.players[nonActiveIndex]

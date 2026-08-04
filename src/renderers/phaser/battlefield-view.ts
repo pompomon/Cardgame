@@ -25,13 +25,13 @@ export interface BattlefieldViewContext {
   setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
 }
 
-export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiState): void {
+export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiState, presentedActor = game.actor): void {
   const scene = ctx.scene
   const layout = ctx.getLayout()
   const rootContainer = ctx.getRootContainer()
   const { effectController, battlefieldTargets } = ctx
   const defaultVisualStyle = ctx.getVisualStyle()
-  const activeIndex = game.actor
+  const activeIndex = presentedActor
   const nonActiveIndex = activeIndex === 0 ? 1 : 0
   // Clear stale positions from the previous render pass so cards from a
   // previous game or rematch don't leave ghost anchors in the registry.

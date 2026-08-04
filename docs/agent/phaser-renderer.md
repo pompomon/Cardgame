@@ -147,6 +147,17 @@ the bottom of the visible strip".
   recursion. Capturing `options` at queue start means mid-queue
   `animationSpeed`/`durationMs` changes don't take effect until the queue
   drains.
+- **Keep board orientation stable until the queue drains.** Both renderers use
+  `BoardPresentationCoordinator` to retain the displayed active actor while
+  effects are queued or playing. State and effect descriptors continue to
+  advance, but the active/non-active rows, hand, anchors, and accessibility
+  view use the presented actor. The final queue completion applies the latest
+  pending actor and triggers one render; changes with no visual effect switch
+  immediately.
+- **Reset presentation and queue state together.** New games, replay rewinds,
+  lobby transitions, unmount, and scene shutdown must clear any pending actor
+  so an old completion callback cannot switch the next board. Turning
+  animations off applies the latest actor immediately.
 - **`clearEffectQueue` drops pending entries but leaves the in-flight
   tween to complete on its own.** The running effect's `done` callback
   (set up by `pumpEffectQueue` / `playAbilityEffect`) flips

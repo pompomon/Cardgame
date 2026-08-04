@@ -209,6 +209,19 @@ describe('DOM lobby layout', () => {
     expect(html).toContain('dom-board__hand')
   })
 
+  it('can keep the previous actor board orientation while effects finish', () => {
+    const gameView = makeGameView()
+    gameView.game!.actor = 1
+    gameView.game!.players[0].handCount = 3
+    gameView.game!.players[1].handCount = 7
+
+    const html = renderGame(gameView, false, null, 0)
+
+    expect(html).toContain('aria-label="Active hand"')
+    expect(html).toContain('Player 1')
+    expect(html.indexOf('Player 2')).toBeLessThan(html.indexOf('Player 1'))
+  })
+
   it('keeps the tutorial hint panel visible between scripted steps', () => {
     const gameView = makeGameView()
     gameView.mode = 'tutorial'

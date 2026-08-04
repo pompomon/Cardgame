@@ -77,17 +77,20 @@ describe('Phaser effect controller', () => {
       runs.push({ anchor, descriptor, done })
     })
     const scene = { scale: { width: 1280, height: 720 } }
+    const onQueueDrained = vi.fn()
     const controller = new EffectController({
       scene: scene as never,
       getLayout: () => layout,
       getCurrentView: () => currentView,
       renderRetainedCard: renderRetainedCard as never,
       playEffect: playEffect as never,
+      onQueueDrained,
     })
 
     controller.recordCardPosition('p0-4', placement(0, 1, 3, 400, 186))
     controller.beginBattlefieldRenderPass()
     controller.recordCardPosition('p1-9', placement(1, 0, 1, 400, 490))
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(true)
     controller.processAbilityEffects(currentView)
 
     expect(runs).toHaveLength(1)
@@ -121,5 +124,7 @@ describe('Phaser effect controller', () => {
 
     runs[1].done()
     expect(retainedCard.destroy).toHaveBeenCalledOnce()
+    expect(onQueueDrained).toHaveBeenCalledOnce()
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
   })
 })

@@ -43,6 +43,7 @@ export interface EffectControllerContext {
     visualStyle: AppViewModel['cardVisualStyle'],
   ) => Phaser.GameObjects.Container
   playEffect?: typeof playAbilityEffect
+  onQueueDrained?: () => void
 }
 
 export class EffectController {
@@ -54,6 +55,7 @@ export class EffectController {
   private cardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private previousCardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private readonly retainedEffectTargets = new EffectTargetRetention()
+  private presentedActor = 0
 
   constructor(ctx: EffectControllerContext) {
     this.ctx = ctx
@@ -65,6 +67,25 @@ export class EffectController {
     this.lastAnimatedEventCount = 0
     this.previousCardPositionRegistry.clear()
     this.cardPositionRegistry.clear()
+  }
+
+  isBusyOrWillEnqueue(view: AppViewModel): boolean {
+    if (view.animationSpeed === 'off') {
+      return false
+    }
+    if (this.effectQueue.playing || this.effectQueue.queue.length > 0) {
+      return true
+    }
+    const events = view.game?.events ?? []
+    if (this.lastAnimatedEventCount > events.length) {
+      return false
+    }
+    for (let index = this.lastAnimatedEventCount; index < events.length; index += 1) {
+      if (effectDescriptorForEvent(events[index], view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE)) {
+        return true
+      }
+    }
+    return false
   }
 
   // Called once at the top of each renderBattlefields pass so stale
@@ -89,14 +110,15 @@ export class EffectController {
     this.cardPositionRegistry.set(instanceId, placement)
   }
 
-  processAbilityEffects(view: AppViewModel): void {
+  processAbilityEffects(view: AppViewModel, presentedActor = view.game?.actor ?? 0): void {
     const game = view.game
     if (!game) {
       return
     }
+    this.presentedActor = presentedActor
     const layout = this.ctx.getLayout()
     this.retainedEffectTargets.update((placement) => (
-      projectBattlefieldCardPlacement(placement, layout, game.actor)
+      projectBattlefieldCardPlacement(placement, layout, presentedActor)
     ))
     const events = game.events
     if (this.lastAnimatedEventCount > events.length) {
@@ -164,14 +186,16 @@ export class EffectController {
       return {
         animationSpeed: speed,
         durationMs: durationMsForSpeed(speed),
+        onDrained: this.ctx.onQueueDrained,
         run: (descriptor, durationMs, done) => {
           const layout = this.ctx.getLayout()
           const scene = this.ctx.scene
-          const anchor = computeEffectAnchorFromLayout(latest, descriptor, layout, this.cardPositionRegistry, this.previousCardPositionRegistry)
+          const activeActor = this.presentedActor
+          const anchor = computeEffectAnchorFromLayout(latest, descriptor, layout, this.cardPositionRegistry, this.previousCardPositionRegistry, activeActor)
           descriptor.sourceAnchor = computeEffectSourceAnchor(
             descriptor,
             layout,
-            latest.game?.actor ?? descriptor.actor,
+            activeActor,
             this.cardPositionRegistry,
             this.previousCardPositionRegistry,
           )

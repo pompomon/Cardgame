@@ -45,7 +45,7 @@ export class GameplayPresenter {
     this.ctx = ctx
   }
 
-  renderGame(view: AppViewModel): void {
+  renderGame(view: AppViewModel, presentedActor = view.game?.actor ?? 0): void {
     const game = view.game
     if (!game) {
       return
@@ -58,8 +58,8 @@ export class GameplayPresenter {
       ctx.inSceneLog.render(game.events, game.log, game.actor)
     }
 
-    renderBattlefields(ctx, game)
-    renderPlayerInfoBlocks(ctx, view)
-    renderHandAndControls(ctx, game)
+    renderBattlefields(ctx, game, presentedActor)
+    renderPlayerInfoBlocks(ctx, view, presentedActor)
+    renderHandAndControls(ctx, game, presentedActor)
   }
 }
