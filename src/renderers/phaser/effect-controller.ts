@@ -156,7 +156,7 @@ export class EffectController {
           this.retainedEffectTargets.releaseMountainTarget(droppedDescriptor)
         }
         if (!dropped.includes(descriptor) && descriptor.targetPlacement) {
-          const targetAnchor = projectBattlefieldCardPlacement(descriptor.targetPlacement, layout, game.actor)
+          const targetAnchor = projectBattlefieldCardPlacement(descriptor.targetPlacement, layout, presentedActor)
           this.retainedEffectTargets.retainMountainTarget(
             descriptor,
             descriptor.targetPlacement,
