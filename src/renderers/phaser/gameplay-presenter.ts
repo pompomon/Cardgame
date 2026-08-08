@@ -1,6 +1,5 @@
 // Composes the gameplay board render pass for the cardgame scene: header,
-// battlefields, player info panels, and hand + phase controls, plus the
-// in-scene replay log. Each concern is a focused module
+// battlefields, player info panels, and hand + phase controls. Each concern is a focused module
 // (game-header.ts/battlefield-view.ts/player-info.ts/hand-controls.ts);
 // this class only sequences them and owns nothing itself. Extracted from
 // CardgameScene so "what does the board look like right now" is separate
@@ -14,8 +13,6 @@ import type { CardPreviewController } from './card-preview-controller'
 import type { EffectController } from './effect-controller'
 import { renderGameHeader } from './game-header'
 import { renderHandAndControls } from './hand-controls'
-import { shouldRenderInSceneReplayLog } from './in-scene-log-policy'
-import type { InSceneLogRenderer } from './in-scene-log'
 import type { SceneLayout } from './layout'
 import { renderPlayerInfoBlocks } from './player-info'
 import type { TargetPickerController } from './target-picker'
@@ -31,8 +28,6 @@ export interface GameplayPresenterContext {
   effectController: EffectController
   battlefieldTargets: BattlefieldTargetsController
   targetPicker: TargetPickerController
-  inSceneLog: InSceneLogRenderer
-  isMenuOpen: () => boolean
   setStatus: (message: string) => void
   setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
   openMenuOverlay: (view: AppViewModel) => void
@@ -53,10 +48,6 @@ export class GameplayPresenter {
     const { ctx } = this
 
     renderGameHeader(ctx, game, view)
-
-    if (shouldRenderInSceneReplayLog({ menuOpen: ctx.isMenuOpen() })) {
-      ctx.inSceneLog.render(game.events, game.log, game.actor)
-    }
 
     renderBattlefields(ctx, game, presentedActor)
     renderPlayerInfoBlocks(ctx, view, presentedActor)

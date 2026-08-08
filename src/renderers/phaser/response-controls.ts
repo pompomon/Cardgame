@@ -26,7 +26,10 @@ export function renderResponseControls(options: ResponseControlsOptions): void {
   const passHeight = Math.min(layout.actionButtonHeight, Math.max(20, layout.activeInfoControlsHeight))
   const controlsLeft = layout.boardColumnLeft + 4
   const controlsRight = layout.boardColumnLeft + layout.boardColumnWidth - 4
-  const instructionWidth = Math.max(40, controlsRight - controlsLeft - (response.canPass ? passWidth + 8 : 0))
+  const instructionRight = layout.orientation === 'horizontal'
+    ? layout.handColumnLeft - 8
+    : controlsRight - (response.canPass ? passWidth + 8 : 0)
+  const instructionWidth = Math.max(40, instructionRight - controlsLeft)
   options.root.add(options.scene.add.text(controlsLeft, layout.controlsStartY, response.instruction, {
     color: options.textColor,
     fontSize: layout.smallFontSize,

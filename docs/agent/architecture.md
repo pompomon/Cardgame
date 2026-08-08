@@ -56,7 +56,6 @@ src/
 │       ├── player-info.ts    Active/non-active player info panels
 │       ├── battlefield-view.ts  Both battlefields + card position registration
 │       ├── hand-controls.ts  Hand rendering + phase-specific controls
-│       ├── in-scene-log.ts   Replay Log panel/scroll host
 │       ├── log-tiles.ts   Log tile cap/legacy-fallback/empty/a11y content (pure, tested)
 │       ├── battlefield-targets.ts  Battlefield target pure state/a11y (tested)
 │       ├── target-picker.ts  Target-picker popup UI (explicit WebGL-safe culling)
@@ -65,7 +64,7 @@ src/
 │       ├── a11y-navigation.ts  Keyboard/screen-reader nav mirroring Phaser UI
 │       ├── recording-file-actions.ts  Hidden file input + recording download
 │       ├── layout.ts      Shared layout math + clamp
-│       ├── log-scroll.ts  Scroll math for in-scene + menu logs
+│       ├── log-scroll.ts  Menu Replay Log scroll math
 │       ├── log-events.ts  formatLogEventTile/Text
 │       └── effects.ts     Effect queue runner
 │

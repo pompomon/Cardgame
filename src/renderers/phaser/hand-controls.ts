@@ -13,7 +13,7 @@ import type { GameAction } from '../../game/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
 import { renderStaticCard } from './card-factory'
 import type { CardPreviewController } from './card-preview-controller'
-import { xForCardInBoardColumn, type SceneLayout } from './layout'
+import { xForHandCardInBoardColumn, type SceneLayout } from './layout'
 import { buildCounterHandOptions } from './response-options'
 import { renderResponseControls } from './response-controls'
 import type { TargetPickerController } from './target-picker'
@@ -48,7 +48,7 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
 
   actorCards.forEach((card, index) => {
-    const x = xForCardInBoardColumn(layout, index, actorCards.length)
+    const x = xForHandCardInBoardColumn(layout, index, actorCards.length)
     const y = layout.handCardsY
     const responseChoice = responseChoices.get(card.id)
     const cardObject = renderStaticCard(scene, layout, x, y, card.name, {
@@ -56,17 +56,24 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
       onClick: responseChoice
         ? () => ctx.submitAction(responseChoice.action)
         : undefined,
+      dimensions: {
+        width: layout.handCardWidth,
+        height: layout.handCardHeight,
+      },
     }, defaultVisualStyle)
     cardObject.setData('cardId', card.id)
     cardObject.setData('originX', x)
     cardObject.setData('originY', y)
     if (canDrag && game.legal.playLandByCard[card.id]) {
-      cardObject.setSize(layout.cardWidth, layout.cardHeight)
+      cardObject.setSize(layout.handCardWidth, layout.handCardHeight)
       cardObject.setInteractive({ draggable: true, useHandCursor: true })
       scene.input.setDraggable(cardObject)
     }
     if (!response) {
-      ctx.getCardPreview()?.bind(cardObject, card.name)
+      ctx.getCardPreview()?.bind(cardObject, card.name, {
+        width: layout.handCardWidth,
+        height: layout.handCardHeight,
+      })
     }
     rootContainer?.add(cardObject)
   })

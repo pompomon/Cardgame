@@ -22,6 +22,7 @@ function renderInfoPanel(
   width: number,
   height: number,
   lines: string[],
+  textWidth = width,
 ): void {
   if (width <= 0 || height <= 0) {
     return
@@ -49,7 +50,7 @@ function renderInfoPanel(
   const text = scene.add.text(x + 10, y + 6, lines.join('\n'), {
     color: UI_THEME.primaryText,
     fontSize: layout.bodyFontSize,
-    wordWrap: { width: Math.max(40, safeWidth - 20) },
+    wordWrap: { width: Math.max(40, textWidth - 20) },
   })
   text.setDepth(DEPTH_BOARD)
   rootContainer?.add(text)
@@ -107,5 +108,8 @@ export function renderPlayerInfoBlocks(ctx: PlayerInfoContext, view: AppViewMode
     layout.boardColumnWidth,
     layout.activeInfoHeight,
     visibleActiveLines,
+    layout.orientation === 'horizontal'
+      ? Math.max(40, layout.handColumnLeft - layout.boardColumnLeft)
+      : layout.boardColumnWidth,
   )
 }

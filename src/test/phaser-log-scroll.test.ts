@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { computeLogScrollLayout } from '../renderers/phaser/log-scroll'
 
-// These tests lock the scroll-clamping math that prevents in-scene log tiles
-// from rendering above the menu/header or below the player-info container.
-// The renderer relies on this helper for both the in-scene log viewport and
-// the menu-overlay log viewport.
+// These tests lock the menu Replay Log's scroll-clamping math.
 describe('computeLogScrollLayout', () => {
   it('pins to top when content fits inside the viewport (no negative offset)', () => {
     const result = computeLogScrollLayout({

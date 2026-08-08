@@ -20,6 +20,8 @@ describe('phaser menu overlay extraction', () => {
 
     expect(cardgameSceneSource).toContain("from './menu-overlay'")
     expect(menuOverlaySource).toContain('export function createMenuOverlay')
+    expect(menuOverlaySource).toContain("'Replay Log'")
+    expect(cardgameSceneSource).not.toContain("from './in-scene-log'")
   })
 
   it('keeps phaser/index.ts as a lean composition root', () => {

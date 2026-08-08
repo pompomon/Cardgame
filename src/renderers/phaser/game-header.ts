@@ -23,10 +23,8 @@ export function renderGameHeader(ctx: GameHeaderContext, game: GameUiState, view
 
   const left = layout.safeAreaLeft + layout.margin
 
-  // Header strip background: a solid rectangle behind the Menu button and
-  // turn/phase label. Even if a future regression breaks the log mask, the
-  // log paints at DEPTH_REPLAY_LOG and this strip paints above it, so the
-  // ☰ Menu button and the Winner banner stay readable on top.
+  // Header strip background keeps the Menu button and turn/phase label
+  // readable above gameplay elements.
   const headerStripHeight = Math.max(layout.headerHeight, layout.actionButtonHeight + 4)
   const headerStrip = scene.add.rectangle(
     layout.safeAreaCenterX,

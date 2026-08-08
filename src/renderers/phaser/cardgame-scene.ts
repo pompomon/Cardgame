@@ -13,13 +13,11 @@ import {
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
 import type { AppViewModel } from '../../app/types'
-import type { LogEvent } from '../../game/types'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
-import { InSceneLogRenderer } from './in-scene-log'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
 import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
@@ -39,10 +37,7 @@ export class CardgameScene extends Phaser.Scene {
   private menuContentScrollOffset: number | null = null
   private menuLogScrollOffset: number | null = null
   private menuLogPinnedToBottom = true
-  // Tracks the seed of the game currently rendered in this scene. When
-  // the seed changes (e.g. via rematch) we reset the log scroll state so
-  // the next game opens with the in-scene log pinned to the newest entry
-  // instead of preserving the stale offset from the previous match.
+  // Tracks the seed of the game currently rendered in this scene.
   private lastRenderedSeed: number | null = null
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
@@ -53,7 +48,6 @@ export class CardgameScene extends Phaser.Scene {
   private readonly effectController: EffectController
   private readonly battlefieldTargets: BattlefieldTargetsController
   private readonly targetPicker: TargetPickerController
-  private readonly inSceneLog: InSceneLogRenderer
   private readonly gameplayPresenter: GameplayPresenter
 
   constructor(rendererRef: PhaserRendererHost) {
@@ -85,12 +79,6 @@ export class CardgameScene extends Phaser.Scene {
       submitAction: (action) => this.rendererRef.controller?.submitAction(action),
       refreshA11yNav: () => this.rendererRef.refreshA11yNavForCurrentView(),
     })
-    this.inSceneLog = new InSceneLogRenderer({
-      scene: this,
-      getLayout: () => this.currentLayout,
-      getRootContainer: () => this.rootContainer,
-      getVisualStyle: () => this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
-    })
     this.gameplayPresenter = new GameplayPresenter({
       scene: this,
       getLayout: () => this.currentLayout,
@@ -102,8 +90,6 @@ export class CardgameScene extends Phaser.Scene {
       effectController: this.effectController,
       battlefieldTargets: this.battlefieldTargets,
       targetPicker: this.targetPicker,
-      inSceneLog: this.inSceneLog,
-      isMenuOpen: () => this.menuOpen,
       setStatus: (message) => this.setStatus(message),
       setBattlefieldDropZone: (zone) => this.setBattlefieldDropZone(zone),
       openMenuOverlay: (view) => this.openMenuOverlay(view),
@@ -130,7 +116,6 @@ export class CardgameScene extends Phaser.Scene {
       ),
       renderCard: (label) => renderStaticCard(this, this.currentLayout, 0, 0, label, { mode: 'preview' }, this.rendererRef.currentView?.cardVisualStyle),
     })
-    this.inSceneLog.reset()
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
     this.updateLayout()
@@ -276,14 +261,11 @@ export class CardgameScene extends Phaser.Scene {
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
     const game = view?.game ?? null
-    // Reset the in-scene log scroll state when the seed changes, e.g. on
-    // a rematch. Without this, the reused CardgameScene would inherit the
-    // previous match's scroll offset and open the new game scrolled away
-    // from the newest log entries.
     if (view && game) {
       const currentSeed = view.seed
       if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
-        this.inSceneLog.reset()
+        this.menuLogScrollOffset = null
+        this.menuLogPinnedToBottom = true
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
         // animations queued from a previous match.
         this.effectController.reset()
@@ -405,15 +387,6 @@ export class CardgameScene extends Phaser.Scene {
     return this.battlefieldTargets.getBattlefieldTargetA11yEntries()
   }
 
-  private buildLogTilesContent(
-    events: readonly LogEvent[],
-    contentWidth: number,
-    visualStyle: AppViewModel['cardVisualStyle'],
-    options: { activeActor: number; legacyLog?: readonly string[] },
-  ): { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number } {
-    return this.inSceneLog.buildLogTilesContent(events, contentWidth, visualStyle, options)
-  }
-
   private openMenuOverlay(view: AppViewModel): void {
     if (!this.rootContainer || this.menuOverlay) {
       return
@@ -441,7 +414,6 @@ export class CardgameScene extends Phaser.Scene {
       menuLogPinnedToBottom: this.menuLogPinnedToBottom,
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
       popupActionWidth: (maxWidth, ratio, minWidth) => popupActionWidth(maxWidth, ratio, minWidth),
-      buildLogTilesContent: (events, width, visualStyle, options) => this.buildLogTilesContent(events, width, visualStyle, options),
       onDestroy: (destroyedOverlay) => {
         this.statusText?.setVisible(true)
         if (this.menuOverlay === destroyedOverlay) {

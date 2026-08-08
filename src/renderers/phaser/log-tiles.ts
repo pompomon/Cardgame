@@ -1,7 +1,7 @@
 // Log tile content: the pure "which entries are visible vs. capped/omitted"
 // selection logic (shared by the visual tiles and the a11y text mirror),
 // plus the Phaser tile-building function itself. Extracted from
-// in-scene-log.ts so the cap/legacy-fallback/empty-state rules — and the
+// menu overlay so the cap/legacy-fallback/empty-state rules — and the
 // exact a11y mirror text they produce — can be unit tested without a
 // Phaser scene. See docs/agent/phaser-renderer.md "Cap the visual log and
 // the a11y mirror."
