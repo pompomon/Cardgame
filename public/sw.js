@@ -108,21 +108,22 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (isRuntimeAsset) {
-    event.respondWith(
-      fetch(event.request)
-        .then(async (response) => {
-          if (response.ok) {
-            const clone = response.clone()
-            try {
-              const cache = await caches.open(ASSET_CACHE)
-              await cache.put(event.request, clone)
-            } catch {
-              // Cache persistence is best-effort. A valid network response must
-              // still reach the app if storage is unavailable or quota-limited.
-            }
+    const networkResponse = fetch(event.request)
+    event.waitUntil(
+      networkResponse
+        .then((response) => {
+          if (!response.ok) {
+            return
           }
-          return response
+          return caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, response.clone()))
         })
+        .catch(() => {
+          // Cache persistence is best-effort. A failed network request falls back
+          // through respondWith(), while storage failures are ignored here.
+        }),
+    )
+    event.respondWith(
+      networkResponse
         .catch(async () => {
           const cached = await caches.match(event.request)
           return cached ?? Response.error()

@@ -12,6 +12,7 @@ type FetchListener = (event: FetchEventStub) => void
 type FetchEventStub = {
   request: Request
   respondWith: (response: Promise<Response>) => void
+  waitUntil: (promise: Promise<unknown>) => void
 }
 
 type CachePutCall = {
@@ -26,6 +27,7 @@ type ServiceWorkerHarness = {
   cachePut: ReturnType<typeof vi.fn>
   fetchListener: FetchListener
   fetchMock: ReturnType<typeof vi.fn>
+  waitUntilPromises: Promise<unknown>[]
 }
 
 function cacheKey(key: Request | string): string {
@@ -62,6 +64,7 @@ function loadServiceWorker(): ServiceWorkerHarness {
   const listeners = new Map<string, EventListener>()
   const cachedResponses = new Map<string, Response>()
   const cachePutCalls: CachePutCall[] = []
+  const waitUntilPromises: Promise<unknown>[] = []
   const cachePut = vi.fn(async (key: Request | string, response: Response) => {
     cachePutCalls.push({ key, response })
   })
@@ -106,6 +109,7 @@ function loadServiceWorker(): ServiceWorkerHarness {
     cachesMatch,
     fetchListener: fetchListener as unknown as FetchListener,
     fetchMock,
+    waitUntilPromises,
   }
 }
 
@@ -115,6 +119,9 @@ function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise
     request,
     respondWith: (response) => {
       responsePromise = response
+    },
+    waitUntil: (promise) => {
+      harness.waitUntilPromises.push(promise)
     },
   })
   return responsePromise
@@ -224,7 +231,7 @@ describe('service worker fetch handling', () => {
       expectSingleCachePut(harness, request, networkClone)
     })
 
-    it('keeps the response pending until the runtime cache write finishes', async () => {
+    it('returns the runtime network response before a pending cache write settles', async () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/boards/classic/background-balanced.png')
       const network = makeResponse('network board')
@@ -247,12 +254,13 @@ describe('service worker fetch handling', () => {
       await flushPromises()
 
       expect(harness.cachePut).toHaveBeenCalledTimes(1)
-      expect(responseSettled).toBe(false)
-
-      cacheWriteControl.finish?.()
+      expect(harness.waitUntilPromises).toHaveLength(1)
       const response = await responsePromise
       expect(response).toBe(network)
       expect(responseSettled).toBe(true)
+
+      cacheWriteControl.finish?.()
+      await Promise.allSettled(harness.waitUntilPromises)
     })
 
     it('returns a valid network response when runtime cache persistence fails', async () => {
