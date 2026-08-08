@@ -67,6 +67,7 @@ export class FailedAssetUrlRegistry {
 
 export interface BoardAssetLoadHandle {
   readonly manifest: PhaserBoardAssetManifest
+  readonly queuedAssetCount: number
   resolveBackgroundTextureKey(): string | null
   dispose(): void
 }
@@ -173,6 +174,7 @@ export function loadPhaserBoardAssetManifest(
   const pending = new Map<string, PhaserAssetDescriptor>()
   const backgroundKeys = new Set(manifest.backgroundCandidates.map((asset) => asset.key))
   let nextBackgroundIndex = 0
+  let queuedAssetCount = 0
   let disposed = false
 
   const noteFailure = (
@@ -195,6 +197,7 @@ export function loadPhaserBoardAssetManifest(
       return
     }
     pending.set(descriptor.key, descriptor)
+    queuedAssetCount += 1
     switch (descriptor.kind) {
       case 'image':
         port.queueImage(descriptor.key, descriptor.url)
@@ -277,9 +280,15 @@ export function loadPhaserBoardAssetManifest(
   for (const atlas of manifest.atlases) {
     queueDescriptor(atlas)
   }
+  if (pending.size === 0) {
+    dispose()
+  }
 
   return {
     manifest,
+    get queuedAssetCount() {
+      return queuedAssetCount
+    },
     resolveBackgroundTextureKey: () =>
       resolveLoadedBoardBackgroundTextureKey(manifest, port.textureExists),
     dispose,

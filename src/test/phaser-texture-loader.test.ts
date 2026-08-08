@@ -295,4 +295,23 @@ describe('Phaser board texture loader', () => {
     expect(harness.errorListenerCount()).toBe(0)
     expect(harness.completeListenerCount()).toBe(0)
   })
+
+  it('does not leave listeners when every requested texture is already usable', () => {
+    const harness = createLoaderPort()
+    harness.addTexture('board-background:classic:balanced')
+    harness.addTexture('board-atlas:ambience:classic', AMBIENCE_ATLAS_FRAMES)
+    harness.addTexture('board-atlas:board-ui', BOARD_UI_ATLAS_FRAMES)
+    harness.addTexture('board-atlas:effects', ['spark', 'impact-ring', 'trail', 'shield'])
+
+    const handle = loadPhaserBoardAssetManifest(
+      harness.port,
+      buildPhaserBoardAssetManifest('classic', 'balanced'),
+      { failedUrls: new FailedAssetUrlRegistry(), onFailure: vi.fn() },
+    )
+
+    expect(handle.queuedAssetCount).toBe(0)
+    expect(harness.queued).toEqual([])
+    expect(harness.errorListenerCount()).toBe(0)
+    expect(harness.completeListenerCount()).toBe(0)
+  })
 })

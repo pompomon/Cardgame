@@ -10,9 +10,12 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
+import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
+import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import type { AppViewModel } from '../../app/types'
+import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
@@ -26,6 +29,7 @@ import { installButtonState, popupActionWidth, snapCardToOrigin } from './ui-uti
 import { UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
 import type { PhaserRendererHost } from './renderer-host'
+import { preloadPhaserBoardAssets, type BoardAssetLoadHandle } from './texture-loader'
 
 export class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRendererHost
@@ -43,6 +47,12 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private boardBackgroundView: BoardBackgroundView | null = null
+  private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
+  private boardAssetSelection: string | null = null
+  private boardAssetLoadCompleteListener: (() => void) | null = null
+  private pageVisible = true
+  private reducedMotion = false
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -102,10 +112,17 @@ export class CardgameScene extends Phaser.Scene {
     const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
+    const theme = view?.boardTheme ?? DEFAULT_BOARD_THEME
+    const quality = view?.renderQualityPreference
+      ?? DEFAULT_RENDER_QUALITY_PREFERENCE
+    this.disposeBoardAssetLoad()
+    this.boardAssetSelection = this.boardAssetSelectionKey(theme, quality)
+    this.boardAssetLoadHandle = preloadPhaserBoardAssets(this, theme, quality)
   }
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
+    this.boardBackgroundView = new BoardBackgroundView(this)
     this.cardPreview = createCardPreviewController({
       scene: this,
       getRoot: () => this.rootContainer,
@@ -120,6 +137,34 @@ export class CardgameScene extends Phaser.Scene {
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
     this.updateLayout()
+    this.pageVisible = typeof document === 'undefined'
+      || document.visibilityState !== 'hidden'
+    let reducedMotionQuery: MediaQueryList | null = null
+    try {
+      reducedMotionQuery = typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : null
+    } catch {
+      reducedMotionQuery = null
+    }
+    this.reducedMotion = reducedMotionQuery?.matches ?? false
+    const onBoardEnvironmentChange = (): void => {
+      this.pageVisible = typeof document === 'undefined'
+        || document.visibilityState !== 'hidden'
+      this.reducedMotion = reducedMotionQuery?.matches ?? false
+      this.syncBoardBackground(this.rendererRef.currentView)
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onBoardEnvironmentChange)
+    }
+    if (reducedMotionQuery) {
+      if (typeof reducedMotionQuery.addEventListener === 'function') {
+        reducedMotionQuery.addEventListener('change', onBoardEnvironmentChange)
+      } else {
+        reducedMotionQuery.addListener(onBoardEnvironmentChange)
+      }
+    }
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
       color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.bodyFontSize,
@@ -210,6 +255,20 @@ export class CardgameScene extends Phaser.Scene {
       this.input.off('drag', onDrag)
       this.input.off('dragend', onDragEnd)
       this.input.off('drop', onDrop)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onBoardEnvironmentChange)
+      }
+      if (reducedMotionQuery) {
+        if (typeof reducedMotionQuery.removeEventListener === 'function') {
+          reducedMotionQuery.removeEventListener('change', onBoardEnvironmentChange)
+        } else {
+          reducedMotionQuery.removeListener(onBoardEnvironmentChange)
+        }
+      }
+      this.disposeBoardAssetLoad()
+      this.boardAssetSelection = null
+      this.boardBackgroundView?.destroy()
+      this.boardBackgroundView = null
       this.cardPreview?.destroy()
       this.cardPreview = null
       this.effectController.reset()
@@ -217,6 +276,10 @@ export class CardgameScene extends Phaser.Scene {
     })
 
     this.renderView(this.rendererRef.currentView)
+  }
+
+  update(time: number): void {
+    this.boardBackgroundView?.update(time)
   }
 
   private setBattlefieldDropZone(zone: Phaser.GameObjects.Zone | null): void {
@@ -261,6 +324,13 @@ export class CardgameScene extends Phaser.Scene {
 
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
+    if (view) {
+      this.ensureBoardAssets(
+        view.boardTheme,
+        view.renderQualityPreference,
+      )
+    }
+    this.syncBoardBackground(view)
     const game = view?.game ?? null
     if (view && game) {
       const currentSeed = view.seed
@@ -328,6 +398,77 @@ export class CardgameScene extends Phaser.Scene {
     this.lastMenuSignature = this.menuOpen && this.menuOverlay
       ? this.computeMenuSignature(view)
       : null
+  }
+
+  private boardAssetSelectionKey(
+    theme: AppViewModel['boardTheme'],
+    quality: AppViewModel['renderQualityPreference'],
+  ): string {
+    return `${theme}:${quality}`
+  }
+
+  private ensureBoardAssets(
+    theme: AppViewModel['boardTheme'],
+    quality: AppViewModel['renderQualityPreference'],
+  ): void {
+    const selection = this.boardAssetSelectionKey(theme, quality)
+    if (selection === this.boardAssetSelection) {
+      return
+    }
+
+    this.disposeBoardAssetLoad()
+    this.boardAssetSelection = selection
+    const handle = preloadPhaserBoardAssets(this, theme, quality)
+    this.boardAssetLoadHandle = handle
+    if (handle.queuedAssetCount === 0 && !this.load.isLoading()) {
+      handle.dispose()
+      this.boardAssetLoadHandle = null
+      return
+    }
+
+    const onComplete = (): void => {
+      if (this.boardAssetLoadCompleteListener === onComplete) {
+        this.boardAssetLoadCompleteListener = null
+      }
+      handle.dispose()
+      if (
+        this.boardAssetLoadHandle === handle
+        && this.boardAssetSelection === selection
+      ) {
+        this.boardAssetLoadHandle = null
+        this.syncBoardBackground(this.rendererRef.currentView)
+      }
+    }
+    this.boardAssetLoadCompleteListener = onComplete
+    this.load.once(Phaser.Loader.Events.COMPLETE, onComplete)
+    if (!this.load.isLoading()) {
+      this.load.start()
+    }
+  }
+
+  private syncBoardBackground(view: AppViewModel | null): void {
+    this.boardBackgroundView?.sync({
+      theme: view?.boardTheme ?? DEFAULT_BOARD_THEME,
+      quality: view?.renderQualityPreference
+        ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+      width: this.currentLayout.width,
+      height: this.currentLayout.height,
+      animationsEnabled: view?.animationSpeed !== 'off',
+      reducedMotion: this.reducedMotion,
+      pageVisible: this.pageVisible,
+    })
+  }
+
+  private disposeBoardAssetLoad(): void {
+    if (this.boardAssetLoadCompleteListener) {
+      this.load.off(
+        Phaser.Loader.Events.COMPLETE,
+        this.boardAssetLoadCompleteListener,
+      )
+      this.boardAssetLoadCompleteListener = null
+    }
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = null
   }
 
   presentedActor(fallback: number): number {
