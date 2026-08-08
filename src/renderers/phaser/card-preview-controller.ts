@@ -8,7 +8,7 @@ import type { SceneLayout } from './layout'
 const TAP_DISTANCE = 8
 
 export interface CardPreviewController {
-  bind(card: Phaser.GameObjects.Container, label: string): void
+  bind(card: Phaser.GameObjects.Container, label: string, sourceDimensions?: { width: number; height: number }): void
   clear(): void
   destroy(): void
 }
@@ -76,8 +76,12 @@ export function createCardPreviewController(options: {
   options.scene.input.on('pointerdown', onScenePointerDown)
 
   return {
-    bind(card, label) {
-      card.setSize(options.getLayout().cardWidth, options.getLayout().cardHeight)
+    bind(card, label, sourceDimensions) {
+      const layout = options.getLayout()
+      card.setSize(
+        sourceDimensions?.width ?? layout.cardWidth,
+        sourceDimensions?.height ?? layout.cardHeight,
+      )
       if (!card.input) {
         card.setInteractive({ useHandCursor: true })
       }

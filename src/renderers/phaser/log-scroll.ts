@@ -1,13 +1,11 @@
-// Pure scroll-positioning math for the in-scene Replay Log (and the menu
-// overlay's mirrored log viewport). Extracted from the Phaser renderer so
+// Pure scroll-positioning math for the menu Replay Log. Extracted from the Phaser renderer so
 // the clamping/pin-to-bottom behavior is unit-testable without spinning up
 // Phaser or JSDOM.
 //
 // Inputs describe a vertical scrollable strip. All Y coordinates are in the
 // coordinate space of the scroll container's parent (i.e. whatever space
-// `content.y` is interpreted in). For the in-scene log this is the scene's
-// world space; for the menu-overlay log this is the overlay `content`
-// container's local space. The helper itself is space-agnostic — it only
+// `content.y` is interpreted in), currently the overlay `content` container's
+// local space. The helper itself is space-agnostic — it only
 // requires that all inputs (`contentTopY`, `viewportTopY`, `viewportBottomY`)
 // and the returned `contentY` share one consistent space.
 //   - `contentTopY`: Y where the content origin sits when scrollOffset is 0.
