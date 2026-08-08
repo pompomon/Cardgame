@@ -10,9 +10,15 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
+import { DEFAULT_BOARD_THEME, type BoardTheme } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
+import {
+  DEFAULT_RENDER_QUALITY_PREFERENCE,
+  type RenderQualityPreference,
+} from '../../app/render-quality'
 import type { AppViewModel } from '../../app/types'
+import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
@@ -26,6 +32,10 @@ import { installButtonState, popupActionWidth, snapCardToOrigin } from './ui-uti
 import { UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
 import type { PhaserRendererHost } from './renderer-host'
+import {
+  preloadPhaserBoardAssets,
+  type BoardAssetLoadHandle,
+} from './texture-loader'
 
 export class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRendererHost
@@ -43,6 +53,10 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private boardBackground: BoardBackgroundView | null = null
+  private readonly boardAssetLoadHandles = new Set<BoardAssetLoadHandle>()
+  private boardAssetSelection = ''
+  private boardAssetLoadGeneration = 0
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -102,6 +116,12 @@ export class CardgameScene extends Phaser.Scene {
     const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
+    this.disposeBoardAssetLoads()
+    this.queueBoardAssetLoad(
+      view?.boardTheme ?? DEFAULT_BOARD_THEME,
+      view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+      false,
+    )
   }
 
   create(): void {
@@ -120,6 +140,7 @@ export class CardgameScene extends Phaser.Scene {
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
     this.updateLayout()
+    this.boardBackground = new BoardBackgroundView(this)
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
       color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.bodyFontSize,
@@ -212,6 +233,9 @@ export class CardgameScene extends Phaser.Scene {
       this.input.off('drop', onDrop)
       this.cardPreview?.destroy()
       this.cardPreview = null
+      this.boardBackground?.destroy()
+      this.boardBackground = null
+      this.disposeBoardAssetLoads()
       this.effectController.reset()
       this.boardPresentation.reset()
     })
@@ -234,6 +258,7 @@ export class CardgameScene extends Phaser.Scene {
     const orientation = orientationFromViewport(width, height)
     const insets = this.rendererRef.safeAreaInsetsForViewport(width, height)
     this.currentLayout = buildLayout(width, height, orientation, insets)
+    this.boardBackground?.resize(this.currentLayout)
     const signature = `${width}x${height}:${orientation}:${this.currentLayout.isCompact ? 'compact' : 'full'}:${this.currentLayout.isCollapsed ? 'collapsed' : 'split'}`
     const changed = signature !== this.lastLayoutSignature
     this.lastLayoutSignature = signature
@@ -298,6 +323,8 @@ export class CardgameScene extends Phaser.Scene {
       return
     }
 
+    this.ensureBoardAssets(view)
+    this.boardBackground?.sync(view, this.currentLayout)
     this.setStatus(view.status)
 
     if (!view.game) {
@@ -353,6 +380,58 @@ export class CardgameScene extends Phaser.Scene {
     fontSize = this.currentLayout.actionButtonFontSize,
   ): Phaser.GameObjects.Container {
     return createThemedButton(this, label, x, y, fontSize, width, height, onClick)
+  }
+
+  private ensureBoardAssets(view: AppViewModel): void {
+    this.queueBoardAssetLoad(
+      view.boardTheme,
+      view.renderQualityPreference,
+      true,
+    )
+  }
+
+  private queueBoardAssetLoad(
+    theme: BoardTheme,
+    quality: RenderQualityPreference,
+    startLoader: boolean,
+  ): void {
+    const selection = `${theme}:${quality}`
+    if (selection === this.boardAssetSelection) {
+      return
+    }
+    this.boardAssetSelection = selection
+    const generation = ++this.boardAssetLoadGeneration
+    let handle: BoardAssetLoadHandle
+    handle = preloadPhaserBoardAssets(this, theme, quality, {
+      onComplete: () => {
+        this.boardAssetLoadHandles.delete(handle)
+        if (generation !== this.boardAssetLoadGeneration) {
+          return
+        }
+        const latestView = this.rendererRef.currentView
+        if (
+          !latestView
+          || `${latestView.boardTheme}:${latestView.renderQualityPreference}`
+            !== this.boardAssetSelection
+        ) {
+          return
+        }
+        this.boardBackground?.sync(latestView, this.currentLayout)
+      },
+    })
+    this.boardAssetLoadHandles.add(handle)
+    if (startLoader) {
+      this.load.start()
+    }
+  }
+
+  private disposeBoardAssetLoads(): void {
+    this.boardAssetLoadGeneration += 1
+    for (const handle of this.boardAssetLoadHandles) {
+      handle.dispose()
+    }
+    this.boardAssetLoadHandles.clear()
+    this.boardAssetSelection = ''
   }
 
   closeMenuOverlay(): void {
