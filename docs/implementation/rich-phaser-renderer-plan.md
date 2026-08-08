@@ -66,7 +66,7 @@ The current Phaser renderer should move away from broad scene reconstruction on 
 - `src/app/controller.ts`
 - `src/app/view-model.ts`
 - `src/app/settings` or current settings modules
-- `src/service-worker.ts`
+- `public/sw.js`
 - `src/test/card-art-base-path.test.ts`
 - Existing Phaser renderer tests under `src/test/`
 
