@@ -48,7 +48,7 @@ export interface EffectControllerContext {
 
 export class EffectController {
   private readonly ctx: EffectControllerContext
-  private readonly effectQueue: EffectQueueState = createEffectQueue()
+  private effectQueue: EffectQueueState = createEffectQueue()
   private lastAnimatedEventCount = 0
   // Maps instanceId → BattlefieldCardPlacement for every card currently visible
   // in both battlefields. Populated (and cleared) on every renderBattlefields pass.
@@ -62,7 +62,14 @@ export class EffectController {
   }
 
   reset(): void {
-    clearEffectQueue(this.effectQueue)
+    // Replace the queue object outright rather than just clearing it: a
+    // tween in flight from the previous game/scene holds a closure over the
+    // old `state` reference (see `pumpEffectQueue`), and will keep flipping
+    // its `playing` flag and re-pumping that stale object after `done`
+    // fires. Swapping to a fresh object here means that stale drain can
+    // never make `isBusyOrWillEnqueue` busy for, or enqueue into, the new
+    // game's queue.
+    this.effectQueue = createEffectQueue()
     this.retainedEffectTargets.clear()
     this.lastAnimatedEventCount = 0
     this.previousCardPositionRegistry.clear()
