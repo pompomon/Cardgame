@@ -35,8 +35,15 @@ and `texture-loader.ts` queues one large background tier at a time. A failed
 background advances through the ordered fallback candidates; failed public
 URLs are remembered so scene restarts do not retry them. Shared UI, effect,
 and per-theme ambience atlases are independent from the large backgrounds so
-future retained views can evict a background without discarding shared
-sprites.
+`board-background.ts` can evict a background without discarding shared
+sprites. `BoardBackgroundView` lives outside the rebuild-heavy gameplay root:
+it keeps two image layers for interrupt-safe theme crossfades, updates
+cover-fit crop/scale in place on resize, and detaches the stale layer before
+evicting its large texture. Its bounded ambience images are retained, moved
+from the scene update event without per-frame display-object allocation, and
+disabled for low quality, reduced motion, animation-off, or hidden-page state.
+Scene shutdown removes its update/visibility listeners and destroys the
+retained objects idempotently.
 
 Because `lobby-scene.ts` and `cardgame-scene.ts` must never import the
 composition root (that would create a cycle), they depend on the structural
@@ -48,6 +55,8 @@ composition root (that would create a cycle), they depend on the structural
 The cardgame scene anchors render order on constants and a z-order map in
 `src/renderers/phaser/depth.ts`:
 
+- `DEPTH_BOARD_BACKGROUND = -10` — retained background image and fallback
+- `DEPTH_BOARD_AMBIENCE = -6` — bounded ambience sprites
 - `DEPTH_BOARD = -5` — player-info panels
 - default `0` — cards, buttons, battlefields
 - `DEPTH_HEADER_STRIP = 9` — header strip
