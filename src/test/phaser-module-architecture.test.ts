@@ -23,6 +23,7 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'card-factory.ts', concern: 'card GameObject factory' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
+  { file: 'board-background.ts', concern: 'retained board background / adaptive ambience' },
 
   // Lobby
   { file: 'lobby-scene.ts', concern: 'lobby scene' },
@@ -71,5 +72,12 @@ describe('phaser renderer module architecture', () => {
   it('renames P2P/a11y/recording utilities to their canonical names', () => {
     expect(existsSync(join(PHASER_DIR, 'a11y-nav.ts'))).toBe(false)
     expect(existsSync(join(PHASER_DIR, 'recording-controls.ts'))).toBe(false)
+  })
+
+  it('wires board asset preload and the retained background into CardgameScene', () => {
+    const source = readFileSync(join(PHASER_DIR, 'cardgame-scene.ts'), 'utf8')
+    expect(source).toMatch(/preloadPhaserBoardAssets\(/)
+    expect(source).toMatch(/new BoardBackgroundView\(/)
+    expect(source).toMatch(/boardBackground\?\.sync\(/)
   })
 })

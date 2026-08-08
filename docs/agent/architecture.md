@@ -49,6 +49,7 @@ src/
 │       ├── card-art-loader.ts  Card art texture preloading
 │       ├── asset-manifest.ts   Board background/atlas texture manifests
 │       ├── texture-loader.ts   Tiered board loading + failed-URL suppression
+│       ├── board-background.ts Retained background, cover crop, bounded ambience
 │       ├── card-factory.ts   Card GameObject factory (uses already-loaded textures)
 │       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
 │       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)

@@ -29,8 +29,9 @@ public/sprites/
   effects-atlas.json
 ```
 
-Keeping the large backgrounds out of the atlases allows later retained views
-to load and evict one quality tier without discarding shared UI textures.
+Keeping the large backgrounds out of the atlases allows
+`BoardBackgroundView` to load and evict one quality tier without discarding
+shared UI textures.
 
 These paths are not content-hashed. The service worker handles `/boards/*` and
 `/sprites/*` network-first, matching `/cards/*`, and keeps the latest successful

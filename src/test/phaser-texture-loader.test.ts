@@ -279,10 +279,15 @@ describe('Phaser board texture loader', () => {
 
   it('uses existing textures and removes listeners on complete or repeated disposal', () => {
     const harness = createLoaderPort(['board-background:classic:balanced'])
+    const onComplete = vi.fn()
     const handle = loadPhaserBoardAssetManifest(
       harness.port,
       buildPhaserBoardAssetManifest('classic', 'balanced'),
-      { failedUrls: new FailedAssetUrlRegistry(), onFailure: vi.fn() },
+      {
+        failedUrls: new FailedAssetUrlRegistry(),
+        onFailure: vi.fn(),
+        onComplete,
+      },
     )
 
     expect(handle.resolveBackgroundTextureKey()).toBe('board-background:classic:balanced')
@@ -292,6 +297,7 @@ describe('Phaser board texture loader', () => {
 
     harness.emitComplete()
     handle.dispose()
+    expect(onComplete).toHaveBeenCalledTimes(1)
     expect(harness.errorListenerCount()).toBe(0)
     expect(harness.completeListenerCount()).toBe(0)
   })

@@ -35,8 +35,10 @@ and `texture-loader.ts` queues one large background tier at a time. A failed
 background advances through the ordered fallback candidates; failed public
 URLs are remembered so scene restarts do not retry them. Shared UI, effect,
 and per-theme ambience atlases are independent from the large backgrounds so
-future retained views can evict a background without discarding shared
-sprites.
+`board-background.ts` can replace and evict a background without discarding
+shared sprites. `BoardBackgroundView` lives outside the rebuild-heavy gameplay
+root, uses `setCrop` for cover-fit rendering, and retains bounded ambience
+sprites/tweens across view-model syncs and resize.
 
 Because `lobby-scene.ts` and `cardgame-scene.ts` must never import the
 composition root (that would create a cycle), they depend on the structural
@@ -48,6 +50,8 @@ composition root (that would create a cycle), they depend on the structural
 The cardgame scene anchors render order on constants and a z-order map in
 `src/renderers/phaser/depth.ts`:
 
+- `DEPTH_BOARD_BACKGROUND = -20` — retained full-viewport background
+- `DEPTH_BOARD_AMBIENCE = -10` — bounded retained ambience sprites
 - `DEPTH_BOARD = -5` — player-info panels
 - default `0` — cards, buttons, battlefields
 - `DEPTH_HEADER_STRIP = 9` — header strip
@@ -126,6 +130,10 @@ the bottom of the visible strip".
 - Cleanup containers (e.g. `effectsLayer`) deterministically. If you
   destroy/recreate a layer per render, add effect GameObjects to that
   layer so cleanup is meaningful. Otherwise drop the layer.
+- Keep the retained background outside `rootContainer`. The gameplay root is
+  cleared on each view-model render; `BoardBackgroundView` owns its image,
+  ambience sprites, tweens, visibility listener, and large texture eviction,
+  and destroys them idempotently on scene shutdown.
 
 ## Effect queue (`effects.ts`)
 

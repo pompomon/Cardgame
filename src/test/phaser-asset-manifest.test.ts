@@ -2,12 +2,20 @@ import { describe, expect, it } from 'vitest'
 import {
   AMBIENCE_ATLAS_FRAMES,
   BOARD_UI_ATLAS_FRAMES,
+  boardAmbienceAtlasTextureKey,
   buildPhaserBoardAssetManifest,
   EFFECTS_ATLAS_FRAMES,
   resolveLoadedBoardBackgroundTextureKey,
 } from '../renderers/phaser/asset-manifest'
 
 describe('Phaser board asset manifest', () => {
+  it('uses stable theme-specific ambience texture keys', () => {
+    expect(boardAmbienceAtlasTextureKey('classic'))
+      .toBe('board-atlas:ambience:classic')
+    expect(boardAmbienceAtlasTextureKey('moonlit'))
+      .toBe('board-atlas:ambience:moonlit')
+  })
+
   it('falls back from HD through balanced, low, and placeholder art', () => {
     const manifest = buildPhaserBoardAssetManifest('moonlit', 'high')
     expect(manifest.backgroundCandidates.map((asset) => asset.key)).toEqual([
