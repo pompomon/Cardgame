@@ -1,6 +1,8 @@
 // Scene depth layering for the game view. Layering is anchored at
 // the scene default depth (0), where gameplay UI (hand cards, End Turn /
 // response buttons, battlefield rectangles & text) lives.
+export const DEPTH_BOARD_BACKGROUND = -10
+export const DEPTH_BOARD_AMBIENCE = -6
 export const DEPTH_BOARD = -5
 export const DEPTH_GAMEPLAY = 0
 // Ability / play-land particle effects sit just above cards and battlefields
@@ -13,6 +15,8 @@ export const DEPTH_MENU_OVERLAY = 20
 export const DEPTH_TARGET_PICKER_OVERLAY = 30
 
 export const SCENE_DEPTHS = {
+  boardBackground: DEPTH_BOARD_BACKGROUND,
+  boardAmbience: DEPTH_BOARD_AMBIENCE,
   board: DEPTH_BOARD,
   gameplay: DEPTH_GAMEPLAY,
   effectOverlay: DEPTH_EFFECT_OVERLAY,

@@ -71,6 +71,10 @@ export function boardBackgroundTextureKey(
   return `board-background:${theme}:${variant}`
 }
 
+export function boardAmbienceTextureKey(theme: BoardTheme): string {
+  return `board-atlas:ambience:${theme}`
+}
+
 export function buildPhaserBoardAssetManifest(
   theme: BoardTheme,
   quality: RenderQualityPreference,
@@ -88,7 +92,7 @@ export function buildPhaserBoardAssetManifest(
   const atlases = [
     Object.freeze({
       kind: 'atlas' as const,
-      key: `board-atlas:${ambience.name}`,
+      key: boardAmbienceTextureKey(theme),
       textureUrl: ambience.textureUrl,
       atlasUrl: ambience.atlasUrl,
       requiredFrames: AMBIENCE_ATLAS_FRAMES,
