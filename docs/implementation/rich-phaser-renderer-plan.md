@@ -109,15 +109,17 @@ The view model does not currently expose one identity that survives zone moves: 
 #### Inspected baseline and scope
 
 - `src/renderers/phaser/index.ts`, `scene-host.ts`, and
-  `cardgame-scene.ts` own renderer/scene lifecycle. Gameplay currently clears
-  and reconstructs the root gameplay container in `renderView`; only selected
-  transient effect targets and an unchanged menu overlay are retained.
+  `cardgame-scene.ts` own renderer/scene lifecycle. `renderView` keeps the
+  scene-level root container, status text, and active effect objects, but
+  clears and reconstructs the root's gameplay children; selected transient
+  effect targets and an unchanged menu overlay are retained across passes.
 - `layout.ts` and `viewport-resize.ts` already provide safe-area-aware,
   orientation-responsive layout and coalesced resize cleanup.
   `quality.ts` defines phone classification and DPR caps, but
-  `resolveGameResolution` is not yet connected to `scene-host.ts`; the current
-  runtime quality adaptation is limited to reduced effect recipes on
-  phone-sized viewports.
+  `resolveGameResolution` is not yet connected to `scene-host.ts`. Current
+  runtime adaptations use reduced effect recipes on phone-sized viewports and
+  suppress effects when animation speed resolves to `off`; with no stored
+  preference, reduced-motion initializes that setting to `off`.
 - Dragging currently uses Phaser's built-in draggable containers plus scene
   `drag`, `dragend`, and `drop` listeners. Drop actions are resolved through
   shared app projections, but there is no dedicated pointer-type-aware drag
