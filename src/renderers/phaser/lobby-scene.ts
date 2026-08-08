@@ -198,6 +198,8 @@ export class LobbyScene extends Phaser.Scene {
         aiLevelOptionsOpen: this.aiLevelOptionsOpen,
         cardVisualStyle: selectedCardVisualStyle,
         animationSpeed: view?.animationSpeed,
+        boardTheme: view?.boardTheme,
+        renderQualityPreference: view?.renderQualityPreference,
       })) {
         switch (row.kind) {
           case 'back':
@@ -215,11 +217,17 @@ export class LobbyScene extends Phaser.Scene {
               },
             })
             break
-          case 'card-visual-style-option':
+          case 'card-visual-style-cycle':
             rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setCardVisualStyle(row.value) } })
             break
-          case 'animation-speed-option':
+          case 'animation-speed-cycle':
             rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setAnimationSpeed(row.value) } })
+            break
+          case 'board-theme-cycle':
+            rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setBoardTheme(row.value) } })
+            break
+          case 'render-quality-cycle':
+            rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setRenderQualityPreference(row.value) } })
             break
         }
       }

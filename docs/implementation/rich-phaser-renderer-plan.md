@@ -3,7 +3,7 @@
 ## Implementation checklist
 
 - [x] Phase 0 — Establish branch, validation baseline, and acceptance criteria
-- [ ] Phase 1 — Add persisted board-theme and render-quality settings
+- [x] Phase 1 — Add persisted board-theme and render-quality settings
 - [ ] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [ ] Phase 3 — Implement persistent board background and adaptive ambience
 - [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
@@ -127,7 +127,8 @@ The view model does not currently expose one identity that survives zone moves: 
 - Shared card-style and animation-speed options, guards, persistence, and
   view-model projection already live in `src/app/`. DOM, visible Phaser
   settings, and the native Phaser accessibility mirror consume those shared
-  options. Board-theme and render-quality preferences do not yet exist.
+  options. At the Phase 0 baseline, board-theme and render-quality preferences
+  did not yet exist; Phase 1 now adds them.
 - Card art already uses direct `import.meta.env.BASE_URL` access and degrades
   from primary HD art to geometric fallback art to procedural rendering.
   The Phaser loader logs a failed texture key once, but does not yet provide
@@ -155,9 +156,10 @@ The view model does not currently expose one identity that survives zone moves: 
 | Accessibility and parity | Every visible Phaser action and new setting has a native keyboard/screen-reader alternative. DOM, visible Phaser, and the accessibility mirror expose the same setting values, labels, and selected value; alternative gameplay controls submit the same `GameAction` values and remain unavailable behind modals. Existing DOM, P2P, recording/replay, import/export, and renderer-selection behavior remains unchanged. | Cross-surface row/action tests, keyboard-only smoke checks, hidden-hand regression tests, and the full suite. |
 | Validation gate | Each implementation phase runs its targeted tests followed by `npm run lint`, `npm run test`, `npm run build`, and `codeql_checker`. Final verification also records the desktop/mobile, reduced-motion, offline, fallback, renderer-switch, and non-root-base smoke matrix. | Command output, exact passing test count, CodeQL result, and independent subagent report are recorded in the PR. |
 
-Phase 0 intentionally changes documentation only. Phases 1–9, the manual
-smoke matrix, performance measurements, and all independent final-verification
-checklist items remain deferred and unchecked.
+Phase 0 intentionally changed documentation only. At its conclusion, Phases
+1–9 remained deferred and unchecked. Phase 1 has since been completed; Phases
+2–9, the manual smoke matrix, performance measurements, and all independent
+final-verification checklist items remain deferred and unchecked.
 
 ## Phase 1 — Add persisted board-theme and render-quality settings
 
@@ -201,6 +203,38 @@ checklist items remain deferred and unchecked.
 - Invalid persisted values are rejected safely.
 - DOM and Phaser expose equivalent user-facing choices.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 1 implementation notes (2026-08-08)
+
+- Added shared app settings modules:
+  - `src/app/board-theme.ts`
+  - `src/app/render-quality.ts`
+  Both define immutable option tuples, labels, defaults, guards, and safe
+  localStorage persistence/fallback behavior.
+- Wired settings through app state, controller API, and immutable view-model:
+  - `src/app/types.ts`
+  - `src/app/controller.ts`
+  - `src/app/view-model.ts`
+- Added DOM + Phaser settings parity for visible controls and a11y navigation:
+  - `src/renderers/dom-utils.ts`
+  - `src/renderers/dom.ts`
+  - `src/renderers/phaser/lobby-actions.ts`
+  - `src/renderers/phaser/lobby-scene.ts`
+  - `src/renderers/phaser/a11y-navigation.ts`
+- Added/updated tests:
+  - `src/test/board-theme.test.ts`
+  - `src/test/render-quality.test.ts`
+  - `src/test/controller-renderer-settings.test.ts`
+  - `src/test/dom-lobby.test.ts`
+  - `src/test/phaser-lobby-actions.test.ts`
+  - `src/test/view-model.test.ts`
+  - `src/test/action-resolution.test.ts`
+- Validation performed:
+  - Targeted: `npm run test -- src/test/board-theme.test.ts src/test/render-quality.test.ts src/test/controller-renderer-settings.test.ts src/test/phaser-lobby-actions.test.ts src/test/dom-lobby.test.ts src/test/view-model.test.ts src/test/action-resolution.test.ts`
+  - Full: `npm run lint`, `npm run test` (60 files / 610 tests), `npm run build`, `codeql_checker` (0 alerts)
+- Independent subagent review completed (`code-review` agent). No merge-blocking
+  issues were found. Non-blocking follow-up suggestions (additional DOM/a11y
+  interaction wiring tests) were deferred.
 
 ## Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 

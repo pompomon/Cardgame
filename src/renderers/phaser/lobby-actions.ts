@@ -6,9 +6,11 @@
 // docs/agent/phaser-renderer.md "A11y submenu predicates must mirror the
 // visible-button predicates".
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
-import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import type { AdventureUiState, AnimationSpeed, CardVisualStyle, Mode } from '../../app/types'
+import { ANIMATION_SPEED_OPTIONS, DEFAULT_ANIMATION_SPEED } from '../../app/animation-settings'
+import { BOARD_THEME_OPTIONS, DEFAULT_BOARD_THEME } from '../../app/board-theme'
+import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
+import { DEFAULT_RENDER_QUALITY_PREFERENCE, RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
+import type { AdventureUiState, AnimationSpeed, BoardTheme, CardVisualStyle, Mode, RenderQualityPreference } from '../../app/types'
 import type { AiLevel } from '../../game/ai-levels'
 
 // Mode entries shown on the lobby root menu. Shared with the a11y nav so the
@@ -72,14 +74,28 @@ export type LobbySettingsRow =
   | { kind: 'back'; label: string }
   | { kind: 'ai-level-toggle'; label: string }
   | { kind: 'ai-level-option'; label: string; value: AiLevel; selected: boolean }
-  | { kind: 'card-visual-style-option'; label: string; value: CardVisualStyle; selected: boolean }
-  | { kind: 'animation-speed-option'; label: string; value: AnimationSpeed; selected: boolean }
+  | { kind: 'card-visual-style-cycle'; label: string; value: CardVisualStyle }
+  | { kind: 'animation-speed-cycle'; label: string; value: AnimationSpeed }
+  | { kind: 'board-theme-cycle'; label: string; value: BoardTheme }
+  | { kind: 'render-quality-cycle'; label: string; value: RenderQualityPreference }
 
 export interface LobbySettingsRowsParams {
   aiLevel: AiLevel | undefined
   aiLevelOptionsOpen: boolean
   cardVisualStyle: CardVisualStyle | undefined
   animationSpeed: AnimationSpeed | undefined
+  boardTheme: BoardTheme | undefined
+  renderQualityPreference: RenderQualityPreference | undefined
+}
+
+function cyclingRow<T>(
+  options: ReadonlyArray<{ readonly value: T; readonly label: string }>,
+  currentValue: T,
+): { label: string; nextValue: T } {
+  const currentIndex = options.findIndex((option) => option.value === currentValue)
+  const current = options[currentIndex] ?? options[0]
+  const next = options[(currentIndex + 1) % options.length] ?? current
+  return { label: current?.label ?? '', nextValue: next?.value ?? currentValue }
 }
 
 export function buildLobbySettingsRows(params: LobbySettingsRowsParams): LobbySettingsRow[] {
@@ -101,25 +117,17 @@ export function buildLobbySettingsRows(params: LobbySettingsRowsParams): LobbySe
       })
     }
   }
-  for (const option of CARD_VISUAL_STYLE_OPTIONS) {
-    const selected = option.value === params.cardVisualStyle
-    rows.push({
-      kind: 'card-visual-style-option',
-      label: selected ? `Card Style: ${option.label} ✓` : `Card Style: ${option.label}`,
-      value: option.value,
-      selected,
-    })
-  }
-  const selectedAnimationSpeed = params.animationSpeed ?? 'normal'
-  for (const option of ANIMATION_SPEED_OPTIONS) {
-    const selected = option.value === selectedAnimationSpeed
-    rows.push({
-      kind: 'animation-speed-option',
-      label: selected ? `Animations: ${option.label} ✓` : `Animations: ${option.label}`,
-      value: option.value,
-      selected,
-    })
-  }
+  const cardStyle = cyclingRow(CARD_VISUAL_STYLE_OPTIONS, params.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE)
+  rows.push({ kind: 'card-visual-style-cycle', label: `Card Style: ${cardStyle.label} ›`, value: cardStyle.nextValue })
+  const animationSpeed = cyclingRow(ANIMATION_SPEED_OPTIONS, params.animationSpeed ?? DEFAULT_ANIMATION_SPEED)
+  rows.push({ kind: 'animation-speed-cycle', label: `Animations: ${animationSpeed.label} ›`, value: animationSpeed.nextValue })
+  const boardTheme = cyclingRow(BOARD_THEME_OPTIONS, params.boardTheme ?? DEFAULT_BOARD_THEME)
+  rows.push({ kind: 'board-theme-cycle', label: `Board Theme: ${boardTheme.label} ›`, value: boardTheme.nextValue })
+  const renderQuality = cyclingRow(
+    RENDER_QUALITY_PREFERENCE_OPTIONS,
+    params.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+  )
+  rows.push({ kind: 'render-quality-cycle', label: `Render Quality: ${renderQuality.label} ›`, value: renderQuality.nextValue })
   return rows
 }
 

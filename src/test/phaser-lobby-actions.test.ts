@@ -111,8 +111,11 @@ describe('buildLobbySettingsRows', () => {
       aiLevelOptionsOpen: false,
       cardVisualStyle: 'classic',
       animationSpeed: 'normal',
+      boardTheme: 'classic',
+      renderQualityPreference: 'auto',
     })
     expect(rows.some((row) => row.kind === 'ai-level-option')).toBe(false)
+    expect(rows).toHaveLength(6)
     const toggle = rows.find((row) => row.kind === 'ai-level-toggle')
     expect(toggle?.label).toBe('AI Difficulty: Basic ▼')
   })
@@ -123,6 +126,8 @@ describe('buildLobbySettingsRows', () => {
       aiLevelOptionsOpen: true,
       cardVisualStyle: 'classic',
       animationSpeed: 'normal',
+      boardTheme: 'classic',
+      renderQualityPreference: 'auto',
     })
     const toggle = rows.find((row) => row.kind === 'ai-level-toggle')
     expect(toggle?.label).toBe('AI Difficulty: Basic ▲')
@@ -133,17 +138,35 @@ describe('buildLobbySettingsRows', () => {
     expect(selected[0]?.label).toContain('✓')
   })
 
-  it('marks exactly one card visual style and one animation speed as selected', () => {
+  it('collapses visual settings into rows that cycle to the next option', () => {
     const rows = buildLobbySettingsRows({
       aiLevel: 'basic',
       aiLevelOptionsOpen: false,
       cardVisualStyle: 'hd',
       animationSpeed: 'fast',
+      boardTheme: 'moonlit',
+      renderQualityPreference: 'balanced',
     })
-    const cardRows = rows.filter((row) => row.kind === 'card-visual-style-option')
-    const animationRows = rows.filter((row) => row.kind === 'animation-speed-option')
-    expect(cardRows.filter((row) => row.kind === 'card-visual-style-option' && row.selected)).toHaveLength(1)
-    expect(animationRows.filter((row) => row.kind === 'animation-speed-option' && row.selected)).toHaveLength(1)
+    expect(rows.find((row) => row.kind === 'card-visual-style-cycle')).toEqual({
+      kind: 'card-visual-style-cycle',
+      label: 'Card Style: HD ›',
+      value: 'monochrome',
+    })
+    expect(rows.find((row) => row.kind === 'animation-speed-cycle')).toEqual({
+      kind: 'animation-speed-cycle',
+      label: 'Animations: Fast ›',
+      value: 'normal',
+    })
+    expect(rows.find((row) => row.kind === 'board-theme-cycle')).toEqual({
+      kind: 'board-theme-cycle',
+      label: 'Board Theme: Moonlit ›',
+      value: 'verdant',
+    })
+    expect(rows.find((row) => row.kind === 'render-quality-cycle')).toEqual({
+      kind: 'render-quality-cycle',
+      label: 'Render Quality: Balanced ›',
+      value: 'low',
+    })
   })
 })
 

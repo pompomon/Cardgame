@@ -8,7 +8,9 @@
 // Extracted from PhaserRenderer.updateA11yNav().
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
+import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
+import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
 import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, Mode } from '../../app/types'
 import type { CardgameScene } from './cardgame-scene'
@@ -129,6 +131,22 @@ export function createA11yNav(container: HTMLElement): A11yNav {
           key: `settings-animation-speed:${option.value}`,
           label: `Set animation speed: ${option.label}${selected}`,
           onClick: () => controller.setAnimationSpeed(option.value),
+        })
+      }
+      for (const option of BOARD_THEME_OPTIONS) {
+        const selected = view.boardTheme === option.value ? ' (selected)' : ''
+        entries.push({
+          key: `settings-board-theme:${option.value}`,
+          label: `Set board theme: ${option.label}${selected}`,
+          onClick: () => controller.setBoardTheme(option.value),
+        })
+      }
+      for (const option of RENDER_QUALITY_PREFERENCE_OPTIONS) {
+        const selected = view.renderQualityPreference === option.value ? ' (selected)' : ''
+        entries.push({
+          key: `settings-render-quality:${option.value}`,
+          label: `Set render quality: ${option.label}${selected}`,
+          onClick: () => controller.setRenderQualityPreference(option.value),
         })
       }
     } else {

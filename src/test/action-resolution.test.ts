@@ -29,6 +29,8 @@ function createState(seed: number): AppState {
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
     animationSpeed: 'normal',
+    boardTheme: 'classic',
+    renderQualityPreference: 'auto',
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,

@@ -24,7 +24,13 @@ import {
   readStoredAdventureRun,
 } from './adventure-persistence'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
+import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
 import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
+import {
+  persistRenderQualityPreference,
+  readStoredRenderQualityPreference,
+  type RenderQualityPreference,
+} from './render-quality'
 import {
   appendGameRecordStep,
   createGameRecord,
@@ -76,6 +82,8 @@ export interface ControllerApi {
   setAiLevel(level: AiLevel): void
   setCardVisualStyle(style: CardVisualStyle): void
   setAnimationSpeed(speed: AnimationSpeed): void
+  setBoardTheme(theme: BoardTheme): void
+  setRenderQualityPreference(preference: RenderQualityPreference): void
   startGame(mode: Mode): void
   startAdventure(): void
   resumeAdventure(): void
@@ -123,6 +131,8 @@ export class AppController implements ControllerApi {
       aiLevel: 'basic',
       cardVisualStyle: readStoredCardVisualStyle(),
       animationSpeed: resolveInitialAnimationSpeed(),
+      boardTheme: readStoredBoardTheme(),
+      renderQualityPreference: readStoredRenderQualityPreference(),
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
@@ -694,6 +704,18 @@ export class AppController implements ControllerApi {
   setAnimationSpeed(speed: AnimationSpeed): void {
     this.state.animationSpeed = speed
     persistAnimationSpeed(speed)
+    this.notify()
+  }
+
+  setBoardTheme(theme: BoardTheme): void {
+    this.state.boardTheme = theme
+    persistBoardTheme(theme)
+    this.notify()
+  }
+
+  setRenderQualityPreference(preference: RenderQualityPreference): void {
+    this.state.renderQualityPreference = preference
+    persistRenderQualityPreference(preference)
     this.notify()
   }
 

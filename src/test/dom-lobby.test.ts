@@ -34,6 +34,8 @@ function makeView(): AppViewModel {
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
     animationSpeed: 'normal',
+    boardTheme: 'classic',
+    renderQualityPreference: 'auto',
     p2pConnected: false,
     p2pStarted: false,
     tutorial: {
@@ -138,6 +140,8 @@ function makeController(view: AppViewModel): ControllerApi {
     setAiLevel: () => {},
     setCardVisualStyle: () => {},
     setAnimationSpeed: () => {},
+    setBoardTheme: () => {},
+    setRenderQualityPreference: () => {},
     startGame: (_mode: Mode) => {},
     startAdventure: () => {},
     resumeAdventure: () => {},
@@ -176,6 +180,18 @@ describe('DOM lobby layout', () => {
     const html = renderLobby(makeView())
     expect(html).toContain('data-mode="tutorial"')
     expect(html).toContain('Tutorial (Learn to Play)')
+  })
+
+  it('renders board theme and render quality selectors with selected values', () => {
+    const view = makeView()
+    view.boardTheme = 'verdant'
+    view.renderQualityPreference = 'balanced'
+
+    const html = renderLobby(view)
+    expect(html).toContain('id="board-theme-select"')
+    expect(html).toContain('id="render-quality-select"')
+    expect(html).toContain('<option value="verdant" selected>Verdant</option>')
+    expect(html).toContain('<option value="balanced" selected>Balanced</option>')
   })
 
   it('does not duplicate element ids across lobby and in-game menu shells', () => {
