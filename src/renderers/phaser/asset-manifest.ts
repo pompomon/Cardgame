@@ -37,6 +37,7 @@ export interface PhaserAtlasAssetDescriptor {
   readonly key: string
   readonly textureUrl: string
   readonly atlasUrl: string
+  readonly requiredFrames: readonly string[]
 }
 
 export type PhaserAssetDescriptor =
@@ -90,6 +91,7 @@ export function buildPhaserBoardAssetManifest(
       key: `board-atlas:${ambience.name}`,
       textureUrl: ambience.textureUrl,
       atlasUrl: ambience.atlasUrl,
+      requiredFrames: AMBIENCE_ATLAS_FRAMES,
     }),
     ...sharedAtlases.map((name) => {
       const asset = boardSpriteAtlasLocation(name)
@@ -98,6 +100,9 @@ export function buildPhaserBoardAssetManifest(
         key: `board-atlas:${name}`,
         textureUrl: asset.textureUrl,
         atlasUrl: asset.atlasUrl,
+        requiredFrames: name === 'board-ui'
+          ? BOARD_UI_ATLAS_FRAMES
+          : EFFECTS_ATLAS_FRAMES,
       })
     }),
   ]

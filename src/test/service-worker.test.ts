@@ -255,6 +255,24 @@ describe('service worker fetch handling', () => {
       expect(responseSettled).toBe(true)
     })
 
+    it('returns a valid network response when runtime cache persistence fails', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/sprites/effects-atlas.png')
+      const cached = makeResponse('stale atlas')
+      const network = makeResponse('network atlas')
+      const networkClone = makeResponse('network atlas clone')
+      vi.spyOn(network, 'clone').mockReturnValue(networkClone)
+      harness.cachedResponses.set(request.url, cached)
+      harness.cachePut.mockRejectedValueOnce(new Error('quota exceeded'))
+      harness.fetchMock.mockResolvedValue(network)
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(network)
+      expect(harness.cachePut).toHaveBeenCalledWith(request, networkClone)
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
+    })
+
     it('uses a cached sprite atlas when offline', async () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/sprites/board-ui-atlas.json')

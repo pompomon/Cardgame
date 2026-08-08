@@ -113,8 +113,13 @@ self.addEventListener('fetch', (event) => {
         .then(async (response) => {
           if (response.ok) {
             const clone = response.clone()
-            const cache = await caches.open(ASSET_CACHE)
-            await cache.put(event.request, clone)
+            try {
+              const cache = await caches.open(ASSET_CACHE)
+              await cache.put(event.request, clone)
+            } catch {
+              // Cache persistence is best-effort. A valid network response must
+              // still reach the app if storage is unavailable or quota-limited.
+            }
           }
           return response
         })

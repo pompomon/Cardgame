@@ -2,10 +2,16 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   FailedAssetUrlRegistry,
   loadPhaserBoardAssetManifest,
+  observeLoaderFileProcessingErrors,
   type LoaderFileFailure,
   type PhaserTextureLoaderPort,
+  type ProcessableLoaderFile,
 } from '../renderers/phaser/texture-loader'
-import { buildPhaserBoardAssetManifest } from '../renderers/phaser/asset-manifest'
+import {
+  AMBIENCE_ATLAS_FRAMES,
+  BOARD_UI_ATLAS_FRAMES,
+  buildPhaserBoardAssetManifest,
+} from '../renderers/phaser/asset-manifest'
 
 type QueuedAsset =
   | { readonly kind: 'image'; readonly key: string; readonly urls: readonly string[] }
@@ -16,18 +22,22 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
   readonly queued: QueuedAsset[]
   emitError(file: LoaderFileFailure): void
   emitComplete(): void
-  addTexture(key: string): void
-  restartCount(): number
+  addTexture(key: string, frames?: readonly string[]): void
   errorListenerCount(): number
   completeListenerCount(): number
 } {
   const textures = new Set(initialTextures)
+  const textureFrames = new Map<string, Set<string>>()
   const queued: QueuedAsset[] = []
   const errorListeners = new Set<(file: LoaderFileFailure) => void>()
   const completeListeners = new Set<() => void>()
-  let restarts = 0
   const port: PhaserTextureLoaderPort = {
     textureExists: (key) => textures.has(key),
+    textureHasFrame: (key, frame) => textureFrames.get(key)?.has(frame) ?? false,
+    removeTexture: (key) => {
+      textures.delete(key)
+      textureFrames.delete(key)
+    },
     queueImage: (key, url) => {
       queued.push({ kind: 'image', key, urls: [url] })
     },
@@ -46,9 +56,6 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
     offComplete: (listener) => {
       completeListeners.delete(listener)
     },
-    restart: () => {
-      restarts += 1
-    },
   }
   return {
     port,
@@ -61,10 +68,10 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
       completeListeners.clear()
       for (const listener of listeners) listener()
     },
-    addTexture: (key) => {
+    addTexture: (key, frames = []) => {
       textures.add(key)
+      textureFrames.set(key, new Set(frames))
     },
-    restartCount: () => restarts,
     errorListenerCount: () => errorListeners.size,
     completeListenerCount: () => completeListeners.size,
   }
@@ -139,7 +146,7 @@ describe('Phaser board texture loader', () => {
     ).toEqual(['board-background:verdant:balanced'])
   })
 
-  it('falls back and suppresses retries when Phaser processing creates no texture', () => {
+  it('queues a fallback before loader completion when image processing fails', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const harness = createLoaderPort()
     const onFailure = vi.fn()
@@ -148,17 +155,16 @@ describe('Phaser board texture loader', () => {
       buildPhaserBoardAssetManifest('moonlit', 'high'),
       { failedUrls, onFailure },
     )
-    for (const atlasKey of [
-      'board-atlas:ambience:moonlit',
-      'board-atlas:board-ui',
-      'board-atlas:effects',
-    ]) {
-      harness.addTexture(atlasKey)
+    const originalOnProcessError = vi.fn()
+    const file: ProcessableLoaderFile = {
+      key: 'board-background:moonlit:hd',
+      src: '/boards/moonlit/background-hd.png',
+      type: 'image',
+      onProcessError: originalOnProcessError,
     }
+    observeLoaderFileProcessingErrors(file, harness.emitError)
+    file.onProcessError?.()
 
-    harness.emitComplete()
-
-    expect(harness.restartCount()).toBe(1)
     expect(
       harness.queued.filter((asset) => asset.kind === 'image').map((asset) => asset.key),
     ).toEqual([
@@ -167,10 +173,14 @@ describe('Phaser board texture loader', () => {
     ])
     expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
       key: 'board-background:moonlit:hd',
-      source: null,
+      source: '/boards/moonlit/background-hd.png',
     }))
+    expect(originalOnProcessError).toHaveBeenCalledTimes(1)
 
     harness.addTexture('board-background:moonlit:balanced')
+    harness.addTexture('board-atlas:ambience:moonlit', AMBIENCE_ATLAS_FRAMES)
+    harness.addTexture('board-atlas:board-ui', BOARD_UI_ATLAS_FRAMES)
+    harness.addTexture('board-atlas:effects', ['spark', 'impact-ring', 'trail', 'shield'])
     harness.emitComplete()
     expect(handle.resolveBackgroundTextureKey()).toBe('board-background:moonlit:balanced')
     expect(harness.errorListenerCount()).toBe(0)
@@ -186,16 +196,46 @@ describe('Phaser board texture loader', () => {
     ).toEqual(['board-background:moonlit:balanced'])
   })
 
-  it('suppresses failed atlases on later cycles without affecting gameplay', () => {
+  it('swallows malformed atlas JSON after reporting its processing failure', () => {
+    const onError = vi.fn()
+    const originalOnProcessError = vi.fn()
+    const file: ProcessableLoaderFile = {
+      key: 'board-atlas:effects',
+      src: '/sprites/effects-atlas.json',
+      type: 'json',
+      onProcessError: originalOnProcessError,
+    }
+    file.onProcess = () => {
+      file.onProcessError?.()
+      throw new SyntaxError('malformed JSON')
+    }
+
+    observeLoaderFileProcessingErrors(file, onError)
+
+    expect(() => file.onProcess?.()).not.toThrow()
+    expect(onError).toHaveBeenCalledWith(file)
+    expect(originalOnProcessError).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects atlases missing required frames and suppresses later retries', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const first = createLoaderPort()
-    const firstHandle = loadPhaserBoardAssetManifest(
+    const onFailure = vi.fn()
+    loadPhaserBoardAssetManifest(
       first.port,
       buildPhaserBoardAssetManifest('classic', 'balanced'),
-      { failedUrls, onFailure: vi.fn() },
+      { failedUrls, onFailure },
     )
-    first.emitError({ key: 'board-atlas:effects', src: '/sprites/effects-atlas.png' })
-    firstHandle.dispose()
+    first.addTexture('board-background:classic:balanced')
+    first.addTexture('board-atlas:ambience:classic', AMBIENCE_ATLAS_FRAMES)
+    first.addTexture('board-atlas:board-ui', BOARD_UI_ATLAS_FRAMES)
+    first.addTexture('board-atlas:effects', ['spark'])
+    first.emitComplete()
+
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'board-atlas:effects',
+    }))
+    expect(first.port.textureExists('board-atlas:effects')).toBe(false)
 
     const second = createLoaderPort()
     loadPhaserBoardAssetManifest(

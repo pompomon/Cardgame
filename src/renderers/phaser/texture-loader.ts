@@ -9,22 +9,30 @@ import {
 } from './asset-manifest'
 
 const FILE_LOAD_ERROR_EVENT = 'loaderror'
+const FILE_ADDED_EVENT = 'addfile'
 const LOAD_COMPLETE_EVENT = 'complete'
 
 export interface PhaserTextureLoaderPort {
   textureExists(key: string): boolean
+  textureHasFrame(key: string, frame: string): boolean
+  removeTexture(key: string): void
   queueImage(key: string, url: string): void
   queueAtlas(key: string, textureUrl: string, atlasUrl: string): void
   onFileError(listener: (file: LoaderFileFailure) => void): void
   offFileError(listener: (file: LoaderFileFailure) => void): void
   onceComplete(listener: () => void): void
   offComplete(listener: () => void): void
-  restart(): void
 }
 
 export interface LoaderFileFailure {
   readonly key?: unknown
   readonly src?: unknown
+}
+
+export interface ProcessableLoaderFile extends LoaderFileFailure {
+  readonly type?: unknown
+  onProcess?: () => void
+  onProcessError?: () => void
 }
 
 export interface AssetLoadFailure {
@@ -89,6 +97,57 @@ function defaultFailureReporter(failure: AssetLoadFailure): void {
   )
 }
 
+export function observeLoaderFileProcessingErrors(
+  file: ProcessableLoaderFile,
+  onError: (file: LoaderFileFailure) => void,
+): void {
+  const originalOnProcessError = file.onProcessError
+  if (typeof originalOnProcessError !== 'function') {
+    return
+  }
+  let reported = false
+  file.onProcessError = () => {
+    if (!reported) {
+      reported = true
+      onError(file)
+    }
+    originalOnProcessError.call(file)
+  }
+
+  // Phaser's JSONFile rethrows malformed JSON after calling onProcessError.
+  // Atlas JSON is optional presentation data, so keep the loader alive after
+  // the original handler has marked the file as failed.
+  if (file.type === 'json' && typeof file.onProcess === 'function') {
+    const originalOnProcess = file.onProcess
+    file.onProcess = () => {
+      try {
+        originalOnProcess.call(file)
+      } catch {
+        if (!reported) {
+          file.onProcessError?.()
+        }
+      }
+    }
+  }
+}
+
+function descriptorIsUsable(
+  port: PhaserTextureLoaderPort,
+  descriptor: PhaserAssetDescriptor,
+): boolean {
+  switch (descriptor.kind) {
+    case 'image':
+      return port.textureExists(descriptor.key)
+    case 'atlas':
+      return port.textureExists(descriptor.key)
+        && descriptor.requiredFrames.every((frame) =>
+          port.textureHasFrame(descriptor.key, frame),
+        )
+    default:
+      return false
+  }
+}
+
 export function loadPhaserBoardAssetManifest(
   port: PhaserTextureLoaderPort,
   manifest: PhaserBoardAssetManifest,
@@ -117,7 +176,7 @@ export function loadPhaserBoardAssetManifest(
 
   const queueDescriptor = (descriptor: PhaserAssetDescriptor): void => {
     const urls = descriptorUrls(descriptor)
-    if (port.textureExists(descriptor.key) || failedUrls.hasAny(urls)) {
+    if (descriptorIsUsable(port, descriptor) || failedUrls.hasAny(urls)) {
       return
     }
     pending.set(descriptor.key, descriptor)
@@ -159,6 +218,9 @@ export function loadPhaserBoardAssetManifest(
   }
 
   const onFileError = (file: LoaderFileFailure): void => {
+    if (disposed) {
+      return
+    }
     const key = typeof file.key === 'string' ? file.key : null
     if (key === null) {
       return
@@ -178,21 +240,15 @@ export function loadPhaserBoardAssetManifest(
     const completedDescriptors = [...pending.values()]
     pending.clear()
     for (const descriptor of completedDescriptors) {
-      if (port.textureExists(descriptor.key)) {
+      if (descriptorIsUsable(port, descriptor)) {
         continue
       }
-      // Phaser's loaderror event only covers transport failures. Successful
-      // HTTP responses can still fail while decoding an image or parsing atlas
-      // JSON, so verify the texture cache after processing completes.
+      // Atlas parsing can produce a texture without its declared frames. Treat
+      // that as a failed optional atlas so later scene starts do not retry it.
       noteFailure(descriptor, null)
-      if (backgroundKeys.has(descriptor.key)) {
-        queueNextBackground()
+      if (descriptor.kind === 'atlas' && port.textureExists(descriptor.key)) {
+        port.removeTexture(descriptor.key)
       }
-    }
-    if (pending.size > 0) {
-      port.onceComplete(onComplete)
-      port.restart()
-      return
     }
     dispose()
   }
@@ -213,8 +269,22 @@ export function loadPhaserBoardAssetManifest(
 }
 
 function textureLoaderPortForScene(scene: Phaser.Scene): PhaserTextureLoaderPort {
+  const fileAddedListeners = new Map<
+    (file: LoaderFileFailure) => void,
+    (
+      key: string,
+      type: string,
+      loader: Phaser.Loader.LoaderPlugin,
+      file: ProcessableLoaderFile,
+    ) => void
+  >()
   return {
     textureExists: (key) => scene.textures.exists(key),
+    textureHasFrame: (key, frame) =>
+      scene.textures.exists(key) && scene.textures.get(key).has(frame),
+    removeTexture: (key) => {
+      scene.textures.remove(key)
+    },
     queueImage: (key, url) => {
       scene.load.image(key, url)
     },
@@ -222,9 +292,24 @@ function textureLoaderPortForScene(scene: Phaser.Scene): PhaserTextureLoaderPort
       scene.load.atlas(key, textureUrl, atlasUrl)
     },
     onFileError: (listener) => {
+      const onFileAdded = (
+        _key: string,
+        _type: string,
+        _loader: Phaser.Loader.LoaderPlugin,
+        file: ProcessableLoaderFile,
+      ): void => {
+        observeLoaderFileProcessingErrors(file, listener)
+      }
+      fileAddedListeners.set(listener, onFileAdded)
+      scene.load.on(FILE_ADDED_EVENT, onFileAdded)
       scene.load.on(FILE_LOAD_ERROR_EVENT, listener)
     },
     offFileError: (listener) => {
+      const onFileAdded = fileAddedListeners.get(listener)
+      if (onFileAdded) {
+        scene.load.off(FILE_ADDED_EVENT, onFileAdded)
+        fileAddedListeners.delete(listener)
+      }
       scene.load.off(FILE_LOAD_ERROR_EVENT, listener)
     },
     onceComplete: (listener) => {
@@ -232,9 +317,6 @@ function textureLoaderPortForScene(scene: Phaser.Scene): PhaserTextureLoaderPort
     },
     offComplete: (listener) => {
       scene.load.off(LOAD_COMPLETE_EVENT, listener)
-    },
-    restart: () => {
-      scene.load.start()
     },
   }
 }

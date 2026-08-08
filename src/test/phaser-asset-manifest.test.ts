@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AMBIENCE_ATLAS_FRAMES,
+  BOARD_UI_ATLAS_FRAMES,
   buildPhaserBoardAssetManifest,
+  EFFECTS_ATLAS_FRAMES,
   resolveLoadedBoardBackgroundTextureKey,
 } from '../renderers/phaser/asset-manifest'
 
@@ -40,6 +43,11 @@ describe('Phaser board asset manifest', () => {
       'board-atlas:ambience:verdant',
       'board-atlas:board-ui',
       'board-atlas:effects',
+    ])
+    expect(manifest.atlases.map((asset) => asset.requiredFrames)).toEqual([
+      AMBIENCE_ATLAS_FRAMES,
+      BOARD_UI_ATLAS_FRAMES,
+      EFFECTS_ATLAS_FRAMES,
     ])
   })
 
