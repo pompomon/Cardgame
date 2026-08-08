@@ -7,8 +7,10 @@
 // visible-button predicates".
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
+import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import type { AdventureUiState, AnimationSpeed, CardVisualStyle, Mode } from '../../app/types'
+import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
+import type { AdventureUiState, AnimationSpeed, BoardTheme, CardVisualStyle, Mode, RenderQualityPreference } from '../../app/types'
 import type { AiLevel } from '../../game/ai-levels'
 
 // Mode entries shown on the lobby root menu. Shared with the a11y nav so the
@@ -74,12 +76,16 @@ export type LobbySettingsRow =
   | { kind: 'ai-level-option'; label: string; value: AiLevel; selected: boolean }
   | { kind: 'card-visual-style-option'; label: string; value: CardVisualStyle; selected: boolean }
   | { kind: 'animation-speed-option'; label: string; value: AnimationSpeed; selected: boolean }
+  | { kind: 'board-theme-option'; label: string; value: BoardTheme; selected: boolean }
+  | { kind: 'render-quality-option'; label: string; value: RenderQualityPreference; selected: boolean }
 
 export interface LobbySettingsRowsParams {
   aiLevel: AiLevel | undefined
   aiLevelOptionsOpen: boolean
   cardVisualStyle: CardVisualStyle | undefined
   animationSpeed: AnimationSpeed | undefined
+  boardTheme: BoardTheme | undefined
+  renderQualityPreference: RenderQualityPreference | undefined
 }
 
 export function buildLobbySettingsRows(params: LobbySettingsRowsParams): LobbySettingsRow[] {
@@ -116,6 +122,24 @@ export function buildLobbySettingsRows(params: LobbySettingsRowsParams): LobbySe
     rows.push({
       kind: 'animation-speed-option',
       label: selected ? `Animations: ${option.label} ✓` : `Animations: ${option.label}`,
+      value: option.value,
+      selected,
+    })
+  }
+  for (const option of BOARD_THEME_OPTIONS) {
+    const selected = option.value === params.boardTheme
+    rows.push({
+      kind: 'board-theme-option',
+      label: selected ? `Board Theme: ${option.label} ✓` : `Board Theme: ${option.label}`,
+      value: option.value,
+      selected,
+    })
+  }
+  for (const option of RENDER_QUALITY_PREFERENCE_OPTIONS) {
+    const selected = option.value === params.renderQualityPreference
+    rows.push({
+      kind: 'render-quality-option',
+      label: selected ? `Render Quality: ${option.label} ✓` : `Render Quality: ${option.label}`,
       value: option.value,
       selected,
     })

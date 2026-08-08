@@ -2,7 +2,9 @@ import type { AppViewModel, AnimationSpeed, CardVisualStyle, RendererKind } from
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../app/animation-settings'
+import { BOARD_THEME_OPTIONS } from '../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../app/card-visual-styles'
+import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../app/render-quality'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { visualEffectForEvent, type VisualEffectDescriptor } from '../app/visual-effects'
 import { getInstallUiState } from '../app/install-support'
@@ -141,6 +143,14 @@ export function renderLobby(view: AppViewModel): string {
     const selected = option.value === view.animationSpeed ? ' selected' : ''
     return `<option value="${option.value}"${selected}>${option.label}</option>`
   }).join('')
+  const boardThemeOptions = BOARD_THEME_OPTIONS.map((option) => {
+    const selected = option.value === view.boardTheme ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
+  const renderQualityOptions = RENDER_QUALITY_PREFERENCE_OPTIONS.map((option) => {
+    const selected = option.value === view.renderQualityPreference ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
 
   const adventure = view.adventure
   const nextOpponent = adventure.opponentLineup[adventure.currentOpponentIndex]
@@ -171,6 +181,16 @@ export function renderLobby(view: AppViewModel): string {
           <label for="animation-speed-select">Speed</label>
           <select id="animation-speed-select">${animationSpeedOptions}</select>
           <p class="install-hint">Default follows system reduced-motion preference.</p>
+        </div>
+        <div class="controls">
+          <h3>Board Theme</h3>
+          <label for="board-theme-select">Theme</label>
+          <select id="board-theme-select">${boardThemeOptions}</select>
+        </div>
+        <div class="controls">
+          <h3>Render Quality</h3>
+          <label for="render-quality-select">Profile</label>
+          <select id="render-quality-select">${renderQualityOptions}</select>
         </div>
       </div>
       <div class="modes dom-cardgame__mode-grid" aria-label="Game modes">

@@ -2,7 +2,9 @@ import type { BasicLand, GameAction, GamePhase, GameState, LogEvent } from '../g
 import type { AiLevel } from '../game/ai-levels'
 import type { GameRecordFile } from './game-recording'
 import type { AdventureOpponentDeck, AdventureOpponentKind, AdventureRunStatus } from './adventure'
+import type { BoardTheme } from './board-theme'
 import type { CardVisualStyle } from './card-visual-styles'
+import type { RenderQualityPreference } from './render-quality'
 
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join' | 'tutorial'
 export type ControllerKind = 'human' | 'ai' | 'remote'
@@ -14,6 +16,8 @@ export type RendererKind = 'dom' | 'phaser'
 // imports.
 export type { AiLevel }
 export type { CardVisualStyle }
+export type { BoardTheme }
+export type { RenderQualityPreference }
 export type AnimationSpeed = 'off' | 'fast' | 'normal' | 'slow'
 
 export interface AdventureState {
@@ -74,6 +78,8 @@ export interface AppState {
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
   animationSpeed: AnimationSpeed
+  boardTheme: BoardTheme
+  renderQualityPreference: RenderQualityPreference
   // True once a P2P game's `start` packet has been acknowledged by the
   // peer (host receives `start-ack`) or applied by the joiner (joiner
   // received the `start` packet and acknowledged it). Used by renderers
@@ -190,6 +196,8 @@ export interface AppViewModel {
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
   animationSpeed: AnimationSpeed
+  boardTheme: BoardTheme
+  renderQualityPreference: RenderQualityPreference
   p2pConnected: boolean
   p2pStarted: boolean
   tutorial: {

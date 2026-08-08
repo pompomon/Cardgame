@@ -12,9 +12,11 @@ import {
 } from '../app/action-resolution'
 import { isAiLevel } from '../app/ai-levels'
 import { isAnimationSpeed, MAX_QUEUED_EFFECTS } from '../app/animation-settings'
+import { isBoardTheme } from '../app/board-theme'
 import { BoardPresentationCoordinator } from '../app/board-presentation'
 import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
+import { isRenderQualityPreference } from '../app/render-quality'
 import { visualEffectForEvent } from '../app/visual-effects'
 import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
@@ -856,6 +858,18 @@ export class DomRenderer implements AppRenderer {
       const value = (event.target as HTMLSelectElement).value
       if (isAnimationSpeed(value)) {
         this.controller?.setAnimationSpeed(value)
+      }
+    })
+    this.container.querySelector<HTMLSelectElement>('#board-theme-select')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value
+      if (isBoardTheme(value)) {
+        this.controller?.setBoardTheme(value)
+      }
+    })
+    this.container.querySelector<HTMLSelectElement>('#render-quality-select')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value
+      if (isRenderQualityPreference(value)) {
+        this.controller?.setRenderQualityPreference(value)
       }
     })
 

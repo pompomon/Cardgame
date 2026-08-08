@@ -111,6 +111,8 @@ describe('buildLobbySettingsRows', () => {
       aiLevelOptionsOpen: false,
       cardVisualStyle: 'classic',
       animationSpeed: 'normal',
+      boardTheme: 'classic',
+      renderQualityPreference: 'auto',
     })
     expect(rows.some((row) => row.kind === 'ai-level-option')).toBe(false)
     const toggle = rows.find((row) => row.kind === 'ai-level-toggle')
@@ -123,6 +125,8 @@ describe('buildLobbySettingsRows', () => {
       aiLevelOptionsOpen: true,
       cardVisualStyle: 'classic',
       animationSpeed: 'normal',
+      boardTheme: 'classic',
+      renderQualityPreference: 'auto',
     })
     const toggle = rows.find((row) => row.kind === 'ai-level-toggle')
     expect(toggle?.label).toBe('AI Difficulty: Basic ▲')
@@ -139,11 +143,17 @@ describe('buildLobbySettingsRows', () => {
       aiLevelOptionsOpen: false,
       cardVisualStyle: 'hd',
       animationSpeed: 'fast',
+      boardTheme: 'moonlit',
+      renderQualityPreference: 'balanced',
     })
     const cardRows = rows.filter((row) => row.kind === 'card-visual-style-option')
     const animationRows = rows.filter((row) => row.kind === 'animation-speed-option')
+    const boardThemeRows = rows.filter((row) => row.kind === 'board-theme-option')
+    const renderQualityRows = rows.filter((row) => row.kind === 'render-quality-option')
     expect(cardRows.filter((row) => row.kind === 'card-visual-style-option' && row.selected)).toHaveLength(1)
     expect(animationRows.filter((row) => row.kind === 'animation-speed-option' && row.selected)).toHaveLength(1)
+    expect(boardThemeRows.filter((row) => row.kind === 'board-theme-option' && row.selected)).toHaveLength(1)
+    expect(renderQualityRows.filter((row) => row.kind === 'render-quality-option' && row.selected)).toHaveLength(1)
   })
 })
 
