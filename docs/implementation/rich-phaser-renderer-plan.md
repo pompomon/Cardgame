@@ -3,7 +3,7 @@
 ## Implementation checklist
 
 - [x] Phase 0 — Establish branch, validation baseline, and acceptance criteria
-- [ ] Phase 1 — Add persisted board-theme and render-quality settings
+- [x] Phase 1 — Add persisted board-theme and render-quality settings
 - [ ] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [ ] Phase 3 — Implement persistent board background and adaptive ambience
 - [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
@@ -201,6 +201,38 @@ checklist items remain deferred and unchecked.
 - Invalid persisted values are rejected safely.
 - DOM and Phaser expose equivalent user-facing choices.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 1 implementation notes (2026-08-08)
+
+- Added shared app settings modules:
+  - `src/app/board-theme.ts`
+  - `src/app/render-quality.ts`
+  Both define immutable option tuples, labels, defaults, guards, and safe
+  localStorage persistence/fallback behavior.
+- Wired settings through app state, controller API, and immutable view-model:
+  - `src/app/types.ts`
+  - `src/app/controller.ts`
+  - `src/app/view-model.ts`
+- Added DOM + Phaser settings parity for visible controls and a11y navigation:
+  - `src/renderers/dom-utils.ts`
+  - `src/renderers/dom.ts`
+  - `src/renderers/phaser/lobby-actions.ts`
+  - `src/renderers/phaser/lobby-scene.ts`
+  - `src/renderers/phaser/a11y-navigation.ts`
+- Added/updated tests:
+  - `src/test/board-theme.test.ts`
+  - `src/test/render-quality.test.ts`
+  - `src/test/controller-renderer-settings.test.ts`
+  - `src/test/dom-lobby.test.ts`
+  - `src/test/phaser-lobby-actions.test.ts`
+  - `src/test/view-model.test.ts`
+  - `src/test/action-resolution.test.ts`
+- Validation performed:
+  - Targeted: `npm run test -- src/test/board-theme.test.ts src/test/render-quality.test.ts src/test/controller-renderer-settings.test.ts src/test/phaser-lobby-actions.test.ts src/test/dom-lobby.test.ts src/test/view-model.test.ts src/test/action-resolution.test.ts`
+  - Full: `npm run lint`, `npm run test` (60 files / 610 tests), `npm run build`, `codeql_checker` (0 alerts)
+- Independent subagent review completed (`code-review` agent). No merge-blocking
+  issues were found. Non-blocking follow-up suggestions (additional DOM/a11y
+  interaction wiring tests) were deferred.
 
 ## Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 
