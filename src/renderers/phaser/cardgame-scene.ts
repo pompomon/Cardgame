@@ -10,9 +10,16 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
+import {
+  DEFAULT_ANIMATION_SPEED,
+  prefersReducedMotion,
+} from '../../app/animation-settings'
+import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
+import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import type { AppViewModel } from '../../app/types'
+import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
@@ -26,6 +33,10 @@ import { installButtonState, popupActionWidth, snapCardToOrigin } from './ui-uti
 import { UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
 import type { PhaserRendererHost } from './renderer-host'
+import {
+  preloadPhaserBoardAssets,
+  type BoardAssetLoadHandle,
+} from './texture-loader'
 
 export class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRendererHost
@@ -43,6 +54,8 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private boardBackground: BoardBackgroundView | null = null
+  private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -102,9 +115,19 @@ export class CardgameScene extends Phaser.Scene {
     const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = preloadPhaserBoardAssets(
+      this,
+      view?.boardTheme ?? DEFAULT_BOARD_THEME,
+      view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+    )
   }
 
   create(): void {
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = null
+    this.boardBackground?.destroy()
+    this.boardBackground = new BoardBackgroundView(this)
     this.rootContainer = this.add.container(0, 0)
     this.cardPreview = createCardPreviewController({
       scene: this,
@@ -212,6 +235,10 @@ export class CardgameScene extends Phaser.Scene {
       this.input.off('drop', onDrop)
       this.cardPreview?.destroy()
       this.cardPreview = null
+      this.boardAssetLoadHandle?.dispose()
+      this.boardAssetLoadHandle = null
+      this.boardBackground?.destroy()
+      this.boardBackground = null
       this.effectController.reset()
       this.boardPresentation.reset()
     })
@@ -261,6 +288,15 @@ export class CardgameScene extends Phaser.Scene {
 
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
+    this.boardBackground?.sync({
+      width: this.currentLayout.width,
+      height: this.currentLayout.height,
+      theme: view?.boardTheme ?? DEFAULT_BOARD_THEME,
+      quality: view?.renderQualityPreference
+        ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+      animationSpeed: view?.animationSpeed ?? DEFAULT_ANIMATION_SPEED,
+      reducedMotion: prefersReducedMotion(),
+    })
     const game = view?.game ?? null
     if (view && game) {
       const currentSeed = view.seed

@@ -30,6 +30,7 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
 
   // Cardgame scene + gameplay presentation
   { file: 'cardgame-scene.ts', concern: 'cardgame scene orchestrator' },
+  { file: 'board-background.ts', concern: 'retained board background and ambience owner' },
   { file: 'gameplay-presenter.ts', concern: 'gameplay render-pass composer' },
   { file: 'game-header.ts', concern: 'header strip renderer' },
   { file: 'player-info.ts', concern: 'player info panels renderer' },
