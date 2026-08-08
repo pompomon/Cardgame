@@ -127,7 +127,8 @@ The view model does not currently expose one identity that survives zone moves: 
 - Shared card-style and animation-speed options, guards, persistence, and
   view-model projection already live in `src/app/`. DOM, visible Phaser
   settings, and the native Phaser accessibility mirror consume those shared
-  options. Board-theme and render-quality preferences do not yet exist.
+  options. At the Phase 0 baseline, board-theme and render-quality preferences
+  did not yet exist; Phase 1 now adds them.
 - Card art already uses direct `import.meta.env.BASE_URL` access and degrades
   from primary HD art to geometric fallback art to procedural rendering.
   The Phaser loader logs a failed texture key once, but does not yet provide
@@ -155,9 +156,10 @@ The view model does not currently expose one identity that survives zone moves: 
 | Accessibility and parity | Every visible Phaser action and new setting has a native keyboard/screen-reader alternative. DOM, visible Phaser, and the accessibility mirror expose the same setting values, labels, and selected value; alternative gameplay controls submit the same `GameAction` values and remain unavailable behind modals. Existing DOM, P2P, recording/replay, import/export, and renderer-selection behavior remains unchanged. | Cross-surface row/action tests, keyboard-only smoke checks, hidden-hand regression tests, and the full suite. |
 | Validation gate | Each implementation phase runs its targeted tests followed by `npm run lint`, `npm run test`, `npm run build`, and `codeql_checker`. Final verification also records the desktop/mobile, reduced-motion, offline, fallback, renderer-switch, and non-root-base smoke matrix. | Command output, exact passing test count, CodeQL result, and independent subagent report are recorded in the PR. |
 
-Phase 0 intentionally changes documentation only. Phases 1–9, the manual
-smoke matrix, performance measurements, and all independent final-verification
-checklist items remain deferred and unchecked.
+Phase 0 intentionally changed documentation only. At its conclusion, Phases
+1–9 remained deferred and unchecked. Phase 1 has since been completed; Phases
+2–9, the manual smoke matrix, performance measurements, and all independent
+final-verification checklist items remain deferred and unchecked.
 
 ## Phase 1 — Add persisted board-theme and render-quality settings
 
