@@ -18,6 +18,8 @@ beforeAll(() => {
 })
 
 import { DomRenderer, renderGame, renderLobby } from '../renderers/dom'
+import { BOARD_THEME_OPTIONS } from '../app/board-theme'
+import { RENDER_QUALITY_OPTIONS } from '../app/render-quality'
 import type { AppViewModel, Mode } from '../app/types'
 import type { ControllerApi } from '../app/controller'
 import type { GameAction } from '../game/types'
@@ -33,6 +35,8 @@ function makeView(): AppViewModel {
     controllers: ['human', 'human'],
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
+    boardTheme: 'classic',
+    renderQualityPreference: 'auto',
     animationSpeed: 'normal',
     p2pConnected: false,
     p2pStarted: false,
@@ -137,6 +141,8 @@ function makeController(view: AppViewModel): ControllerApi {
     getViewModel: () => view,
     setAiLevel: () => {},
     setCardVisualStyle: () => {},
+    setBoardTheme: () => {},
+    setRenderQualityPreference: () => {},
     setAnimationSpeed: () => {},
     startGame: (_mode: Mode) => {},
     startAdventure: () => {},
@@ -176,6 +182,25 @@ describe('DOM lobby layout', () => {
     const html = renderLobby(makeView())
     expect(html).toContain('data-mode="tutorial"')
     expect(html).toContain('Tutorial (Learn to Play)')
+  })
+
+  it('renders shared board-theme and render-quality labels with selected values', () => {
+    const view = makeView()
+    view.boardTheme = 'midnight'
+    view.renderQualityPreference = 'low'
+
+    const html = renderLobby(view)
+
+    for (const option of BOARD_THEME_OPTIONS) {
+      expect(html).toContain(`value="${option.value}"`)
+      expect(html).toContain(`>${option.label}</option>`)
+    }
+    for (const option of RENDER_QUALITY_OPTIONS) {
+      expect(html).toContain(`value="${option.value}"`)
+      expect(html).toContain(`>${option.label}</option>`)
+    }
+    expect(html).toContain('<option value="midnight" selected>Midnight</option>')
+    expect(html).toContain('<option value="low" selected>Low</option>')
   })
 
   it('does not duplicate element ids across lobby and in-game menu shells', () => {

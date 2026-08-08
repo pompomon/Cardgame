@@ -28,6 +28,8 @@ function createState(seed: number): AppState {
     hasSavedRecording: false,
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
+    boardTheme: 'classic',
+    renderQualityPreference: 'auto',
     animationSpeed: 'normal',
     p2pStarted: false,
     pendingP2PStartSeed: null,

@@ -24,6 +24,7 @@ import {
   readStoredAdventureRun,
 } from './adventure-persistence'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
+import { persistBoardTheme, readStoredBoardTheme } from './board-theme'
 import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
 import {
   appendGameRecordStep,
@@ -32,8 +33,20 @@ import {
   serializeGameRecord,
   snapshotFromRecord,
 } from './game-recording'
+import { persistRenderQualityPreference, readStoredRenderQualityPreference } from './render-quality'
 import { buildViewModel } from './view-model'
-import type { AdventureState, AiLevel, AnimationSpeed, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
+import type {
+  AdventureState,
+  AiLevel,
+  AnimationSpeed,
+  AppState,
+  AppViewModel,
+  BoardTheme,
+  CardVisualStyle,
+  Mode,
+  RendererKind,
+  RenderQualityPreference,
+} from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
@@ -75,6 +88,8 @@ export interface ControllerApi {
   getViewModel(): AppViewModel
   setAiLevel(level: AiLevel): void
   setCardVisualStyle(style: CardVisualStyle): void
+  setBoardTheme(theme: BoardTheme): void
+  setRenderQualityPreference(preference: RenderQualityPreference): void
   setAnimationSpeed(speed: AnimationSpeed): void
   startGame(mode: Mode): void
   startAdventure(): void
@@ -122,6 +137,8 @@ export class AppController implements ControllerApi {
       hasSavedRecording: this.hasSavedRecording(),
       aiLevel: 'basic',
       cardVisualStyle: readStoredCardVisualStyle(),
+      boardTheme: readStoredBoardTheme(),
+      renderQualityPreference: readStoredRenderQualityPreference(),
       animationSpeed: resolveInitialAnimationSpeed(),
       p2pStarted: false,
       pendingP2PStartSeed: null,
@@ -688,6 +705,18 @@ export class AppController implements ControllerApi {
   setCardVisualStyle(style: CardVisualStyle): void {
     this.state.cardVisualStyle = style
     persistCardVisualStyle(style)
+    this.notify()
+  }
+
+  setBoardTheme(theme: BoardTheme): void {
+    this.state.boardTheme = theme
+    persistBoardTheme(theme)
+    this.notify()
+  }
+
+  setRenderQualityPreference(preference: RenderQualityPreference): void {
+    this.state.renderQualityPreference = preference
+    persistRenderQualityPreference(preference)
     this.notify()
   }
 

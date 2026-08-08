@@ -1,5 +1,6 @@
 // Lobby scene: mode selection, Settings (AI difficulty / card visual style /
-// animation speed), and Recording (load from browser/file) submenus. Extracted
+// board theme / render quality / animation speed), and Recording (load from
+// browser/file) submenus. Extracted
 // from the monolithic phaser/index.ts so lobby UI and its submenu state own a
 // single file, matching docs/agent/phaser-renderer.md "Lobby fallbacks". Row
 // content/predicates themselves live in the pure, testable `lobby-actions.ts`.
@@ -197,6 +198,8 @@ export class LobbyScene extends Phaser.Scene {
         aiLevel: view?.aiLevel,
         aiLevelOptionsOpen: this.aiLevelOptionsOpen,
         cardVisualStyle: selectedCardVisualStyle,
+        boardTheme: view?.boardTheme,
+        renderQualityPreference: view?.renderQualityPreference,
         animationSpeed: view?.animationSpeed,
       })) {
         switch (row.kind) {
@@ -217,6 +220,12 @@ export class LobbyScene extends Phaser.Scene {
             break
           case 'card-visual-style-option':
             rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setCardVisualStyle(row.value) } })
+            break
+          case 'board-theme-option':
+            rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setBoardTheme(row.value) } })
+            break
+          case 'render-quality-option':
+            rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setRenderQualityPreference(row.value) } })
             break
           case 'animation-speed-option':
             rows.push({ label: row.label, onClick: () => { this.rendererRef.controller?.setAnimationSpeed(row.value) } })

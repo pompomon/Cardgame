@@ -18,6 +18,8 @@ function createState(seed: number): AppState {
     hasSavedRecording: false,
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
+    boardTheme: 'midnight',
+    renderQualityPreference: 'low',
     animationSpeed: 'normal',
     p2pStarted: false,
     pendingP2PStartSeed: null,
@@ -55,6 +57,8 @@ describe('buildViewModel', () => {
     expect(vm.game?.log.length).toBe(entries.length)
     expect(vm.aiLevel).toBe('basic')
     expect(vm.cardVisualStyle).toBe('classic')
+    expect(vm.boardTheme).toBe('midnight')
+    expect(vm.renderQualityPreference).toBe('low')
     expect(vm.adventure.status).toBe('inactive')
     // The structured event stream is exposed alongside the log strings so
     // renderers (Phaser visual log, ability animations) can consume it.

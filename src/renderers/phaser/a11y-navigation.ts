@@ -8,15 +8,27 @@
 // Extracted from PhaserRenderer.updateA11yNav().
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
+import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
 import type { ControllerApi } from '../../app/controller'
+import { RENDER_QUALITY_OPTIONS } from '../../app/render-quality'
 import type { AppViewModel, Mode } from '../../app/types'
 import type { CardgameScene } from './cardgame-scene'
 import { isAdventureResumable, LOBBY_MODE_OPTIONS, selectedAiLevelLabel } from './lobby-actions'
 import type { LobbyScene } from './lobby-scene'
 import { installButtonState } from './ui-utils'
 
-type NavEntry = { key: string; label: string; onClick: () => void; disabled?: boolean }
+export type NavEntry = { key: string; label: string; onClick: () => void; disabled?: boolean }
+
+type VisualSettingsView = Pick<
+  AppViewModel,
+  'animationSpeed' | 'boardTheme' | 'cardVisualStyle' | 'renderQualityPreference'
+>
+
+type VisualSettingsController = Pick<
+  ControllerApi,
+  'setAnimationSpeed' | 'setBoardTheme' | 'setCardVisualStyle' | 'setRenderQualityPreference'
+>
 
 export interface A11yNavDeps {
   controller: ControllerApi | null
@@ -30,6 +42,46 @@ export interface A11yNav {
   element: HTMLElement
   update: (view: AppViewModel, lobbyActive: boolean, deps: A11yNavDeps) => void
   remove: () => void
+}
+
+export function buildVisualSettingsA11yEntries(
+  view: VisualSettingsView,
+  controller: VisualSettingsController,
+): NavEntry[] {
+  const entries: NavEntry[] = []
+  for (const option of CARD_VISUAL_STYLE_OPTIONS) {
+    const selected = view.cardVisualStyle === option.value ? ' (selected)' : ''
+    entries.push({
+      key: `settings-card-visual-style:${option.value}`,
+      label: `Set card visual style: ${option.label}${selected}`,
+      onClick: () => controller.setCardVisualStyle(option.value),
+    })
+  }
+  for (const option of BOARD_THEME_OPTIONS) {
+    const selected = view.boardTheme === option.value ? ' (selected)' : ''
+    entries.push({
+      key: `settings-board-theme:${option.value}`,
+      label: `Set board theme: ${option.label}${selected}`,
+      onClick: () => controller.setBoardTheme(option.value),
+    })
+  }
+  for (const option of RENDER_QUALITY_OPTIONS) {
+    const selected = view.renderQualityPreference === option.value ? ' (selected)' : ''
+    entries.push({
+      key: `settings-render-quality:${option.value}`,
+      label: `Set render quality: ${option.label}${selected}`,
+      onClick: () => controller.setRenderQualityPreference(option.value),
+    })
+  }
+  for (const option of ANIMATION_SPEED_OPTIONS) {
+    const selected = view.animationSpeed === option.value ? ' (selected)' : ''
+    entries.push({
+      key: `settings-animation-speed:${option.value}`,
+      label: `Set animation speed: ${option.label}${selected}`,
+      onClick: () => controller.setAnimationSpeed(option.value),
+    })
+  }
+  return entries
 }
 
 export function createA11yNav(container: HTMLElement): A11yNav {
@@ -115,22 +167,7 @@ export function createA11yNav(container: HTMLElement): A11yNav {
           })
         }
       }
-      for (const option of CARD_VISUAL_STYLE_OPTIONS) {
-        const selected = view.cardVisualStyle === option.value ? ' (selected)' : ''
-        entries.push({
-          key: `settings-card-visual-style:${option.value}`,
-          label: `Set card visual style: ${option.label}${selected}`,
-          onClick: () => controller.setCardVisualStyle(option.value),
-        })
-      }
-      for (const option of ANIMATION_SPEED_OPTIONS) {
-        const selected = view.animationSpeed === option.value ? ' (selected)' : ''
-        entries.push({
-          key: `settings-animation-speed:${option.value}`,
-          label: `Set animation speed: ${option.label}${selected}`,
-          onClick: () => controller.setAnimationSpeed(option.value),
-        })
-      }
+      entries.push(...buildVisualSettingsA11yEntries(view, controller))
     } else {
       entries.push({
         key: 'recording-back',

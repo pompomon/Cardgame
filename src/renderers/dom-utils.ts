@@ -2,10 +2,12 @@ import type { AppViewModel, AnimationSpeed, CardVisualStyle, RendererKind } from
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../app/animation-settings'
+import { BOARD_THEME_OPTIONS } from '../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../app/card-visual-styles'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { visualEffectForEvent, type VisualEffectDescriptor } from '../app/visual-effects'
 import { getInstallUiState } from '../app/install-support'
+import { RENDER_QUALITY_OPTIONS } from '../app/render-quality'
 import { isBasicLand, type BasicLand, type LogEvent } from '../game/types'
 
 const failedRasterCardArtUrls = new Set<string>()
@@ -137,6 +139,14 @@ export function renderLobby(view: AppViewModel): string {
     const selected = option.value === view.cardVisualStyle ? ' selected' : ''
     return `<option value="${option.value}"${selected}>${option.label}</option>`
   }).join('')
+  const boardThemeOptions = BOARD_THEME_OPTIONS.map((option) => {
+    const selected = option.value === view.boardTheme ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
+  const renderQualityOptions = RENDER_QUALITY_OPTIONS.map((option) => {
+    const selected = option.value === view.renderQualityPreference ? ' selected' : ''
+    return `<option value="${option.value}"${selected}>${option.label}</option>`
+  }).join('')
   const animationSpeedOptions = ANIMATION_SPEED_OPTIONS.map((option) => {
     const selected = option.value === view.animationSpeed ? ' selected' : ''
     return `<option value="${option.value}"${selected}>${option.label}</option>`
@@ -165,6 +175,17 @@ export function renderLobby(view: AppViewModel): string {
           <h3>Card Visual Style</h3>
           <label for="card-visual-style-select">Style</label>
           <select id="card-visual-style-select">${cardVisualStyleOptions}</select>
+        </div>
+        <div class="controls">
+          <h3>Board Theme</h3>
+          <label for="board-theme-select">Theme</label>
+          <select id="board-theme-select">${boardThemeOptions}</select>
+        </div>
+        <div class="controls">
+          <h3>Render Quality</h3>
+          <label for="render-quality-select">Quality</label>
+          <select id="render-quality-select">${renderQualityOptions}</select>
+          <p class="install-hint">Auto adapts to the device.</p>
         </div>
         <div class="controls">
           <h3>Animations</h3>

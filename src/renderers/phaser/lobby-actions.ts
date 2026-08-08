@@ -6,9 +6,18 @@
 // docs/agent/phaser-renderer.md "A11y submenu predicates must mirror the
 // visible-button predicates".
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
-import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
+import { ANIMATION_SPEED_OPTIONS, DEFAULT_ANIMATION_SPEED } from '../../app/animation-settings'
+import { BOARD_THEME_OPTIONS, DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import type { AdventureUiState, AnimationSpeed, CardVisualStyle, Mode } from '../../app/types'
+import { DEFAULT_RENDER_QUALITY_PREFERENCE, RENDER_QUALITY_OPTIONS } from '../../app/render-quality'
+import type {
+  AdventureUiState,
+  AnimationSpeed,
+  BoardTheme,
+  CardVisualStyle,
+  Mode,
+  RenderQualityPreference,
+} from '../../app/types'
 import type { AiLevel } from '../../game/ai-levels'
 
 // Mode entries shown on the lobby root menu. Shared with the a11y nav so the
@@ -73,12 +82,16 @@ export type LobbySettingsRow =
   | { kind: 'ai-level-toggle'; label: string }
   | { kind: 'ai-level-option'; label: string; value: AiLevel; selected: boolean }
   | { kind: 'card-visual-style-option'; label: string; value: CardVisualStyle; selected: boolean }
+  | { kind: 'board-theme-option'; label: string; value: BoardTheme; selected: boolean }
+  | { kind: 'render-quality-option'; label: string; value: RenderQualityPreference; selected: boolean }
   | { kind: 'animation-speed-option'; label: string; value: AnimationSpeed; selected: boolean }
 
 export interface LobbySettingsRowsParams {
   aiLevel: AiLevel | undefined
   aiLevelOptionsOpen: boolean
   cardVisualStyle: CardVisualStyle | undefined
+  boardTheme: BoardTheme | undefined
+  renderQualityPreference: RenderQualityPreference | undefined
   animationSpeed: AnimationSpeed | undefined
 }
 
@@ -110,7 +123,27 @@ export function buildLobbySettingsRows(params: LobbySettingsRowsParams): LobbySe
       selected,
     })
   }
-  const selectedAnimationSpeed = params.animationSpeed ?? 'normal'
+  const selectedBoardTheme = params.boardTheme ?? DEFAULT_BOARD_THEME
+  for (const option of BOARD_THEME_OPTIONS) {
+    const selected = option.value === selectedBoardTheme
+    rows.push({
+      kind: 'board-theme-option',
+      label: selected ? `Board Theme: ${option.label} ✓` : `Board Theme: ${option.label}`,
+      value: option.value,
+      selected,
+    })
+  }
+  const selectedRenderQuality = params.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE
+  for (const option of RENDER_QUALITY_OPTIONS) {
+    const selected = option.value === selectedRenderQuality
+    rows.push({
+      kind: 'render-quality-option',
+      label: selected ? `Render Quality: ${option.label} ✓` : `Render Quality: ${option.label}`,
+      value: option.value,
+      selected,
+    })
+  }
+  const selectedAnimationSpeed = params.animationSpeed ?? DEFAULT_ANIMATION_SPEED
   for (const option of ANIMATION_SPEED_OPTIONS) {
     const selected = option.value === selectedAnimationSpeed
     rows.push({

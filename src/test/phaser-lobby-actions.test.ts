@@ -9,6 +9,8 @@ import {
   LOBBY_MODE_OPTIONS,
   selectedAiLevelLabel,
 } from '../renderers/phaser/lobby-actions'
+import { BOARD_THEME_OPTIONS } from '../app/board-theme'
+import { RENDER_QUALITY_OPTIONS } from '../app/render-quality'
 import type { AdventureUiState } from '../app/types'
 
 function adventure(overrides: Partial<AdventureUiState> = {}): AdventureUiState {
@@ -110,6 +112,8 @@ describe('buildLobbySettingsRows', () => {
       aiLevel: 'basic',
       aiLevelOptionsOpen: false,
       cardVisualStyle: 'classic',
+      boardTheme: 'classic',
+      renderQualityPreference: 'auto',
       animationSpeed: 'normal',
     })
     expect(rows.some((row) => row.kind === 'ai-level-option')).toBe(false)
@@ -122,6 +126,8 @@ describe('buildLobbySettingsRows', () => {
       aiLevel: 'basic',
       aiLevelOptionsOpen: true,
       cardVisualStyle: 'classic',
+      boardTheme: 'classic',
+      renderQualityPreference: 'auto',
       animationSpeed: 'normal',
     })
     const toggle = rows.find((row) => row.kind === 'ai-level-toggle')
@@ -133,16 +139,28 @@ describe('buildLobbySettingsRows', () => {
     expect(selected[0]?.label).toContain('✓')
   })
 
-  it('marks exactly one card visual style and one animation speed as selected', () => {
+  it('mirrors shared visual-setting options and marks one value per setting as selected', () => {
     const rows = buildLobbySettingsRows({
       aiLevel: 'basic',
       aiLevelOptionsOpen: false,
       cardVisualStyle: 'hd',
+      boardTheme: 'midnight',
+      renderQualityPreference: 'low',
       animationSpeed: 'fast',
     })
     const cardRows = rows.filter((row) => row.kind === 'card-visual-style-option')
+    const boardRows = rows.filter((row) => row.kind === 'board-theme-option')
+    const qualityRows = rows.filter((row) => row.kind === 'render-quality-option')
     const animationRows = rows.filter((row) => row.kind === 'animation-speed-option')
+    expect(boardRows.map((row) => row.kind === 'board-theme-option' && row.value)).toEqual(
+      BOARD_THEME_OPTIONS.map((option) => option.value),
+    )
+    expect(qualityRows.map((row) => row.kind === 'render-quality-option' && row.value)).toEqual(
+      RENDER_QUALITY_OPTIONS.map((option) => option.value),
+    )
     expect(cardRows.filter((row) => row.kind === 'card-visual-style-option' && row.selected)).toHaveLength(1)
+    expect(boardRows.filter((row) => row.kind === 'board-theme-option' && row.selected)).toHaveLength(1)
+    expect(qualityRows.filter((row) => row.kind === 'render-quality-option' && row.selected)).toHaveLength(1)
     expect(animationRows.filter((row) => row.kind === 'animation-speed-option' && row.selected)).toHaveLength(1)
   })
 })
