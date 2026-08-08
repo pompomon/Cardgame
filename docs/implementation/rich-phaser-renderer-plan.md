@@ -40,7 +40,9 @@ This work must not change engine rules or card legality. The Phaser renderer mus
 The current Phaser renderer should move away from broad scene reconstruction on each view-model update. The target flow is a stable scene graph with small, keyed reconciliation steps:
 
 1. `BoardBackgroundView.sync(viewModel, layout, quality)` updates persistent background layers, crop rectangles, ambience intensity, and theme-dependent textures without recreating the whole scene.
-2. `CardViewRegistry.sync(viewModel.game, layout, visibility, quality)` creates card views only for newly visible stable `cardId` values, updates existing card positions and textures in place, pools removed views, and schedules move tweens where appropriate.
+2. `CardViewRegistry.sync(viewModel.game, layout, visibility, quality)` creates card views only for newly visible stable view keys, updates existing card positions and textures in place, pools removed views, and schedules move tweens where appropriate.
+
+The view model does not currently expose one identity that survives zone moves: `UiCard` (hand, graveyard) carries `id`, while `UiBattlefieldCard` (`src/app/types.ts`) carries only `instanceId`. Before reconciliation can track a card across hand → battlefield → graveyard, extend the view-model projection in `src/app/view-model.ts` to also emit the underlying `Card.id` on battlefield entries (for example `UiBattlefieldCard { instanceId, cardId, name }`), keeping `instanceId` as the targeting key used by `GameAction` payloads. Until that projection exists, the registry key is `cardId` for hand/graveyard entries and `instanceId` for battlefield entries.
 3. `DropZoneView.sync(viewModel.game, legalActions, dragState, layout)` updates reusable battlefield, hand, target, and action-zone highlights based on current legality and pointer state.
 4. HUD sync updates persistent text, panels, buttons, overlays, menus, and accessibility mirrors independently from board/card object reconciliation.
 5. Queued effects consume shared app-level effect descriptors and play bounded Phaser animations without modifying game state. Effects should be deduplicated, interrupt-safe, and cleaned up on scene transitions.
@@ -238,7 +240,8 @@ public/sprites/
 ### Tasks
 
 - Introduce a `CardView` abstraction that owns the Phaser containers/images/text associated with one visible card.
-- Introduce `CardViewRegistry` keyed by stable `cardId` values from the view model.
+- Extend the view-model card projection first so one stable identity exists across zones: add the underlying `Card.id` to `UiBattlefieldCard` in `src/app/types.ts`/`src/app/view-model.ts` while keeping `instanceId` for targeting.
+- Introduce `CardViewRegistry` keyed by that stable `cardId` value from the view model.
 - Reconcile card zones by creating views for new cards, updating existing views in place, and pooling/removing views for cards that leave visibility.
 - Add move tweens for zone/slot changes while preserving deterministic final positions after sync.
 - Keep hidden-hand and privacy behavior exactly equivalent to the current renderer: do not reveal opponent hidden card identities, textures, names, or metadata.
@@ -256,7 +259,7 @@ public/sprites/
 
 ### Requirements
 
-- Key by stable `cardId`, not array index.
+- Key by the stable `cardId` projected by the view model, not array index and not the Phaser object order. Keep `instanceId` as the identifier submitted in `GameAction` targeting payloads.
 - Preserve immutable view-model consumption.
 - Do not use `structuredClone(GameState)` in render or AI hot loops.
 - Do not hardcode card visual style defaults; reuse shared constants such as `DEFAULT_CARD_VISUAL_STYLE` where applicable.
@@ -536,7 +539,7 @@ Implement the renderer evolution in small logical commits, each scoped to one re
 For every phase:
 
 - Keep changes surgical and avoid unrelated refactors.
-- Run `npm run lint`, `npm run test`, and `npm run build` before reporting the phase complete.
+- Run the canonical validation sequence from `docs/agent/validation-and-build.md` before reporting the phase complete: `npm run lint`, `npm run test`, `npm run build`, then `codeql_checker`, addressing every alert it reports.
 - If validation fails, stop and fix the phase before starting the next one unless the failure is proven pre-existing and documented.
 - Preserve direct `import.meta.env.BASE_URL` member access.
 - Use crop/manual culling instead of Phaser `GeometryMask` for WebGL clipping.
@@ -615,4 +618,4 @@ Do not merge the implementation until all of the following are true:
 - No regressions are present in DOM renderer flows, P2P flows, recordings/replay, import/export, renderer selection, or GitHub Pages base-path asset loading.
 - Manual confirmation covers retained board/card/drop-zone objects, drag responsiveness, invalid-drop recovery, resize behavior, fallback assets, offline behavior, reduced-motion, and high/balanced/low quality limits.
 - Documentation is updated for any new durable renderer rules, settings, assets, or validation expectations.
-- The PR description includes final validation status and any approved follow-up work.
+- The PR description includes any approved follow-up work and ends with the validation block required by `docs/agent/pr-workflow.md`: `Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔`.
