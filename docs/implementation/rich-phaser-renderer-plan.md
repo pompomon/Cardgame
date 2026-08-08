@@ -4,7 +4,7 @@
 
 - [x] Phase 0 — Establish branch, validation baseline, and acceptance criteria
 - [x] Phase 1 — Add persisted board-theme and render-quality settings
-- [ ] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
+- [x] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [ ] Phase 3 — Implement persistent board background and adaptive ambience
 - [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 - [ ] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
@@ -296,6 +296,46 @@ public/sprites/
 - Loader failures fall back without breaking gameplay.
 - Service worker/runtime cache updates are complete.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 2 implementation notes (2026-08-08)
+
+- Phase 2 was selected because it was the first unchecked phase. The Phase 0
+  baseline/acceptance criteria and Phase 1 shared theme/quality settings,
+  persistence, view-model projection, renderer parity, and tests were verified
+  in the current tree before implementation.
+- Added renderer-neutral paths, direct-literal Vite `BASE_URL` URL generation,
+  and immutable asset locations in `src/app/board-assets.ts`.
+- Added independently loadable HD/balanced/low/fallback backgrounds for all
+  three themes under `public/boards/`, per-theme ambience atlases, and shared
+  board UI/effect atlases under `public/sprites/`. Asset dimensions, PNG
+  validity, atlas metadata, and required frame names are covered by tests.
+- Added `src/renderers/phaser/asset-manifest.ts` and
+  `src/renderers/phaser/texture-loader.ts`. The loader queues one background
+  tier at a time, advances through ordered fallbacks during transport or image
+  processing failure, treats malformed atlas JSON/frame data as non-fatal,
+  removes partial atlases, remembers failed URLs, and cleans up listeners
+  idempotently. `CardgameScene` preloads the selected theme/quality manifest;
+  rendering the retained background remains Phase 3 work.
+- Updated `public/sw.js` to cache unhashed `/boards/*` and `/sprites/*`
+  network-first, await best-effort runtime cache writes, preserve valid network
+  responses when cache storage fails, and bump `CACHE_VERSION` from `v7` to
+  `v8`. Cache-version checks now cover cards, boards, and sprites.
+- Added `board-assets`, `board-asset-files`, `phaser-asset-manifest`,
+  `phaser-texture-loader`, and production-build base-path tests, and extended
+  service-worker/cache-version/architecture coverage. The targeted asset,
+  loader, service-worker, and base-path tests passed.
+- Required validation passed: `npm run lint`; `npm run test` (65 files / 635
+  tests); `npm run build` (with the existing non-failing chunk-size advisory);
+  and `codeql_checker` (0 alerts).
+- Independent `code-review` subagents inspected the actual diff and Phaser
+  internals. Reported blockers around cache-write lifetime, decode/parse
+  fallback, scene-create timing, required atlas frames, and last-child atlas
+  assembly were fixed in focused commits and re-reviewed. The final review
+  reported no blockers.
+- Deferred as planned: retained background rendering/ambience (Phase 3), large
+  texture eviction (Phase 8), and manual offline/mobile smoke and performance
+  measurement (Phase 9). The independent final-verification checklist remains
+  unchecked.
 
 ## Phase 3 — Implement persistent board background and adaptive ambience
 
