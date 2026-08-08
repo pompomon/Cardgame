@@ -1,0 +1,99 @@
+import { readFileSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import {
+  ALL_BOARD_ATLAS_ASSETS,
+  ALL_BOARD_BACKGROUND_ASSETS,
+  type BoardBackgroundVariant,
+} from '../app/board-assets'
+import {
+  AMBIENCE_ATLAS_FRAMES,
+  BOARD_UI_ATLAS_FRAMES,
+  EFFECTS_ATLAS_FRAMES,
+} from '../renderers/phaser/asset-manifest'
+
+const PUBLIC_ROOT = resolve(__dirname, '..', '..', 'public')
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const MINIMUM_BACKGROUND_SIZE: Record<
+  BoardBackgroundVariant,
+  { readonly width: number; readonly height: number }
+> = {
+  hd: { width: 1920, height: 1080 },
+  balanced: { width: 1280, height: 720 },
+  low: { width: 960, height: 540 },
+  fallback: { width: 640, height: 360 },
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false
+  }
+  return true
+}
+
+function readUInt32BE(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset] << 24)
+    | (bytes[offset + 1] << 16)
+    | (bytes[offset + 2] << 8)
+    | bytes[offset + 3]
+  ) >>> 0
+}
+
+function readPngSize(path: string): { width: number; height: number } {
+  const bytes = readFileSync(path)
+  if (bytes.length < 24 || !bytesEqual(bytes.slice(0, 8), PNG_SIGNATURE)) {
+    throw new Error(`${path} is not a valid PNG`)
+  }
+  return {
+    width: readUInt32BE(bytes, 16),
+    height: readUInt32BE(bytes, 20),
+  }
+}
+
+function expectedFrames(name: string): readonly string[] {
+  if (name.startsWith('ambience:')) {
+    return AMBIENCE_ATLAS_FRAMES
+  }
+  if (name === 'board-ui') {
+    return BOARD_UI_ATLAS_FRAMES
+  }
+  return EFFECTS_ATLAS_FRAMES
+}
+
+describe('board asset files', () => {
+  it('ships every registered background at its quality-tier dimensions', () => {
+    for (const asset of ALL_BOARD_BACKGROUND_ASSETS) {
+      const path = resolve(PUBLIC_ROOT, asset.path)
+      expect(statSync(path).size, `${asset.path} should be non-empty`).toBeGreaterThan(0)
+      const size = readPngSize(path)
+      expect(size.width, `${asset.path} width`)
+        .toBeGreaterThanOrEqual(MINIMUM_BACKGROUND_SIZE[asset.variant].width)
+      expect(size.height, `${asset.path} height`)
+        .toBeGreaterThanOrEqual(MINIMUM_BACKGROUND_SIZE[asset.variant].height)
+      expect(size.width / size.height, `${asset.path} aspect ratio`).toBeCloseTo(16 / 9, 5)
+    }
+  })
+
+  it('ships valid textures and declared frames for every atlas', () => {
+    for (const asset of ALL_BOARD_ATLAS_ASSETS) {
+      const texturePath = resolve(PUBLIC_ROOT, asset.texturePath)
+      expect(statSync(texturePath).size, `${asset.texturePath} should be non-empty`)
+        .toBeGreaterThan(0)
+      const textureSize = readPngSize(texturePath)
+      expect(textureSize.width).toBeGreaterThan(0)
+      expect(textureSize.height).toBeGreaterThan(0)
+
+      const atlas = JSON.parse(readFileSync(resolve(PUBLIC_ROOT, asset.atlasPath), 'utf8')) as {
+        frames?: Record<string, unknown>
+        meta?: { image?: string; size?: { width?: number; height?: number; w?: number; h?: number } }
+      }
+      const atlasFileName = asset.texturePath.split('/').slice(-1)[0]
+      expect(atlas.meta?.image).toBe(atlasFileName)
+      expect(Object.keys(atlas.frames ?? {})).toEqual(expectedFrames(asset.name))
+      expect(atlas.meta?.size?.w ?? atlas.meta?.size?.width).toBe(textureSize.width)
+      expect(atlas.meta?.size?.h ?? atlas.meta?.size?.height).toBe(textureSize.height)
+    }
+  })
+})

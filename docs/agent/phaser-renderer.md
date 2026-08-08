@@ -29,6 +29,15 @@ constants/scene keys), and `scene-host.ts` (Phaser.Game bootstrap). See
 `src/test/phaser-module-architecture.test.ts` for the guard that asserts
 every module above still exists.
 
+Board asset paths and URLs are renderer-neutral in `src/app/board-assets.ts`.
+`asset-manifest.ts` maps the selected theme/quality to Phaser texture keys,
+and `texture-loader.ts` queues one large background tier at a time. A failed
+background advances through the ordered fallback candidates; failed public
+URLs are remembered so scene restarts do not retry them. Shared UI, effect,
+and per-theme ambience atlases are independent from the large backgrounds so
+future retained views can evict a background without discarding shared
+sprites.
+
 Because `lobby-scene.ts` and `cardgame-scene.ts` must never import the
 composition root (that would create a cycle), they depend on the structural
 `PhaserRendererHost` interface in `renderer-host.ts` instead of the concrete

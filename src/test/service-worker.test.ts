@@ -12,6 +12,7 @@ type FetchListener = (event: FetchEventStub) => void
 type FetchEventStub = {
   request: Request
   respondWith: (response: Promise<Response>) => void
+  waitUntil: (promise: Promise<unknown>) => void
 }
 
 type CachePutCall = {
@@ -26,6 +27,7 @@ type ServiceWorkerHarness = {
   cachePut: ReturnType<typeof vi.fn>
   fetchListener: FetchListener
   fetchMock: ReturnType<typeof vi.fn>
+  waitUntilPromises: Promise<unknown>[]
 }
 
 function cacheKey(key: Request | string): string {
@@ -62,6 +64,7 @@ function loadServiceWorker(): ServiceWorkerHarness {
   const listeners = new Map<string, EventListener>()
   const cachedResponses = new Map<string, Response>()
   const cachePutCalls: CachePutCall[] = []
+  const waitUntilPromises: Promise<unknown>[] = []
   const cachePut = vi.fn(async (key: Request | string, response: Response) => {
     cachePutCalls.push({ key, response })
   })
@@ -106,6 +109,7 @@ function loadServiceWorker(): ServiceWorkerHarness {
     cachesMatch,
     fetchListener: fetchListener as unknown as FetchListener,
     fetchMock,
+    waitUntilPromises,
   }
 }
 
@@ -116,6 +120,9 @@ function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise
     respondWith: (response) => {
       responsePromise = response
     },
+    waitUntil: (promise) => {
+      harness.waitUntilPromises.push(promise)
+    },
   })
   return responsePromise
 }
@@ -125,7 +132,7 @@ describe('service worker fetch handling', () => {
     vi.restoreAllMocks()
   })
 
-  describe('/cards/* network-first caching', () => {
+  describe('unhashed public asset network-first caching', () => {
     it('uses the network response when a cached card also exists', async () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/cards/hd/Forest.png')
@@ -201,6 +208,89 @@ describe('service worker fetch handling', () => {
       expect(response?.type).toBe('error')
       expect(response?.ok).toBe(false)
       expect(response?.status).toBe(0)
+      expect(harness.cachesMatch).toHaveBeenCalledWith(request)
+      expect(harness.cachePut).not.toHaveBeenCalled()
+    })
+
+    it('refreshes board backgrounds from the network before a cached copy', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/boards/moonlit/background-hd.png')
+      const cached = makeResponse('cached board')
+      const network = makeResponse('network board')
+      const networkClone = makeResponse('network board clone')
+      const clone = vi.spyOn(network, 'clone').mockReturnValue(networkClone)
+      harness.cachedResponses.set(request.url, cached)
+      harness.fetchMock.mockResolvedValue(network)
+
+      const response = await dispatchFetch(harness, request)
+      await flushPromises()
+
+      expect(response).toBe(network)
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
+      expect(clone).toHaveBeenCalledTimes(1)
+      expectSingleCachePut(harness, request, networkClone)
+    })
+
+    it('returns the runtime network response before a pending cache write settles', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/boards/classic/background-balanced.png')
+      const network = makeResponse('network board')
+      const networkClone = makeResponse('network board clone')
+      vi.spyOn(network, 'clone').mockReturnValue(networkClone)
+      const cacheWriteControl: { finish: (() => void) | null } = { finish: null }
+      harness.cachePut.mockImplementationOnce(async (key: Request | string, response: Response) => {
+        harness.cachePutCalls.push({ key, response })
+        await new Promise<void>((resolve) => {
+          cacheWriteControl.finish = resolve
+        })
+      })
+      harness.fetchMock.mockResolvedValue(network)
+
+      let responseSettled = false
+      const responsePromise = dispatchFetch(harness, request)
+      responsePromise?.then(() => {
+        responseSettled = true
+      })
+      await flushPromises()
+
+      expect(harness.cachePut).toHaveBeenCalledTimes(1)
+      expect(harness.waitUntilPromises).toHaveLength(1)
+      const response = await responsePromise
+      expect(response).toBe(network)
+      expect(responseSettled).toBe(true)
+
+      cacheWriteControl.finish?.()
+      await Promise.allSettled(harness.waitUntilPromises)
+    })
+
+    it('returns a valid network response when runtime cache persistence fails', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/sprites/effects-atlas.png')
+      const cached = makeResponse('stale atlas')
+      const network = makeResponse('network atlas')
+      const networkClone = makeResponse('network atlas clone')
+      vi.spyOn(network, 'clone').mockReturnValue(networkClone)
+      harness.cachedResponses.set(request.url, cached)
+      harness.cachePut.mockRejectedValueOnce(new Error('quota exceeded'))
+      harness.fetchMock.mockResolvedValue(network)
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(network)
+      expect(harness.cachePut).toHaveBeenCalledWith(request, networkClone)
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
+    })
+
+    it('uses a cached sprite atlas when offline', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/sprites/board-ui-atlas.json')
+      const cached = makeResponse('cached atlas')
+      harness.cachedResponses.set(request.url, cached)
+      harness.fetchMock.mockRejectedValue(new Error('offline'))
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(cached)
       expect(harness.cachesMatch).toHaveBeenCalledWith(request)
       expect(harness.cachePut).not.toHaveBeenCalled()
     })

@@ -97,8 +97,9 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle
-      ?? this.rendererRef.controller?.getViewModel().cardVisualStyle
+    const view = this.rendererRef.currentView
+      ?? this.rendererRef.controller?.getViewModel()
+    const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
   }

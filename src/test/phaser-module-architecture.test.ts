@@ -21,6 +21,8 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   // Card art
   { file: 'card-art-loader.ts', concern: 'card art texture preloading' },
   { file: 'card-factory.ts', concern: 'card GameObject factory' },
+  { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
+  { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
 
   // Lobby
   { file: 'lobby-scene.ts', concern: 'lobby scene' },

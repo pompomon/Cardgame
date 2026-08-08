@@ -28,6 +28,7 @@ src/
 │   ├── card-visuals.ts    Procedural icon generation, raster routing
 │   ├── card-visual-styles.ts  CardVisualStyle tuple, guards, options
 │   ├── card-art.ts        Raster asset registry, URL builder
+│   ├── board-assets.ts     Board/sprite public paths + base-safe URLs
 │   ├── install-support.ts PWA install state machine
 │   ├── renderer-selection.ts  ?renderer=… selector
 │   ├── safe-storage.ts    localStorage wrappers (swallow access errors)
@@ -46,6 +47,8 @@ src/
 │       ├── theme.ts       Color palette, CardStyle, cardStyleForLand
 │       ├── scene-host.ts  Phaser.Game bootstrap + canvas host element
 │       ├── card-art-loader.ts  Card art texture preloading
+│       ├── asset-manifest.ts   Board background/atlas texture manifests
+│       ├── texture-loader.ts   Tiered board loading + failed-URL suppression
 │       ├── card-factory.ts   Card GameObject factory (uses already-loaded textures)
 │       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
 │       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)

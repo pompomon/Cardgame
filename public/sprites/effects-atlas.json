@@ -1,0 +1,40 @@
+{
+  "frames": {
+    "spark": {
+      "frame": { "x": 0, "y": 0, "w": 64, "h": 64 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 64, "h": 64 },
+      "sourceSize": { "w": 64, "h": 64 }
+    },
+    "impact-ring": {
+      "frame": { "x": 64, "y": 0, "w": 64, "h": 64 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 64, "h": 64 },
+      "sourceSize": { "w": 64, "h": 64 }
+    },
+    "trail": {
+      "frame": { "x": 128, "y": 0, "w": 64, "h": 64 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 64, "h": 64 },
+      "sourceSize": { "w": 64, "h": 64 }
+    },
+    "shield": {
+      "frame": { "x": 192, "y": 0, "w": 64, "h": 64 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 64, "h": 64 },
+      "sourceSize": { "w": 64, "h": 64 }
+    }
+  },
+  "meta": {
+    "app": "Cardgame deterministic asset generator",
+    "version": "1.0",
+    "image": "effects-atlas.png",
+    "format": "RGBA8888",
+    "size": { "w": 256, "h": 64 },
+    "scale": "1"
+  }
+}

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v7'
+const CACHE_VERSION = 'v8'
 const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
 const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
 
@@ -96,22 +96,34 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  const isCardAsset = relativePath.startsWith('/cards/')
+  // Public art paths are intentionally unhashed, so they use network-first
+  // refresh with cache fallback. Vite's content-hashed /assets/* stay
+  // cache-first below.
+  const isRuntimeAsset = relativePath.startsWith('/cards/')
+    || relativePath.startsWith('/boards/')
+    || relativePath.startsWith('/sprites/')
   const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
-  if (!isStaticAsset && !isCardAsset) {
+  if (!isStaticAsset && !isRuntimeAsset) {
     return
   }
 
-  if (isCardAsset) {
-    event.respondWith(
-      fetch(event.request)
+  if (isRuntimeAsset) {
+    const networkResponse = fetch(event.request)
+    event.waitUntil(
+      networkResponse
         .then((response) => {
-          if (response.ok) {
-            const clone = response.clone()
-            void caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, clone))
+          if (!response.ok) {
+            return
           }
-          return response
+          return caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, response.clone()))
         })
+        .catch(() => {
+          // Cache persistence is best-effort. A failed network request falls back
+          // through respondWith(), while storage failures are ignored here.
+        }),
+    )
+    event.respondWith(
+      networkResponse
         .catch(async () => {
           const cached = await caches.match(event.request)
           return cached ?? Response.error()

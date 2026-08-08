@@ -3,7 +3,11 @@ import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const DEFAULT_BASE_REF = 'origin/main'
-const CARD_ART_PREFIX = 'public/cards/'
+const UNHASHED_ASSET_PREFIXES = [
+  'public/cards/',
+  'public/boards/',
+  'public/sprites/',
+] as const
 const SERVICE_WORKER_PATH = 'public/sw.js'
 
 export type CacheVersionCheckResult =
@@ -31,8 +35,10 @@ export function evaluateCacheVersionCheck({
   changedPaths,
   currentCacheVersion,
 }: CacheVersionCheckInput): CacheVersionCheckResult {
-  const changedCardPaths = changedPaths.filter((path) => path.startsWith(CARD_ART_PREFIX))
-  if (changedCardPaths.length === 0) {
+  const changedAssetPaths = changedPaths.filter((path) =>
+    UNHASHED_ASSET_PREFIXES.some((prefix) => path.startsWith(prefix)),
+  )
+  if (changedAssetPaths.length === 0) {
     return { kind: 'ok' }
   }
 
@@ -47,9 +53,9 @@ export function evaluateCacheVersionCheck({
   return {
     kind: 'warning',
     message: [
-      '[cache-version] public/cards/ changed without a public/sw.js CACHE_VERSION bump.',
-      `Changed card files: ${changedCardPaths.join(', ')}`,
-      'If these are same-path card-art changes, bump CACHE_VERSION and note the bump in the PR "Risk / migration notes" section.',
+      '[cache-version] unhashed public assets changed without a public/sw.js CACHE_VERSION bump.',
+      `Changed unhashed asset files: ${changedAssetPaths.join(', ')}`,
+      'If these are same-path card/board/sprite changes, bump CACHE_VERSION and note the bump in the PR "Risk / migration notes" section.',
     ].join('\n'),
   }
 }
@@ -66,12 +72,12 @@ export function checkCacheVersionForRepo(
     'diff',
     '--name-only',
     // Only modified/renamed/deleted paths matter for the same-path stale-cache
-    // concern. Newly added (A) card art was never cached under its URL, so
+    // concern. Newly added (A) public art was never cached under its URL, so
     // excluding it avoids false-positive CACHE_VERSION warnings.
     '--diff-filter=MRD',
     baseRef,
     '--',
-    CARD_ART_PREFIX,
+    ...UNHASHED_ASSET_PREFIXES,
   ])
   if (!changedPathsResult.ok) {
     return { kind: 'skipped', reason: changedPathsResult.reason }
