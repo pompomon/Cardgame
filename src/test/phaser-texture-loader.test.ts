@@ -16,6 +16,8 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
   readonly queued: QueuedAsset[]
   emitError(file: LoaderFileFailure): void
   emitComplete(): void
+  addTexture(key: string): void
+  restartCount(): number
   errorListenerCount(): number
   completeListenerCount(): number
 } {
@@ -23,6 +25,7 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
   const queued: QueuedAsset[] = []
   const errorListeners = new Set<(file: LoaderFileFailure) => void>()
   const completeListeners = new Set<() => void>()
+  let restarts = 0
   const port: PhaserTextureLoaderPort = {
     textureExists: (key) => textures.has(key),
     queueImage: (key, url) => {
@@ -43,6 +46,9 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
     offComplete: (listener) => {
       completeListeners.delete(listener)
     },
+    restart: () => {
+      restarts += 1
+    },
   }
   return {
     port,
@@ -51,8 +57,14 @@ function createLoaderPort(initialTextures: readonly string[] = []): {
       for (const listener of [...errorListeners]) listener(file)
     },
     emitComplete: () => {
-      for (const listener of [...completeListeners]) listener()
+      const listeners = [...completeListeners]
+      completeListeners.clear()
+      for (const listener of listeners) listener()
     },
+    addTexture: (key) => {
+      textures.add(key)
+    },
+    restartCount: () => restarts,
     errorListenerCount: () => errorListeners.size,
     completeListenerCount: () => completeListeners.size,
   }
@@ -125,6 +137,53 @@ describe('Phaser board texture loader', () => {
     expect(
       second.queued.filter((asset) => asset.kind === 'image').map((asset) => asset.key),
     ).toEqual(['board-background:verdant:balanced'])
+  })
+
+  it('falls back and suppresses retries when Phaser processing creates no texture', () => {
+    const failedUrls = new FailedAssetUrlRegistry()
+    const harness = createLoaderPort()
+    const onFailure = vi.fn()
+    const handle = loadPhaserBoardAssetManifest(
+      harness.port,
+      buildPhaserBoardAssetManifest('moonlit', 'high'),
+      { failedUrls, onFailure },
+    )
+    for (const atlasKey of [
+      'board-atlas:ambience:moonlit',
+      'board-atlas:board-ui',
+      'board-atlas:effects',
+    ]) {
+      harness.addTexture(atlasKey)
+    }
+
+    harness.emitComplete()
+
+    expect(harness.restartCount()).toBe(1)
+    expect(
+      harness.queued.filter((asset) => asset.kind === 'image').map((asset) => asset.key),
+    ).toEqual([
+      'board-background:moonlit:hd',
+      'board-background:moonlit:balanced',
+    ])
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'board-background:moonlit:hd',
+      source: null,
+    }))
+
+    harness.addTexture('board-background:moonlit:balanced')
+    harness.emitComplete()
+    expect(handle.resolveBackgroundTextureKey()).toBe('board-background:moonlit:balanced')
+    expect(harness.errorListenerCount()).toBe(0)
+
+    const nextCycle = createLoaderPort()
+    loadPhaserBoardAssetManifest(
+      nextCycle.port,
+      buildPhaserBoardAssetManifest('moonlit', 'high'),
+      { failedUrls, onFailure: vi.fn() },
+    )
+    expect(
+      nextCycle.queued.filter((asset) => asset.kind === 'image').map((asset) => asset.key),
+    ).toEqual(['board-background:moonlit:balanced'])
   })
 
   it('suppresses failed atlases on later cycles without affecting gameplay', () => {

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -14,7 +14,15 @@ function runViteBuild(base: string): string {
   outDir = dir
   const result = spawnSync(
     process.execPath,
-    [resolve(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dir, '--emptyOutDir'],
+    [
+      resolve(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'),
+      'build',
+      '--ssr',
+      'src/app/board-assets.ts',
+      '--outDir',
+      dir,
+      '--emptyOutDir',
+    ],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, VITE_BASE_PATH: base, NODE_ENV: 'production' },
@@ -31,11 +39,35 @@ function runViteBuild(base: string): string {
 }
 
 function readBundle(dir: string): string {
-  const files = readdirSync(join(dir, 'assets')).filter((name) => name.endsWith('.js'))
-  expect(files.length, 'expected at least one built JS bundle').toBeGreaterThan(0)
-  return files
-    .map((name) => readFileSync(join(dir, 'assets', name), 'utf8'))
-    .join('\n')
+  return readFileSync(join(dir, 'board-assets.js'), 'utf8')
+}
+
+function evaluateBuiltUrls(dir: string): {
+  backgroundUrl: string
+  spriteUrl: string
+} {
+  const moduleUrl = `file://${join(dir, 'board-assets.js')}`
+  const script = [
+    `const assets = await import(${JSON.stringify(moduleUrl)});`,
+    'console.log(JSON.stringify({',
+    "backgroundUrl: assets.boardBackgroundAssetLocation('classic', 'hd').url,",
+    "spriteUrl: assets.boardSpriteAtlasLocation('board-ui').textureUrl,",
+    '}));',
+  ].join('')
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: 30_000,
+  })
+  if (result.status !== 0) {
+    throw new Error(
+      `built board-assets module failed (status=${result.status}):\n${result.stdout}\n${result.stderr}`,
+    )
+  }
+  return JSON.parse(result.stdout) as {
+    backgroundUrl: string
+    spriteUrl: string
+  }
 }
 
 describe('Phaser board asset base path (production bundle)', () => {
@@ -47,7 +79,8 @@ describe('Phaser board asset base path (production bundle)', () => {
   })
 
   it('bakes the configured Vite BASE_URL into board and sprite URLs', () => {
-    const bundle = readBundle(runViteBuild(TEST_BASE))
+    const dir = runViteBuild(TEST_BASE)
+    const bundle = readBundle(dir)
 
     expect(
       bundle.includes('import.meta.env.BASE_URL')
@@ -60,5 +93,9 @@ describe('Phaser board asset base path (production bundle)', () => {
     expect(bundle.includes('sprites/'), 'sprite URL path should be bundled').toBe(true)
     expect(bundle.includes('board-ui'), 'board UI atlas name should be bundled').toBe(true)
     expect(bundle.includes('-atlas.png'), 'atlas texture suffix should be bundled').toBe(true)
+    expect(evaluateBuiltUrls(dir)).toEqual({
+      backgroundUrl: '/regression-base/boards/classic/background-hd.png',
+      spriteUrl: '/regression-base/sprites/board-ui-atlas.png',
+    })
   }, 120_000)
 })

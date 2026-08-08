@@ -224,6 +224,37 @@ describe('service worker fetch handling', () => {
       expectSingleCachePut(harness, request, networkClone)
     })
 
+    it('keeps the response pending until the runtime cache write finishes', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/boards/classic/background-balanced.png')
+      const network = makeResponse('network board')
+      const networkClone = makeResponse('network board clone')
+      vi.spyOn(network, 'clone').mockReturnValue(networkClone)
+      const cacheWriteControl: { finish: (() => void) | null } = { finish: null }
+      harness.cachePut.mockImplementationOnce(async (key: Request | string, response: Response) => {
+        harness.cachePutCalls.push({ key, response })
+        await new Promise<void>((resolve) => {
+          cacheWriteControl.finish = resolve
+        })
+      })
+      harness.fetchMock.mockResolvedValue(network)
+
+      let responseSettled = false
+      const responsePromise = dispatchFetch(harness, request)
+      responsePromise?.then(() => {
+        responseSettled = true
+      })
+      await flushPromises()
+
+      expect(harness.cachePut).toHaveBeenCalledTimes(1)
+      expect(responseSettled).toBe(false)
+
+      cacheWriteControl.finish?.()
+      const response = await responsePromise
+      expect(response).toBe(network)
+      expect(responseSettled).toBe(true)
+    })
+
     it('uses a cached sprite atlas when offline', async () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/sprites/board-ui-atlas.json')

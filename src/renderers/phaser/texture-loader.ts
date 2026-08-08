@@ -19,6 +19,7 @@ export interface PhaserTextureLoaderPort {
   offFileError(listener: (file: LoaderFileFailure) => void): void
   onceComplete(listener: () => void): void
   offComplete(listener: () => void): void
+  restart(): void
 }
 
 export interface LoaderFileFailure {
@@ -100,6 +101,20 @@ export function loadPhaserBoardAssetManifest(
   let nextBackgroundIndex = 0
   let disposed = false
 
+  const noteFailure = (
+    descriptor: PhaserAssetDescriptor,
+    source: string | null,
+  ): void => {
+    const urls = descriptorUrls(descriptor)
+    if (failedUrls.noteAll(urls)) {
+      onFailure({
+        key: descriptor.key,
+        urls,
+        source,
+      })
+    }
+  }
+
   const queueDescriptor = (descriptor: PhaserAssetDescriptor): void => {
     const urls = descriptorUrls(descriptor)
     if (port.textureExists(descriptor.key) || failedUrls.hasAny(urls)) {
@@ -153,20 +168,32 @@ export function loadPhaserBoardAssetManifest(
       return
     }
     pending.delete(key)
-    const urls = descriptorUrls(descriptor)
-    if (failedUrls.noteAll(urls)) {
-      onFailure({
-        key,
-        urls,
-        source: typeof file.src === 'string' ? file.src : null,
-      })
-    }
+    noteFailure(descriptor, typeof file.src === 'string' ? file.src : null)
     if (backgroundKeys.has(key)) {
       queueNextBackground()
     }
   }
 
   const onComplete = (): void => {
+    const completedDescriptors = [...pending.values()]
+    pending.clear()
+    for (const descriptor of completedDescriptors) {
+      if (port.textureExists(descriptor.key)) {
+        continue
+      }
+      // Phaser's loaderror event only covers transport failures. Successful
+      // HTTP responses can still fail while decoding an image or parsing atlas
+      // JSON, so verify the texture cache after processing completes.
+      noteFailure(descriptor, null)
+      if (backgroundKeys.has(descriptor.key)) {
+        queueNextBackground()
+      }
+    }
+    if (pending.size > 0) {
+      port.onceComplete(onComplete)
+      port.restart()
+      return
+    }
     dispose()
   }
 
@@ -205,6 +232,9 @@ function textureLoaderPortForScene(scene: Phaser.Scene): PhaserTextureLoaderPort
     },
     offComplete: (listener) => {
       scene.load.off(LOAD_COMPLETE_EVENT, listener)
+    },
+    restart: () => {
+      scene.load.start()
     },
   }
 }

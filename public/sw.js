@@ -110,10 +110,11 @@ self.addEventListener('fetch', (event) => {
   if (isRuntimeAsset) {
     event.respondWith(
       fetch(event.request)
-        .then((response) => {
+        .then(async (response) => {
           if (response.ok) {
             const clone = response.clone()
-            void caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, clone))
+            const cache = await caches.open(ASSET_CACHE)
+            await cache.put(event.request, clone)
           }
           return response
         })
