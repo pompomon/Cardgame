@@ -2,7 +2,7 @@
 
 ## Implementation checklist
 
-- [ ] Phase 0 — Establish branch, validation baseline, and acceptance criteria
+- [x] Phase 0 — Establish branch, validation baseline, and acceptance criteria
 - [ ] Phase 1 — Add persisted board-theme and render-quality settings
 - [ ] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [ ] Phase 3 — Implement persistent board background and adaptive ambience
@@ -89,6 +89,75 @@ The view model does not currently expose one identity that survives zone moves: 
 - Baseline validation result is known.
 - Acceptance criteria and implementation scope are documented.
 - No production code has changed yet.
+
+### Phase 0 implementation notes (2026-08-08)
+
+#### Selection and baseline
+
+- Phase 0 was selected because it was the first unchecked phase in the
+  authoritative checklist. No earlier phase exists to verify.
+- The task branch, `copilot/implement-first-unchecked-phase`, existed before
+  this documentation change. The baseline commit was `89cc4f1`.
+- The required pre-change baseline passed:
+
+  | Command | Result |
+  | --- | --- |
+  | `npm run lint` | Passed (`tsc --noEmit`). |
+  | `npm run test` | Passed: 57 files, 600 tests. |
+  | `npm run build` | Passed. Vite emitted its existing chunk-size advisory for the 1,545.61 kB JavaScript bundle (403.32 kB gzip); this was not a build failure. |
+
+#### Inspected baseline and scope
+
+- `src/renderers/phaser/index.ts`, `scene-host.ts`, and
+  `cardgame-scene.ts` own renderer/scene lifecycle. `renderView` keeps the
+  scene-level root container, status text, and active effect objects, but
+  clears and reconstructs the root's gameplay children; selected transient
+  effect targets and an unchanged menu overlay are retained across passes.
+- `layout.ts` and `viewport-resize.ts` already provide safe-area-aware,
+  orientation-responsive layout and coalesced resize cleanup.
+  `quality.ts` defines phone classification and DPR caps, but
+  `resolveGameResolution` is not yet connected to `scene-host.ts`. Current
+  runtime adaptations use reduced effect recipes on phone-sized viewports and
+  suppress effects when animation speed resolves to `off`; with no stored
+  preference, reduced-motion initializes that setting to `off`.
+- Dragging currently uses Phaser's built-in draggable containers plus scene
+  `drag`, `dragend`, and `drop` listeners. Drop actions are resolved through
+  shared app projections, but there is no dedicated pointer-type-aware drag
+  controller or Phaser drag integration suite.
+- Shared card-style and animation-speed options, guards, persistence, and
+  view-model projection already live in `src/app/`. DOM, visible Phaser
+  settings, and the native Phaser accessibility mirror consume those shared
+  options. Board-theme and render-quality preferences do not yet exist.
+- Card art already uses direct `import.meta.env.BASE_URL` access and degrades
+  from primary HD art to geometric fallback art to procedural rendering.
+  The Phaser loader logs a failed texture key once, but does not yet provide
+  the failed-URL suppression and tiered board/sprite fallback required by
+  later phases.
+- `public/sw.js` is at cache version `v7`, uses network-first behavior for
+  unhashed `/cards/*`, and cache-first behavior for hashed `/assets/*` and
+  fixed static files. No `/boards/*` or `/sprites/*` policy exists yet.
+- The relevant architecture, layout, quality, resize, effects, settings,
+  storage, action-resolution, card-art, base-path, and service-worker tests
+  were inspected. The later-phase board/theme, retained-card, dedicated-drag,
+  drop-zone, asset-loader, and lifecycle test modules do not yet exist.
+
+#### Measurable acceptance criteria for Phases 1–9
+
+| Area | Required result | Verification |
+| --- | --- | --- |
+| Architecture and ownership | Dependency direction remains `renderers/phaser/ → app/ → game/`; renderer settings and validation live in `src/app/`; Phaser objects and input/resource ownership live in `src/renderers/phaser/`; no game rule changes or renderer imports enter `src/game/`. | Architecture guards plus diff review of imports and changed modules. |
+| Retained objects | After warm-up, 100 consecutive syncs of an unchanged view model, layout, theme, and quality profile create or destroy zero board-background, card, or drop-zone display objects. A card keeps one `CardView` identity across visible zone moves, and pooled views expose no prior card text, texture, input, or hidden-hand data. | Instrumented registry/pool tests assert object identity and creation/destruction counters. |
+| Drag correctness | Mouse, touch, and pen sequences submit only an action present in the app-provided legal actions. A valid completed drag submits exactly once; movement below the touch/pen threshold, invalid drops, pointer cancellation/loss, visibility changes, resize, menu/route transitions, and scene shutdown submit zero actions and restore the source view. A duplicate release after valid completion submits no additional action. | Pointer/state-machine tests cover every completion and cancellation path, including release outside the source bounds. |
+| Mobile responsiveness | The board, hand, overlays, and controls remain inside safe-area bounds at 390×844 portrait, 844×390 landscape, 720×360 short landscape, and a high-DPR phone viewport. Portrait → landscape → portrait restores the original layout without duplicate objects/listeners; collapsed mobile controls retain the existing 44 CSS-pixel target-height contract. | Pure layout/resize tests plus the documented Chromium mobile smoke matrix. |
+| Asset and offline fallback | A Vite build with `VITE_BASE_PATH=/regression-base/` places that base in every board/sprite URL and leaves no runtime `import.meta.env.BASE_URL` lookup. Missing HD assets try each declared tier once in order and end on a playable placeholder; a failed URL is not retried during repeated syncs. Unhashed public assets have an explicit tested runtime-cache/offline policy. | Build-invocation, manifest-order, loader-failure, failed-URL, and service-worker tests; offline reload smoke check. |
+| Quality limits | Unknown/automatic selection resolves to the balanced profile. Phone DPR is capped at 2 and non-phone DPR at 2.5 or lower; every profile has finite particle/object limits. Low quality, reduced motion, and hidden-page state disable ambience and unnecessary effects, while profile changes update retained objects in place. | Profile-selection tests assert each cap and override; object counters assert live ambience/effect objects never exceed the selected profile. |
+| Performance and lifecycle | 1,000 pointer-move updates allocate zero Phaser display objects. Twenty-five theme/profile switches retain at most the active large texture plus one in-flight transition texture. Twenty mount/unmount or scene-restart cycles leave no active drag, tween, delayed call, effect, or added global/scene listener. Desktop and mobile traces record p95 frame time against 16.7 ms and 33.3 ms budgets respectively; a miss requires an approved documented follow-up. | Allocation/object/texture/listener instrumentation, lifecycle tests, and recorded desktop/mobile performance notes. |
+| Accessibility and parity | Every visible Phaser action and new setting has a native keyboard/screen-reader alternative. DOM, visible Phaser, and the accessibility mirror expose the same setting values, labels, and selected value; alternative gameplay controls submit the same `GameAction` values and remain unavailable behind modals. Existing DOM, P2P, recording/replay, import/export, and renderer-selection behavior remains unchanged. | Cross-surface row/action tests, keyboard-only smoke checks, hidden-hand regression tests, and the full suite. |
+| Validation gate | Each implementation phase runs its targeted tests followed by `npm run lint`, `npm run test`, `npm run build`, and `codeql_checker`. Final verification also records the desktop/mobile, reduced-motion, offline, fallback, renderer-switch, and non-root-base smoke matrix. | Command output, exact passing test count, CodeQL result, and independent subagent report are recorded in the PR. |
+
+Phase 0 intentionally changes documentation only. Phases 1–9, the manual
+smoke matrix, performance measurements, and all independent final-verification
+checklist items remain deferred and unchecked.
 
 ## Phase 1 — Add persisted board-theme and render-quality settings
 
