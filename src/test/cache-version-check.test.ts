@@ -8,28 +8,32 @@ import {
 
 const REPO_ROOT = resolve(__dirname, '..', '..')
 
-describe('cache-version card-art change warning', () => {
+describe('cache-version unhashed-asset change warning', () => {
   it('extracts CACHE_VERSION from the service worker source', () => {
     expect(extractCacheVersion("const CACHE_VERSION = 'v7'\n")).toBe('v7')
   })
 
-  it('warns when card files changed without a CACHE_VERSION bump', () => {
+  it.each([
+    'public/cards/hd/Forest.png',
+    'public/boards/classic/background-hd.png',
+    'public/sprites/board-ui-atlas.png',
+  ])('warns when %s changes without a CACHE_VERSION bump', (changedPath) => {
     const result = evaluateCacheVersionCheck({
       baseCacheVersion: 'v7',
-      changedPaths: ['public/cards/hd/Forest.png'],
+      changedPaths: [changedPath],
       currentCacheVersion: 'v7',
     })
 
     expect(result.kind).toBe('warning')
     expect(result).toMatchObject({
-      message: expect.stringContaining('public/cards/ changed without a public/sw.js CACHE_VERSION bump'),
+      message: expect.stringContaining('unhashed public assets changed without a public/sw.js CACHE_VERSION bump'),
     })
     expect(result).toMatchObject({
       message: expect.stringContaining('Risk / migration notes'),
     })
   })
 
-  it('does not warn when card files changed with a CACHE_VERSION bump', () => {
+  it('does not warn when an unhashed asset changes with a CACHE_VERSION bump', () => {
     expect(
       evaluateCacheVersionCheck({
         baseCacheVersion: 'v7',
@@ -39,7 +43,7 @@ describe('cache-version card-art change warning', () => {
     ).toEqual({ kind: 'ok' })
   })
 
-  it('does not warn when no card files changed', () => {
+  it('does not warn when no unhashed public assets changed', () => {
     expect(
       evaluateCacheVersionCheck({
         baseCacheVersion: 'v7',

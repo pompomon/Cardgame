@@ -2,23 +2,26 @@
 
 The service worker is `public/sw.js`. The Vite base path is set via
 `VITE_BASE_PATH` and applied in `vite.config.ts`. Base-aware URL helpers
-live in `src/app/url-path.ts` and `src/app/card-art.ts`.
+live in `src/app/url-path.ts`, `src/app/card-art.ts`, and
+`src/app/board-assets.ts`.
 
 ## Service-worker caching strategy
 
-Current intentional split (verified at `public/sw.js:99-136`):
+Current intentional split (verified at `public/sw.js:99-141`):
 
-- **`/cards/*`** — network-first with cache fallback. Card art URLs are
-  **not** content-hashed, so a same-path replacement must reach users
+- **`/cards/*`, `/boards/*`, and `/sprites/*`** — network-first with cache
+  fallback. These public asset URLs are **not** content-hashed, so a same-path
+  replacement must reach users
   without waiting for `CACHE_VERSION` bumps or manual cache clears.
 - **`/assets/*` and fixed static files** — cache-first. Vite content-hashes
   these, so stale caches are safe between releases.
 
 Rules:
 
-- **Bump `CACHE_VERSION` when same-path card-art binaries change.**
+- **Bump `CACHE_VERSION` when same-path card, board, or sprite assets change.**
   Note this in the PR's "Risk / migration notes" block. `npm run test`
-  includes a soft cache-version warning: when `public/cards/` changes
+  includes a soft cache-version warning: when `public/cards/`, `public/boards/`,
+  or `public/sprites/` changes
   against `origin/main` and `public/sw.js` keeps the same `CACHE_VERSION`,
   Vitest prints a reminder to bump the version and include the release-note
   callout. The reminder is intentionally non-blocking while the check is new.

@@ -10,8 +10,10 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
+import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
+import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import type { AppViewModel } from '../../app/types'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
@@ -24,6 +26,7 @@ import { TargetPickerController } from './target-picker'
 import { BattlefieldTargetsController } from './battlefield-targets'
 import { installButtonState, popupActionWidth, snapCardToOrigin } from './ui-utils'
 import { UI_THEME } from './theme'
+import { preloadPhaserBoardAssets, type BoardAssetLoadHandle } from './texture-loader'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
 import type { PhaserRendererHost } from './renderer-host'
 
@@ -43,6 +46,7 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private boardAssetLoad: BoardAssetLoadHandle | null = null
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -97,10 +101,17 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const selectedStyle = this.rendererRef.currentView?.cardVisualStyle
-      ?? this.rendererRef.controller?.getViewModel().cardVisualStyle
+    const view = this.rendererRef.currentView
+      ?? this.rendererRef.controller?.getViewModel()
+    const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
+    this.boardAssetLoad?.dispose()
+    this.boardAssetLoad = preloadPhaserBoardAssets(
+      this,
+      view?.boardTheme ?? DEFAULT_BOARD_THEME,
+      view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+    )
   }
 
   create(): void {
@@ -213,6 +224,8 @@ export class CardgameScene extends Phaser.Scene {
       this.cardPreview = null
       this.effectController.reset()
       this.boardPresentation.reset()
+      this.boardAssetLoad?.dispose()
+      this.boardAssetLoad = null
     })
 
     this.renderView(this.rendererRef.currentView)

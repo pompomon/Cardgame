@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v7'
+const CACHE_VERSION = 'v8'
 const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
 const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
 
@@ -96,13 +96,18 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  const isCardAsset = relativePath.startsWith('/cards/')
+  // Public art paths are intentionally unhashed, so they use network-first
+  // refresh with cache fallback. Vite's content-hashed /assets/* stay
+  // cache-first below.
+  const isRuntimeAsset = relativePath.startsWith('/cards/')
+    || relativePath.startsWith('/boards/')
+    || relativePath.startsWith('/sprites/')
   const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
-  if (!isStaticAsset && !isCardAsset) {
+  if (!isStaticAsset && !isRuntimeAsset) {
     return
   }
 
-  if (isCardAsset) {
+  if (isRuntimeAsset) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {

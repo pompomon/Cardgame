@@ -125,7 +125,7 @@ describe('service worker fetch handling', () => {
     vi.restoreAllMocks()
   })
 
-  describe('/cards/* network-first caching', () => {
+  describe('unhashed public asset network-first caching', () => {
     it('uses the network response when a cached card also exists', async () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/cards/hd/Forest.png')
@@ -201,6 +201,39 @@ describe('service worker fetch handling', () => {
       expect(response?.type).toBe('error')
       expect(response?.ok).toBe(false)
       expect(response?.status).toBe(0)
+      expect(harness.cachesMatch).toHaveBeenCalledWith(request)
+      expect(harness.cachePut).not.toHaveBeenCalled()
+    })
+
+    it('refreshes board backgrounds from the network before a cached copy', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/boards/moonlit/background-hd.png')
+      const cached = makeResponse('cached board')
+      const network = makeResponse('network board')
+      const networkClone = makeResponse('network board clone')
+      const clone = vi.spyOn(network, 'clone').mockReturnValue(networkClone)
+      harness.cachedResponses.set(request.url, cached)
+      harness.fetchMock.mockResolvedValue(network)
+
+      const response = await dispatchFetch(harness, request)
+      await flushPromises()
+
+      expect(response).toBe(network)
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
+      expect(clone).toHaveBeenCalledTimes(1)
+      expectSingleCachePut(harness, request, networkClone)
+    })
+
+    it('uses a cached sprite atlas when offline', async () => {
+      const harness = loadServiceWorker()
+      const request = makeRequest('/Cardgame/sprites/board-ui-atlas.json')
+      const cached = makeResponse('cached atlas')
+      harness.cachedResponses.set(request.url, cached)
+      harness.fetchMock.mockRejectedValue(new Error('offline'))
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(cached)
       expect(harness.cachesMatch).toHaveBeenCalledWith(request)
       expect(harness.cachePut).not.toHaveBeenCalled()
     })
