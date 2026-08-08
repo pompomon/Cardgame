@@ -1,0 +1,618 @@
+# Implement retained-mode rich Phaser board renderer
+
+## Implementation checklist
+
+- [ ] Phase 0 — Establish branch, validation baseline, and acceptance criteria
+- [ ] Phase 1 — Add persisted board-theme and render-quality settings
+- [ ] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
+- [ ] Phase 3 — Implement persistent board background and adaptive ambience
+- [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
+- [ ] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
+- [ ] Phase 6 — Add drop-zone visuals and contextual interaction feedback
+- [ ] Phase 7 — Implement adaptive desktop/mobile performance policy
+- [ ] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
+- [ ] Phase 9 — Add regression, lifecycle, and performance verification
+- [ ] Subagent verification — Architecture and ownership review
+- [ ] Subagent verification — Lifecycle, memory, and listener-cleanup review
+- [ ] Subagent verification — Input safety, accessibility, and rule-parity review
+- [ ] Subagent verification — Asset, GitHub Pages, and service-worker review
+- [ ] Subagent verification — Performance review and final merge gate
+
+## Objective
+
+Evolve the existing Phaser 4 renderer into a retained-mode, visually richer board renderer while preserving the current application architecture and game-rule behavior. The target experience includes HD themed board backgrounds, sprite and atlas support, smooth mouse/touch/pen drag-and-drop, adaptive desktop/mobile performance, and robust fallbacks for GitHub Pages and offline use.
+
+This work must not change engine rules or card legality. The Phaser renderer must keep consuming the immutable `AppViewModel` snapshots produced by `src/app/` and must keep submitting existing `GameAction` objects back to the controller. DOM accessibility flows, non-canvas controls, renderer selection, P2P overlays, recordings, import/export, and replay behavior must remain available and semantically equivalent.
+
+## Architecture constraints
+
+- Preserve the dependency direction: `src/renderers/phaser/ → src/app/ → src/game/`.
+- Keep `src/game/` renderer-independent. Do not import Phaser, DOM, browser storage, assets, or renderer settings into engine modules.
+- Keep shared settings, persistence, validation, URL construction semantics, visual-effect descriptors, and cross-renderer presentation rules in `src/app/`.
+- Keep Phaser-specific display objects, textures, pooling, input wiring, drag proxies, culling, and scene lifecycle ownership in `src/renderers/phaser/`.
+- Consume immutable `AppViewModel` data only. Do not retain references to mutable controller internals.
+- Submit existing `GameAction` values through the current controller boundary. Do not bypass legality checks or duplicate game rules in Phaser.
+- Preserve DOM renderer parity and accessibility alternatives. Canvas interactions may be richer, but keyboard/screen-reader/non-canvas workflows must keep working.
+- Follow repository guardrails: access `import.meta.env.BASE_URL` as a direct literal member expression, use crop/manual culling instead of Phaser `GeometryMask` for WebGL clipping, validate persisted settings with guards, and keep shared visual semantics out of Phaser-only modules.
+
+## Retained-mode target flow
+
+The current Phaser renderer should move away from broad scene reconstruction on each view-model update. The target flow is a stable scene graph with small, keyed reconciliation steps:
+
+1. `BoardBackgroundView.sync(viewModel, layout, quality)` updates persistent background layers, crop rectangles, ambience intensity, and theme-dependent textures without recreating the whole scene.
+2. `CardViewRegistry.sync(viewModel.game, layout, visibility, quality)` creates card views only for newly visible stable `cardId` values, updates existing card positions and textures in place, pools removed views, and schedules move tweens where appropriate.
+3. `DropZoneView.sync(viewModel.game, legalActions, dragState, layout)` updates reusable battlefield, hand, target, and action-zone highlights based on current legality and pointer state.
+4. HUD sync updates persistent text, panels, buttons, overlays, menus, and accessibility mirrors independently from board/card object reconciliation.
+5. Queued effects consume shared app-level effect descriptors and play bounded Phaser animations without modifying game state. Effects should be deduplicated, interrupt-safe, and cleaned up on scene transitions.
+
+## Phase 0 — Establish branch, validation baseline, and acceptance criteria
+
+### Tasks
+
+- Create the feature branch before implementation work, for example `copilot/rich-phaser-renderer`.
+- Read `AGENTS.md` and the relevant deep dives under `docs/agent/`, especially architecture, Phaser renderer, state/persistence, service worker, DOM/CSS, testing, validation, and PR workflow notes.
+- Inspect the current Phaser renderer entry points, layout helpers, quality controls, effects handling, drag behavior, service worker, app settings, controller persistence, and tests.
+- Record a baseline by running:
+  - `npm run lint`
+  - `npm run test`
+  - `npm run build`
+- Define measurable acceptance criteria before code changes land.
+
+### Suggested modules to inspect
+
+- `src/renderers/phaser/index.ts`
+- `src/renderers/phaser/layout.ts`
+- `src/renderers/phaser/*quality*` or existing quality policy helpers
+- `src/app/controller.ts`
+- `src/app/view-model.ts`
+- `src/app/settings` or current settings modules
+- `src/service-worker.ts`
+- `src/test/card-art-base-path.test.ts`
+- Existing Phaser renderer tests under `src/test/`
+
+### Requirements
+
+- No runtime behavior changes in this phase except branch setup and documentation of acceptance criteria.
+- Baseline failures must be captured with command output, affected tests, and whether the failure is pre-existing.
+- Initial acceptance criteria must cover retained objects, drag correctness, mobile responsiveness, fallback assets, quality limits, accessibility parity, and validation commands.
+
+### Tests
+
+- Run the full baseline sequence: `npm run lint`, `npm run test`, `npm run build`.
+- If baseline failures exist, add a note to the implementation issue before proceeding.
+
+### Definition of done
+
+- Branch exists.
+- Baseline validation result is known.
+- Acceptance criteria and implementation scope are documented.
+- No production code has changed yet.
+
+## Phase 1 — Add persisted board-theme and render-quality settings
+
+### Tasks
+
+- Add shared app-level setting modules for `BoardTheme` and renderer quality preferences.
+- Define immutable option tuples, labels, defaults, and type unions in `src/app/`, not inside Phaser-only code.
+- Add guards such as `isBoardTheme` and `isRenderQualityPreference` for untrusted input.
+- Persist settings safely in `localStorage`, rejecting unknown values and falling back to defaults.
+- Ensure corrupted or absent storage does not throw during app startup.
+- Expose the options through the existing settings/view-model flow.
+- Add UI parity so DOM and Phaser can both view and change the setting, or so Phaser-specific quality controls have an accessible DOM/settings equivalent.
+
+### Suggested modules
+
+- New `src/app/board-theme.ts`
+- New or extended `src/app/render-quality.ts`
+- Existing app settings/persistence module
+- DOM settings/menu renderer
+- Phaser menu/settings overlay
+- View-model projection module
+
+### Requirements
+
+- Keep settings validation shared in `src/app/`.
+- Do not cast strings to setting unions.
+- Use existing storage warning behavior and avoid overwriting storage-unavailable warnings with later unconditional success messages.
+- Keep option tuples immutable with `as const` and derive types from them.
+- Preserve current defaults for existing users.
+
+### Tests
+
+- Unit tests for option guards and default fallback behavior.
+- Storage tests for missing, valid, invalid, and malformed persisted values.
+- UI/view-model tests that verify DOM and Phaser receive equivalent option labels and selected values.
+- Regression tests ensuring corrupted settings do not prevent app initialization.
+
+### Definition of done
+
+- Board theme and quality preferences are shared app settings.
+- Invalid persisted values are rejected safely.
+- DOM and Phaser expose equivalent user-facing choices.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 2 — Add base-path-safe HD board and sprite asset pipeline
+
+### Tasks
+
+- Define a public asset layout under `public/boards/<theme>/` with separate variants for HD, balanced, low, and fallback assets.
+- Keep large board backgrounds separate from UI/effect atlases so the renderer can load only the needed quality tier.
+- Add sprite/atlas manifest definitions for repeated UI, zone, effect, and interaction visuals.
+- Add URL helpers that use direct literal `import.meta.env.BASE_URL` access so Vite replaces the value for GitHub Pages builds.
+- Add loader error handling that falls back from HD to balanced, low, and placeholder assets without crashing the scene.
+- Track failed runtime asset URLs to avoid retry loops during repeated render syncs.
+- Update runtime cache and service worker behavior for new same-path assets and unhashed public assets. Bump the cache version when required.
+
+### Suggested asset layout
+
+```text
+public/boards/<theme>/
+  background-hd.png
+  background-balanced.png
+  background-low.png
+  background-fallback.png
+  ambience-atlas.png
+  ambience-atlas.json
+public/sprites/
+  board-ui-atlas.png
+  board-ui-atlas.json
+  effects-atlas.png
+  effects-atlas.json
+```
+
+### Suggested modules
+
+- New `src/app/board-assets.ts` for shared manifest names and base-path-safe URLs
+- New `src/renderers/phaser/asset-manifest.ts`
+- New `src/renderers/phaser/texture-loader.ts`
+- Existing service worker module
+- Existing base-path/card-art tests as a pattern
+
+### Requirements
+
+- Never build asset URLs through an alias of `import.meta.env.BASE_URL`.
+- Large backgrounds should be independently loadable and evictable.
+- Atlases should be used for repeated sprites and effects.
+- Asset failures must be visible in diagnostics but non-fatal for gameplay.
+- GitHub Pages non-root base path must work for all assets.
+- Offline/runtime cache behavior must match existing `/cards/*` and `/assets/*` expectations: network-first for unhashed public content where appropriate, cache-first for hashed build assets.
+
+### Tests
+
+- Build-invocation regression test following `src/test/card-art-base-path.test.ts` to verify board URLs include the configured base path.
+- Unit tests for URL normalization and fallback ordering.
+- Service worker tests for board asset caching strategy and cache-version changes.
+- Phaser loader tests or adapter tests for error-to-fallback transitions.
+
+### Definition of done
+
+- Board and sprite manifests exist with HD/balanced/low/fallback variants.
+- URL generation is base-path safe.
+- Loader failures fall back without breaking gameplay.
+- Service worker/runtime cache updates are complete.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 3 — Implement persistent board background and adaptive ambience
+
+### Tasks
+
+- Add `BoardBackgroundView` as a retained Phaser object owner.
+- Create persistent background image layers once per scene/theme and update them in place.
+- Implement cover-fit crop math so HD backgrounds fill the viewport without relying on `GeometryMask`.
+- Add optional foreground/ambience layers using bounded sprite or particle counts.
+- Respect reduced-motion and low-quality settings by disabling or simplifying ambience.
+- Ensure resize updates crop, scale, position, and depth without reallocating all background objects.
+- Add theme-switch handling that transitions textures safely and frees no-longer-needed large textures.
+
+### Suggested modules
+
+- New `src/renderers/phaser/board-background.ts`
+- Existing `src/renderers/phaser/layout.ts`
+- New or extended Phaser quality module
+- Shared app theme/quality setting modules from Phase 1
+
+### Requirements
+
+- Do not use Phaser `GeometryMask` for clipping under WebGL.
+- Use `setCrop` or manual culling for large images and scrollable regions.
+- Bound ambience by quality profile and device class.
+- Pause or reduce ambience when the page is hidden.
+- Keep background rendering independent from game rules.
+
+### Tests
+
+- Unit tests for cover-fit crop calculations across portrait, landscape, narrow, wide, and high-DPR sizes.
+- Lifecycle tests that theme switches do not leak stale texture keys or duplicate layers.
+- Reduced-motion tests verifying ambience is disabled or minimized.
+- Manual smoke tests in desktop and mobile viewport sizes.
+
+### Definition of done
+
+- Board background persists across view-model syncs.
+- Resize and theme changes update retained objects in place.
+- Ambience is bounded, reduced-motion aware, and quality aware.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
+
+### Tasks
+
+- Introduce a `CardView` abstraction that owns the Phaser containers/images/text associated with one visible card.
+- Introduce `CardViewRegistry` keyed by stable `cardId` values from the view model.
+- Reconcile card zones by creating views for new cards, updating existing views in place, and pooling/removing views for cards that leave visibility.
+- Add move tweens for zone/slot changes while preserving deterministic final positions after sync.
+- Keep hidden-hand and privacy behavior exactly equivalent to the current renderer: do not reveal opponent hidden card identities, textures, names, or metadata.
+- Add texture fallback behavior for cards whose raster or atlas art fails to load.
+- Ensure pooled views are fully reset before reuse, including text, texture, tint, alpha, interactivity, listeners, depth, and drag state.
+
+### Suggested modules
+
+- New `src/renderers/phaser/card-view.ts`
+- New `src/renderers/phaser/card-view-registry.ts`
+- New `src/renderers/phaser/card-view-pool.ts`
+- Existing card-art helpers
+- Existing app-level card visual style settings
+- Existing hand/battlefield layout helpers
+
+### Requirements
+
+- Key by stable `cardId`, not array index.
+- Preserve immutable view-model consumption.
+- Do not use `structuredClone(GameState)` in render or AI hot loops.
+- Do not hardcode card visual style defaults; reuse shared constants such as `DEFAULT_CARD_VISUAL_STYLE` where applicable.
+- Reconciliation must be idempotent: two syncs with the same view model should not allocate new card objects or submit actions.
+
+### Tests
+
+- Registry reconciliation tests for create/update/remove/reorder cases.
+- Pool reset tests that verify no stale hidden/private data leaks after reuse.
+- Snapshot or structural tests for hidden opponent hand rendering.
+- Movement tests using fake timer helpers to verify tween completion reaches expected layout.
+- Regression tests for texture fallback after raster load failure.
+
+### Definition of done
+
+- Broad card reconstruction is replaced by keyed retained card views.
+- Hidden-information behavior is unchanged.
+- Repeated syncs are allocation-light and idempotent.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 5 — Add dedicated mouse/touch drag-and-drop controller
+
+### Tasks
+
+- Create a Phaser-specific drag controller that owns pointer state, drag thresholds, drag proxies, cancellation, and action submission.
+- Use a movement threshold for touch and pen input so tap/preview behavior does not accidentally become a drag.
+- Render a high-depth drag proxy while dimming or marking the original retained card view.
+- Submit at most one action for a completed drag, and only through the existing controller action boundary.
+- Implement valid drop, invalid drop, pointer-cancel, scene-shutdown, visibility-change, route/menu transition, and resize cancellation paths.
+- Return invalid drops with a bounded tween and restore original interactivity.
+- Provide keyboard/accessibility alternatives through existing DOM or shared app controls.
+
+### Suggested modules
+
+- New `src/renderers/phaser/drag-controller.ts`
+- New `src/renderers/phaser/drag-state.ts`
+- `CardView` integration points
+- `DropZoneView` integration points
+- Existing action/legality projection from `src/app/`
+
+### Requirements
+
+- The controller may inspect app-provided legal actions, but must not reimplement game rules.
+- Pointer move work must be cheap: update only the drag proxy directly and defer expensive hover/legality recomputation.
+- All pointer listeners must be removed on shutdown/destroy.
+- Drag release outside the original card still resolves safely.
+- Duplicate pointer-up events or cancellation followed by pointer-up must not submit duplicate actions.
+
+### Tests
+
+- Unit tests for drag state transitions and at-most-once submission.
+- Pointer simulation tests for mouse, touch threshold, invalid drop, cancel, and release outside source bounds.
+- Accessibility regression test that non-drag action alternatives remain available.
+- Rule-parity tests comparing submitted `GameAction` values to existing legal-action projections.
+
+### Definition of done
+
+- Drag behavior is smooth and pointer-type aware.
+- Valid and invalid drops resolve predictably.
+- Cancellation paths clean up state and listeners.
+- Accessibility alternatives remain intact.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 6 — Add drop-zone visuals and contextual interaction feedback
+
+### Tasks
+
+- Add `DropZoneView` objects for battlefield, hand, playable-card, target, attack/block, and modal target areas as applicable.
+- Drive zone visibility from current legal actions and drag state.
+- Cache reusable highlight sprites, outlines, text labels, and target rings.
+- Avoid allocation on every pointer move; update positions, alpha, tint, and visibility in place.
+- Map shared visual-effect semantics from `src/app/` to Phaser presentation effects.
+- Show valid, invalid, hover, selected, and disabled states consistently across desktop and touch interactions.
+
+### Suggested modules
+
+- New `src/renderers/phaser/drop-zone-view.ts`
+- New `src/renderers/phaser/interaction-feedback.ts`
+- Existing app effect descriptor modules
+- Existing Phaser effects queue
+- Existing layout helpers
+
+### Requirements
+
+- No rule duplication: legal zones come from shared action/selector data.
+- Reusable visuals must be pooled or retained.
+- Pointer-move handlers must not allocate new Phaser objects.
+- Feedback semantics should align with DOM labels/tooltips where possible.
+- Unknown or future effect descriptors must fall back safely rather than returning `undefined` from format/render paths.
+
+### Tests
+
+- Drop-zone sync tests for no drag, valid drag, invalid hover, target selection, and state transitions.
+- Allocation guard tests or instrumentation around pointer-move update paths.
+- Effect descriptor mapping tests for known and unknown descriptor kinds.
+- Visual regression screenshots for representative desktop/mobile states if screenshot infrastructure exists.
+
+### Definition of done
+
+- Legal drop and target feedback is clear and reusable.
+- Pointer move is allocation-light.
+- Shared effect semantics remain centralized.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 7 — Implement adaptive desktop/mobile performance policy
+
+### Tasks
+
+- Define `PhaserQualityProfile` values derived from shared render-quality preference, device signals, reduced-motion state, visibility state, and viewport size.
+- Add high, balanced, and low profiles with explicit recommendations for backgrounds, ambience, particles, tweens, shadows, antialiasing, and DPR cap.
+- Cap device pixel ratio on high-DPR phones to avoid excessive GPU fill-rate cost.
+- Validate actual Phaser 4 renderer and scale-manager APIs before changing render scaling or resolution behavior.
+- Add visibility handling to pause ambience, reduce timers, and avoid unnecessary work when hidden.
+- Ensure profile changes reconcile retained objects instead of recreating the full scene.
+
+### Suggested profile shape
+
+```ts
+type PhaserQualityProfile = {
+  readonly tier: 'high' | 'balanced' | 'low';
+  readonly maxDevicePixelRatio: number;
+  readonly backgroundVariant: 'hd' | 'balanced' | 'low' | 'fallback';
+  readonly ambience: 'full' | 'reduced' | 'off';
+  readonly maxParticles: number;
+  readonly enableMoveTweens: boolean;
+  readonly enableHoverTweens: boolean;
+};
+```
+
+### Suggested modules
+
+- New or extended `src/renderers/phaser/quality.ts`
+- Shared `src/app/render-quality.ts`
+- `BoardBackgroundView`
+- `CardViewRegistry`
+- `DropZoneView`
+- Scene visibility/lifecycle hooks
+
+### Requirements
+
+- Validate Phaser 4 APIs against installed `phaser` types and runtime behavior before modifying resolution, canvas size, or scale behavior.
+- High profile may use HD assets and richer ambience on capable desktop devices.
+- Balanced profile should be the safe default for unknown devices.
+- Low profile should minimize overdraw, particles, shadows, filters, and high-DPR rendering.
+- Reduced-motion must override ambience and unnecessary animation.
+- Hidden tabs should not keep running expensive effects.
+
+### Tests
+
+- Unit tests for profile selection across desktop, mobile, high-DPR mobile, reduced-motion, hidden tab, and explicit user preference cases.
+- Integration tests verifying profile changes update retained views without duplicate objects.
+- Manual smoke tests on desktop Chrome/Firefox/Safari if available, mobile emulation, and at least one touch viewport.
+- Performance measurement notes for frame time and object counts.
+
+### Definition of done
+
+- Quality policy is explicit, typed, and tested.
+- DPR and ambience are bounded on mobile.
+- Phaser API usage has been verified before scaling changes land.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
+
+### Tasks
+
+- Audit every object owner introduced by previous phases for `destroy`, `dispose`, or `shutdown` behavior.
+- Clean up on renderer transitions, scene shutdown, scene destroy, app unmount, route/menu transitions, resize teardown, game seed reset, and visibility-state changes.
+- Remove global listeners, Phaser input listeners, timers, tweens, delayed calls, texture references, cached failed URLs, drag state, and pooled transient objects when no longer valid.
+- Evict large theme background textures when switching themes or quality tiers if they are not shared by another active scene.
+- Ensure game reset/new seed clears retained card views and effect queues before the next game sync.
+
+### Suggested modules
+
+- Scene lifecycle owner or disposer registry in `src/renderers/phaser/`
+- `BoardBackgroundView`
+- `CardViewRegistry`
+- `DropZoneView`
+- `DragController`
+- Texture loader/cache helpers
+- Existing renderer mount/unmount code
+
+### Requirements
+
+- Cleanup must be safe to call more than once.
+- Scene shutdown must cancel in-flight drags and queued effects.
+- Resize handlers must be debounced/throttled where appropriate and removed on unmount.
+- Texture eviction must not remove textures still in active use.
+- Visibility transitions must not leave the scene in a permanently paused or degraded state after returning to visible.
+
+### Tests
+
+- Lifecycle tests for mount/unmount, scene restart, renderer switch, game reset, and theme switch.
+- Listener cleanup tests using spies or counters where practical.
+- Texture cache tests for large background eviction and fallback preservation.
+- Drag cancellation tests during shutdown and visibility changes.
+
+### Definition of done
+
+- All retained object owners have idempotent cleanup.
+- No known listener, tween, timer, texture, or drag-state leaks remain.
+- Renderer transitions and game resets are stable.
+- `npm run lint`, `npm run test`, and `npm run build` pass.
+
+## Phase 9 — Add regression, lifecycle, and performance verification
+
+### Tasks
+
+- Fill gaps in unit, integration, and smoke coverage from earlier phases.
+- Add named regression tests that document the retained-mode behavior and repository-specific guardrails.
+- Add a desktop/mobile smoke matrix and record expected manual checks.
+- Measure performance against acceptance targets and document results.
+- Update relevant documentation under `docs/agent/` only if new durable renderer rules are introduced.
+
+### Suggested tests
+
+- `src/test/phaser-board-theme-settings.test.ts` — validates board theme and quality guards, defaults, and storage fallback.
+- `src/test/phaser-board-assets-base-path.test.ts` — verifies board asset URLs survive a Vite build with a non-root base path.
+- `src/test/phaser-board-background-view.test.ts` — verifies cover-fit crop, resize sync, reduced-motion ambience, and theme switching.
+- `src/test/phaser-card-view-registry.test.ts` — verifies keyed create/update/remove/reorder behavior and pool reset.
+- `src/test/phaser-drag-controller.test.ts` — verifies thresholds, cancel paths, invalid drops, and at-most-once action submission.
+- `src/test/phaser-drop-zone-view.test.ts` — verifies legal zone feedback and reusable visual states.
+- `src/test/phaser-quality-profile.test.ts` — verifies DPR caps, tier selection, reduced-motion, and visibility handling.
+- `src/test/phaser-lifecycle-cleanup.test.ts` — verifies listener, texture, tween, timer, and drag cleanup.
+
+### Required commands
+
+Run these after each phase and before final merge:
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
+Then run CodeQL review before finalizing the implementation PR.
+
+### Desktop/mobile smoke matrix
+
+- Desktop Chrome or Chromium, mouse input, high and balanced quality.
+- Desktop Firefox or WebKit where available, mouse input, resize and renderer switching.
+- Mobile viewport emulation, touch input, balanced and low quality.
+- High-DPR mobile viewport, low quality or DPR-capped balanced quality.
+- Reduced-motion enabled, ambience disabled/reduced.
+- Offline/reload path with service worker enabled and cached fallback assets.
+- Non-root GitHub Pages base path build.
+
+### Performance acceptance targets
+
+- Repeated sync with unchanged view model creates no new retained board/card/drop-zone objects.
+- Pointer move during drag allocates no Phaser display objects and performs only bounded math/state updates.
+- Mobile low-quality mode avoids expensive filters, unbounded particles, and uncapped DPR.
+- Scene shutdown leaves no active drag, no retained tweens/timers, and no orphan global listeners.
+- Large background textures are not accumulated across repeated theme switches.
+- Gameplay remains responsive during hand drag, battlefield updates, and resize.
+
+### Definition of done
+
+- Named regression tests cover the retained renderer, settings, asset, input, lifecycle, and quality paths.
+- Manual smoke matrix is complete.
+- Performance targets are met or documented with approved follow-up issues.
+- `npm run lint`, `npm run test`, `npm run build`, and CodeQL pass.
+
+## Autonomous implementation workflow
+
+Implement the renderer evolution in small logical commits, each scoped to one reviewable concern. A suggested commit sequence is:
+
+1. Add shared board-theme and render-quality settings with guards and tests.
+2. Add board/sprite asset manifests, base-path-safe URL helpers, and service worker updates.
+3. Add retained `BoardBackgroundView` and cover-fit crop tests.
+4. Add `CardView`, registry reconciliation, pooling, and hidden-information tests.
+5. Add drag controller state machine and action-submission tests.
+6. Add drop-zone visuals and contextual feedback tests.
+7. Add adaptive `PhaserQualityProfile` and visibility/reduced-motion handling.
+8. Add lifecycle cleanup, resource eviction, and reset tests.
+9. Add final regression/performance documentation and address subagent findings.
+
+For every phase:
+
+- Keep changes surgical and avoid unrelated refactors.
+- Run `npm run lint`, `npm run test`, and `npm run build` before reporting the phase complete.
+- If validation fails, stop and fix the phase before starting the next one unless the failure is proven pre-existing and documented.
+- Preserve direct `import.meta.env.BASE_URL` member access.
+- Use crop/manual culling instead of Phaser `GeometryMask` for WebGL clipping.
+- Validate all persisted settings and untrusted JSON with shared guards.
+- Keep shared visual semantics, settings, and persistence in `src/app/`; keep Phaser objects, input, pooling, and texture ownership in `src/renderers/phaser/`.
+- Do not modify engine legality, hidden-information rules, P2P semantics, recordings, renderer selection, or DOM accessibility flows except to preserve parity with new settings.
+
+## Independent subagent verification
+
+Use one or more independent verification subagents after implementation is substantially complete. The subagent should review the implementation rather than initially implement it. Provide the subagent with the branch, objective, acceptance criteria, changed files, validation results, and this plan.
+
+### Architecture and ownership review checklist
+
+- Verify dependency direction remains `src/renderers/phaser/ → src/app/ → src/game/`.
+- Confirm `src/game/` has no renderer, Phaser, asset, storage, or browser dependencies.
+- Confirm shared settings, persistence, guards, and cross-renderer visual semantics live in `src/app/`.
+- Confirm Phaser display objects, pooling, texture ownership, and input controllers live in `src/renderers/phaser/`.
+- Confirm the renderer consumes immutable `AppViewModel` snapshots and submits existing `GameAction` values.
+- Flag broad unrelated refactors or source changes outside the intended ownership boundaries.
+
+### Lifecycle, memory, and listener-cleanup review checklist
+
+- Verify retained views are cleaned up on scene shutdown, destroy, unmount, renderer switch, game reset, theme switch, resize teardown, and visibility changes.
+- Verify cleanup is idempotent.
+- Verify global listeners, Phaser input listeners, timers, tweens, delayed calls, drag state, and effect queues are removed or cancelled.
+- Verify large background textures are evicted when safe and retained only when still active.
+- Verify pooled card/drop-zone/effect objects are fully reset before reuse.
+- Flag any leak-prone owner without a clear lifecycle contract.
+
+### Input safety, accessibility, and rule-parity review checklist
+
+- Verify drag-and-drop submits at most one action per completed drag.
+- Verify invalid drops, cancellation, pointer loss, scene shutdown, visibility changes, and release outside source bounds are safe.
+- Verify drag legality comes from shared app/game projections, not duplicated Phaser-only rules.
+- Verify hidden opponent hand behavior does not leak private card identity, art, metadata, or stale pooled state.
+- Verify keyboard, DOM, screen-reader, and non-canvas action alternatives remain available.
+- Verify DOM renderer, P2P, recordings, replay, import/export, and renderer selection behavior are not regressed.
+
+### Asset, GitHub Pages, and service-worker review checklist
+
+- Verify asset URL helpers use direct `import.meta.env.BASE_URL` literal member access.
+- Verify non-root GitHub Pages builds resolve board backgrounds, sprite atlases, fallback textures, and existing card art.
+- Verify loader error handling falls back without crashing or retrying failed URLs indefinitely.
+- Verify service worker/runtime cache behavior handles public board assets and hashed build assets correctly.
+- Verify cache version is bumped when same-path public assets change.
+- Verify missing/offline assets still allow gameplay with fallback visuals.
+
+### Performance review and final merge gate checklist
+
+- Verify retained-mode sync avoids recreating unchanged board, card, and drop-zone objects.
+- Verify pointer move during drag does not allocate display objects or run unbounded legality/layout work.
+- Verify high/balanced/low quality profiles bound DPR, particles, ambience, shadows, filters, and tween counts appropriately.
+- Verify reduced-motion and hidden-tab states reduce animation work.
+- Verify repeated theme switches and game resets do not accumulate textures, listeners, or retained views.
+- Verify desktop and mobile smoke results satisfy the documented acceptance targets.
+
+### Required verification report
+
+The subagent report must include:
+
+- Verified areas and files reviewed.
+- Defects with file and line references.
+- Performance risks and measured or observed evidence.
+- Accessibility risks and affected flows.
+- Required pre-merge fixes, clearly separated from optional follow-up work.
+- Validation commands reviewed and whether they passed.
+- A final blocker/non-blocker recommendation.
+
+## Final merge gate
+
+Do not merge the implementation until all of the following are true:
+
+- `npm run lint`, `npm run test`, `npm run build`, and CodeQL pass.
+- Independent subagent verification reports no blockers.
+- Required subagent defects are fixed and re-verified.
+- No regressions are present in DOM renderer flows, P2P flows, recordings/replay, import/export, renderer selection, or GitHub Pages base-path asset loading.
+- Manual confirmation covers retained board/card/drop-zone objects, drag responsiveness, invalid-drop recovery, resize behavior, fallback assets, offline behavior, reduced-motion, and high/balanced/low quality limits.
+- Documentation is updated for any new durable renderer rules, settings, assets, or validation expectations.
+- The PR description includes final validation status and any approved follow-up work.
