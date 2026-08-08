@@ -217,6 +217,35 @@ describe('Phaser board texture loader', () => {
     expect(originalOnProcessError).toHaveBeenCalledTimes(1)
   })
 
+  it('recovers when malformed atlas frames throw during last-child assembly', () => {
+    const harness = createLoaderPort()
+    const onFailure = vi.fn()
+    loadPhaserBoardAssetManifest(
+      harness.port,
+      buildPhaserBoardAssetManifest('classic', 'balanced'),
+      { failedUrls: new FailedAssetUrlRegistry(), onFailure },
+    )
+    harness.addTexture('board-atlas:effects')
+    const originalOnProcessError = vi.fn()
+    const file: ProcessableLoaderFile = {
+      key: 'board-atlas:effects',
+      src: '/sprites/effects-atlas.png',
+      type: 'image',
+      onProcessComplete: () => {
+        throw new TypeError('malformed atlas frame')
+      },
+      onProcessError: originalOnProcessError,
+    }
+    observeLoaderFileProcessingErrors(file, harness.emitError)
+
+    expect(() => file.onProcessComplete?.()).not.toThrow()
+    expect(originalOnProcessError).toHaveBeenCalledTimes(1)
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'board-atlas:effects',
+    }))
+    expect(harness.port.textureExists('board-atlas:effects')).toBe(false)
+  })
+
   it('rejects atlases missing required frames and suppresses later retries', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const first = createLoaderPort()

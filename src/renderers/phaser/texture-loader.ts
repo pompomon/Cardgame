@@ -32,6 +32,7 @@ export interface LoaderFileFailure {
 export interface ProcessableLoaderFile extends LoaderFileFailure {
   readonly type?: unknown
   onProcess?: () => void
+  onProcessComplete?: () => void
   onProcessError?: () => void
 }
 
@@ -112,6 +113,20 @@ export function observeLoaderFileProcessingErrors(
       onError(file)
     }
     originalOnProcessError.call(file)
+  }
+
+  // Atlas assembly happens inside whichever child file completes last. Guard
+  // every child so malformed frame data cannot throw out of MultiFile
+  // addToCache(), strand the loader queue, and prevent scene creation.
+  if (typeof file.onProcessComplete === 'function') {
+    const originalOnProcessComplete = file.onProcessComplete
+    file.onProcessComplete = () => {
+      try {
+        originalOnProcessComplete.call(file)
+      } catch {
+        file.onProcessError?.()
+      }
+    }
   }
 
   // Phaser's JSONFile rethrows malformed JSON after calling onProcessError.
@@ -231,6 +246,9 @@ export function loadPhaserBoardAssetManifest(
     }
     pending.delete(key)
     noteFailure(descriptor, typeof file.src === 'string' ? file.src : null)
+    if (descriptor.kind === 'atlas' && port.textureExists(descriptor.key)) {
+      port.removeTexture(descriptor.key)
+    }
     if (backgroundKeys.has(key)) {
       queueNextBackground()
     }
