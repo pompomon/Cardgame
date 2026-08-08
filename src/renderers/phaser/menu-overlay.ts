@@ -2,11 +2,11 @@ import Phaser from 'phaser'
 
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import type { AppViewModel, GameUiState } from '../../app/types'
-import type { LogEvent } from '../../game/types'
 import { DEPTH_MENU_OVERLAY } from './depth'
 import type { SceneLayout } from './layout'
 import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
+import { buildLogA11yLines, buildLogTiles } from './log-tiles'
 import { bindScrollableViewport } from './scrollable-viewport'
 
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
@@ -52,12 +52,6 @@ export interface MenuOverlayInput {
     fontSize?: string,
   ) => Phaser.GameObjects.Container
   popupActionWidth: (maxWidth: number, ratio: number, minWidth: number) => number
-  buildLogTilesContent: (
-    events: readonly LogEvent[],
-    width: number,
-    visualStyle: AppViewModel['cardVisualStyle'],
-    options: { activeActor: number; legacyLog: readonly string[] },
-  ) => { container: Phaser.GameObjects.Container; contentHeight: number; tileCount: number }
   onDestroy: (overlay: Phaser.GameObjects.Container) => void
   closeMenuOverlay: () => void
   setMenuContentScrollOffset: (offset: number | null) => void
@@ -97,7 +91,6 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     installEntry,
     createButton,
     popupActionWidth,
-    buildLogTilesContent,
     closeMenuOverlay,
     setMenuContentScrollOffset,
     setMenuLogScrollState,
@@ -371,6 +364,14 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
         fontSize: layout.bodyFontSize,
       }).setOrigin(0, 0.5))
     }
+    const a11yMirror = scene.add.text(
+      -fullButtonWidth / 2,
+      logTitleY,
+      buildLogA11yLines(game.events, game.log).join('\n'),
+      { color: '#000000', fontSize: layout.smallFontSize },
+    ).setVisible(false)
+    a11yMirror.setData('log-a11y-mirror', true)
+    content.add(a11yMirror)
 
     const logViewportHeight = Math.min(layout.menuLogViewportHeight, maxViewportHeight)
     const logViewportY = logViewportTop + logViewportHeight / 2
@@ -389,7 +390,9 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     content.add(logContent)
     const visualStyle = view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
     const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
-    const { container: tilesColumn, contentHeight: logContentHeight } = buildLogTilesContent(
+    const { container: tilesColumn, contentHeight: logContentHeight } = buildLogTiles(
+      scene,
+      layout,
       game.events,
       tileColumnWidth,
       visualStyle,
@@ -406,9 +409,8 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
 
     const logContentTopY = logViewportTop + 8
     const logViewportBottom = logViewportTop + logViewportHeight
-    // Use the shared scroll helper so the menu log clamps + pin-to-bottom
-    // semantics stay in lock-step with the in-scene log (and remain
-    // covered by the helper's unit tests). bottomPadding=16 matches the
+    // Use the shared scroll helper so menu log clamp + pin-to-bottom
+    // semantics remain covered by unit tests. bottomPadding=16 matches the
     // legacy `+ 16` term — 8px top inset above the tile column plus 8px
     // breathing room below the last tile.
     const initialScroll = computeLogScrollLayout({

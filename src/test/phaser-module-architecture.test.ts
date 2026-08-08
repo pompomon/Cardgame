@@ -35,7 +35,6 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'hand-controls.ts', concern: 'hand + phase controls renderer' },
 
   // Log
-  { file: 'in-scene-log.ts', concern: 'replay log panel/scroll host' },
   { file: 'log-tiles.ts', concern: 'log tile cap/legacy/empty/a11y content' },
 
   // Target selection

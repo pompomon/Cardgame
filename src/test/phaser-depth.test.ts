@@ -11,8 +11,6 @@ import {
   DEPTH_HEADER,
   DEPTH_HEADER_STRIP,
   DEPTH_MENU_OVERLAY,
-  DEPTH_REPLAY_LOG,
-  DEPTH_REPLAY_LOG_HEADING,
   DEPTH_TARGET_PICKER_OVERLAY,
   SCENE_DEPTHS,
 } from '../renderers/phaser/depth'
@@ -20,9 +18,7 @@ import {
 const REPO_ROOT = join(__dirname, '..', '..')
 
 describe('phaser scene depths', () => {
-  it('keeps the documented z-order from log through overlays', () => {
-    expect(DEPTH_REPLAY_LOG).toBeLessThan(DEPTH_REPLAY_LOG_HEADING)
-    expect(DEPTH_REPLAY_LOG_HEADING).toBeLessThan(DEPTH_BOARD)
+  it('keeps the documented z-order from board through overlays', () => {
     expect(DEPTH_BOARD).toBeLessThan(DEPTH_GAMEPLAY)
     expect(DEPTH_GAMEPLAY).toBeLessThan(DEPTH_EFFECT_OVERLAY)
     expect(DEPTH_EFFECT_OVERLAY).toBeLessThan(DEPTH_HEADER_STRIP)
@@ -34,8 +30,6 @@ describe('phaser scene depths', () => {
 
   it('exports a complete scene depth map', () => {
     expect(SCENE_DEPTHS).toEqual({
-      replayLog: DEPTH_REPLAY_LOG,
-      replayLogHeading: DEPTH_REPLAY_LOG_HEADING,
       board: DEPTH_BOARD,
       gameplay: DEPTH_GAMEPLAY,
       effectOverlay: DEPTH_EFFECT_OVERLAY,

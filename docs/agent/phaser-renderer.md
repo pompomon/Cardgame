@@ -11,9 +11,9 @@ overlays Phaser can't host itself (`p2p-overlay.ts`, `a11y-navigation.ts`,
 `recording-file-actions.ts`). `cardgame-scene.ts` owns scene lifecycle/input
 wiring and composes the extracted subsystems: `gameplay-presenter.ts`
 sequences the board render pass across `game-header.ts`, `player-info.ts`,
-`battlefield-view.ts`, and `hand-controls.ts`; `in-scene-log.ts` hosts the
+`battlefield-view.ts`, and `hand-controls.ts`; `menu-overlay.ts` hosts the
 Replay Log panel/scroll state and delegates tile content (cap/legacy-
-fallback/empty/a11y rules) to the pure, unit-tested `log-tiles.ts`; target
+fallback/empty rules) to the pure, unit-tested `log-tiles.ts`; target
 selection splits into `battlefield-targets.ts` (pure pending-selection state
 and the a11y label derivation, unit-tested without Phaser) and
 `target-picker.ts` (the modal popup UI); and `effect-controller.ts` owns the
@@ -39,8 +39,6 @@ composition root (that would create a cycle), they depend on the structural
 The cardgame scene anchors render order on constants and a z-order map in
 `src/renderers/phaser/depth.ts`:
 
-- `DEPTH_REPLAY_LOG = -10` — replay log
-- `DEPTH_REPLAY_LOG_HEADING = -9` — replay log heading
 - `DEPTH_BOARD = -5` — player-info panels
 - default `0` — cards, buttons, battlefields
 - `DEPTH_HEADER_STRIP = 9` — header strip
@@ -73,7 +71,7 @@ Options:
 - **Scrollable list:** manual viewport culling through
   `cullRowsToViewport` in `src/renderers/phaser/log-row-visibility.ts`.
   Use `mode: 'contained'` when partial rows would render outside a panel
-  without masking (both replay-log viewports **and** the target-picker
+  without masking (the menu replay-log viewport **and** the target-picker
   options list in `target-picker.ts` use this today), and `mode: 'overlap'`
   only where partial rows are acceptable. `target-picker.ts` tags each
   option button with `rowTop`/`rowHeight` data (mirroring the log tiles) and
@@ -168,8 +166,8 @@ and removes active overlays on unmount or game changes.
   top-align the label inside the row (`setOrigin(0, 0)` and
   `y = tilePadding`), or measure row height first and center both icon
   and label within the measured row.
-- **Reuse `computeLogScrollLayout` for both the in-scene and the
-  menu-overlay log** so clamp + pin-to-bottom semantics stay identical.
+- **Use `computeLogScrollLayout` for the menu-overlay log** so clamp +
+  pin-to-bottom semantics remain unit-tested.
 - **Reuse the shared `clamp` from `layout.ts`** rather than redeclaring a
   local one in `log-scroll.ts`.
 

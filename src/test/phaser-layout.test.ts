@@ -16,19 +16,20 @@ describe('phaser buildLayout', () => {
     expect(portrait.isCollapsed).toBe(true)
     expect(landscape.isCollapsed).toBe(false)
     expect(restored).toEqual(portrait)
-    expect(landscape.boardColumnLeft).toBeGreaterThan(landscape.logColumnLeft + landscape.logColumnWidth)
+    expect(landscape.boardColumnLeft).toBe(landscape.safeAreaLeft + landscape.margin)
   })
 
-  it('caps the log column at ~25% of viewport width on wide screens', () => {
-    const layout = buildLayout(1280, 820, 'horizontal')
-    expect(layout.isCollapsed).toBe(false)
-    // Log column width should be no larger than 25% of the viewport width
-    // (matches DOM `.log { max-width: 25vw }` rule).
-    expect(layout.logColumnWidth).toBeLessThanOrEqual(1280 * 0.25)
-    // Board column starts to the right of the log column, leaving non-zero
-    // remaining width for the battlefield rows.
-    expect(layout.boardColumnLeft).toBeGreaterThan(layout.logColumnLeft + layout.logColumnWidth)
-    expect(layout.boardColumnWidth).toBeGreaterThan(0)
+  it('uses the full safe-area content width for the board in both orientations', () => {
+    for (const layout of [
+      buildLayout(1280, 820, 'horizontal'),
+      buildLayout(600, 900, 'vertical'),
+    ]) {
+      expect(layout.boardColumnLeft).toBe(layout.safeAreaLeft + layout.margin)
+      expect(layout.boardColumnWidth).toBe(layout.safeAreaWidth - layout.margin * 2)
+      expect(layout.boardColumnLeft + layout.boardColumnWidth).toBeCloseTo(
+        layout.safeAreaLeft + layout.safeAreaWidth - layout.margin,
+      )
+    }
   })
 
   it('places the active battlefield below the non-active battlefield (active anchored at bottom)', () => {
@@ -36,16 +37,6 @@ describe('phaser buildLayout', () => {
     expect(layout.nonActiveInfoY).toBeLessThan(layout.nonActiveBattlefieldY)
     expect(layout.nonActiveBattlefieldY).toBeLessThan(layout.activeBattlefieldY)
     expect(layout.activeBattlefieldY).toBeLessThan(layout.activeInfoY)
-  })
-
-  it('collapses to a single column with the log on top below 720px width', () => {
-    const layout = buildLayout(600, 900, 'vertical')
-    expect(layout.isCollapsed).toBe(true)
-    // Log and board share the same horizontal column when collapsed.
-    expect(layout.logColumnLeft).toBe(layout.boardColumnLeft)
-    expect(layout.logColumnWidth).toBe(layout.boardColumnWidth)
-    // Log sits above the board.
-    expect(layout.logColumnTop + layout.logColumnHeight).toBeLessThanOrEqual(layout.boardColumnTop)
   })
 
   it('keeps the split layout above the 720px collapse threshold', () => {
@@ -78,8 +69,6 @@ describe('phaser buildLayout', () => {
     const cardRowPadding = 12
     expect(layout.cardHeight).toBeLessThanOrEqual(layout.nonActiveBattlefieldHeight - cardRowPadding + 0.5)
     expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeBattlefieldHeight - cardRowPadding + 0.5)
-    // Hand cards must also fit in the active info row with their bottom anchor.
-    expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeInfoHeight - cardRowPadding + 0.5)
     // Aspect ratio (cardHeight ≈ 1.35 * cardWidth) is preserved within a small
     // tolerance; the floor on cardWidth ensures cards are still visible.
     expect(layout.cardWidth).toBeGreaterThan(0)
@@ -123,23 +112,15 @@ describe('phaser buildLayout', () => {
     expect(layout.menuPopupHeight).toBeGreaterThanOrEqual(Math.min(worstCaseWrappedContent, viewportHeight - layout.margin * 2))
   })
 
-  it('reserves the active-info controls band below the player-info text and above the hand strip', () => {
-    // On a short landscape viewport the renderer must place End Turn / response
-    // controls in a band that does not overlap the 2-line player info text at
-    // the top of the active-info row, nor the hand strip anchored at its
-    // bottom. The layout exposes activeInfoControlsTop / activeInfoControlsHeight
-    // so renderers can size their controls to fit that band exactly.
+  it('reserves landscape side lanes for active-info controls and the hand', () => {
     const layout = buildLayout(1024, 480, 'horizontal')
-    expect(layout.activeInfoControlsTop).toBeGreaterThan(layout.activeInfoY + 6)
+    expect(layout.activeInfoControlsTop).toBe(layout.activeInfoY + 6)
     const activeInfoBottom = layout.activeInfoY + layout.activeInfoHeight
     expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(activeInfoBottom + 0.5)
-    // The band must not overlap the hand strip (cards centered at handCardsY,
-    // top edge at handCardsY - cardHeight / 2).
-    const handStripTop = layout.handCardsY - layout.cardHeight / 2
-    expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(handStripTop + 0.5)
-    // The band must be tall enough to host at least one usable control (End
-    // Turn / counter / Pass button); a band of 0 means the renderer has no
-    // visible space for those actions on the short viewport this test guards.
+    expect(layout.handColumnLeft).toBeGreaterThan(layout.boardColumnLeft)
+    expect(layout.handColumnLeft + layout.handColumnWidth).toBeLessThan(
+      layout.boardColumnLeft + layout.boardColumnWidth,
+    )
     expect(layout.activeInfoControlsHeight).toBeGreaterThanOrEqual(24)
   })
 
@@ -154,17 +135,16 @@ describe('phaser buildLayout', () => {
     expect(layout.activeInfoControlsHeight).toBeGreaterThanOrEqual(28)
     expect(layout.activeInfoTextLines).toBeGreaterThanOrEqual(0)
     expect(layout.activeInfoTextLines).toBeLessThanOrEqual(2)
-    const handStripTop = layout.handCardsY - layout.cardHeight / 2
-    expect(layout.activeInfoControlsTop + layout.activeInfoControlsHeight).toBeLessThanOrEqual(handStripTop + 0.5)
+    expect(layout.handColumnWidth).toBeGreaterThan(0)
   })
 
-  it('does not insert an extra inter-band gap when active-info text is dropped to 0 lines', () => {
+  it('does not insert an extra inter-band gap when portrait active-info text is dropped to 0 lines', () => {
     // On very short split layouts textLines can be 0. In that case controls
     // should start directly at activeInfoY + 6, without an extra 4px gap that
     // steals space from the controls band and can push it into the hand strip.
-    let layout = buildLayout(720, 340, 'horizontal')
+    let layout = buildLayout(600, 500, 'vertical')
     if (layout.activeInfoTextLines !== 0) {
-      layout = buildLayout(720, 320, 'horizontal')
+      layout = buildLayout(600, 400, 'vertical')
     }
     expect(layout.activeInfoTextLines).toBe(0)
     expect(layout.activeInfoControlsTop).toBeCloseTo(layout.activeInfoY + 6, 4)
@@ -175,14 +155,12 @@ describe('phaser buildLayout', () => {
     const cardRowPadding = 12
     expect(layout.cardHeight).toBeLessThanOrEqual(layout.nonActiveBattlefieldHeight - cardRowPadding + 0.5)
     expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeBattlefieldHeight - cardRowPadding + 0.5)
-    expect(layout.cardHeight).toBeLessThanOrEqual(layout.activeInfoHeight - cardRowPadding + 0.5)
   })
 
-  it('keeps split log/board columns inside the viewport on very short heights', () => {
+  it('keeps the board inside the viewport on very short heights', () => {
     const viewportHeight = 220
     const layout = buildLayout(720, viewportHeight, 'horizontal')
     const contentBottom = viewportHeight - layout.margin - layout.statusBottomOffset - 8
-    expect(layout.logColumnTop + layout.logColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
     expect(layout.boardColumnTop + layout.boardColumnHeight).toBeLessThanOrEqual(contentBottom + 0.5)
   })
 
@@ -193,71 +171,28 @@ describe('phaser buildLayout', () => {
     expect(layout.popupButtonHeight).toBeGreaterThanOrEqual(44)
   })
 
-  it('keeps the replay-log column fully below the header strip on mobile portrait', () => {
-    const layout = buildLayout(360, 800, 'vertical')
-    const headerBottom = layout.headerTop + layout.headerHeight
-    expect(layout.logColumnTop).toBeGreaterThanOrEqual(layout.bodyTop)
-    expect(layout.logColumnTop).toBeGreaterThanOrEqual(headerBottom)
+  it('fills the landscape hand row height while preserving side lanes for information and controls', () => {
+    const layout = buildLayout(932, 430, 'horizontal')
+    expect(layout.handCardHeight).toBeCloseTo(layout.activeInfoHeight - 12, 4)
+    expect(layout.handCardHeight / layout.handCardWidth).toBeCloseTo(1.35, 4)
+    expect(layout.handCardsY - layout.handCardHeight / 2).toBeGreaterThanOrEqual(layout.activeInfoY)
+    expect(layout.handCardsY + layout.handCardHeight / 2).toBeLessThanOrEqual(
+      layout.activeInfoY + layout.activeInfoHeight,
+    )
+    expect(layout.handColumnLeft).toBeGreaterThan(layout.boardColumnLeft)
+    expect(layout.handColumnLeft + layout.handColumnWidth).toBeLessThan(
+      layout.boardColumnLeft + layout.boardColumnWidth,
+    )
+    expect(layout.activeInfoControlsHeight).toBeGreaterThanOrEqual(28)
   })
 
-  it('inserts a visible gutter between the header and the log panel on every viewport size', () => {
-    // Even with masking working correctly, the renderer relies on a small
-    // gutter between the header strip (☰ Menu button + Turn/phase text) and
-    // the top of the log panel, so any pixel overflow can't reach the menu
-    // button. The gutter is computed from minDimension so phones and desktop
-    // both get a sensible value.
-    const viewports: Array<[number, number, 'vertical' | 'horizontal']> = [
-      [320, 640, 'vertical'],
-      [414, 896, 'vertical'],
-      [720, 1280, 'vertical'],
-      [1280, 800, 'horizontal'],
-      [1920, 1080, 'horizontal'],
-    ]
-    for (const [width, height, orientation] of viewports) {
-      const layout = buildLayout(width, height, orientation)
-      const headerBottom = layout.headerTop + layout.headerHeight
-      // bodyTop already includes the gap between header and body; the log
-      // column must sit at or below that, plus an additional logColumnGapTop.
-      expect(layout.logColumnTop).toBeGreaterThan(headerBottom)
-      expect(layout.logColumnTop).toBeGreaterThan(layout.bodyTop)
-    }
-  })
-
-  it('keeps the log panel fully above the board on collapsed (single-column) viewports', () => {
-    // The collapsed layout stacks log on top, board below. The log bottom
-    // must finish before the board starts, with a non-zero gutter so a tile
-    // can't visually touch the player-info container directly below.
-    const viewports: Array<[number, number]> = [
-      [320, 640],
-      [414, 896],
-      [600, 900],
-    ]
-    for (const [width, height] of viewports) {
-      const layout = buildLayout(width, height, 'vertical')
-      expect(layout.isCollapsed).toBe(true)
-      const logBottom = layout.logColumnTop + layout.logColumnHeight
-      expect(logBottom).toBeLessThan(layout.boardColumnTop)
-    }
-  })
-
-  it('gives the collapsed log panel a usable minimum height on mobile portrait', () => {
-    // Regression: the previous layout could shrink the log panel to ~80px on
-    // tight viewports, leaving room for only one tile and making scrollback
-    // confusing. The new minimum keeps the panel large enough to host the
-    // heading + 2-3 tile rows.
-    const layout = buildLayout(360, 720, 'vertical')
-    expect(layout.isCollapsed).toBe(true)
-    expect(layout.logColumnHeight).toBeGreaterThanOrEqual(88)
-  })
-
-  it('caps collapsed log height share so gameplay rows keep most portrait space', () => {
-    const layout = buildLayout(360, 740, 'vertical')
-    expect(layout.isCollapsed).toBe(true)
-    // Body area excludes the top and bottom log gutters in collapsed mode.
-    const availableForLog = Math.max(0, layout.bodyHeight - 12 - 12)
-    const maxShare = Math.max(Math.min(88, availableForLog), layout.bodyHeight * 0.34)
-    expect(layout.logColumnHeight).toBeLessThanOrEqual(maxShare + 0.5)
-    expect(layout.boardColumnHeight).toBeGreaterThan(layout.logColumnHeight)
+  it('retains standard card dimensions for the portrait hand', () => {
+    const layout = buildLayout(390, 844, 'vertical')
+    expect(layout.handCardWidth).toBe(layout.cardWidth)
+    expect(layout.handCardHeight).toBe(layout.cardHeight)
+    expect(layout.handCardGap).toBe(layout.cardGap)
+    expect(layout.handColumnLeft).toBe(layout.boardColumnLeft)
+    expect(layout.handColumnWidth).toBe(layout.boardColumnWidth)
   })
 
   it('uses opaque popup layers while keeping scrim dimming configurable', () => {
@@ -345,8 +280,11 @@ describe('phaser buildLayout', () => {
     expect(layout.safeAreaLeft).toBe(47)
     expect(layout.safeAreaRight).toBe(47)
     expect(layout.safeAreaWidth).toBe(932 - 47 - 47)
-    expect(layout.logColumnLeft).toBeGreaterThanOrEqual(layout.safeAreaLeft)
-    expect(layout.boardColumnLeft).toBeGreaterThan(layout.logColumnLeft)
+    expect(layout.boardColumnLeft).toBeGreaterThanOrEqual(layout.safeAreaLeft)
     expect(layout.boardColumnLeft + layout.boardColumnWidth).toBeLessThanOrEqual(safeRight + 0.5)
+    expect(layout.handColumnLeft).toBeGreaterThanOrEqual(layout.boardColumnLeft)
+    expect(layout.handColumnLeft + layout.handColumnWidth).toBeLessThanOrEqual(
+      layout.boardColumnLeft + layout.boardColumnWidth,
+    )
   })
 })

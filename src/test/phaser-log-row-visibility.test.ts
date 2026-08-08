@@ -59,8 +59,8 @@ describe('isLogRowVisible (fully-contained mode)', () => {
   })
 
   it('hides rows that partially overlap the top edge', () => {
-    // Regression guard for the in-scene Replay Log: a partial top row must
-    // NOT paint over the "Replay Log" heading or the header strip above it.
+    // Regression guard for the menu Replay Log: a partial top row must not
+    // paint over the heading above it.
     expect(isLogRowVisible({
       rowTop: -20, rowHeight: 40, columnOriginY: 100, ...VIEWPORT, ...opts,
     })).toBe(false)

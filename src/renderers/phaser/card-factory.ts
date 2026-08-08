@@ -115,9 +115,15 @@ export function addCardArtToContainer(
 // Face-down placeholder rendered when the AI's hand is hidden from the
 // local human viewer. Keeps the hand slot visible (so the human can see
 // card count) without revealing card identities.
-export function renderHiddenCard(scene: Phaser.Scene, layout: SceneLayout, x: number, y: number): Phaser.GameObjects.Container {
-  const cardWidth = layout.cardWidth
-  const cardHeight = layout.cardHeight
+export function renderHiddenCard(
+  scene: Phaser.Scene,
+  layout: SceneLayout,
+  x: number,
+  y: number,
+  dimensions: { width: number; height: number } = { width: layout.cardWidth, height: layout.cardHeight },
+): Phaser.GameObjects.Container {
+  const cardWidth = dimensions.width
+  const cardHeight = dimensions.height
   const card = scene.add.container(x, y)
   if (canRenderCardBackTexture((key) => scene.textures?.exists(key) ?? false)) {
     card.add(buildCoverImage(scene, CARD_BACK_KEY, cardWidth, cardHeight, Math.max(cardWidth, cardHeight)))
@@ -157,6 +163,7 @@ export interface StaticCardConfig {
   highlight?: boolean
   mode?: CardRenderMode
   visualStyle?: AppViewModel['cardVisualStyle']
+  dimensions?: { width: number; height: number }
 }
 
 export function renderStaticCard(
@@ -169,15 +176,15 @@ export function renderStaticCard(
   defaultVisualStyle?: AppViewModel['cardVisualStyle'],
 ): Phaser.GameObjects.Container {
   if (label === HIDDEN_HAND_CARD_NAME) {
-    return renderHiddenCard(scene, layout, x, y)
+    return renderHiddenCard(scene, layout, x, y, config.dimensions)
   }
   const visualStyle = config.visualStyle ?? defaultVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
   const style = cardStyleForLand(label, visualStyle)
   const strokeWidth = config.highlight ? 3 : 1
   const strokeColor = config.highlight ? COLOR_CARD_HIGHLIGHT_STROKE : style.stroke
   const content = cardRenderContentForMode(config.mode ?? 'standard')
-  const cardWidth = layout.cardWidth
-  const cardHeight = layout.cardHeight
+  const cardWidth = config.dimensions?.width ?? layout.cardWidth
+  const cardHeight = config.dimensions?.height ?? layout.cardHeight
   const willUseRasterArt = isBasicLand(label) && resolveRasterCardArtTextureKey(
     label,
     visualStyle,

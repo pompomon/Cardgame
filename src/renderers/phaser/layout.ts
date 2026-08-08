@@ -37,12 +37,13 @@ export interface SceneLayout {
   cardWidth: number
   cardHeight: number
   cardGap: number
+  handCardWidth: number
+  handCardHeight: number
+  handCardGap: number
+  handColumnLeft: number
+  handColumnWidth: number
   bodyTop: number
   bodyHeight: number
-  logColumnLeft: number
-  logColumnTop: number
-  logColumnWidth: number
-  logColumnHeight: number
   boardColumnLeft: number
   boardColumnWidth: number
   boardColumnTop: number
@@ -102,19 +103,48 @@ export function clamp(value: number, minValue: number, maxValue: number): number
   return Math.min(upper, Math.max(lower, value))
 }
 
-export function xForCardInBoardColumn(layout: SceneLayout, index: number, count: number): number {
+function xForCardInColumn(
+  left: number,
+  width: number,
+  cardWidth: number,
+  cardGap: number,
+  index: number,
+  count: number,
+): number {
   if (count <= 1) {
-    return layout.boardColumnLeft + layout.boardColumnWidth / 2
+    return left + width / 2
   }
-  const minX = layout.boardColumnLeft + layout.cardWidth / 2 + 4
-  const maxX = layout.boardColumnLeft + layout.boardColumnWidth - layout.cardWidth / 2 - 4
+  const minX = left + cardWidth / 2 + 4
+  const maxX = left + width - cardWidth / 2 - 4
   if (maxX <= minX) {
     return (minX + maxX) / 2
   }
-  const gap = Math.min(layout.cardGap, (maxX - minX) / (count - 1))
+  const gap = Math.min(cardGap, (maxX - minX) / (count - 1))
   const usedWidth = gap * (count - 1)
   const startX = minX + (maxX - minX - usedWidth) / 2
   return startX + index * gap
+}
+
+export function xForCardInBoardColumn(layout: SceneLayout, index: number, count: number): number {
+  return xForCardInColumn(
+    layout.boardColumnLeft,
+    layout.boardColumnWidth,
+    layout.cardWidth,
+    layout.cardGap,
+    index,
+    count,
+  )
+}
+
+export function xForHandCardInBoardColumn(layout: SceneLayout, index: number, count: number): number {
+  return xForCardInColumn(
+    layout.handColumnLeft,
+    layout.handColumnWidth,
+    layout.handCardWidth,
+    layout.handCardGap,
+    index,
+    count,
+  )
 }
 
 export function orientationFromViewport(width: number, height: number): OrientationMode {
@@ -180,69 +210,10 @@ export function buildLayout(
   const bodyBottom = viewportHeight - margin - statusBottomOffset - 8
   const bodyHeight = Math.max(0, bodyBottom - bodyTop)
 
-  // Log column: capped at 25% viewport width, with a sensible minimum.
-  const logColumnGap = 12
-  const desiredLogWidth = clamp(safeWidth * 0.25 - logColumnGap, 180, Math.max(180, safeWidth * 0.4))
-  const collapsedLogHeight = clamp(safeHeight * 0.2, 96, 200)
-  // Defensive gutters between the header strip and the log panel, and between
-  // the log panel and the next container below it. Without these, regressions
-  // in masking/clipping let log tiles render flush against the ☰ Menu button
-  // or the player-info container. Even with masks working correctly, a small
-  // visible gap reinforces that the log is its own contained region.
-  const logColumnGapTop = clamp(minDimension * 0.012, 6, 12)
-  const logColumnGapBottom = clamp(minDimension * 0.012, 6, 12)
-  // Collapsed (mobile portrait) viewports need a usable minimum that still
-  // fits ~2-3 tile rows; this also guarantees the replay-log viewport region
-  // used by GeometryMask + per-row culling remains non-degenerate.
-  const collapsedLogMinHeight = 88
-
-  let logColumnLeft: number
-  let logColumnTop: number
-  let logColumnWidth: number
-  let logColumnHeight: number
-  let boardColumnLeft: number
-  let boardColumnWidth: number
-  let boardColumnTop: number
-  let boardColumnHeight: number
-
-  if (isCollapsed) {
-    // Single-column stacked layout: log on top, board below (mirrors DOM
-    // `@media (max-width: 720px)` rule that flattens the grid to one column).
-    logColumnLeft = safeAreaLeft + margin
-    logColumnTop = bodyTop + logColumnGapTop
-    logColumnWidth = Math.max(120, contentWidth)
-    const collapsedDesiredHeight = Math.min(collapsedLogHeight, Math.max(80, bodyHeight * 0.24))
-    // Don't let the gutters shrink the log below the readable minimum unless
-    // the available body really is that small.
-    const availableForLog = Math.max(0, bodyHeight - logColumnGapTop - logColumnGapBottom)
-    // In collapsed portrait we prioritize gameplay surfaces (battlefields +
-    // hand controls), so cap how much of the body the replay log may consume.
-    const collapsedMaxShareHeight = Math.max(
-      Math.min(collapsedLogMinHeight, availableForLog),
-      bodyHeight * 0.34,
-    )
-    const collapsedTargetHeight = Math.max(
-      Math.min(collapsedLogMinHeight, availableForLog),
-      collapsedDesiredHeight,
-    )
-    logColumnHeight = Math.min(
-      availableForLog,
-      Math.min(collapsedMaxShareHeight, collapsedTargetHeight),
-    )
-    boardColumnLeft = safeAreaLeft + margin
-    boardColumnWidth = Math.max(160, contentWidth)
-    boardColumnTop = logColumnTop + logColumnHeight + logColumnGapBottom
-    boardColumnHeight = Math.max(0, bodyBottom - boardColumnTop)
-  } else {
-    logColumnLeft = safeAreaLeft + margin
-    logColumnTop = bodyTop + logColumnGapTop
-    logColumnWidth = Math.max(160, Math.min(desiredLogWidth, contentWidth - 200))
-    logColumnHeight = Math.max(0, bodyHeight - logColumnGapTop - logColumnGapBottom)
-    boardColumnLeft = safeAreaLeft + margin + logColumnWidth + logColumnGap
-    boardColumnWidth = Math.max(200, safeAreaLeft + safeWidth - margin - boardColumnLeft)
-    boardColumnTop = bodyTop
-    boardColumnHeight = Math.max(0, bodyHeight)
-  }
+  const boardColumnLeft = safeAreaLeft + margin
+  const boardColumnWidth = Math.max(0, contentWidth)
+  const boardColumnTop = bodyTop
+  const boardColumnHeight = bodyHeight
 
   // Stacked board rows: non-active info, non-active battlefield, active
   // battlefield, active info+hand (active anchored at bottom).
@@ -288,7 +259,6 @@ export function buildLayout(
   const minRowForCards = Math.min(
     nonActiveBattlefieldHeight,
     activeBattlefieldHeight,
-    activeInfoHeight,
   )
   const cardFitHeight = Math.max(0, minRowForCards - cardRowPadding)
   const effectiveCardHeight = Math.min(cardHeight, cardFitHeight)
@@ -306,7 +276,27 @@ export function buildLayout(
   // Hand cards centered toward the bottom of the active info row so the
   // active player's drag area lives at the bottom of the screen. Use the
   // effective card height so the hand strip always fits within the row.
-  const handCardsY = activeInfoY + activeInfoHeight - effectiveCardHeight / 2 - 6
+  const horizontalHandCardHeight = Math.max(0, activeInfoHeight - cardRowPadding)
+  const handCardHeight = orientation === 'horizontal'
+    ? horizontalHandCardHeight
+    : effectiveCardHeight
+  const handCardWidth = orientation === 'horizontal'
+    ? handCardHeight / 1.35
+    : effectiveCardWidth
+  const handCardGap = orientation === 'horizontal'
+    ? Math.max(cardGapFloor, cardGap * (handCardWidth / Math.max(1, cardWidth)))
+    : effectiveCardGap
+  // In landscape the reclaimed board width lets the hand occupy the full
+  // active-info height while player information and phase controls use side
+  // lanes. Portrait retains the existing vertically stacked arrangement.
+  const handSideLaneWidth = orientation === 'horizontal'
+    ? Math.min(actionButtonWidth + 16, boardColumnWidth * 0.26)
+    : 0
+  const handColumnLeft = boardColumnLeft + handSideLaneWidth
+  const handColumnWidth = Math.max(0, boardColumnWidth - handSideLaneWidth * 2)
+  const handCardsY = orientation === 'horizontal'
+    ? activeInfoY + activeInfoHeight / 2
+    : activeInfoY + activeInfoHeight - handCardHeight / 2 - 6
   // Player info text in renderPlayerInfoBlocks renders 2 lines starting at
   // activeInfoY + 6, so reserve that vertical band before placing the End Turn
   // button or the response prompt. Without this offset, the controls would
@@ -320,7 +310,7 @@ export function buildLayout(
   // text may render with only one fully-visible line in that case, but the
   // controls always have somewhere to land.
   const lineHeight = bodyFontPx * 1.25
-  const handStripTop = handCardsY - effectiveCardHeight / 2 - 4
+  const handStripTop = handCardsY - handCardHeight / 2 - 4
   const desiredTextBand = Math.ceil(lineHeight * 2)
   // Minimum click target for End Turn / response buttons. Prefer this over
   // a fully visible 2-line player-info text on tight viewports so the
@@ -333,7 +323,11 @@ export function buildLayout(
   let textBand: number
   let controlsBand: number
   let textLines: number
-  if (availableAboveHand >= desiredTextBand + desiredControlsBand + interBandGap) {
+  if (orientation === 'horizontal') {
+    textBand = Math.min(desiredTextBand, Math.max(0, activeInfoHeight - 12))
+    controlsBand = Math.max(0, activeInfoHeight - 12)
+    textLines = Math.min(2, Math.floor(textBand / Math.max(1, lineHeight)))
+  } else if (availableAboveHand >= desiredTextBand + desiredControlsBand + interBandGap) {
     // Full 2-line text + comfortable controls band.
     textBand = desiredTextBand
     controlsBand = availableAboveHand - desiredTextBand - interBandGap
@@ -369,7 +363,9 @@ export function buildLayout(
   }
   const activeInfoTextBottom = activeInfoY + 6 + textBand
   const activeInfoGap = textBand > 0 && controlsBand > 0 ? interBandGap : 0
-  const activeInfoControlsTop = activeInfoTextBottom + activeInfoGap
+  const activeInfoControlsTop = orientation === 'horizontal'
+    ? activeInfoY + 6
+    : activeInfoTextBottom + activeInfoGap
   const activeInfoControlsHeight = controlsBand
   const controlsStartY = activeInfoControlsTop + Math.min(actionButtonHeight, activeInfoControlsHeight) / 2
   const responseInfoY = activeInfoControlsTop
@@ -459,12 +455,13 @@ export function buildLayout(
     cardWidth: effectiveCardWidth,
     cardHeight: effectiveCardHeight,
     cardGap: effectiveCardGap,
+    handCardWidth,
+    handCardHeight,
+    handCardGap,
+    handColumnLeft,
+    handColumnWidth,
     bodyTop,
     bodyHeight,
-    logColumnLeft,
-    logColumnTop,
-    logColumnWidth,
-    logColumnHeight,
     boardColumnLeft,
     boardColumnWidth,
     boardColumnTop,
