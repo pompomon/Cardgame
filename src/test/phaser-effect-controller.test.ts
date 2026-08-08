@@ -77,17 +77,20 @@ describe('Phaser effect controller', () => {
       runs.push({ anchor, descriptor, done })
     })
     const scene = { scale: { width: 1280, height: 720 } }
+    const onQueueDrained = vi.fn()
     const controller = new EffectController({
       scene: scene as never,
       getLayout: () => layout,
       getCurrentView: () => currentView,
       renderRetainedCard: renderRetainedCard as never,
       playEffect: playEffect as never,
+      onQueueDrained,
     })
 
     controller.recordCardPosition('p0-4', placement(0, 1, 3, 400, 186))
     controller.beginBattlefieldRenderPass()
     controller.recordCardPosition('p1-9', placement(1, 0, 1, 400, 490))
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(true)
     controller.processAbilityEffects(currentView)
 
     expect(runs).toHaveLength(1)
@@ -121,5 +124,51 @@ describe('Phaser effect controller', () => {
 
     runs[1].done()
     expect(retainedCard.destroy).toHaveBeenCalledOnce()
+    expect(onQueueDrained).toHaveBeenCalledOnce()
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
+  })
+
+  it('reset() invalidates a still-in-flight effect so its later done() cannot affect the new game', () => {
+    const currentView = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0,
+        events: [
+          { kind: 'play_land', actor: 0, cardName: 'Mountain', sourceInstanceId: 'p0-1' },
+        ],
+      },
+    } as unknown as AppViewModel
+    const runs: Array<{ done: () => void }> = []
+    const playEffect = vi.fn((_scene, _anchor, _descriptor, _durationMs, done: () => void) => {
+      runs.push({ done })
+    })
+    const scene = { scale: { width: 1280, height: 720 } }
+    const controller = new EffectController({
+      scene: scene as never,
+      getLayout: () => layout,
+      getCurrentView: () => currentView,
+      playEffect: playEffect as never,
+    })
+
+    controller.recordCardPosition('p0-1', placement(0, 0, 1, 400, 490))
+    controller.processAbilityEffects(currentView)
+    expect(runs).toHaveLength(1)
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(true)
+
+    // Simulate starting a new game/scene while the previous effect's tween
+    // is still in flight (its `done` callback hasn't fired yet).
+    controller.reset()
+    const newGameView = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: { actor: 0, events: [] },
+    } as unknown as AppViewModel
+    expect(controller.isBusyOrWillEnqueue(newGameView)).toBe(false)
+
+    // The stale tween finally completes; it must not resurrect busy state
+    // or enqueue into the new game's (now separate) queue.
+    runs[0].done()
+    expect(controller.isBusyOrWillEnqueue(newGameView)).toBe(false)
   })
 })

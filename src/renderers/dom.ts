@@ -12,6 +12,7 @@ import {
 } from '../app/action-resolution'
 import { isAiLevel } from '../app/ai-levels'
 import { isAnimationSpeed, MAX_QUEUED_EFFECTS } from '../app/animation-settings'
+import { BoardPresentationCoordinator } from '../app/board-presentation'
 import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
 import { visualEffectForEvent } from '../app/visual-effects'
@@ -299,14 +300,19 @@ function renderLogDrawer(game: GameUiState): string {
   `
 }
 
-export function renderGame(view: AppViewModel, menuOpen: boolean, pendingTargetSelection: PendingPlayLandTargetSelection | null = null): string {
+export function renderGame(
+  view: AppViewModel,
+  menuOpen: boolean,
+  pendingTargetSelection: PendingPlayLandTargetSelection | null = null,
+  presentedActor = view.game?.actor ?? 0,
+): string {
   const game = view.game
   if (!game) {
     return ''
   }
 
   const [p1, p2] = game.players
-  const activeIndex = game.actor
+  const activeIndex = presentedActor
   const nonActiveIndex = activeIndex === 0 ? 1 : 0
   const activeState = activeIndex === 0 ? p1 : p2
   const nonActiveState = nonActiveIndex === 0 ? p1 : p2
@@ -431,6 +437,7 @@ export class DomRenderer implements AppRenderer {
   private domEffectPlaying = false
   private domEffectGeneration = 0
   private domCardAnchorHistory = new Map<string, DomEffectAnchor>()
+  private readonly boardPresentation = new BoardPresentationCoordinator()
 
   mount(container: HTMLElement, controller: ControllerApi): void {
     this.container = container
@@ -477,17 +484,24 @@ export class DomRenderer implements AppRenderer {
     const p2pReady = !isP2PMode || view.p2pStarted
     const inGame = !!view.game && p2pReady
     const showP2P = isP2PMode && !view.replay.active && !inGame
+    const effectsBusy = this.prepareDomEffects(view)
+    const presentedActor = view.game
+      ? this.boardPresentation.resolve(view.game.actor, effectsBusy, view.animationSpeed !== 'off')
+      : 0
+    const presentedView = view.game && presentedActor !== view.game.actor
+      ? { ...view, game: { ...view.game, actor: presentedActor, canInput: false } }
+      : view
 
     this.container.innerHTML = `
       <main class="app-shell">
         ${inGame ? '' : renderLobby(view)}
         ${showP2P ? renderP2P(view, this.hostAnswerDraft, this.joinOfferDraft) : ''}
-        ${inGame ? renderGame(view, this.menuOpen, this.pendingTargetSelection) : ''}
+        ${inGame ? renderGame(presentedView, this.menuOpen, this.pendingTargetSelection, presentedActor) : ''}
       </main>
     `
 
     this.bindEvents()
-    this.runDomEffects(view)
+    this.pumpDomEffectQueue()
   }
 
   unmount(): void {
@@ -508,6 +522,7 @@ export class DomRenderer implements AppRenderer {
     this.lastDomEffectSeed = null
     this.domCardAnchorHistory.clear()
     this.resetDomEffectQueue()
+    this.boardPresentation.reset()
   }
 
   private rerender(): void {
@@ -516,7 +531,7 @@ export class DomRenderer implements AppRenderer {
     }
   }
 
-  private runDomEffects(view: AppViewModel): void {
+  private prepareDomEffects(view: AppViewModel): boolean {
     const game = view.game
     if (!game) {
       // No active game — reset cursor so a new game starts fresh.
@@ -524,7 +539,8 @@ export class DomRenderer implements AppRenderer {
       this.lastDomEffectSeed = null
       this.domCardAnchorHistory.clear()
       this.resetDomEffectQueue()
-      return
+      this.boardPresentation.reset()
+      return false
     }
     // When the seed changes (rematch or replay), reset the cursor so we
     // don't attempt to re-animate events from a previous game.
@@ -533,13 +549,20 @@ export class DomRenderer implements AppRenderer {
       this.lastDomAnimatedEventCount = 0
       this.domCardAnchorHistory.clear()
       this.resetDomEffectQueue()
+      this.boardPresentation.reset(game.actor)
     }
     const events = game.events
+    if (this.lastDomAnimatedEventCount > events.length) {
+      this.lastDomAnimatedEventCount = events.length
+      this.resetDomEffectQueue()
+      this.boardPresentation.reset(game.actor)
+      return false
+    }
     if (view.animationSpeed === 'off') {
       // Skip all queued effects and advance cursor so we never catch up.
       this.lastDomAnimatedEventCount = events.length
       this.resetDomEffectQueue()
-      return
+      return false
     }
     for (let i = this.lastDomAnimatedEventCount; i < events.length; i += 1) {
       if (!visualEffectForEvent(events[i], view.cardVisualStyle)) {
@@ -551,7 +574,7 @@ export class DomRenderer implements AppRenderer {
       }
     }
     this.lastDomAnimatedEventCount = events.length
-    this.pumpDomEffectQueue()
+    return this.domEffectPlaying || this.domEffectQueue.length > 0
   }
 
   private resetDomEffectQueue(): void {
@@ -569,6 +592,9 @@ export class DomRenderer implements AppRenderer {
     }
     const event = this.domEffectQueue.shift()
     if (!event) {
+      if (this.boardPresentation.effectsDrained()) {
+        this.rerender()
+      }
       return
     }
     this.domEffectPlaying = true
@@ -577,7 +603,7 @@ export class DomRenderer implements AppRenderer {
       event,
       view.animationSpeed,
       view.cardVisualStyle,
-      game.actor,
+      this.boardPresentation.currentActor(game.actor),
       () => {
         if (generation !== this.domEffectGeneration) {
           return

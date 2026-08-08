@@ -60,9 +60,9 @@ export function computeEffectAnchorFromLayout(
   layout: SceneLayout,
   registry: ReadonlyMap<string, BattlefieldCardPlacement>,
   previousRegistry: ReadonlyMap<string, BattlefieldCardPlacement> = registry,
+  presentedActor = view.game?.actor ?? 0,
 ): EffectAnchor {
-  const game = view.game
-  const activeIndex = game?.actor ?? 0
+  const activeIndex = presentedActor
   const nonActiveIndex = activeIndex === 0 ? 1 : 0
 
   const anchorOwner = descriptor.targetActor ?? descriptor.actor

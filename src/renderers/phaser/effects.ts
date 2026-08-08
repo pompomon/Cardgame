@@ -475,6 +475,7 @@ export function clearEffectQueue(state: EffectQueueState): void {
 export interface PumpEffectQueueOptions {
   animationSpeed: AnimationSpeed
   durationMs: number
+  onDrained?: () => void
   // Caller-provided runner: receives the descriptor + duration and a `done`
   // callback. Returning synchronously is OK; pumpEffectQueue will keep
   // draining until the queue is empty.
@@ -494,6 +495,9 @@ export function pumpEffectQueue(
   const options = getOptions()
   if (options.animationSpeed === 'off') {
     clearEffectQueue(state)
+    if (!state.playing) {
+      options.onDrained?.()
+    }
     return
   }
   if (state.playing) {
@@ -501,6 +505,7 @@ export function pumpEffectQueue(
   }
   const next = state.queue.shift()
   if (!next) {
+    options.onDrained?.()
     return
   }
   state.playing = true

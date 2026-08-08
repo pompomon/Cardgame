@@ -89,7 +89,6 @@ export class PhaserRenderer implements AppRenderer {
     const lobbyActive = targetSceneKey === LOBBY_SCENE_KEY
 
     this.p2pOverlay?.update(view, lobbyActive, this.controller)
-    this.refreshA11yNav(view, lobbyActive)
 
     if (this.activeSceneKey !== targetSceneKey && this.sceneHost) {
       const sceneManager = this.sceneHost.game.scene
@@ -101,6 +100,7 @@ export class PhaserRenderer implements AppRenderer {
         sceneManager.stop(previousKey)
       }
       sceneManager.start(targetSceneKey)
+      this.refreshA11yNav(view, lobbyActive)
       return
     }
 
@@ -109,6 +109,7 @@ export class PhaserRenderer implements AppRenderer {
     } else {
       this.lobbyScene?.renderView(view)
     }
+    this.refreshA11yNav(view, lobbyActive)
   }
 
   refreshA11yNavForCurrentView(): void {
@@ -119,7 +120,13 @@ export class PhaserRenderer implements AppRenderer {
   }
 
   private refreshA11yNav(view: AppViewModel, lobbyActive: boolean): void {
-    this.a11yNav?.update(view, lobbyActive, {
+    const presentedActor = view.game && !lobbyActive
+      ? this.cardgameScene?.presentedActor(view.game.actor) ?? view.game.actor
+      : null
+    const presentedView = presentedActor !== null && view.game && presentedActor !== view.game.actor
+      ? { ...view, game: { ...view.game, actor: presentedActor, canInput: false } }
+      : view
+    this.a11yNav?.update(presentedView, lobbyActive, {
       controller: this.controller,
       lobbyScene: this.lobbyScene,
       cardgameScene: this.cardgameScene,

@@ -32,16 +32,17 @@ export interface HandControlsContext {
   setStatus: (message: string) => void
 }
 
-export function renderHandAndControls(ctx: HandControlsContext, game: GameUiState): void {
+export function renderHandAndControls(ctx: HandControlsContext, game: GameUiState, presentedActor = game.actor): void {
   const scene = ctx.scene
   const layout = ctx.getLayout()
   const rootContainer = ctx.getRootContainer()
   const { battlefieldTargets, targetPicker } = ctx
   const defaultVisualStyle = ctx.getVisualStyle()
-  const actor = game.actor
+  const actor = presentedActor
   const actorCards = game.players[actor].handCards
-  const canDrag = game.canInput && game.phase === 'main' && battlefieldTargets.getPendingPlayLandTargetSelection() === null
-  const response = game.canInput && game.phase === 'respond'
+  const presentationIsCurrent = actor === game.actor
+  const canDrag = presentationIsCurrent && game.canInput && game.phase === 'main' && battlefieldTargets.getPendingPlayLandTargetSelection() === null
+  const response = presentationIsCurrent && game.canInput && game.phase === 'respond'
     ? buildCounterHandOptions(game)
     : null
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
@@ -77,7 +78,7 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
     rootContainer?.add(cardObject)
   })
 
-  if (game.canInput && game.phase === 'plains_target') {
+  if (presentationIsCurrent && game.canInput && game.phase === 'plains_target') {
     if (!targetPicker.isTargetPickerOpen()) {
       const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.plainsReuseOptions.map((option, index) => ({
         effectTargetId: option.action.effectTargetId ?? `plains-option-${index}`,
@@ -123,7 +124,7 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
     }
     return
   }
-  if (game.canInput && game.phase === 'swamp_target') {
+  if (presentationIsCurrent && game.canInput && game.phase === 'swamp_target') {
     if (!targetPicker.isTargetPickerOpen()) {
       const grouped = groupCardTargetOptions(
         game,
@@ -149,7 +150,7 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
     }
     return
   }
-  if (game.canInput && game.phase === 'respond') {
+  if (presentationIsCurrent && game.canInput && game.phase === 'respond') {
     if (response && rootContainer) {
       renderResponseControls({
         scene,
@@ -164,7 +165,7 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
     return
   }
 
-  if (game.canInput && game.legal.canEndTurn && game.phase === 'main' && battlefieldTargets.getBattlefieldTargetEntries().length === 0) {
+  if (presentationIsCurrent && game.canInput && game.legal.canEndTurn && game.phase === 'main' && battlefieldTargets.getBattlefieldTargetEntries().length === 0) {
     const endTurnWidth = Math.min(layout.actionButtonWidth, Math.max(120, layout.boardColumnWidth - 16))
     const endTurnX = layout.boardColumnLeft + layout.boardColumnWidth - endTurnWidth / 2 - 4
     // Clamp End Turn button height so it never spills below the hand strip

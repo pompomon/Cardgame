@@ -11,6 +11,7 @@ import {
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
+import { BoardPresentationCoordinator } from '../../app/board-presentation'
 import type { AppViewModel } from '../../app/types'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
@@ -42,6 +43,7 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
   private readonly battlefieldTargets: BattlefieldTargetsController
@@ -56,6 +58,12 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getLayout: () => this.currentLayout,
       getCurrentView: () => this.rendererRef.currentView,
+      onQueueDrained: () => {
+        if (this.boardPresentation.effectsDrained()) {
+          this.renderView(this.rendererRef.currentView)
+          this.rendererRef.refreshA11yNavForCurrentView()
+        }
+      },
     })
     this.battlefieldTargets = new BattlefieldTargetsController({
       isMenuOpen: () => this.menuOpen,
@@ -108,6 +116,7 @@ export class CardgameScene extends Phaser.Scene {
       ),
       renderCard: (label) => renderStaticCard(this, this.currentLayout, 0, 0, label, { mode: 'preview' }, this.rendererRef.currentView?.cardVisualStyle),
     })
+    this.boardPresentation.reset()
     this.lastRenderedSeed = null
     this.updateLayout()
     this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
@@ -202,6 +211,8 @@ export class CardgameScene extends Phaser.Scene {
       this.input.off('drop', onDrop)
       this.cardPreview?.destroy()
       this.cardPreview = null
+      this.effectController.reset()
+      this.boardPresentation.reset()
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -258,11 +269,13 @@ export class CardgameScene extends Phaser.Scene {
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
         // animations queued from a previous match.
         this.effectController.reset()
+        this.boardPresentation.reset(game.actor)
       }
       this.lastRenderedSeed = currentSeed
     } else {
       this.lastRenderedSeed = null
       this.effectController.reset()
+      this.boardPresentation.reset()
     }
     const currentMenuSignature = this.menuOpen && view && game
       ? this.computeMenuSignature(view)
@@ -296,17 +309,28 @@ export class CardgameScene extends Phaser.Scene {
 
     this.battlefieldTargets.syncPendingPlayLandTargetSelection(view.game)
     this.battlefieldTargets.updateBattlefieldTargetEntries(view.game)
-    this.gameplayPresenter.renderGame(view)
-    this.effectController.processAbilityEffects(view)
+    const effectsBusy = this.effectController.isBusyOrWillEnqueue(view)
+    const presentedActor = this.boardPresentation.resolve(
+      view.game.actor,
+      effectsBusy,
+      view.animationSpeed !== 'off',
+    )
+    this.gameplayPresenter.renderGame(view, presentedActor)
+    this.effectController.processAbilityEffects(view, presentedActor)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay
       this.rootContainer.add(preservedOverlay)
     } else if (this.menuOpen) {
       this.openMenuOverlay(view)
     }
+
     this.lastMenuSignature = this.menuOpen && this.menuOverlay
       ? this.computeMenuSignature(view)
       : null
+  }
+
+  presentedActor(fallback: number): number {
+    return this.boardPresentation.currentActor(fallback)
   }
 
   private computeMenuSignature(view: AppViewModel): string {
