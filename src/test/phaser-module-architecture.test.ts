@@ -24,6 +24,8 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'card-view.ts', concern: 'retained card display object owner' },
   { file: 'card-view-pool.ts', concern: 'reset card view pool' },
   { file: 'card-view-registry.ts', concern: 'stable card-id reconciliation' },
+  { file: 'drag-state.ts', concern: 'pointer-type-aware drag state machine' },
+  { file: 'drag-controller.ts', concern: 'drag proxy, cancellation, and action submission owner' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
   { file: 'board-background.ts', concern: 'retained board background / ambience owner' },
@@ -77,11 +79,13 @@ describe('phaser renderer module architecture', () => {
     expect(existsSync(join(PHASER_DIR, 'recording-controls.ts'))).toBe(false)
   })
 
-  it('routes hand and battlefield cards through the retained registry', () => {
+  it('routes retained cards through the dedicated drag controller', () => {
     const battlefieldSource = readFileSync(join(PHASER_DIR, 'battlefield-view.ts'), 'utf8')
     const handSource = readFileSync(join(PHASER_DIR, 'hand-controls.ts'), 'utf8')
     const presenterSource = readFileSync(join(PHASER_DIR, 'gameplay-presenter.ts'), 'utf8')
     const sceneSource = readFileSync(join(PHASER_DIR, 'cardgame-scene.ts'), 'utf8')
+    const dragControllerSource = readFileSync(join(PHASER_DIR, 'drag-controller.ts'), 'utf8')
+    const cardViewSource = readFileSync(join(PHASER_DIR, 'card-view.ts'), 'utf8')
 
     expect(battlefieldSource).not.toContain('renderStaticCard')
     expect(handSource).not.toContain('renderStaticCard')
@@ -90,10 +94,14 @@ describe('phaser renderer module architecture', () => {
       presenterSource.indexOf('renderHandAndControls(ctx'),
     )
     expect(sceneSource).toContain('child !== cardLayer')
-    expect(sceneSource.match(/cardViews\?\.isActiveDrag/g)).toHaveLength(2)
-    expect(sceneSource).toContain('isCanceledPhaserPointer(pointer)')
-    expect(sceneSource).toContain('shouldAnimateCardDragEnd(pointer, dropped, this.menuOpen)')
-    expect(sceneSource).toContain('shouldResolveCardDrop(')
+    expect(sceneSource).toContain('new DragController({')
+    expect(sceneSource).toContain("this.dragController?.cancel('resize')")
+    expect(sceneSource).toContain("this.dragController?.cancel('visibility')")
+    expect(sceneSource).toContain("this.dragController?.cancel('menu')")
+    expect(sceneSource).not.toMatch(/this\.input\.on\(['"](?:dragstart|drag|dragend|drop)/)
+    expect(dragControllerSource).toContain('resolvePlayLandDrop(game, source.cardId)')
+    expect(dragControllerSource).toContain('this.ctx.submitAction(action)')
+    expect(cardViewSource).not.toContain('setDraggable(')
     expect(sceneSource).not.toContain('this.cardViews?.detach()')
     expect(sceneSource).not.toContain('this.rootContainer?.removeAll(true)')
   })

@@ -116,10 +116,6 @@ export class CardView {
     return this.assignedCardId
   }
 
-  get isDragging(): boolean {
-    return this.dragging
-  }
-
   getDragSource(): CardViewDragSource | null {
     if (
       this.destroyed

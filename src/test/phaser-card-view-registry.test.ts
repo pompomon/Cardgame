@@ -686,7 +686,6 @@ describe('Phaser retained card views', () => {
         height: layout.handCardHeight,
       })
       expect(registry.beginDrag(container as never)).toBe(true)
-      expect(registry.isActiveDrag(container as never)).toBe(true)
       expect(container.alpha).toBe(0.35)
       container.setPosition(250, 500)
 
@@ -713,8 +712,8 @@ describe('Phaser retained card views', () => {
       container.setPosition(300, 520)
       sync(registry, harness, [handCard], 'off')
       expect(container.x).toBe(300)
-      registry.cancelActiveDrags()
-      expect(registry.isActiveDrag(container as never)).toBe(false)
+      registry.endDrag(container as never, false)
+      expect(container.alpha).toBe(1)
       expect(container.x).toBe(80)
       expect(container.y).toBe(600)
       registry.destroy()

@@ -7,6 +7,7 @@ import {
   DEPTH_BACKGROUND,
   DEPTH_BOARD,
   DEPTH_CARD_PREVIEW_OVERLAY,
+  DEPTH_DRAG_PROXY,
   DEPTH_EFFECT_OVERLAY,
   DEPTH_GAMEPLAY,
   DEPTH_HEADER,
@@ -26,7 +27,8 @@ describe('phaser scene depths', () => {
     expect(DEPTH_EFFECT_OVERLAY).toBeLessThan(DEPTH_HEADER_STRIP)
     expect(DEPTH_HEADER_STRIP).toBeLessThan(DEPTH_HEADER)
     expect(DEPTH_HEADER).toBeLessThan(DEPTH_CARD_PREVIEW_OVERLAY)
-    expect(DEPTH_CARD_PREVIEW_OVERLAY).toBeLessThan(DEPTH_MENU_OVERLAY)
+    expect(DEPTH_CARD_PREVIEW_OVERLAY).toBeLessThan(DEPTH_DRAG_PROXY)
+    expect(DEPTH_DRAG_PROXY).toBeLessThan(DEPTH_MENU_OVERLAY)
     expect(DEPTH_MENU_OVERLAY).toBeLessThan(DEPTH_TARGET_PICKER_OVERLAY)
   })
 
@@ -39,6 +41,7 @@ describe('phaser scene depths', () => {
       headerStrip: DEPTH_HEADER_STRIP,
       header: DEPTH_HEADER,
       cardPreviewOverlay: DEPTH_CARD_PREVIEW_OVERLAY,
+      dragProxy: DEPTH_DRAG_PROXY,
       menuOverlay: DEPTH_MENU_OVERLAY,
       targetPickerOverlay: DEPTH_TARGET_PICKER_OVERLAY,
     })

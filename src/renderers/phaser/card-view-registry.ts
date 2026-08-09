@@ -110,18 +110,6 @@ export class CardViewRegistry {
     this.findByContainer(container)?.endDrag(animateToTarget)
   }
 
-  isActiveDrag(container: Phaser.GameObjects.Container): boolean {
-    return this.findByContainer(container)?.isDragging ?? false
-  }
-
-  cancelActiveDrags(): void {
-    for (const view of this.active.values()) {
-      if (view.isDragging) {
-        view.cancelDrag()
-      }
-    }
-  }
-
   reset(): void {
     for (const [cardId, view] of [...this.active]) {
       this.release(cardId, view)
