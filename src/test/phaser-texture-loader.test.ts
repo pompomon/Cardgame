@@ -11,6 +11,7 @@ import {
   AMBIENCE_ATLAS_FRAMES,
   BOARD_UI_ATLAS_FRAMES,
   buildPhaserBoardAssetManifest,
+  EFFECTS_ATLAS_FRAMES,
 } from '../renderers/phaser/asset-manifest'
 
 type QueuedAsset =
@@ -292,6 +293,25 @@ describe('Phaser board texture loader', () => {
 
     harness.emitComplete()
     handle.dispose()
+    expect(harness.errorListenerCount()).toBe(0)
+    expect(harness.completeListenerCount()).toBe(0)
+  })
+
+  it('settles immediately without leaking listeners when every asset is already usable', () => {
+    const harness = createLoaderPort(['board-background:classic:balanced'])
+    harness.addTexture('board-atlas:ambience:classic', AMBIENCE_ATLAS_FRAMES)
+    harness.addTexture('board-atlas:board-ui', BOARD_UI_ATLAS_FRAMES)
+    harness.addTexture('board-atlas:effects', EFFECTS_ATLAS_FRAMES)
+
+    const handle = loadPhaserBoardAssetManifest(
+      harness.port,
+      buildPhaserBoardAssetManifest('classic', 'balanced'),
+      { failedUrls: new FailedAssetUrlRegistry(), onFailure: vi.fn() },
+    )
+
+    expect(handle.hasPendingAssets()).toBe(false)
+    expect(handle.isSettled()).toBe(true)
+    expect(harness.queued).toEqual([])
     expect(harness.errorListenerCount()).toBe(0)
     expect(harness.completeListenerCount()).toBe(0)
   })

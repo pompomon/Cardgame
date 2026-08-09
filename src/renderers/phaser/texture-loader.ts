@@ -68,6 +68,8 @@ export class FailedAssetUrlRegistry {
 export interface BoardAssetLoadHandle {
   readonly manifest: PhaserBoardAssetManifest
   resolveBackgroundTextureKey(): string | null
+  hasPendingAssets(): boolean
+  isSettled(): boolean
   dispose(): void
 }
 
@@ -174,6 +176,7 @@ export function loadPhaserBoardAssetManifest(
   const backgroundKeys = new Set(manifest.backgroundCandidates.map((asset) => asset.key))
   let nextBackgroundIndex = 0
   let disposed = false
+  let settled = false
 
   const noteFailure = (
     descriptor: PhaserAssetDescriptor,
@@ -268,6 +271,7 @@ export function loadPhaserBoardAssetManifest(
         port.removeTexture(descriptor.key)
       }
     }
+    settled = true
     dispose()
   }
 
@@ -277,11 +281,17 @@ export function loadPhaserBoardAssetManifest(
   for (const atlas of manifest.atlases) {
     queueDescriptor(atlas)
   }
+  if (pending.size === 0) {
+    settled = true
+    dispose()
+  }
 
   return {
     manifest,
     resolveBackgroundTextureKey: () =>
       resolveLoadedBoardBackgroundTextureKey(manifest, port.textureExists),
+    hasPendingAssets: () => !disposed && pending.size > 0,
+    isSettled: () => settled,
     dispose,
   }
 }
