@@ -9,7 +9,7 @@ import type { AppViewModel } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
 import { renderBattlefields } from './battlefield-view'
-import type { CardPreviewController } from './card-preview-controller'
+import type { CardViewDescriptor } from './card-view'
 import type { EffectController } from './effect-controller'
 import { renderGameHeader } from './game-header'
 import { renderHandAndControls } from './hand-controls'
@@ -21,16 +21,15 @@ export interface GameplayPresenterContext {
   scene: Phaser.Scene
   getLayout: () => SceneLayout
   getRootContainer: () => Phaser.GameObjects.Container | null
-  getVisualStyle: () => AppViewModel['cardVisualStyle']
   submitAction: (action: GameAction) => void
   createButton: (label: string, x: number, y: number, onClick: () => void, width?: number, height?: number, fontSize?: string) => Phaser.GameObjects.Container
-  getCardPreview: () => CardPreviewController | null
   effectController: EffectController
   battlefieldTargets: BattlefieldTargetsController
   targetPicker: TargetPickerController
   setStatus: (message: string) => void
   setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
   openMenuOverlay: (view: AppViewModel) => void
+  syncCardViews: (cards: readonly CardViewDescriptor[], view: AppViewModel) => void
 }
 
 export class GameplayPresenter {
@@ -49,8 +48,9 @@ export class GameplayPresenter {
 
     renderGameHeader(ctx, game, view)
 
-    renderBattlefields(ctx, game, presentedActor)
+    const battlefieldCards = renderBattlefields(ctx, game, presentedActor)
     renderPlayerInfoBlocks(ctx, view, presentedActor)
-    renderHandAndControls(ctx, game, presentedActor)
+    const handCards = renderHandAndControls(ctx, game, presentedActor)
+    ctx.syncCardViews([...battlefieldCards, ...handCards], view)
   }
 }

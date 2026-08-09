@@ -270,7 +270,7 @@ describe('DOM lobby layout', () => {
     const gameView = makeGameView()
     gameView.game!.canInput = true
     gameView.game!.players[0].handCards = [{ id: 'card-1', name: 'Mountain' }]
-    gameView.game!.players[1].battlefield = [{ instanceId: 'target-1', name: 'Forest' }]
+    gameView.game!.players[1].battlefield = [{ instanceId: 'target-1', cardId: 'target-card-1', name: 'Forest' }]
     gameView.game!.legal.playLandByCard = {
       'card-1': [
         { action: { type: 'play_land', actor: 0, cardId: 'card-1', effectTargetId: 'target-1' }, label: 'Destroy Forest' },

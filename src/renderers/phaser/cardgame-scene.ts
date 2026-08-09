@@ -20,6 +20,7 @@ import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
+import { CardViewRegistry } from './card-view-registry'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
@@ -48,6 +49,7 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private cardViews: CardViewRegistry | null = null
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
@@ -91,16 +93,25 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getLayout: () => this.currentLayout,
       getRootContainer: () => this.rootContainer,
-      getVisualStyle: () => this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
       submitAction: (action) => this.rendererRef.controller?.submitAction(action),
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
-      getCardPreview: () => this.cardPreview,
       effectController: this.effectController,
       battlefieldTargets: this.battlefieldTargets,
       targetPicker: this.targetPicker,
       setStatus: (message) => this.setStatus(message),
       setBattlefieldDropZone: (zone) => this.setBattlefieldDropZone(zone),
       openMenuOverlay: (view) => this.openMenuOverlay(view),
+      syncCardViews: (cards, view) => {
+        if (!this.cardViews || !this.rootContainer) {
+          return
+        }
+        this.cardViews.sync(cards, {
+          root: this.rootContainer,
+          layout: this.currentLayout,
+          visualStyle: view.cardVisualStyle,
+          animationSpeed: view.animationSpeed,
+        })
+      },
     })
   }
 
@@ -135,6 +146,13 @@ export class CardgameScene extends Phaser.Scene {
         this.menuOpen,
       ),
       renderCard: (label) => renderStaticCard(this, this.currentLayout, 0, 0, label, { mode: 'preview' }, this.rendererRef.currentView?.cardVisualStyle),
+    })
+    this.cardViews?.destroy()
+    this.cardViews = new CardViewRegistry({
+      scene: this,
+      bindPreview: (card, label, dimensions) => {
+        this.cardPreview?.bind(card, label, dimensions)
+      },
     })
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
@@ -240,6 +258,8 @@ export class CardgameScene extends Phaser.Scene {
       }
       this.cardPreview?.destroy()
       this.cardPreview = null
+      this.cardViews?.destroy()
+      this.cardViews = null
       this.boardBackground?.destroy()
       this.boardBackground = null
       this.boardAssetLoadHandle?.dispose()
@@ -317,6 +337,7 @@ export class CardgameScene extends Phaser.Scene {
     const wasMenuOpen = this.menuOpen
     this.menuOverlay = null
     this.cardPreview?.clear()
+    this.cardViews?.detach()
     this.rootContainer?.removeAll(true)
     this.battlefieldTargets.clearTransientEntries()
     this.targetPicker.clearTransientPickerState()
@@ -335,12 +356,14 @@ export class CardgameScene extends Phaser.Scene {
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
         // animations queued from a previous match.
         this.effectController.reset()
+        this.cardViews?.reset()
         this.boardPresentation.reset(game.actor)
       }
       this.lastRenderedSeed = currentSeed
     } else {
       this.lastRenderedSeed = null
       this.effectController.reset()
+      this.cardViews?.reset()
       this.boardPresentation.reset()
     }
     const currentMenuSignature = this.menuOpen && view && game
@@ -358,6 +381,7 @@ export class CardgameScene extends Phaser.Scene {
     this.clearRoot()
     if (!view || !this.rootContainer) {
       this.battlefieldTargets.reset()
+      this.cardViews?.reset()
       preservedOverlay?.destroy(true)
       this.lastMenuSignature = null
       return
@@ -368,6 +392,7 @@ export class CardgameScene extends Phaser.Scene {
 
     if (!view.game) {
       this.battlefieldTargets.reset()
+      this.cardViews?.reset()
       preservedOverlay?.destroy(true)
       this.closeMenuOverlay()
       this.lastMenuSignature = null
