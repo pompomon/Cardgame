@@ -14,6 +14,7 @@ import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
+import { visualEffectForEvent } from '../../app/visual-effects'
 import type { AppViewModel, GameUiState } from '../../app/types'
 import { buildPhaserBoardAssetManifest, resolveLoadedBoardBackgroundTextureKey } from './asset-manifest'
 import { BoardBackgroundView } from './board-background'
@@ -23,6 +24,7 @@ import { createThemedButton, renderStaticCard } from './card-factory'
 import type { CardViewDragSource } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
 import { DragController } from './drag-controller'
+import { DropZoneView } from './drop-zone-view'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
@@ -53,6 +55,7 @@ export class CardgameScene extends Phaser.Scene {
   private cardPreview: CardPreviewController | null = null
   private cardViews: CardViewRegistry | null = null
   private dragController: DragController | null = null
+  private dropZoneView: DropZoneView | null = null
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
@@ -139,6 +142,7 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getDocumentHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
     })
+    this.dropZoneView = new DropZoneView(this)
     this.cardPreview = createCardPreviewController({
       scene: this,
       getRoot: () => this.rootContainer,
@@ -173,6 +177,12 @@ export class CardgameScene extends Phaser.Scene {
         this.beginPlayLandTargetSelection(game, cardId, options)
       },
       setStatus: (message) => this.setStatus(message),
+      onPointerMove: (x, y) => this.dropZoneView?.updatePointer(x, y),
+      onDragStateChange: (cardId, phase) => this.dropZoneView?.setDragState(
+        this.rendererRef.currentView?.game ?? null,
+        cardId,
+        phase,
+      ),
     })
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
@@ -210,6 +220,8 @@ export class CardgameScene extends Phaser.Scene {
       this.cardPreview = null
       this.cardViews?.destroy()
       this.cardViews = null
+      this.dropZoneView?.destroy()
+      this.dropZoneView = null
       this.boardBackground?.destroy()
       this.boardBackground = null
       this.boardAssetLoadHandle?.dispose()
@@ -402,7 +414,18 @@ export class CardgameScene extends Phaser.Scene {
       effectsBusy,
       view.animationSpeed !== 'off',
     )
-    this.gameplayPresenter.renderGame(view, presentedActor)
+    const cards = this.gameplayPresenter.renderGame(view, presentedActor)
+    const latestEvent = view.game.events.length > 0
+      ? view.game.events[view.game.events.length - 1]
+      : null
+    this.dropZoneView?.sync({
+      game: view.game,
+      layout: this.currentLayout,
+      cards,
+      dragCardId: this.dragController?.activeCardId ?? null,
+      dragPhase: this.dragController?.phase ?? 'idle',
+      effect: latestEvent ? visualEffectForEvent(latestEvent, view.cardVisualStyle) : null,
+    })
     this.dragController?.reconcile()
     this.effectController.processAbilityEffects(view, presentedActor)
     if (preservedOverlay) {
