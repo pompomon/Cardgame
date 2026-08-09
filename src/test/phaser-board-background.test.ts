@@ -217,6 +217,17 @@ describe('Phaser board background view', () => {
     expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
   })
 
+  it('evicts the active large background texture on destroy', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+    view.destroy()
+
+    expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
+  })
+
   it('bounds ambience by quality, reduced motion, hidden-page state, and phone viewports', () => {
     expect(resolveBoardAmbiencePolicy({
       quality: 'high',

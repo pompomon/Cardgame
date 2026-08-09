@@ -129,6 +129,11 @@ export class BoardBackgroundView {
   destroy(): void {
     this.clearAmbienceTweens()
     this.container?.destroy(true)
+    for (const key of this.knownBackgroundKeys) {
+      if (this.scene.textures.exists(key)) {
+        this.scene.textures.remove(key)
+      }
+    }
     this.container = null
     this.fallback = null
     this.background = null
