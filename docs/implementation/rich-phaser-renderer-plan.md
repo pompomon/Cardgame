@@ -6,7 +6,7 @@
 - [x] Phase 1 — Add persisted board-theme and render-quality settings
 - [x] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [x] Phase 3 — Implement persistent board background and adaptive ambience
-- [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
+- [x] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 - [ ] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 - [ ] Phase 6 — Add drop-zone visuals and contextual interaction feedback
 - [ ] Phase 7 — Implement adaptive desktop/mobile performance policy
@@ -461,6 +461,41 @@ public/sprites/
 - Hidden-information behavior is unchanged.
 - Repeated syncs are allocation-light and idempotent.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 4 implementation notes (2026-08-09)
+
+- Phase 4 was selected because it was the first unchecked phase in the
+  authoritative checklist. Phase 0 acceptance criteria, Phase 1 shared
+  renderer settings, Phase 2 asset loading/fallbacks, and Phase 3 retained
+  background ownership were verified in the current tree before completion.
+- Extended immutable battlefield projections with stable `cardId` values while
+  preserving targeting-only `instanceId` values in `src/app/types.ts` and
+  `src/app/view-model.ts`.
+- Added retained `CardView`, `CardViewPool`, and `CardViewRegistry` ownership
+  under `src/renderers/phaser/`, then routed hand and battlefield descriptors
+  through the registry from `GameplayPresenter`. The scene preserves the card
+  layer across transient root rebuilds and resets it on game/scene lifecycle
+  boundaries.
+- Reconciliation retains outer card identity across visible zone moves,
+  updates faces and interactions only when signatures change, bounds the pool,
+  completes movement tweens at deterministic targets, falls back from failed
+  raster art, and fully clears hidden-hand data before reuse.
+- Hardened retained input lifecycle after review: pool cleanup preserves
+  Phaser's parent `destroy` listener, pointer-out clears click latches, and
+  canceled clicks or drag/drop releases cannot submit or animate an action.
+- Added or extended `view-model`, retained-card registry, card-rendering,
+  battlefield-target, card-preview, and module-architecture tests. Targeted
+  validation passed (6 files / 80 tests); required validation passed:
+  `npm run lint`, `npm run test` (67 files / 661 tests), `npm run build`
+  (with the existing non-failing chunk-size advisory), and `codeql_checker`
+  (0 alerts).
+- Independent `code-review` inspected the actual implementation and surrounding
+  Phaser input internals. Its canceled/outside pointer-release blocker was
+  fixed in `f3611c6`; focused re-review reported no remaining blockers.
+- Deferred as planned: the dedicated pointer-type-aware drag controller and
+  drag proxy (Phase 5), later drop-zone/quality/lifecycle/performance phases,
+  and real-browser mobile/WebGL smoke coverage. The independent final
+  verification checklist remains unchecked.
 
 ## Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 

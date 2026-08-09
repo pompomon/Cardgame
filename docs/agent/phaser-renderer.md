@@ -60,6 +60,8 @@ re-enabling one synchronously would otherwise drop it from the input list.
 Click
 handlers require a pointer-down from their current assignment so synchronous
 pool reuse during a drop cannot submit a second action from the same release.
+Pointer-out clears that latch, and canceled pointers must never submit clicks
+or drops or animate a retained card toward a drop target.
 Static cards outside the board (previews, effect retention, log tiles, and
 target choices) continue to use `card-factory.ts`.
 
