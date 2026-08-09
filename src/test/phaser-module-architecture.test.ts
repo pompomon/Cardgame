@@ -21,6 +21,9 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   // Card art
   { file: 'card-art-loader.ts', concern: 'card art texture preloading' },
   { file: 'card-factory.ts', concern: 'card GameObject factory' },
+  { file: 'card-view.ts', concern: 'retained card display object owner' },
+  { file: 'card-view-pool.ts', concern: 'reset card view pool' },
+  { file: 'card-view-registry.ts', concern: 'stable card-id reconciliation' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
   { file: 'board-background.ts', concern: 'retained board background / ambience owner' },
@@ -72,5 +75,19 @@ describe('phaser renderer module architecture', () => {
   it('renames P2P/a11y/recording utilities to their canonical names', () => {
     expect(existsSync(join(PHASER_DIR, 'a11y-nav.ts'))).toBe(false)
     expect(existsSync(join(PHASER_DIR, 'recording-controls.ts'))).toBe(false)
+  })
+
+  it('routes hand and battlefield cards through the retained registry', () => {
+    const battlefieldSource = readFileSync(join(PHASER_DIR, 'battlefield-view.ts'), 'utf8')
+    const handSource = readFileSync(join(PHASER_DIR, 'hand-controls.ts'), 'utf8')
+    const presenterSource = readFileSync(join(PHASER_DIR, 'gameplay-presenter.ts'), 'utf8')
+    const sceneSource = readFileSync(join(PHASER_DIR, 'cardgame-scene.ts'), 'utf8')
+
+    expect(battlefieldSource).not.toContain('renderStaticCard')
+    expect(handSource).not.toContain('renderStaticCard')
+    expect(presenterSource).toContain('ctx.syncCardViews')
+    expect(sceneSource.indexOf('this.cardViews?.detach()')).toBeLessThan(
+      sceneSource.indexOf('this.rootContainer?.removeAll(true)'),
+    )
   })
 })
