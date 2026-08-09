@@ -23,6 +23,7 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'card-factory.ts', concern: 'card GameObject factory' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
+  { file: 'board-background.ts', concern: 'retained board background / ambience owner' },
 
   // Lobby
   { file: 'lobby-scene.ts', concern: 'lobby scene' },

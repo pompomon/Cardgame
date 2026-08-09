@@ -1,0 +1,268 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { BoardTheme } from '../app/board-theme'
+import {
+  BoardBackgroundView,
+  computeCoverFitCrop,
+  resolveBoardAmbiencePolicy,
+  type BoardBackgroundSyncOptions,
+} from '../renderers/phaser/board-background'
+import { buildLayout } from '../renderers/phaser/layout'
+
+class FakeDisplayObject {
+  destroyed = false
+  visible = true
+  x = 0
+  y = 0
+  alpha = 1
+  textureKey: string | null = null
+  frame: string | null = null
+  crop: [number, number, number, number] | null = null
+  displaySize: [number, number] | null = null
+
+  setOrigin(): this { return this }
+  setDepth(): this { return this }
+  setBlendMode(): this { return this }
+  setScale(): this { return this }
+  setPosition(x: number, y: number): this {
+    this.x = x
+    this.y = y
+    return this
+  }
+
+  setVisible(visible: boolean): this {
+    this.visible = visible
+    return this
+  }
+
+  setAlpha(alpha: number): this {
+    this.alpha = alpha
+    return this
+  }
+
+  setTexture(key: string, frame?: string): this {
+    this.textureKey = key
+    this.frame = frame ?? null
+    return this
+  }
+
+  setCrop(x: number, y: number, width: number, height: number): this {
+    this.crop = [x, y, width, height]
+    return this
+  }
+
+  setDisplaySize(width: number, height: number): this {
+    this.displaySize = [width, height]
+    return this
+  }
+
+  setSize(width: number, height: number): this {
+    this.displaySize = [width, height]
+    return this
+  }
+
+  setFillStyle(): this { return this }
+
+  destroy(): void {
+    this.destroyed = true
+  }
+}
+
+class FakeContainer extends FakeDisplayObject {
+  readonly children: FakeDisplayObject[] = []
+
+  add(child: FakeDisplayObject): this {
+    this.children.push(child)
+    return this
+  }
+
+  override destroy(destroyChildren?: boolean): void {
+    this.destroyed = true
+    if (destroyChildren) {
+      for (const child of this.children) child.destroy()
+    }
+  }
+}
+
+function createSceneHarness(): {
+  readonly scene: {
+    readonly tweens: {
+      readonly add: ReturnType<typeof vi.fn>
+    }
+  }
+  readonly images: FakeDisplayObject[]
+  readonly sprites: FakeDisplayObject[]
+  readonly containers: FakeContainer[]
+  readonly removedTextures: string[]
+  addTexture: (key: string, width: number, height: number, frames?: readonly string[]) => void
+} {
+  const textureSizes = new Map<string, { width: number; height: number }>()
+  const textureFrames = new Map<string, Set<string>>()
+  const images: FakeDisplayObject[] = []
+  const sprites: FakeDisplayObject[] = []
+  const containers: FakeContainer[] = []
+  const removedTextures: string[] = []
+  const scene = {
+    add: {
+      container: () => {
+        const container = new FakeContainer()
+        containers.push(container)
+        return container
+      },
+      rectangle: () => new FakeDisplayObject(),
+      image: (_x: number, _y: number, key: string) => {
+        const image = new FakeDisplayObject()
+        image.setTexture(key)
+        images.push(image)
+        return image
+      },
+      sprite: (_x: number, _y: number, key: string, frame: string) => {
+        const sprite = new FakeDisplayObject()
+        sprite.setTexture(key, frame)
+        sprites.push(sprite)
+        return sprite
+      },
+    },
+    textures: {
+      exists: (key: string) => textureSizes.has(key),
+      get: (key: string) => ({
+        getSourceImage: () => textureSizes.get(key) ?? { width: 1, height: 1 },
+        has: (frame: string) => textureFrames.get(key)?.has(frame) ?? false,
+      }),
+      remove: (key: string) => {
+        removedTextures.push(key)
+        textureSizes.delete(key)
+        textureFrames.delete(key)
+      },
+    },
+    tweens: {
+      add: vi.fn(() => ({ remove: vi.fn() })),
+    },
+  }
+  return {
+    scene,
+    images,
+    sprites,
+    containers,
+    removedTextures,
+    addTexture: (key, width, height, frames = []) => {
+      textureSizes.set(key, { width, height })
+      textureFrames.set(key, new Set(frames))
+    },
+  }
+}
+
+const layout = buildLayout(1280, 720, 'horizontal')
+
+function syncOptions(
+  theme: BoardTheme,
+  backgroundTextureKey: string | null,
+  candidateKeys: readonly string[],
+): BoardBackgroundSyncOptions {
+  return {
+    layout,
+    theme,
+    quality: 'high',
+    animationSpeed: 'normal',
+    backgroundTextureKey,
+    backgroundCandidateKeys: candidateKeys,
+  }
+}
+
+describe('Phaser board background view', () => {
+  it('computes cover-fit crops for portrait, landscape, and invalid source sizes', () => {
+    const portrait = computeCoverFitCrop(1920, 1080, 390, 844)
+    expect(portrait.height).toBe(1080)
+    expect(portrait.width).toBeCloseTo(499.05, 2)
+    expect(portrait.x).toBeGreaterThan(700)
+
+    const landscape = computeCoverFitCrop(1024, 1024, 1280, 720)
+    expect(landscape.width).toBe(1024)
+    expect(landscape.height).toBeCloseTo(576, 4)
+    expect(landscape.y).toBeCloseTo(224, 4)
+
+    expect(computeCoverFitCrop(Number.NaN, -1, 0, 0)).toEqual({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    })
+  })
+
+  it('retains one background image across repeated syncs and updates crop in place', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+
+    expect(harness.containers).toHaveLength(1)
+    expect(harness.images).toHaveLength(1)
+    expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
+    expect(harness.images[0].displaySize).toEqual([layout.width, layout.height])
+    expect(harness.images[0].crop).not.toBeNull()
+  })
+
+  it('switches the retained image texture and evicts stale large backgrounds', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    harness.addTexture('board-background:verdant:balanced', 1280, 720)
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+    view.sync(syncOptions('verdant', 'board-background:verdant:balanced', ['board-background:verdant:balanced']))
+
+    expect(harness.images).toHaveLength(1)
+    expect(harness.images[0].textureKey).toBe('board-background:verdant:balanced')
+    expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
+  })
+
+  it('bounds ambience by quality, reduced motion, hidden-page state, and phone viewports', () => {
+    expect(resolveBoardAmbiencePolicy({
+      quality: 'high',
+      animationSpeed: 'normal',
+      width: 1280,
+      height: 720,
+    }).spriteCount).toBe(8)
+    expect(resolveBoardAmbiencePolicy({
+      quality: 'high',
+      animationSpeed: 'normal',
+      width: 390,
+      height: 844,
+    }).spriteCount).toBe(4)
+    expect(resolveBoardAmbiencePolicy({
+      quality: 'balanced',
+      animationSpeed: 'off',
+      width: 1280,
+      height: 720,
+    }).spriteCount).toBe(0)
+    expect(resolveBoardAmbiencePolicy({
+      quality: 'balanced',
+      animationSpeed: 'normal',
+      width: 1280,
+      height: 720,
+      documentHidden: true,
+    }).spriteCount).toBe(0)
+  })
+
+  it('creates bounded ambience sprites once and removes them when quality disables ambience', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    harness.addTexture('board-atlas:ambience:classic', 16, 16, ['ambient-mote'])
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+    const options = syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd'])
+
+    view.sync(options)
+    view.sync(options)
+
+    expect(harness.sprites).toHaveLength(8)
+    expect(harness.scene.tweens.add).toHaveBeenCalledTimes(8)
+
+    view.sync({
+      ...options,
+      quality: 'low',
+    })
+
+    expect(harness.sprites.every((sprite) => sprite.destroyed)).toBe(true)
+  })
+})

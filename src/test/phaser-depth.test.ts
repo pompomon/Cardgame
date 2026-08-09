@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  DEPTH_BACKGROUND,
   DEPTH_BOARD,
   DEPTH_CARD_PREVIEW_OVERLAY,
   DEPTH_EFFECT_OVERLAY,
@@ -19,6 +20,7 @@ const REPO_ROOT = join(__dirname, '..', '..')
 
 describe('phaser scene depths', () => {
   it('keeps the documented z-order from board through overlays', () => {
+    expect(DEPTH_BACKGROUND).toBeLessThan(DEPTH_BOARD)
     expect(DEPTH_BOARD).toBeLessThan(DEPTH_GAMEPLAY)
     expect(DEPTH_GAMEPLAY).toBeLessThan(DEPTH_EFFECT_OVERLAY)
     expect(DEPTH_EFFECT_OVERLAY).toBeLessThan(DEPTH_HEADER_STRIP)
@@ -30,6 +32,7 @@ describe('phaser scene depths', () => {
 
   it('exports a complete scene depth map', () => {
     expect(SCENE_DEPTHS).toEqual({
+      background: DEPTH_BACKGROUND,
       board: DEPTH_BOARD,
       gameplay: DEPTH_GAMEPLAY,
       effectOverlay: DEPTH_EFFECT_OVERLAY,
