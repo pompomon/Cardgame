@@ -48,7 +48,7 @@ describe('computeBattlefieldTargetEntries', () => {
     const game = baseGame({
       players: [
         { id: 0, handCount: 1, deckCount: 10, graveyardCount: 0, handCards: [{ id: 'mountain-1', name: 'Mountain' }], graveyardCards: [], battlefield: [] },
-        { id: 1, handCount: 0, deckCount: 10, graveyardCount: 0, handCards: [], graveyardCards: [], battlefield: [{ instanceId: 'enemy-island-1', name: 'Island' }] },
+        { id: 1, handCount: 0, deckCount: 10, graveyardCount: 0, handCards: [], graveyardCards: [], battlefield: [{ instanceId: 'enemy-island-1', cardId: 'enemy-island-card-1', name: 'Island' }] },
       ],
       legal: {
         playLandByCard: {
@@ -75,8 +75,8 @@ describe('computeBattlefieldTargetEntries', () => {
           handCards: [],
           graveyardCards: [],
           battlefield: [
-            { instanceId: 'enemy-island-1', name: 'Island' },
-            { instanceId: 'enemy-island-2', name: 'Island' },
+            { instanceId: 'enemy-island-1', cardId: 'enemy-island-card-1', name: 'Island' },
+            { instanceId: 'enemy-island-2', cardId: 'enemy-island-card-2', name: 'Island' },
           ],
         },
       ],
@@ -122,7 +122,10 @@ describe('computeBattlefieldTargetEntries', () => {
           graveyardCount: 0,
           handCards: [],
           graveyardCards: [],
-          battlefield: [{ instanceId: 'own-forest-1', name: 'Forest' }, { instanceId: 'own-forest-2', name: 'Forest' }],
+          battlefield: [
+            { instanceId: 'own-forest-1', cardId: 'own-forest-card-1', name: 'Forest' },
+            { instanceId: 'own-forest-2', cardId: 'own-forest-card-2', name: 'Forest' },
+          ],
         },
         { id: 1, handCount: 0, deckCount: 10, graveyardCount: 0, handCards: [], graveyardCards: [], battlefield: [] },
       ],

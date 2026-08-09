@@ -118,6 +118,7 @@ export const HIDDEN_HAND_CARD_NAME = '__hidden__'
 
 export interface UiBattlefieldCard {
   instanceId: string
+  cardId: string
   name: string
 }
 

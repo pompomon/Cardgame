@@ -341,7 +341,11 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
           graveyardCount: game.players[0].graveyard.length,
           handCards: projectHandCards(game.players[0].hand, state.controllers, 0),
           graveyardCards: game.players[0].graveyard.map((card) => ({ id: card.id, name: card.name })),
-          battlefield: game.players[0].battlefield.map((entry) => ({ instanceId: entry.instanceId, name: entry.card.name })),
+          battlefield: game.players[0].battlefield.map((entry) => ({
+            instanceId: entry.instanceId,
+            cardId: entry.card.id,
+            name: entry.card.name,
+          })),
         },
         {
           id: 1,
@@ -350,7 +354,11 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
           graveyardCount: game.players[1].graveyard.length,
           handCards: projectHandCards(game.players[1].hand, state.controllers, 1),
           graveyardCards: game.players[1].graveyard.map((card) => ({ id: card.id, name: card.name })),
-          battlefield: game.players[1].battlefield.map((entry) => ({ instanceId: entry.instanceId, name: entry.card.name })),
+          battlefield: game.players[1].battlefield.map((entry) => ({
+            instanceId: entry.instanceId,
+            cardId: entry.card.id,
+            name: entry.card.name,
+          })),
         },
       ],
       legal: {

@@ -150,6 +150,11 @@ describe('buildViewModel', () => {
     expect(vm.game?.players[0].handCards).not.toBe(state.game!.players[0].hand)
     expect(vm.game?.players[0].graveyardCards).not.toBe(state.game!.players[0].graveyard)
     expect(vm.game?.players[0].battlefield).not.toBe(state.game!.players[0].battlefield)
+    expect(vm.game?.players[0].battlefield[0]).toEqual({
+      instanceId: 'bf-1',
+      cardId: 'bf-card-1',
+      name: 'Mountain',
+    })
     expect(vm.game?.log).toEqual(state.game!.log)
     expect(vm.game?.log).not.toBe(state.game!.log)
     expect(vm.game?.events).toEqual(state.game!.events)

@@ -8,11 +8,10 @@ import {
   resolvePlainsReuseTargetSelectionMode,
   resolveSwampDiscardAction,
 } from '../../app/action-resolution'
-import type { AppViewModel, GameUiState } from '../../app/types'
+import type { GameUiState } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
-import { renderStaticCard } from './card-factory'
-import type { CardPreviewController } from './card-preview-controller'
+import type { CardViewDescriptor } from './card-view'
 import { xForHandCardInBoardColumn, type SceneLayout } from './layout'
 import { buildCounterHandOptions } from './response-options'
 import { renderResponseControls } from './response-controls'
@@ -23,61 +22,73 @@ export interface HandControlsContext {
   scene: Phaser.Scene
   getLayout: () => SceneLayout
   getRootContainer: () => Phaser.GameObjects.Container | null
-  getVisualStyle: () => AppViewModel['cardVisualStyle']
   submitAction: (action: GameAction) => void
   createButton: (label: string, x: number, y: number, onClick: () => void, width?: number, height?: number, fontSize?: string) => Phaser.GameObjects.Container
-  getCardPreview: () => CardPreviewController | null
   battlefieldTargets: BattlefieldTargetsController
   targetPicker: TargetPickerController
   setStatus: (message: string) => void
 }
 
-export function renderHandAndControls(ctx: HandControlsContext, game: GameUiState, presentedActor = game.actor): void {
-  const scene = ctx.scene
+export function buildHandCardDescriptors(
+  ctx: HandControlsContext,
+  game: GameUiState,
+  presentedActor = game.actor,
+): CardViewDescriptor[] {
   const layout = ctx.getLayout()
-  const rootContainer = ctx.getRootContainer()
-  const { battlefieldTargets, targetPicker } = ctx
-  const defaultVisualStyle = ctx.getVisualStyle()
   const actor = presentedActor
   const actorCards = game.players[actor].handCards
   const presentationIsCurrent = actor === game.actor
-  const canDrag = presentationIsCurrent && game.canInput && game.phase === 'main' && battlefieldTargets.getPendingPlayLandTargetSelection() === null
+  const canDrag = presentationIsCurrent && game.canInput && game.phase === 'main'
+    && ctx.battlefieldTargets.getPendingPlayLandTargetSelection() === null
   const response = presentationIsCurrent && game.canInput && game.phase === 'respond'
     ? buildCounterHandOptions(game)
     : null
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
+  const cards: CardViewDescriptor[] = []
 
   actorCards.forEach((card, index) => {
     const x = xForHandCardInBoardColumn(layout, index, actorCards.length)
     const y = layout.handCardsY
     const responseChoice = responseChoices.get(card.id)
-    const cardObject = renderStaticCard(scene, layout, x, y, card.name, {
+    const draggable = canDrag && game.legal.playLandByCard[card.id] !== undefined
+    cards.push({
+      cardId: card.id,
+      instanceId: null,
+      playerIndex: actor,
+      zone: 'hand',
+      name: card.name,
+      x,
+      y,
+      width: layout.handCardWidth,
+      height: layout.handCardHeight,
       highlight: response?.requiredIslandId === card.id || responseChoice !== undefined,
       onClick: responseChoice
         ? () => ctx.submitAction(responseChoice.action)
         : undefined,
-      dimensions: {
-        width: layout.handCardWidth,
-        height: layout.handCardHeight,
-      },
-    }, defaultVisualStyle)
-    cardObject.setData('cardId', card.id)
-    cardObject.setData('originX', x)
-    cardObject.setData('originY', y)
-    if (canDrag && game.legal.playLandByCard[card.id]) {
-      cardObject.setSize(layout.handCardWidth, layout.handCardHeight)
-      cardObject.setInteractive({ draggable: true, useHandCursor: true })
-      scene.input.setDraggable(cardObject)
-    }
-    if (!response) {
-      ctx.getCardPreview()?.bind(cardObject, card.name, {
-        width: layout.handCardWidth,
-        height: layout.handCardHeight,
-      })
-    }
-    rootContainer?.add(cardObject)
+      draggable,
+      preview: response === null,
+      interactionKey: responseChoice
+        ? `response:${JSON.stringify(responseChoice.action)}`
+        : `${draggable ? 'drag' : 'static'}:preview:hand:${card.id}:${card.name}`,
+    })
   })
+  return cards
+}
 
+export function renderHandAndControls(
+  ctx: HandControlsContext,
+  game: GameUiState,
+  presentedActor = game.actor,
+): void {
+  const scene = ctx.scene
+  const layout = ctx.getLayout()
+  const rootContainer = ctx.getRootContainer()
+  const { battlefieldTargets, targetPicker } = ctx
+  const actor = presentedActor
+  const presentationIsCurrent = actor === game.actor
+  const response = presentationIsCurrent && game.canInput && game.phase === 'respond'
+    ? buildCounterHandOptions(game)
+    : null
   if (presentationIsCurrent && game.canInput && game.phase === 'plains_target') {
     if (!targetPicker.isTargetPickerOpen()) {
       const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.plainsReuseOptions.map((option, index) => ({

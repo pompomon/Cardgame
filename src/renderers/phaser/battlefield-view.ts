@@ -3,10 +3,9 @@
 // EffectController and highlighting cards flagged by BattlefieldTargetsController
 // as eligible click targets. Extracted from gameplay-presenter.ts.
 import type Phaser from 'phaser'
-import type { AppViewModel, GameUiState } from '../../app/types'
+import type { GameUiState } from '../../app/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
-import { renderStaticCard } from './card-factory'
-import type { CardPreviewController } from './card-preview-controller'
+import type { CardViewDescriptor } from './card-view'
 import type { EffectController } from './effect-controller'
 import type { BattlefieldCardPlacement } from './effect-anchoring'
 import { xForCardInBoardColumn, type SceneLayout } from './layout'
@@ -18,21 +17,23 @@ export interface BattlefieldViewContext {
   scene: Phaser.Scene
   getLayout: () => SceneLayout
   getRootContainer: () => Phaser.GameObjects.Container | null
-  getVisualStyle: () => AppViewModel['cardVisualStyle']
-  getCardPreview: () => CardPreviewController | null
   effectController: EffectController
   battlefieldTargets: BattlefieldTargetsController
   setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
 }
 
-export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiState, presentedActor = game.actor): void {
+export function renderBattlefields(
+  ctx: BattlefieldViewContext,
+  game: GameUiState,
+  presentedActor = game.actor,
+): CardViewDescriptor[] {
   const scene = ctx.scene
   const layout = ctx.getLayout()
   const rootContainer = ctx.getRootContainer()
   const { effectController, battlefieldTargets } = ctx
-  const defaultVisualStyle = ctx.getVisualStyle()
   const activeIndex = presentedActor
   const nonActiveIndex = activeIndex === 0 ? 1 : 0
+  const cards: CardViewDescriptor[] = []
   // Clear stale positions from the previous render pass so cards from a
   // previous game or rematch don't leave ghost anchors in the registry.
   effectController.beginBattlefieldRenderPass()
@@ -79,22 +80,24 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
       cardCount: nonActiveBattlefield.length,
     }
     effectController.recordCardPosition(card.instanceId, placement)
-    const renderedCard = renderStaticCard(
-      scene,
-      layout,
-      cardX,
-      nonActiveCardY,
-      card.name,
-      {
-        highlight: targetEntry !== null,
-        onClick: targetEntry?.onSelect,
-      },
-      defaultVisualStyle,
-    )
-    if (!targetEntry) {
-      ctx.getCardPreview()?.bind(renderedCard, card.name)
-    }
-    rootContainer?.add(renderedCard)
+    cards.push({
+      cardId: card.cardId,
+      instanceId: card.instanceId,
+      playerIndex: nonActiveIndex,
+      zone: 'battlefield',
+      name: card.name,
+      x: cardX,
+      y: nonActiveCardY,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      highlight: targetEntry !== null,
+      draggable: false,
+      preview: targetEntry === null,
+      onClick: targetEntry?.onSelect,
+      interactionKey: targetEntry
+        ? `target:${game.phase}:non-active:${card.instanceId}:${battlefieldTargets.getPendingPlayLandTargetSelection()?.cardId ?? ''}`
+        : `preview:battlefield:${card.cardId}:${card.name}`,
+    })
   }
 
   // Active battlefield (below non-active, drop zone enabled, parchment with green tint).
@@ -143,21 +146,24 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
       cardCount: activeBattlefield.length,
     }
     effectController.recordCardPosition(card.instanceId, placement)
-    const renderedCard = renderStaticCard(
-      scene,
-      layout,
-      cardX,
-      activeCardY,
-      card.name,
-      {
-        highlight: targetEntry !== null,
-        onClick: targetEntry?.onSelect,
-      },
-      defaultVisualStyle,
-    )
-    if (!targetEntry) {
-      ctx.getCardPreview()?.bind(renderedCard, card.name)
-    }
-    rootContainer?.add(renderedCard)
+    cards.push({
+      cardId: card.cardId,
+      instanceId: card.instanceId,
+      playerIndex: activeIndex,
+      zone: 'battlefield',
+      name: card.name,
+      x: cardX,
+      y: activeCardY,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      highlight: targetEntry !== null,
+      draggable: false,
+      preview: targetEntry === null,
+      onClick: targetEntry?.onSelect,
+      interactionKey: targetEntry
+        ? `target:${game.phase}:active:${card.instanceId}:${battlefieldTargets.getPendingPlayLandTargetSelection()?.cardId ?? ''}`
+        : `preview:battlefield:${card.cardId}:${card.name}`,
+    })
   }
+  return cards
 }
