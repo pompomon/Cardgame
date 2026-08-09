@@ -51,7 +51,6 @@ composition root (that would create a cycle), they depend on the structural
 The cardgame scene anchors render order on constants and a z-order map in
 `src/renderers/phaser/depth.ts`:
 
-- `DEPTH_BOARD = -5` — player-info panels
 - `DEPTH_BACKGROUND = -10` — retained full-scene board background
 - `DEPTH_BOARD = -5` — player-info panels
 - default `0` — cards, buttons, battlefields

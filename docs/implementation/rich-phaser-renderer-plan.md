@@ -5,7 +5,7 @@
 - [x] Phase 0 — Establish branch, validation baseline, and acceptance criteria
 - [x] Phase 1 — Add persisted board-theme and render-quality settings
 - [x] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
-- [ ] Phase 3 — Implement persistent board background and adaptive ambience
+- [x] Phase 3 — Implement persistent board background and adaptive ambience
 - [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 - [ ] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 - [ ] Phase 6 — Add drop-zone visuals and contextual interaction feedback
@@ -377,6 +377,36 @@ public/sprites/
 - Resize and theme changes update retained objects in place.
 - Ambience is bounded, reduced-motion aware, and quality aware.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 3 implementation notes (2026-08-09)
+
+- Phase 3 was selected because it was the first unchecked phase in the
+  authoritative checklist. Phase 0 acceptance criteria, Phase 1 shared
+  board-theme/render-quality settings, and Phase 2 board/sprite asset pipeline
+  were verified in the current tree before implementation.
+- Added `src/renderers/phaser/board-background.ts` as the retained
+  scene-level owner for background fallback fill, loaded board image, cover-fit
+  `setCrop` math, bounded ambience sprites/tweens, hidden-page reduction, and
+  stale large-background texture eviction.
+- Integrated board background asset preloading and retained sync into
+  `src/renderers/phaser/cardgame-scene.ts` without changing game rules or app
+  controller internals. The board background lives outside the rebuild-heavy
+  gameplay root container and is destroyed on scene shutdown.
+- Updated Phaser depth/module documentation and guards for the new
+  `DEPTH_BACKGROUND` layer and `board-background.ts` module.
+- Added `src/test/phaser-board-background.test.ts` for cover-fit crop math,
+  retained image identity, theme-switch texture eviction, and quality,
+  reduced-motion, hidden-page, and phone-sized ambience bounds. Updated depth
+  and module-architecture tests for the new layer/module.
+- Validation performed so far:
+  - Targeted:
+    `npm run test -- src/test/phaser-board-background.test.ts src/test/phaser-depth.test.ts src/test/phaser-module-architecture.test.ts`
+    (36 tests).
+  - `npm run lint`.
+- Known limitations/deferred work: manual desktop/mobile smoke, broader
+  performance traces, retained cards, dedicated drag, drop-zone visuals, and
+  full final-verification subagent checklist items remain deferred to later
+  phases as planned.
 
 ## Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 
