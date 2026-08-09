@@ -113,7 +113,7 @@ export function createCardPreviewController(options: {
         sourcePointerActive = false
       })
       card.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-        if (pointer.wasCanceled || dragged || Phaser.Math.Distance.Between(downX, downY, pointer.x, pointer.y) > TAP_DISTANCE) {
+        if (!sourcePointerActive || pointer.wasCanceled || dragged || Phaser.Math.Distance.Between(downX, downY, pointer.x, pointer.y) > TAP_DISTANCE) {
           sourcePointerActive = false
           return
         }
