@@ -52,6 +52,7 @@ function legalDropFor(game: GameUiState, cardId: string | null): boolean {
 
 export class DropZoneView {
   private readonly scene: Phaser.Scene
+  private readonly container: Phaser.GameObjects.Container
   private readonly dropZone: Phaser.GameObjects.Rectangle
   private readonly dropLabel: Phaser.GameObjects.Text
   private readonly targetRings: TargetRing[] = []
@@ -65,8 +66,10 @@ export class DropZoneView {
   private pointerY = Number.NaN
   private destroyed = false
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, rootContainer: Phaser.GameObjects.Container) {
     this.scene = scene
+    this.container = scene.add.container(0, 0)
+    rootContainer.add(this.container)
     this.dropZone = scene.add.rectangle(0, 0, 1, 1, DROP_ZONE_FILL, 0)
       .setStrokeStyle(2, DROP_ZONE_STROKE_SUCCESS, 0.9)
       .setDepth(DEPTH_GAMEPLAY + 0.1)
@@ -78,6 +81,11 @@ export class DropZoneView {
       .setOrigin(0.5)
       .setDepth(DEPTH_EFFECT_OVERLAY)
       .setVisible(false)
+    this.container.add([this.dropZone, this.dropLabel])
+  }
+
+  get rootChild(): Phaser.GameObjects.Container {
+    return this.container
   }
 
   sync(options: DropZoneViewSyncOptions): void {
@@ -129,12 +137,7 @@ export class DropZoneView {
       return
     }
     this.destroyed = true
-    this.dropZone.destroy()
-    this.dropLabel.destroy()
-    for (const target of this.targetRings) {
-      target.ring.destroy()
-      target.label.destroy()
-    }
+    this.container.destroy(true)
     this.targetRings.length = 0
   }
 
@@ -151,6 +154,7 @@ export class DropZoneView {
         .setOrigin(0.5)
         .setDepth(DEPTH_EFFECT_OVERLAY)
         .setVisible(false)
+      this.container.add([ring, label])
       this.targetRings.push({ ring, label })
     }
     for (let index = 0; index < this.targetRings.length; index += 1) {

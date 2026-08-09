@@ -13,6 +13,7 @@ class FakeObject {
   text = ''
   color = ''
   destroyed = false
+  readonly children: FakeObject[] = []
 
   setPosition(x: number, y: number): this { this.x = x; this.y = y; return this }
   setSize(width: number, height: number): this { this.width = width; this.height = height; return this }
@@ -24,7 +25,16 @@ class FakeObject {
   setFontSize(): this { return this }
   setText(text: string): this { this.text = text; return this }
   setColor(color: string): this { this.color = color; return this }
-  destroy(): void { this.destroyed = true }
+  add(children: FakeObject | FakeObject[]): this {
+    this.children.push(...(Array.isArray(children) ? children : [children]))
+    return this
+  }
+  destroy(): void {
+    this.destroyed = true
+    for (const child of this.children) {
+      child.destroy()
+    }
+  }
 }
 
 function game(overrides: Partial<GameUiState> = {}): GameUiState {
@@ -81,10 +91,12 @@ const targetCard: CardViewDescriptor = {
   interactionKey: 'target',
 }
 
-function harness(): { view: DropZoneView; objects: FakeObject[] } {
+function harness(): { view: DropZoneView; root: FakeObject; objects: FakeObject[] } {
   const objects: FakeObject[] = []
+  const root = new FakeObject()
   const scene = {
     add: {
+      container: () => new FakeObject(),
       rectangle: () => {
         const object = new FakeObject()
         objects.push(object)
@@ -98,7 +110,7 @@ function harness(): { view: DropZoneView; objects: FakeObject[] } {
       },
     },
   }
-  return { view: new DropZoneView(scene as never), objects }
+  return { view: new DropZoneView(scene as never, root as never), root, objects }
 }
 
 describe('DropZoneView', () => {
@@ -111,6 +123,12 @@ describe('DropZoneView', () => {
 
     view.updatePointer(400, 480)
     expect(objects[1]).toMatchObject({ visible: true, text: 'Release to play' })
+  })
+
+  it('keeps feedback in the gameplay root so later modal children occlude it', () => {
+    const { root, view } = harness()
+
+    expect(root.children).toContain(view.rootChild)
   })
 
   it('retains target rings and hides the drop zone during target selection', () => {

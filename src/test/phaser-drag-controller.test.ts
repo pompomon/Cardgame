@@ -118,6 +118,7 @@ interface Harness {
     options: Array<{ effectTargetId?: string; label: string }>
   }>
   readonly statuses: string[]
+  readonly feedbackEvents: string[]
   readonly tweens: TweenRecord[]
   readonly setBlocked: (blocked: boolean) => void
   readonly setGame: (game: GameUiState | null) => void
@@ -232,6 +233,7 @@ function createHarness(): Harness {
   const submitted: GameAction[] = []
   const targetSelections: Harness['targetSelections'] = []
   const statuses: string[] = []
+  const feedbackEvents: string[] = []
   const tweens: TweenRecord[] = []
   let blocked = false
   let game: GameUiState | null = gameWithOptions()
@@ -273,6 +275,12 @@ function createHarness(): Harness {
     setStatus: (status) => {
       statuses.push(status)
     },
+    onPointerMove: (x, y) => {
+      feedbackEvents.push(`pointer:${x},${y}`)
+    },
+    onDragStateChange: () => {
+      feedbackEvents.push('drag')
+    },
   }
   return {
     controller: new DragController(context),
@@ -284,6 +292,7 @@ function createHarness(): Harness {
     submitted,
     targetSelections,
     statuses,
+    feedbackEvents,
     tweens,
     setBlocked: (value) => {
       blocked = value
@@ -321,6 +330,14 @@ describe('DragController', () => {
     expect(harness.registry.endDrag).toHaveBeenCalledOnce()
     expect(harness.proxies[0].destroyed).toBe(true)
     expect(harness.controller.phase).toBe('idle')
+  })
+
+  it('seeds pointer feedback before reporting an immediately-started mouse drag', () => {
+    const harness = createHarness()
+
+    start(harness, pointer(1, 420, 220))
+
+    expect(harness.feedbackEvents).toEqual(['pointer:420,220', 'drag'])
   })
 
   it('keeps touch taps below threshold and starts touch drags above it', () => {

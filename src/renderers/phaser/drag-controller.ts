@@ -265,6 +265,7 @@ export class DragController {
         pointer.x + this.pointerOffsetX,
         pointer.y + this.pointerOffsetY,
       )
+    this.ctx.onPointerMove?.(pointer.x, pointer.y)
     this.notifyDragStateChange()
     return true
   }
