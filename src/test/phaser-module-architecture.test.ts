@@ -21,6 +21,9 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   // Card art
   { file: 'card-art-loader.ts', concern: 'card art texture preloading' },
   { file: 'card-factory.ts', concern: 'card GameObject factory' },
+  { file: 'card-view.ts', concern: 'retained card display object owner' },
+  { file: 'card-view-pool.ts', concern: 'retained card view pooling and reset' },
+  { file: 'card-view-registry.ts', concern: 'keyed retained card reconciliation' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
   { file: 'board-background.ts', concern: 'retained board background / ambience owner' },

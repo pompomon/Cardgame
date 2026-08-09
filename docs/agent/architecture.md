@@ -51,6 +51,9 @@ src/
 │       ├── texture-loader.ts   Tiered board loading + failed-URL suppression
 │       ├── board-background.ts Retained board background + ambience owner
 │       ├── card-factory.ts   Card GameObject factory (uses already-loaded textures)
+│       ├── card-view.ts      Retained owner for one visible card
+│       ├── card-view-pool.ts CardView reuse/reset pool
+│       ├── card-view-registry.ts  Keyed retained card reconciliation
 │       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
 │       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)
 │       ├── cardgame-scene.ts CardgameScene: lifecycle/input wiring, menu

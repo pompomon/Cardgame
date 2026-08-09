@@ -19,15 +19,18 @@ and the a11y label derivation, unit-tested without Phaser) and
 `target-picker.ts` (the modal popup UI); and `effect-controller.ts` owns the
 effect queue + card position registries. Card art loading (`card-art-loader.ts`)
 is separate from the card GameObject factory (`card-factory.ts`) that assumes
-textures are already loaded. Lobby row/action content and predicates
-(`isAdventureResumable`, `selectedAiLevelLabel`, …) live in the pure, tested
-`lobby-actions.ts`, consumed by both `lobby-scene.ts` and
+textures are already loaded. Retained gameplay cards are owned by
+`card-view.ts`, reset/reused through `card-view-pool.ts`, and keyed by stable
+view-model card ids in `card-view-registry.ts`; previews, menus, and transient
+effect copies still use the stateless factory. Lobby row/action content and
+predicates (`isAdventureResumable`, `selectedAiLevelLabel`, …) live in the
+pure, tested `lobby-actions.ts`, consumed by both `lobby-scene.ts` and
 `a11y-navigation.ts` so the two surfaces can't drift apart. Shared low-level
 pieces live in `theme.ts` (colors/CardStyle), `scene-config.ts` (numeric
 constants/scene keys), and `scene-host.ts` (Phaser.Game bootstrap). See
 `docs/agent/architecture.md` for the full module map, and
-`src/test/phaser-module-architecture.test.ts` for the guard that asserts
-every module above still exists.
+`src/test/phaser-module-architecture.test.ts` for the guard that asserts every
+module above still exists.
 
 Board asset paths and URLs are renderer-neutral in `src/app/board-assets.ts`.
 `asset-manifest.ts` maps the selected theme/quality to Phaser texture keys,

@@ -6,7 +6,7 @@
 - [x] Phase 1 — Add persisted board-theme and render-quality settings
 - [x] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [x] Phase 3 — Implement persistent board background and adaptive ambience
-- [ ] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
+- [x] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 - [ ] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 - [ ] Phase 6 — Add drop-zone visuals and contextual interaction feedback
 - [ ] Phase 7 — Implement adaptive desktop/mobile performance policy
@@ -461,6 +461,43 @@ public/sprites/
 - Hidden-information behavior is unchanged.
 - Repeated syncs are allocation-light and idempotent.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 4 implementation notes (2026-08-09)
+
+- Phase 4 was selected because it was the first unchecked phase in the
+  authoritative checklist after Phases 0–3.
+- Extended the app view model battlefield projection with stable `cardId`
+  values while preserving `instanceId` as the targeting identifier submitted in
+  `GameAction` payloads. Hidden opponent hand redaction remains scoped to
+  `UiCard.name === HIDDEN_HAND_CARD_NAME` and continues to expose only stable
+  slot ids/counts.
+- Added retained Phaser card ownership modules:
+  - `card-view.ts` owns one visible card container, resets input/listeners/data,
+    and animates deterministic moves to the latest layout position.
+  - `card-view-pool.ts` reuses reset card views instead of destroying every
+    card on every render pass.
+  - `card-view-registry.ts` reconciles visible cards by stable `cardId`, pools
+    cards that leave visibility, and detaches retained cards before
+    `rootContainer.removeAll(true)` clears transient UI.
+- Integrated retained card syncing into `CardgameScene`, `battlefield-view.ts`,
+  and `hand-controls.ts`. Battlefield effect anchoring still records positions
+  by `instanceId`; hand drag/drop still reads `cardId`, origin coordinates, and
+  shared app action-resolution helpers.
+- Left the stateless `card-factory.ts` path in place for previews, menus,
+  target picker cards, and effect-retention copies. Retained-card modules accept
+  a render callback so unit tests can exercise pooling without importing the
+  Phaser runtime.
+- Added `src/test/phaser-card-view-registry.test.ts` for idempotent keyed sync,
+  reorder/move tween final positions using shared fake-timer helpers, and pooled
+  hidden-card reset/privacy behavior. Updated view-model, DOM fixture,
+  battlefield-target, module-architecture, and documentation coverage.
+- Validation performed:
+  - Focused:
+    `npm run test -- src/test/phaser-card-view-registry.test.ts src/test/view-model.test.ts src/test/phaser-battlefield-targets.test.ts src/test/dom-lobby.test.ts`
+    (37 tests).
+  - `npm run lint`.
+  - `npm run test` (67 files / 650 tests).
+  - `npm run build` (with the existing non-failing chunk-size advisory).
 
 ## Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 
