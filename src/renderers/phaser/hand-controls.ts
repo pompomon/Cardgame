@@ -61,7 +61,9 @@ export function buildHandCardDescriptors(
       y,
       width: layout.handCardWidth,
       height: layout.handCardHeight,
-      highlight: response?.requiredIslandId === card.id || responseChoice !== undefined,
+      highlight: draggable
+        || response?.requiredIslandId === card.id
+        || responseChoice !== undefined,
       onClick: responseChoice
         ? () => ctx.submitAction(responseChoice.action)
         : undefined,

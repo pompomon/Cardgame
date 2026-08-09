@@ -48,6 +48,12 @@ export interface DragControllerContext {
     options: Array<{ effectTargetId?: string; label: string }>,
   ) => void
   readonly setStatus: (message: string) => void
+  readonly onDragFeedback?: (
+    phase: DragStatePhase,
+    cardId: string | null,
+    x: number,
+    y: number,
+  ) => void
 }
 
 function pointerSnapshot(pointer: Phaser.Input.Pointer): DragPointerSnapshot {
@@ -85,6 +91,8 @@ export class DragController {
   private returnTween: Phaser.Tweens.Tween | null = null
   private pointerOffsetX = 0
   private pointerOffsetY = 0
+  private pointerX = 0
+  private pointerY = 0
   private destroyed = false
 
   constructor(ctx: DragControllerContext) {
@@ -145,11 +153,14 @@ export class DragController {
     }
 
     this.source = source
+    this.pointerX = snapshot.x
+    this.pointerY = snapshot.y
     this.pointerOffsetX = source.container.x - snapshot.x
     this.pointerOffsetY = source.container.y - snapshot.y
     if (result === 'dragging') {
       this.activateDrag(snapshot)
     }
+    this.notifyFeedback()
   }
 
   private readonly handlePointerMove = (pointer: Phaser.Input.Pointer): void => {
@@ -158,7 +169,13 @@ export class DragController {
     }
     const snapshot = pointerSnapshot(pointer)
     const result = this.state.move(snapshot)
-    if (result === 'ignored' || result === 'pressed') {
+    if (result === 'ignored') {
+      return
+    }
+    this.pointerX = snapshot.x
+    this.pointerY = snapshot.y
+    if (result === 'pressed') {
+      this.notifyFeedback()
       return
     }
     if (!this.source) {
@@ -174,6 +191,7 @@ export class DragController {
       snapshot.x + this.pointerOffsetX,
       snapshot.y + this.pointerOffsetY,
     )
+    this.notifyFeedback()
   }
 
   private readonly handlePointerUp = (pointer: Phaser.Input.Pointer): void => {
@@ -185,9 +203,12 @@ export class DragController {
     if (result === 'ignored') {
       return
     }
+    this.pointerX = snapshot.x
+    this.pointerY = snapshot.y
     if (result === 'tap') {
       this.source = null
       this.state.complete()
+      this.notifyFeedback()
       return
     }
     if (
@@ -275,6 +296,7 @@ export class DragController {
       return
     }
 
+    this.notifyFeedback()
     this.returnTween?.remove()
     const tween = this.ctx.scene.tweens.add({
       targets: proxy,
@@ -304,6 +326,18 @@ export class DragController {
     this.source = null
     this.pointerOffsetX = 0
     this.pointerOffsetY = 0
+    this.pointerX = 0
+    this.pointerY = 0
     this.state.complete()
+    this.notifyFeedback()
+  }
+
+  private notifyFeedback(): void {
+    this.ctx.onDragFeedback?.(
+      this.state.phase,
+      this.source?.cardId ?? null,
+      this.pointerX,
+      this.pointerY,
+    )
   }
 }

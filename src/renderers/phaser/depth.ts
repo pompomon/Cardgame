@@ -4,6 +4,8 @@
 export const DEPTH_BACKGROUND = -10
 export const DEPTH_BOARD = -5
 export const DEPTH_GAMEPLAY = 0
+// Retained drop-zone fills and rings sit above cards without obscuring effects.
+export const DEPTH_INTERACTION_FEEDBACK = 0.5
 // Ability / play-land particle effects sit just above cards and battlefields
 // but below the persistent header strip so they never obscure game controls.
 export const DEPTH_EFFECT_OVERLAY = 1
@@ -18,6 +20,7 @@ export const SCENE_DEPTHS = {
   background: DEPTH_BACKGROUND,
   board: DEPTH_BOARD,
   gameplay: DEPTH_GAMEPLAY,
+  interactionFeedback: DEPTH_INTERACTION_FEEDBACK,
   effectOverlay: DEPTH_EFFECT_OVERLAY,
   headerStrip: DEPTH_HEADER_STRIP,
   header: DEPTH_HEADER,

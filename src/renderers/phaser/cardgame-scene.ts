@@ -20,11 +20,13 @@ import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
-import type { CardViewDragSource } from './card-view'
+import type { CardViewDescriptor, CardViewDragSource } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
 import { DragController } from './drag-controller'
+import { DropZoneView } from './drop-zone-view'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
+import { buildInteractionFeedbackModel } from './interaction-feedback'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
 import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
@@ -39,7 +41,6 @@ export class CardgameScene extends Phaser.Scene {
   private readonly rendererRef: PhaserRendererHost
   private rootContainer: Phaser.GameObjects.Container | null = null
   private statusText: Phaser.GameObjects.Text | null = null
-  private battlefieldDropZone: Phaser.GameObjects.Zone | null = null
   private menuOverlay: Phaser.GameObjects.Container | null = null
   private menuOpen = false
   private menuContentScrollOffset: number | null = null
@@ -53,6 +54,7 @@ export class CardgameScene extends Phaser.Scene {
   private cardPreview: CardPreviewController | null = null
   private cardViews: CardViewRegistry | null = null
   private dragController: DragController | null = null
+  private dropZoneView: DropZoneView | null = null
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
@@ -91,6 +93,9 @@ export class CardgameScene extends Phaser.Scene {
       clearCardPreview: () => this.cardPreview?.clear(),
       submitAction: (action) => this.rendererRef.controller?.submitAction(action),
       refreshA11yNav: () => this.rendererRef.refreshA11yNavForCurrentView(),
+      onOpenChange: (open) => {
+        this.dropZoneView?.setBlocked(open || this.menuOpen)
+      },
     })
     this.gameplayPresenter = new GameplayPresenter({
       scene: this,
@@ -102,7 +107,6 @@ export class CardgameScene extends Phaser.Scene {
       battlefieldTargets: this.battlefieldTargets,
       targetPicker: this.targetPicker,
       setStatus: (message) => this.setStatus(message),
-      setBattlefieldDropZone: (zone) => this.setBattlefieldDropZone(zone),
       openMenuOverlay: (view) => this.openMenuOverlay(view),
       syncCardViews: (cards, view) => {
         if (!this.cardViews || !this.rootContainer) {
@@ -114,6 +118,9 @@ export class CardgameScene extends Phaser.Scene {
           visualStyle: view.cardVisualStyle,
           animationSpeed: view.animationSpeed,
         })
+      },
+      syncInteractionFeedback: (cards, view, presentedActor) => {
+        this.syncInteractionFeedback(cards, view, presentedActor)
       },
     })
   }
@@ -139,6 +146,8 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getDocumentHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
     })
+    this.dropZoneView?.destroy()
+    this.dropZoneView = new DropZoneView({ scene: this })
     this.cardPreview = createCardPreviewController({
       scene: this,
       getRoot: () => this.rootContainer,
@@ -163,9 +172,10 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getCardViews: () => this.cardViews,
       getGame: () => this.rendererRef.currentView?.game ?? null,
-      getDropZone: () => this.battlefieldDropZone,
+      getDropZone: () => this.dropZoneView?.dropZone ?? null,
       getAnimationSpeed: () => this.rendererRef.currentView?.animationSpeed ?? DEFAULT_ANIMATION_SPEED,
       isInteractionBlocked: () => this.menuOpen
+        || this.targetPicker.isTargetPickerOpen()
         || this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null,
       createProxy: (source) => this.createDragProxy(source),
       submitAction: (action) => this.rendererRef.controller?.submitAction(action),
@@ -173,6 +183,9 @@ export class CardgameScene extends Phaser.Scene {
         this.beginPlayLandTargetSelection(game, cardId, options)
       },
       setStatus: (message) => this.setStatus(message),
+      onDragFeedback: (phase, cardId, x, y) => {
+        this.dropZoneView?.updateDrag(phase, cardId, x, y)
+      },
     })
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
@@ -210,6 +223,8 @@ export class CardgameScene extends Phaser.Scene {
       this.cardPreview = null
       this.cardViews?.destroy()
       this.cardViews = null
+      this.dropZoneView?.destroy()
+      this.dropZoneView = null
       this.boardBackground?.destroy()
       this.boardBackground = null
       this.boardAssetLoadHandle?.dispose()
@@ -220,15 +235,6 @@ export class CardgameScene extends Phaser.Scene {
     })
 
     this.renderView(this.rendererRef.currentView)
-  }
-
-  private setBattlefieldDropZone(zone: Phaser.GameObjects.Zone | null): void {
-    zone?.once(Phaser.GameObjects.Events.DESTROY, () => {
-      if (this.battlefieldDropZone === zone) {
-        this.battlefieldDropZone = null
-      }
-    })
-    this.battlefieldDropZone = zone
   }
 
   private createDragProxy(source: CardViewDragSource): Phaser.GameObjects.Container {
@@ -335,7 +341,6 @@ export class CardgameScene extends Phaser.Scene {
     }
     this.battlefieldTargets.clearTransientEntries()
     this.targetPicker.clearTransientPickerState()
-    this.battlefieldDropZone = null
     this.menuOpen = wasMenuOpen
   }
 
@@ -377,6 +382,7 @@ export class CardgameScene extends Phaser.Scene {
     if (!view || !this.rootContainer) {
       this.battlefieldTargets.reset()
       this.cardViews?.reset()
+      this.dropZoneView?.reset()
       preservedOverlay?.destroy(true)
       this.lastMenuSignature = null
       return
@@ -388,6 +394,7 @@ export class CardgameScene extends Phaser.Scene {
     if (!view.game) {
       this.battlefieldTargets.reset()
       this.cardViews?.reset()
+      this.dropZoneView?.reset()
       preservedOverlay?.destroy(true)
       this.closeMenuOverlay()
       this.lastMenuSignature = null
@@ -442,6 +449,32 @@ export class CardgameScene extends Phaser.Scene {
     return createThemedButton(this, label, x, y, fontSize, width, height, onClick)
   }
 
+  private syncInteractionFeedback(
+    cards: readonly CardViewDescriptor[],
+    view: AppViewModel,
+    presentedActor: number,
+  ): void {
+    const game = view.game
+    if (!game || !this.dropZoneView) {
+      this.dropZoneView?.reset()
+      return
+    }
+    this.dropZoneView.sync(
+      buildInteractionFeedbackModel({
+        game,
+        cards,
+        layout: this.currentLayout,
+        presentedActor,
+        selectedCardId: this.battlefieldTargets
+          .getPendingPlayLandTargetSelection()?.cardId ?? null,
+      }),
+      this.currentLayout,
+    )
+    this.dropZoneView.setBlocked(
+      this.menuOpen || this.targetPicker.isTargetPickerOpen(),
+    )
+  }
+
   closeMenuOverlay(): void {
     const overlay = this.menuOverlay
     this.menuOverlay = null
@@ -452,6 +485,7 @@ export class CardgameScene extends Phaser.Scene {
     this.menuLogPinnedToBottom = true
     this.lastMenuSignature = null
     overlay?.destroy(true)
+    this.dropZoneView?.setBlocked(this.targetPicker.isTargetPickerOpen())
     this.rendererRef.refreshA11yNavForCurrentView()
   }
 
@@ -489,6 +523,7 @@ export class CardgameScene extends Phaser.Scene {
     this.targetPicker.closeTargetPickerOverlay()
     this.battlefieldTargets.reset()
     this.menuOpen = true
+    this.dropZoneView?.setBlocked(true)
     this.statusText?.setVisible(false)
 
     const overlay = createMenuOverlay({

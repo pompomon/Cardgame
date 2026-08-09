@@ -19,7 +19,6 @@ export interface BattlefieldViewContext {
   getRootContainer: () => Phaser.GameObjects.Container | null
   effectController: EffectController
   battlefieldTargets: BattlefieldTargetsController
-  setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
 }
 
 export function renderBattlefields(
@@ -100,7 +99,7 @@ export function renderBattlefields(
     })
   }
 
-  // Active battlefield (below non-active, drop zone enabled, parchment with green tint).
+  // Active battlefield (below non-active, parchment with green tint).
   const activeX = layout.boardColumnLeft + layout.boardColumnWidth / 2
   const activeY = layout.activeBattlefieldY + layout.activeBattlefieldHeight / 2
   const activeBg = buildBattlefieldBackdrop(scene, activeX, activeY, {
@@ -113,17 +112,12 @@ export function renderBattlefields(
   rootContainer?.add(scene.add.text(
     layout.boardColumnLeft + 8,
     layout.activeBattlefieldY + 4,
-    `Player ${activeIndex + 1} Battlefield (drop card here)`,
+    `Player ${activeIndex + 1} Battlefield`,
     {
       color: COLOR_SUCCESS_TEXT,
       fontSize: layout.smallFontSize,
     },
   ))
-
-  const dropZone = scene.add.zone(activeX, activeY, layout.boardColumnWidth, layout.activeBattlefieldHeight)
-  dropZone.setRectangleDropZone(layout.boardColumnWidth, layout.activeBattlefieldHeight)
-  ctx.setBattlefieldDropZone(dropZone)
-  rootContainer?.add(dropZone)
 
   const activeBattlefield = game.players[activeIndex].battlefield
   // Reserve the same header band as the non-active row so the active title

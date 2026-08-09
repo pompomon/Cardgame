@@ -26,6 +26,8 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'card-view-registry.ts', concern: 'stable card-id reconciliation' },
   { file: 'drag-state.ts', concern: 'pointer-type-aware drag state machine' },
   { file: 'drag-controller.ts', concern: 'drag proxy, cancellation, and action submission owner' },
+  { file: 'interaction-feedback.ts', concern: 'pure contextual feedback derivation / effect tint mapping' },
+  { file: 'drop-zone-view.ts', concern: 'retained and pooled interaction feedback owner' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
   { file: 'board-background.ts', concern: 'retained board background / ambience owner' },
@@ -95,7 +97,13 @@ describe('phaser renderer module architecture', () => {
     )
     expect(sceneSource).toContain('child !== cardLayer')
     expect(sceneSource).toContain('new DragController({')
-    expect(sceneSource).toContain('isInteractionBlocked: () => this.menuOpen\n        || this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null')
+    expect(sceneSource).toContain('isInteractionBlocked: () => this.menuOpen')
+    expect(sceneSource).toContain('|| this.targetPicker.isTargetPickerOpen()')
+    expect(sceneSource).toContain('new DropZoneView({ scene: this })')
+    expect(sceneSource).toContain('this.dropZoneView?.updateDrag(phase, cardId, x, y)')
+    expect(sceneSource).toContain('this.dropZoneView?.destroy()')
+    expect(battlefieldSource).not.toContain('scene.add.zone')
+    expect(dragControllerSource).toContain('this.ctx.onDragFeedback?.(')
     expect(sceneSource).toContain("this.dragController?.cancel('resize')")
     expect(sceneSource).toContain("this.dragController?.cancel('visibility')")
     expect(sceneSource).toContain("this.dragController?.cancel('menu')")

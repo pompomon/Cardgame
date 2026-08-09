@@ -27,9 +27,13 @@ export interface GameplayPresenterContext {
   battlefieldTargets: BattlefieldTargetsController
   targetPicker: TargetPickerController
   setStatus: (message: string) => void
-  setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
   openMenuOverlay: (view: AppViewModel) => void
   syncCardViews: (cards: readonly CardViewDescriptor[], view: AppViewModel) => void
+  syncInteractionFeedback: (
+    cards: readonly CardViewDescriptor[],
+    view: AppViewModel,
+    presentedActor: number,
+  ) => void
 }
 
 export class GameplayPresenter {
@@ -51,8 +55,10 @@ export class GameplayPresenter {
     const battlefieldCards = renderBattlefields(ctx, game, presentedActor)
     renderPlayerInfoBlocks(ctx, view, presentedActor)
     const handCards = buildHandCardDescriptors(ctx, game, presentedActor)
-    ctx.syncCardViews([...battlefieldCards, ...handCards], view)
+    const cards = [...battlefieldCards, ...handCards]
+    ctx.syncCardViews(cards, view)
     renderHandAndControls(ctx, game, presentedActor)
+    ctx.syncInteractionFeedback(cards, view, presentedActor)
     ctx.getRootContainer()?.sort('depth')
   }
 }

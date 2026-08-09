@@ -9,6 +9,7 @@ import {
 } from '../../app/visual-effects'
 import { DEPTH_EFFECT_OVERLAY } from './depth'
 import type { BattlefieldCardPlacement } from './effect-anchoring'
+import { phaserEffectTint } from './interaction-feedback'
 
 // Bounded ability-resolution effect pipeline. Each `LogEvent` that has a
 // visual recipe maps to one `EffectDescriptor`; descriptors are queued and
@@ -43,10 +44,6 @@ export function effectDescriptorForEvent(
   visualStyle: EffectDescriptor['visualStyle'],
 ): EffectDescriptor | null {
   return visualEffectForEvent(event, visualStyle)
-}
-
-function colorToNumber(value: string, fallback: number): number {
-  return /^#[0-9a-f]{6}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -406,7 +403,7 @@ export function playAbilityEffect(
   }
   const effectAnchor = descriptor.anchorOverride ?? anchor
   const cappedDuration = Math.min(durationMs, MAX_EFFECT_MS)
-  const tint = colorToNumber(descriptor.palette.secondary, 0xffffff)
+  const tint = phaserEffectTint(descriptor)
   const hasLink = descriptor.sourceAnchor !== undefined
     && (descriptor.sourceAnchor.x !== effectAnchor.x || descriptor.sourceAnchor.y !== effectAnchor.y)
   const finish = hasLink ? makeCounter(2, onDone) : onDone

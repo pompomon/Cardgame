@@ -117,6 +117,12 @@ interface Harness {
     cardId: string
     options: Array<{ effectTargetId?: string; label: string }>
   }>
+  readonly feedback: Array<{
+    phase: string
+    cardId: string | null
+    x: number
+    y: number
+  }>
   readonly statuses: string[]
   readonly tweens: TweenRecord[]
   readonly setBlocked: (blocked: boolean) => void
@@ -231,6 +237,7 @@ function createHarness(): Harness {
   })
   const submitted: GameAction[] = []
   const targetSelections: Harness['targetSelections'] = []
+  const feedback: Harness['feedback'] = []
   const statuses: string[] = []
   const tweens: TweenRecord[] = []
   let blocked = false
@@ -273,6 +280,9 @@ function createHarness(): Harness {
     setStatus: (status) => {
       statuses.push(status)
     },
+    onDragFeedback: (phase, cardId, x, y) => {
+      feedback.push({ phase, cardId, x, y })
+    },
   }
   return {
     controller: new DragController(context),
@@ -283,6 +293,7 @@ function createHarness(): Harness {
     createProxy,
     submitted,
     targetSelections,
+    feedback,
     statuses,
     tweens,
     setBlocked: (value) => {
@@ -321,6 +332,11 @@ describe('DragController', () => {
     expect(harness.registry.endDrag).toHaveBeenCalledOnce()
     expect(harness.proxies[0].destroyed).toBe(true)
     expect(harness.controller.phase).toBe('idle')
+    expect(harness.feedback).toEqual(expect.arrayContaining([
+      { phase: 'dragging', cardId: 'hand-card', x: 80, y: 600 },
+      { phase: 'dragging', cardId: 'hand-card', x: 420, y: 220 },
+      { phase: 'idle', cardId: null, x: 0, y: 0 },
+    ]))
   })
 
   it('keeps touch taps below threshold and starts touch drags above it', () => {
@@ -373,6 +389,12 @@ describe('DragController', () => {
       duration: 250,
     })
     expect(harness.registry.dragging).toBe(true)
+    expect(harness.feedback.at(-1)).toEqual({
+      phase: 'settling',
+      cardId: 'hand-card',
+      x: 200,
+      y: 500,
+    })
     start(harness, pointer(2, 80, 600))
     expect(harness.createProxy).toHaveBeenCalledOnce()
 

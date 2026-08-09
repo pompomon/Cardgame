@@ -72,6 +72,14 @@ Duplicate releases cannot submit twice. Invalid drops tween the proxy back
 with a bounded duration. Resize, visibility change, menu open, game change,
 pointer cancellation/loss, and scene shutdown all cancel the session and
 restore the source.
+`interaction-feedback.ts` derives battlefield, hand, playable-card, target,
+and response-action feedback only from the projected legal actions and current
+card descriptors. `drop-zone-view.ts` owns the retained battlefield hit zone,
+area outlines, label, and a bounded pool of card/target markers. Drag pointer
+updates may only change those existing objects' state; they must not call
+`scene.add.*`, reconcile markers, or recompute legality. Popup target areas
+remain owned by `target-picker.ts`, while attack/block zones do not exist in
+the current game rules.
 Static cards outside the board (previews, effect retention, log tiles, and
 target choices) continue to use `card-factory.ts`.
 
@@ -88,6 +96,8 @@ The cardgame scene anchors render order on constants and a z-order map in
 - `DEPTH_BACKGROUND = -10` — retained full-scene board background
 - `DEPTH_BOARD = -5` — player-info panels
 - default `0` — cards, buttons, battlefields
+- `DEPTH_INTERACTION_FEEDBACK = 0.5` — retained zone fills, labels, and rings
+- `DEPTH_EFFECT_OVERLAY = 1` — bounded ability/play-land effects
 - `DEPTH_HEADER_STRIP = 9` — header strip
 - `DEPTH_HEADER = 10` — Menu button, Turn/Phase label, Winner banner
 - `DEPTH_CARD_PREVIEW_OVERLAY = 15` — enlarged card preview

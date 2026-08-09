@@ -205,6 +205,18 @@ describe('playAbilityEffect', () => {
     })
   }
 
+  it('completes safely for an unknown future effect descriptor', () => {
+    let called = 0
+    playAbilityEffect(
+      { add: {}, tweens: {} } as unknown as import('phaser').Scene,
+      anchor,
+      { ...descriptor('play_land'), kind: 'future-effect' } as never,
+      100,
+      () => { called += 1 },
+    )
+    expect(called).toBe(1)
+  })
+
   it('uses fewer particles in the reduced mobile quality tier', () => {
     let rectangles = 0
     const scene = {

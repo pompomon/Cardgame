@@ -41,6 +41,7 @@ export interface TargetPickerContext {
   clearCardPreview: () => void
   submitAction: (action: GameAction) => void
   refreshA11yNav: () => void
+  onOpenChange?: (open: boolean) => void
 }
 
 export class TargetPickerController {
@@ -65,8 +66,12 @@ export class TargetPickerController {
   // root container) has already been destroyed by `removeAll(true)`, so this
   // just drops the now-dangling reference/a11y entries.
   clearTransientPickerState(): void {
+    const wasOpen = this.pendingTargetPicker !== null
     this.pendingTargetPicker = null
     this.pendingTargetPickerA11yEntries = []
+    if (wasOpen) {
+      this.ctx.onOpenChange?.(false)
+    }
   }
 
   getTargetPickerA11yEntries(): A11yEntry[] {
@@ -112,6 +117,7 @@ export class TargetPickerController {
     overlay.once(Phaser.GameObjects.Events.DESTROY, () => {
       if (this.pendingTargetPicker === overlay) {
         this.pendingTargetPicker = null
+        this.ctx.onOpenChange?.(false)
       }
       this.pendingTargetPickerA11yEntries = []
       this.ctx.refreshA11yNav()
@@ -333,6 +339,7 @@ export class TargetPickerController {
 
     this.pendingTargetPicker = overlay
     getRootContainer()?.add(overlay)
+    this.ctx.onOpenChange?.(true)
     this.ctx.refreshA11yNav()
   }
 }
