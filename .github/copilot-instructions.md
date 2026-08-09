@@ -96,3 +96,9 @@ Use checklists; add a new "PR review feedback (round N)" sub-checklist for
 each round. When addressing a reviewer comment, reply with the commit hash
 and a short summary. See
 [`docs/agent/pr-workflow.md`](../docs/agent/pr-workflow.md).
+
+## Code review skill
+
+For pull request reviews, use the repository-scoped `code-review` skill (defined in `.github/skills/code-review/`) when available. It provides review-specific
+guidance for Cardgame performance, user experience, and implementation
+correctness.
