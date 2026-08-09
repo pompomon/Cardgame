@@ -488,15 +488,16 @@ public/sprites/
   a render callback so unit tests can exercise pooling without importing the
   Phaser runtime.
 - Added `src/test/phaser-card-view-registry.test.ts` for idempotent keyed sync,
-  reorder/move tween final positions using shared fake-timer helpers, and pooled
-  hidden-card reset/privacy behavior. Updated view-model, DOM fixture,
-  battlefield-target, module-architecture, and documentation coverage.
+  reorder/move tween final positions using shared fake-timer helpers,
+  animation-disabled snap behavior, and pooled hidden-card reset/privacy
+  behavior. Updated view-model, DOM fixture, battlefield-target,
+  module-architecture, and documentation coverage.
 - Validation performed:
   - Focused:
     `npm run test -- src/test/phaser-card-view-registry.test.ts src/test/view-model.test.ts src/test/phaser-battlefield-targets.test.ts src/test/dom-lobby.test.ts`
-    (37 tests).
+    (38 tests).
   - `npm run lint`.
-  - `npm run test` (67 files / 650 tests).
+  - `npm run test` (67 files / 651 tests).
   - `npm run build` (with the existing non-failing chunk-size advisory).
 
 ## Phase 5 — Add dedicated mouse/touch drag-and-drop controller

@@ -33,7 +33,7 @@ export interface HandControlsContext {
   syncRetainedCard: (options: RetainedCardSyncOptions) => Phaser.GameObjects.Container | null
 }
 
-export function renderHandAndControls(ctx: HandControlsContext, game: GameUiState, presentedActor = game.actor): void {
+export function renderHandAndControls(ctx: HandControlsContext, game: GameUiState, presentedActor = game.actor, animateCardMoves = true): void {
   const scene = ctx.scene
   const layout = ctx.getLayout()
   const rootContainer = ctx.getRootContainer()
@@ -67,7 +67,7 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
         ? () => ctx.submitAction(responseChoice.action)
         : undefined,
       draggable: canDrag && game.legal.playLandByCard[card.id] !== undefined,
-      animate: true,
+      animate: animateCardMoves,
       bindPreview: response
         ? undefined
         : (cardObject, label, dimensions) => ctx.getCardPreview()?.bind(cardObject, label, dimensions),

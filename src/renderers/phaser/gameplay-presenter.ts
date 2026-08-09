@@ -51,8 +51,10 @@ export class GameplayPresenter {
 
     renderGameHeader(ctx, game, view)
 
-    renderBattlefields(ctx, game, presentedActor)
+    const animateCardMoves = view.animationSpeed !== 'off'
+
+    renderBattlefields(ctx, game, presentedActor, animateCardMoves)
     renderPlayerInfoBlocks(ctx, view, presentedActor)
-    renderHandAndControls(ctx, game, presentedActor)
+    renderHandAndControls(ctx, game, presentedActor, animateCardMoves)
   }
 }

@@ -236,6 +236,22 @@ describe('CardViewRegistry', () => {
     expect(second?.x).toBe(100)
   }))
 
+  it('snaps to moved positions without creating tweens when card animation is disabled', () => {
+    const { registry, root, tweens } = createHarness()
+
+    registry.beginFrame(root as never)
+    const card = syncForest(registry, { x: 100, y: 200 })
+    registry.endFrame()
+
+    registry.beginFrame(root as never)
+    syncForest(registry, { x: 220, y: 240, animate: false })
+    registry.endFrame()
+
+    expect(tweens).toHaveLength(0)
+    expect(card?.x).toBe(220)
+    expect(card?.y).toBe(240)
+  })
+
   it('fully resets pooled views before reuse so hidden-card state cannot leak', () => {
     const { registry, root } = createHarness()
 

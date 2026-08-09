@@ -26,7 +26,7 @@ export interface BattlefieldViewContext {
   syncRetainedCard: (options: RetainedCardSyncOptions) => Phaser.GameObjects.Container | null
 }
 
-export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiState, presentedActor = game.actor): void {
+export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiState, presentedActor = game.actor, animateCardMoves = true): void {
   const scene = ctx.scene
   const layout = ctx.getLayout()
   const rootContainer = ctx.getRootContainer()
@@ -93,7 +93,7 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
       height: layout.cardHeight,
       highlight: targetEntry !== null,
       onClick: targetEntry?.onSelect,
-      animate: true,
+      animate: animateCardMoves,
       bindPreview: targetEntry
         ? undefined
         : (renderedCard, label, dimensions) => ctx.getCardPreview()?.bind(renderedCard, label, dimensions),
@@ -159,7 +159,7 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
       height: layout.cardHeight,
       highlight: targetEntry !== null,
       onClick: targetEntry?.onSelect,
-      animate: true,
+      animate: animateCardMoves,
       bindPreview: targetEntry
         ? undefined
         : (renderedCard, label, dimensions) => ctx.getCardPreview()?.bind(renderedCard, label, dimensions),
