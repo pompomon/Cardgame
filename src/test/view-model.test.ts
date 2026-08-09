@@ -155,6 +155,11 @@ describe('buildViewModel', () => {
     expect(vm.game?.events).toEqual(state.game!.events)
     expect(vm.game?.events).not.toBe(state.game!.events)
     expect(vm.game?.events[0]).not.toBe(state.game!.events[0])
+    expect(vm.game?.players[0].battlefield[0]).toEqual({
+      cardId: 'bf-card-1',
+      instanceId: 'bf-1',
+      name: 'Mountain',
+    })
 
     expect(vm.adventure).not.toBe(state.adventure)
     expect(vm.adventure.opponentLineup).not.toBe(state.adventure.opponentLineup)

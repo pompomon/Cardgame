@@ -117,6 +117,7 @@ export interface UiCard {
 export const HIDDEN_HAND_CARD_NAME = '__hidden__'
 
 export interface UiBattlefieldCard {
+  cardId: string
   instanceId: string
   name: string
 }
