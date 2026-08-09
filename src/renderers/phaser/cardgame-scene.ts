@@ -10,9 +10,13 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
+import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
+import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
 import type { AppViewModel } from '../../app/types'
+import { buildPhaserBoardAssetManifest, resolveLoadedBoardBackgroundTextureKey } from './asset-manifest'
+import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
@@ -22,6 +26,7 @@ import { buildLayout, orientationFromViewport, type SceneLayout } from './layout
 import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
 import { BattlefieldTargetsController } from './battlefield-targets'
+import { preloadPhaserBoardAssets, type BoardAssetLoadHandle } from './texture-loader'
 import { installButtonState, popupActionWidth, snapCardToOrigin } from './ui-utils'
 import { UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
@@ -43,6 +48,9 @@ export class CardgameScene extends Phaser.Scene {
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
+  private boardBackground: BoardBackgroundView | null = null
+  private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
+  private boardAssetManifestSignature: string | null = null
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -102,10 +110,21 @@ export class CardgameScene extends Phaser.Scene {
     const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = preloadPhaserBoardAssets(
+      this,
+      view?.boardTheme ?? DEFAULT_BOARD_THEME,
+      view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+    )
+    this.boardAssetManifestSignature = `${view?.boardTheme ?? DEFAULT_BOARD_THEME}:${view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE}`
   }
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
+    this.boardBackground = new BoardBackgroundView({
+      scene: this,
+      getDocumentHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+    })
     this.cardPreview = createCardPreviewController({
       scene: this,
       getRoot: () => this.rootContainer,
@@ -205,13 +224,27 @@ export class CardgameScene extends Phaser.Scene {
       }
     }
     this.scale.on('resize', onResize)
+    const onVisibilityChange = (): void => {
+      this.renderView(this.rendererRef.currentView)
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', onResize)
       this.input.off('drag', onDrag)
       this.input.off('dragend', onDragEnd)
       this.input.off('drop', onDrop)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
       this.cardPreview?.destroy()
       this.cardPreview = null
+      this.boardBackground?.destroy()
+      this.boardBackground = null
+      this.boardAssetLoadHandle?.dispose()
+      this.boardAssetLoadHandle = null
+      this.boardAssetManifestSignature = null
       this.effectController.reset()
       this.boardPresentation.reset()
     })
@@ -246,6 +279,38 @@ export class CardgameScene extends Phaser.Scene {
       this.statusText.setPosition(this.currentLayout.safeAreaLeft + this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset)
       this.statusText.setFontSize(this.currentLayout.bodyFontSize)
     }
+  }
+
+  private syncBoardBackground(view: AppViewModel): void {
+    const manifestSignature = `${view.boardTheme}:${view.renderQualityPreference}`
+    if (manifestSignature !== this.boardAssetManifestSignature) {
+      this.boardAssetLoadHandle?.dispose()
+      this.boardAssetManifestSignature = manifestSignature
+      this.boardAssetLoadHandle = preloadPhaserBoardAssets(
+        this,
+        view.boardTheme,
+        view.renderQualityPreference,
+        () => {
+          if (this.boardAssetManifestSignature === manifestSignature) {
+            this.renderView(this.rendererRef.currentView)
+          }
+        },
+      )
+      this.load.start()
+    }
+    const manifest = buildPhaserBoardAssetManifest(view.boardTheme, view.renderQualityPreference)
+    const backgroundTextureKey = resolveLoadedBoardBackgroundTextureKey(
+      manifest,
+      (key) => this.textures.exists(key),
+    )
+    this.boardBackground?.sync({
+      layout: this.currentLayout,
+      theme: view.boardTheme,
+      quality: view.renderQualityPreference,
+      animationSpeed: view.animationSpeed,
+      backgroundTextureKey,
+      backgroundCandidateKeys: manifest.backgroundCandidates.map((candidate) => candidate.key),
+    })
   }
 
   private clearRoot(): void {
@@ -299,6 +364,7 @@ export class CardgameScene extends Phaser.Scene {
     }
 
     this.setStatus(view.status)
+    this.syncBoardBackground(view)
 
     if (!view.game) {
       this.battlefieldTargets.reset()
