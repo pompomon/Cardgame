@@ -101,9 +101,32 @@ The workflow runs:
 1. `npm ci`
 2. `npm run lint`
 3. `npm run test`
-4. `npm run build`
-5. Upload `dist` artifact
-6. Deploy artifact to Pages
+4. `npm run test:bench`
+5. `npm run build`
+6. Upload `dist` as a one-day Pages artifact
+7. Deploy the artifact to Pages
+8. Delete that exact artifact after a successful deployment
+
+## Actions storage policy
+
+- The workflow deliberately does not persist an npm dependency cache. Each run
+  installs from `package-lock.json` so old dependency caches do not occupy
+  Actions storage between deployments.
+- The Pages artifact is retained for at most one day and its unique ID is passed
+  to the deploy job. A successful deployment deletes that artifact immediately;
+  failed or cancelled deployments leave it available for diagnosis until it
+  expires.
+- After this policy is first deployed, obsolete setup-node entries can be
+  removed from **Actions → Caches**, or left to expire under GitHub's cache
+  policy. Only remove the `node-cache-…-npm-…` entries created by this workflow;
+  dynamic Copilot artifacts are unrelated.
+- Rerun the complete workflow when redeploying an older commit because a
+  successfully deployed run no longer retains its transfer artifact.
+
+After rollout, trigger the workflow manually and confirm that the site deploys,
+the run's `github-pages` artifact is deleted, and no npm cache is created.
+Monitor Actions storage for at least 48 hours; if a persistent baseline remains,
+inventory artifacts from the dynamic Copilot workflows separately.
 
 ## Base path + service worker behavior
 
