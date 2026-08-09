@@ -8,6 +8,8 @@ import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import {
   cardFaceTextureSignature,
   cardMoveDurationMs,
+  shouldAnimateCardDragEnd,
+  shouldResolveCardDrop,
   type CardViewDescriptor,
 } from '../renderers/phaser/card-view'
 import { CardViewRegistry } from '../renderers/phaser/card-view-registry'
@@ -585,6 +587,44 @@ describe('Phaser retained card views', () => {
     container.emit('pointerdown', { id: 4 })
     container.emit('pointerup', { id: 4 })
     expect(submitResponse).toHaveBeenCalledOnce()
+  })
+
+  it('rejects canceled and outside click releases before submitting an action', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+    const submitResponse = vi.fn()
+    sync(registry, harness, [descriptor('response-card', {
+      preview: false,
+      onClick: submitResponse,
+      interactionKey: 'response:response-card',
+    })])
+    const container = registry.get('response-card')!.container as unknown as FakeContainer
+
+    container.emit('pointerdown', { id: 1, wasCanceled: false })
+    container.emit('pointerout', { id: 1, wasCanceled: false })
+    container.emit('pointerup', { id: 1, wasCanceled: false })
+    container.emit('pointerdown', { id: 2, wasCanceled: false })
+    container.emit('pointerup', { id: 2, wasCanceled: true })
+    container.emit('pointerup', { id: 2, wasCanceled: false })
+    expect(submitResponse).not.toHaveBeenCalled()
+
+    container.emit('pointerdown', { id: 3, wasCanceled: false })
+    container.emit('pointerup', { id: 3, wasCanceled: false })
+    expect(submitResponse).toHaveBeenCalledOnce()
+  })
+
+  it('never animates a canceled drag release toward its drop target', () => {
+    expect(shouldAnimateCardDragEnd({ wasCanceled: true }, true, false)).toBe(false)
+    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, false, false)).toBe(false)
+    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, true, true)).toBe(false)
+    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, true, false)).toBe(true)
+  })
+
+  it('resolves drops only for active, uncanceled drags while the menu is closed', () => {
+    expect(shouldResolveCardDrop({ wasCanceled: true }, false, true)).toBe(false)
+    expect(shouldResolveCardDrop({ wasCanceled: false }, true, true)).toBe(false)
+    expect(shouldResolveCardDrop({ wasCanceled: false }, false, false)).toBe(false)
+    expect(shouldResolveCardDrop({ wasCanceled: false }, false, true)).toBe(true)
   })
 
   it('recreates hit areas after card dimensions change', () => {

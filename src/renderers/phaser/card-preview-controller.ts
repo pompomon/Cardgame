@@ -94,6 +94,7 @@ export function createCardPreviewController(options: {
         }
       })
       card.on('pointerout', () => {
+        sourcePointerActive = false
         if (pinnedLabel === null) {
           clear()
         }
@@ -112,7 +113,7 @@ export function createCardPreviewController(options: {
         sourcePointerActive = false
       })
       card.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-        if (dragged || Phaser.Math.Distance.Between(downX, downY, pointer.x, pointer.y) > TAP_DISTANCE) {
+        if (pointer.wasCanceled || dragged || Phaser.Math.Distance.Between(downX, downY, pointer.x, pointer.y) > TAP_DISTANCE) {
           sourcePointerActive = false
           return
         }
@@ -121,9 +122,6 @@ export function createCardPreviewController(options: {
         } else {
           show(label, true)
         }
-        sourcePointerActive = false
-      })
-      card.on('pointerupoutside', () => {
         sourcePointerActive = false
       })
     },

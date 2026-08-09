@@ -20,6 +20,7 @@ import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
+import { isCanceledPhaserPointer, shouldAnimateCardDragEnd, shouldResolveCardDrop } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
@@ -183,22 +184,28 @@ export class CardgameScene extends Phaser.Scene {
     }
     this.input.on('drag', onDrag)
 
-    const onDragEnd = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
+    const onDragEnd = (pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
       const card = object as Phaser.GameObjects.Container
-      this.cardViews?.endDrag(card, dropped && !this.menuOpen)
-      if (this.menuOpen) {
-        snapCardToOrigin(card)
-        return
-      }
-      if (!dropped) {
+      const animateToTarget = shouldAnimateCardDragEnd(pointer, dropped, this.menuOpen)
+      this.cardViews?.endDrag(card, animateToTarget)
+      if (!animateToTarget) {
         snapCardToOrigin(card)
       }
     }
     this.input.on('dragend', onDragEnd)
 
-    const onDrop = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone): void => {
+    const onDrop = (pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone): void => {
       const card = object as Phaser.GameObjects.Container
-      if (this.menuOpen || !this.cardViews?.isActiveDrag(card)) {
+      if (isCanceledPhaserPointer(pointer)) {
+        this.cardViews?.endDrag(card, false)
+        snapCardToOrigin(card)
+        return
+      }
+      if (!shouldResolveCardDrop(
+        pointer,
+        this.menuOpen,
+        this.cardViews?.isActiveDrag(card) ?? false,
+      )) {
         return
       }
       const game = this.rendererRef.currentView?.game
