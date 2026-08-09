@@ -398,11 +398,20 @@ public/sprites/
   retained image identity, theme-switch texture eviction, and quality,
   reduced-motion, hidden-page, and phone-sized ambience bounds. Updated depth
   and module-architecture tests for the new layer/module.
-- Validation performed so far:
+- Validation performed:
   - Targeted:
     `npm run test -- src/test/phaser-board-background.test.ts src/test/phaser-depth.test.ts src/test/phaser-module-architecture.test.ts`
-    (36 tests).
+    (37 tests).
   - `npm run lint`.
+  - `npm run test` (66 files / 642 tests).
+  - `npm run build` (with the existing non-failing chunk-size advisory).
+  - `codeql_checker` (0 alerts).
+- Independent `code-review` subagent review inspected the actual diff and
+  relevant Phaser code. It found one merge-blocking lifecycle issue: the active
+  large board texture was not evicted on scene shutdown. The blocker was fixed
+  by removing tracked background textures in `BoardBackgroundView.destroy()`
+  and adding a regression test; a focused follow-up `code-review` reported no
+  remaining blockers.
 - Known limitations/deferred work: manual desktop/mobile smoke, broader
   performance traces, retained cards, dedicated drag, drop-zone visuals, and
   full final-verification subagent checklist items remain deferred to later
