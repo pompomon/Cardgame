@@ -326,7 +326,9 @@ describe('BoardBackgroundView', () => {
     expect(background.textureKey).toBe(classicBackground)
     expect(background.crop).toEqual({ x: 0, y: 0, width: 1920, height: 1080 })
 
-    view.sync(settings, { width: 390, height: 844 }, assets, visibleEnvironment)
+    for (let index = 0; index < 100; index += 1) {
+      view.sync(settings, { width: 390, height: 844 }, assets, visibleEnvironment)
+    }
     expect(harness.images).toEqual(retainedImages)
     expect(harness.images[0]).toBe(background)
     expect(background.x).toBe(195)
