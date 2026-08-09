@@ -65,7 +65,6 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      actions: write
       pages: write
       id-token: write
     environment:
@@ -76,6 +75,13 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
+  cleanup:
+    needs: [build, deploy]
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
       - name: Delete deployed artifact
         env:
           GH_TOKEN: ${{ github.token }}
