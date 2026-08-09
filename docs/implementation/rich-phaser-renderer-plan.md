@@ -8,7 +8,7 @@
 - [x] Phase 3 — Implement persistent board background and adaptive ambience
 - [x] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 - [x] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
-- [ ] Phase 6 — Add drop-zone visuals and contextual interaction feedback
+- [x] Phase 6 — Add drop-zone visuals and contextual interaction feedback
 - [ ] Phase 7 — Implement adaptive desktop/mobile performance policy
 - [ ] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
 - [ ] Phase 9 — Add regression, lifecycle, and performance verification
@@ -203,6 +203,32 @@ final-verification checklist items remain deferred and unchecked.
 - Invalid persisted values are rejected safely.
 - DOM and Phaser expose equivalent user-facing choices.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 6 implementation notes (2026-08-09)
+
+- Added retained Phaser feedback owners:
+  - `src/renderers/phaser/drop-zone-view.ts` keeps one battlefield outline,
+    contextual label, and reusable target-ring pool outside the transient
+    gameplay root.
+  - `src/renderers/phaser/interaction-feedback.ts` maps drag state and shared
+    app visual-effect descriptors to feedback labels with a safe unknown-kind
+    fallback.
+- `CardgameScene` owns and cleans up the feedback view. `DragController`
+  reports retained drag-state and pointer updates so move handling only updates
+  existing visual properties; it does not create Phaser display objects.
+  Legal playability remains projected from `GameUiState.legal`, and
+  `visualEffectForEvent` remains the shared app-level semantic source.
+- Highlighted playable hand cards and battlefield targets now provide clear
+  visual affordances alongside the existing native accessibility controls and
+  target picker.
+- Added `src/test/phaser-drop-zone-view.test.ts` and
+  `src/test/phaser-interaction-feedback.test.ts`; expanded the Phaser module
+  architecture guard. Coverage includes valid/invalid feedback, target rings,
+  1,000 pointer updates without new Phaser objects, cleanup, known effect
+  labels, and unknown-descriptor fallback.
+- Validation passed: `npm run lint`, `npm run test` (73 files / 690 tests),
+  and `npm run build` (with the existing non-failing chunk-size advisory).
+  CodeQL is recorded with the implementation validation.
 
 ### Phase 1 implementation notes (2026-08-08)
 
