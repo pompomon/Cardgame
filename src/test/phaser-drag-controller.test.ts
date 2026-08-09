@@ -343,6 +343,22 @@ describe('DragController', () => {
     expect(harness.submitted).toEqual([playAction])
   })
 
+  it('ignores overlapping pointers until the active pointer completes', () => {
+    const harness = createHarness()
+    start(harness, pointer(1, 80, 600, 'touch'))
+    harness.input.emit('pointermove', pointer(1, 100, 600, 'touch'))
+    start(harness, pointer(2, 80, 600, 'touch'))
+    harness.input.emit('pointermove', pointer(2, 420, 220, 'touch'))
+    harness.input.emit('pointerup', pointer(2, 420, 220, 'touch'))
+
+    expect(harness.createProxy).toHaveBeenCalledOnce()
+    expect(harness.submitted).toEqual([])
+
+    harness.input.emit('pointermove', pointer(1, 420, 220, 'touch'))
+    harness.input.emit('pointerup', pointer(1, 420, 220, 'touch'))
+    expect(harness.submitted).toEqual([playAction])
+  })
+
   it('returns invalid drops with a bounded tween and blocks overlapping drags', () => {
     const harness = createHarness()
     start(harness)
