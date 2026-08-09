@@ -144,7 +144,7 @@ export class DropZoneView {
       marker.container
         .setPosition(descriptor.bounds.x, descriptor.bounds.y)
         .setVisible(true)
-      marker.fill.setDisplaySize(
+      marker.fill.setSize(
         descriptor.bounds.width + MARKER_PADDING,
         descriptor.bounds.height + MARKER_PADDING,
       )
@@ -264,7 +264,7 @@ export class DropZoneView {
   ): void {
     visual.fill
       .setPosition(area.bounds.x, area.bounds.y)
-      .setDisplaySize(area.bounds.width, area.bounds.height)
+      .setSize(area.bounds.width, area.bounds.height)
     visual.outline
       ?.setPosition(area.bounds.x, area.bounds.y)
       .setDisplaySize(area.bounds.width, area.bounds.height)
