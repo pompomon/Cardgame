@@ -38,7 +38,12 @@ class FakeContainer {
   readonly children: FakeContainer[] = []
   readonly listeners = new Map<string, Listener[]>()
   parentContainer: FakeContainer | null = null
-  input: { enabled: boolean; draggable: boolean } | null = null
+  input: {
+    enabled: boolean
+    draggable: boolean
+    hitWidth: number
+    hitHeight: number
+  } | null = null
   destroyed = false
   visible = true
   alpha = 1
@@ -86,6 +91,15 @@ class FakeContainer {
     }
     this.children.splice(currentIndex, 1)
     this.children.splice(Math.max(0, Math.min(index, this.children.length)), 0, child)
+    return this
+  }
+
+  bringToTop(child: FakeContainer): this {
+    return this.moveTo(child, this.children.length - 1)
+  }
+
+  sort(property: 'depth'): this {
+    this.children.sort((first, second) => first[property] - second[property])
     return this
   }
 
@@ -137,7 +151,12 @@ class FakeContainer {
   }
 
   setInteractive(): this {
-    this.input = { enabled: true, draggable: this.input?.draggable ?? false }
+    this.input = {
+      enabled: true,
+      draggable: false,
+      hitWidth: this.width,
+      hitHeight: this.height,
+    }
     return this
   }
 
@@ -145,6 +164,11 @@ class FakeContainer {
     if (this.input) {
       this.input.enabled = false
     }
+    return this
+  }
+
+  removeInteractive(): this {
+    this.input = null
     return this
   }
 
@@ -162,6 +186,12 @@ class FakeContainer {
       this.listeners.delete(event)
     }
     return this
+  }
+
+  emit(event: string, ...args: unknown[]): void {
+    for (const listener of [...(this.listeners.get(event) ?? [])]) {
+      listener(...args)
+    }
   }
 
   listenerCount(): number {
@@ -223,7 +253,12 @@ function createHarness(): Harness {
     },
     input: {
       setDraggable: (container: FakeContainer, value = true) => {
-        container.input ??= { enabled: value, draggable: value }
+        container.input ??= {
+          enabled: value,
+          draggable: value,
+          hitWidth: container.width,
+          hitHeight: container.height,
+        }
         container.input.enabled = value
         container.input.draggable = value
       },
@@ -417,7 +452,7 @@ describe('Phaser retained card views', () => {
     expect(container.children).toEqual([])
     expect(container.data.values.size).toBe(0)
     expect(container.listenerCount()).toBe(0)
-    expect(container.input).toEqual({ enabled: false, draggable: false })
+    expect(container.input).toBeNull()
     expect(hiddenFace.destroyed).toBe(true)
 
     sync(registry, harness, [descriptor('public-card', { name: 'Island' })])
@@ -452,6 +487,129 @@ describe('Phaser retained card views', () => {
     sync(registry, harness, [card])
     sync(registry, harness, [card])
     expect(harness.renderCard).toHaveBeenCalledTimes(3)
+  })
+
+  it('requires a fresh pointer down before a pooled view can submit its new action', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+    sync(registry, harness, [descriptor('dragged-card', {
+      draggable: true,
+      preview: false,
+      interactionKey: 'drag:dragged-card',
+    })])
+    const container = registry.get('dragged-card')!.container as unknown as FakeContainer
+    container.emit('pointerdown', { id: 3 })
+
+    const submitResponse = vi.fn()
+    sync(registry, harness, [descriptor('response-card', {
+      name: 'Island',
+      preview: false,
+      onClick: submitResponse,
+      interactionKey: 'response:response-card',
+    })])
+    expect(registry.get('response-card')!.container).toBe(container)
+
+    container.emit('pointerup', { id: 3 })
+    expect(submitResponse).not.toHaveBeenCalled()
+    container.emit('pointerdown', { id: 4 })
+    container.emit('pointerup', { id: 4 })
+    expect(submitResponse).toHaveBeenCalledOnce()
+  })
+
+  it('recreates hit areas after card dimensions change', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+    const onClick = vi.fn()
+    sync(registry, harness, [descriptor('sized-card', {
+      preview: false,
+      onClick,
+      interactionKey: 'click:sized-card',
+      width: 80,
+      height: 110,
+    })])
+    const container = registry.get('sized-card')!.container as unknown as FakeContainer
+    expect(container.input).toMatchObject({ hitWidth: 80, hitHeight: 110 })
+
+    sync(registry, harness, [descriptor('sized-card', {
+      preview: false,
+      onClick,
+      interactionKey: 'click:sized-card',
+      width: 120,
+      height: 160,
+    })])
+    expect(container.input).toMatchObject({ hitWidth: 120, hitHeight: 160 })
+  })
+
+  it('keeps the stable card layer between chrome and modal controls', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+    const chrome = new FakeContainer()
+    const modal = new FakeContainer()
+    harness.root.add(chrome)
+    sync(registry, harness, [descriptor('layered-card')])
+    harness.root.add(modal)
+    expect(harness.root.children).toEqual([
+      chrome,
+      registry.layer,
+      modal,
+    ])
+
+    harness.root.remove(chrome, true)
+    harness.root.remove(modal, true)
+    const nextChrome = new FakeContainer()
+    const nextModal = new FakeContainer()
+    harness.root.add(nextChrome)
+    sync(registry, harness, [descriptor('layered-card')])
+    harness.root.add(nextModal)
+    expect(harness.root.children).toEqual([
+      nextChrome,
+      registry.layer,
+      nextModal,
+    ])
+  })
+
+  it('defers zone movement during drag and snaps interrupted drags safely', () => {
+    withFakeTimers(() => {
+      const harness = createHarness()
+      const registry = createRegistry(harness)
+      const handCard = descriptor('drag-card', {
+        draggable: true,
+        x: 80,
+        y: 600,
+        interactionKey: 'drag:drag-card',
+      })
+      sync(registry, harness, [handCard], 'normal')
+      const container = registry.get('drag-card')!.container as unknown as FakeContainer
+      registry.beginDrag(container as never)
+      container.setPosition(250, 500)
+
+      const battlefieldCard = descriptor('drag-card', {
+        instanceId: 'instance-9',
+        zone: 'battlefield',
+        x: 420,
+        y: 350,
+        interactionKey: 'preview:battlefield:drag-card',
+      })
+      sync(registry, harness, [battlefieldCard], 'normal')
+      expect(harness.tweenCount()).toBe(0)
+      expect(container.x).toBe(250)
+
+      registry.endDrag(container as never, true)
+      expect(harness.tweenCount()).toBe(1)
+      vi.advanceTimersByTime(cardMoveDurationMs('normal'))
+      expect(container.x).toBe(420)
+      expect(container.y).toBe(350)
+
+      sync(registry, harness, [handCard], 'off')
+      registry.beginDrag(container as never)
+      container.setPosition(300, 520)
+      sync(registry, harness, [handCard], 'off')
+      expect(container.x).toBe(300)
+      registry.cancelActiveDrags()
+      expect(container.x).toBe(80)
+      expect(container.y).toBe(600)
+      registry.destroy()
+    })
   })
 
   it('cancels retained resources and destroys active and pooled views idempotently', () => {

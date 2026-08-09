@@ -78,7 +78,9 @@ export class CardViewRegistry {
       if (!view) {
         view = this.pool.acquire()
         this.active.set(descriptor.cardId, view)
-        this.layer.add(view.container)
+        if (view.container.parentContainer !== this.layer) {
+          this.layer.add(view.container)
+        }
       } else if (view.container.parentContainer !== this.layer) {
         this.layer.add(view.container)
       }
@@ -95,9 +97,20 @@ export class CardViewRegistry {
     this.attach(options.root)
   }
 
-  detach(): void {
-    const parent = this.layer.parentContainer as Phaser.GameObjects.Container | null
-    parent?.remove(this.layer, false)
+  beginDrag(container: Phaser.GameObjects.Container): void {
+    this.findByContainer(container)?.beginDrag()
+  }
+
+  endDrag(container: Phaser.GameObjects.Container, animateToTarget: boolean): void {
+    this.findByContainer(container)?.endDrag(animateToTarget)
+  }
+
+  cancelActiveDrags(): void {
+    for (const view of this.active.values()) {
+      if (view.isDragging) {
+        view.cancelDrag()
+      }
+    }
   }
 
   reset(): void {
@@ -111,7 +124,6 @@ export class CardViewRegistry {
       return
     }
     this.destroyed = true
-    this.detach()
     for (const view of this.active.values()) {
       view.destroy()
     }
@@ -122,17 +134,25 @@ export class CardViewRegistry {
 
   private attach(root: Phaser.GameObjects.Container): void {
     if (this.layer.parentContainer === root) {
+      root.bringToTop(this.layer)
       return
     }
-    this.detach()
+    const parent = this.layer.parentContainer as Phaser.GameObjects.Container | null
+    parent?.remove(this.layer, false)
     root.add(this.layer)
   }
 
   private release(cardId: string, view: CardView): void {
     this.active.delete(cardId)
-    if (view.container.parentContainer === this.layer) {
-      this.layer.remove(view.container, false)
-    }
     this.pool.release(view)
+  }
+
+  private findByContainer(container: Phaser.GameObjects.Container): CardView | null {
+    for (const view of this.active.values()) {
+      if (view.container === container) {
+        return view
+      }
+    }
+    return null
   }
 }

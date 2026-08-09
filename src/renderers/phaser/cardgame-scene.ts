@@ -162,6 +162,14 @@ export class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.bodyFontSize,
     })
 
+    const onDragStart = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject): void => {
+      if (this.menuOpen) {
+        return
+      }
+      this.cardViews?.beginDrag(object as Phaser.GameObjects.Container)
+    }
+    this.input.on('dragstart', onDragStart)
+
     const onDrag = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number): void => {
       if (this.menuOpen) {
         return
@@ -174,6 +182,7 @@ export class CardgameScene extends Phaser.Scene {
 
     const onDragEnd = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
       const card = object as Phaser.GameObjects.Container
+      this.cardViews?.endDrag(card, dropped && !this.menuOpen)
       if (this.menuOpen) {
         snapCardToOrigin(card)
         return
@@ -202,6 +211,7 @@ export class CardgameScene extends Phaser.Scene {
       const resolution = resolvePlayLandDrop(game, cardId)
       if (resolution.kind === 'invalid') {
         this.setStatus('Invalid drop. Choose a playable card.')
+        this.cardViews?.endDrag(card, false)
         snapCardToOrigin(card)
         return
       }
@@ -209,9 +219,11 @@ export class CardgameScene extends Phaser.Scene {
       if (resolution.kind === 'single') {
         this.battlefieldTargets.clearPendingPlayLandTargetSelection()
         this.rendererRef.controller?.submitAction(resolution.action)
+        this.cardViews?.endDrag(card, true)
         return
       }
 
+      this.cardViews?.endDrag(card, false)
       snapCardToOrigin(card)
       const mode = resolvePlayLandTargetSelectionMode(game, cardId)
       if (mode === 'battlefield_highlight') {
@@ -237,12 +249,14 @@ export class CardgameScene extends Phaser.Scene {
     // when the user goes Back to Lobby and then starts a new match) does not
     // accumulate duplicate listeners on the reused scene instance.
     const onResize = (): void => {
+      this.cardViews?.cancelActiveDrags()
       if (this.updateLayout()) {
         this.renderView(this.rendererRef.currentView)
       }
     }
     this.scale.on('resize', onResize)
     const onVisibilityChange = (): void => {
+      this.cardViews?.cancelActiveDrags()
       this.renderView(this.rendererRef.currentView)
     }
     if (typeof document !== 'undefined') {
@@ -250,6 +264,7 @@ export class CardgameScene extends Phaser.Scene {
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', onResize)
+      this.input.off('dragstart', onDragStart)
       this.input.off('drag', onDrag)
       this.input.off('dragend', onDragEnd)
       this.input.off('drop', onDrop)
@@ -333,12 +348,18 @@ export class CardgameScene extends Phaser.Scene {
     })
   }
 
-  private clearRoot(): void {
+  private clearRoot(preservedOverlay: Phaser.GameObjects.Container | null): void {
     const wasMenuOpen = this.menuOpen
     this.menuOverlay = null
     this.cardPreview?.clear()
-    this.cardViews?.detach()
-    this.rootContainer?.removeAll(true)
+    const cardLayer = this.cardViews?.layer ?? null
+    if (this.rootContainer) {
+      for (const child of this.rootContainer.getAll()) {
+        if (child !== cardLayer && child !== preservedOverlay) {
+          this.rootContainer.remove(child, true)
+        }
+      }
+    }
     this.battlefieldTargets.clearTransientEntries()
     this.targetPicker.clearTransientPickerState()
     this.battlefieldDropZone = null
@@ -372,13 +393,12 @@ export class CardgameScene extends Phaser.Scene {
     let preservedOverlay: Phaser.GameObjects.Container | null = null
     if (
       currentMenuSignature !== null
-      && currentMenuSignature === this.lastMenuSignature
+      &&       currentMenuSignature === this.lastMenuSignature
       && this.menuOverlay
     ) {
       preservedOverlay = this.menuOverlay
-      this.rootContainer?.remove(preservedOverlay, false)
     }
-    this.clearRoot()
+    this.clearRoot(preservedOverlay)
     if (!view || !this.rootContainer) {
       this.battlefieldTargets.reset()
       this.cardViews?.reset()
@@ -411,7 +431,7 @@ export class CardgameScene extends Phaser.Scene {
     this.effectController.processAbilityEffects(view, presentedActor)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay
-      this.rootContainer.add(preservedOverlay)
+      this.rootContainer.bringToTop(preservedOverlay)
     } else if (this.menuOpen) {
       this.openMenuOverlay(view)
     }
@@ -489,6 +509,7 @@ export class CardgameScene extends Phaser.Scene {
     }
 
     this.cardPreview?.clear()
+    this.cardViews?.cancelActiveDrags()
     this.targetPicker.closeTargetPickerOverlay()
     this.battlefieldTargets.reset()
     this.menuOpen = true

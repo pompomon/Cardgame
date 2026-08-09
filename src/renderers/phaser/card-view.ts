@@ -78,7 +78,10 @@ export class CardView {
   private assignedCardId: string | null = null
   private targetX = 0
   private targetY = 0
+  private moveDurationMs = 0
   private moveTween: Phaser.Tweens.Tween | null = null
+  private dragging = false
+  private draggable = false
   private destroyed = false
 
   constructor(ctx: CardViewContext) {
@@ -91,6 +94,10 @@ export class CardView {
 
   get cardId(): string | null {
     return this.assignedCardId
+  }
+
+  get isDragging(): boolean {
+    return this.dragging
   }
 
   sync(options: CardViewSyncOptions): void {
@@ -113,6 +120,7 @@ export class CardView {
     this.container.setData('zone', options.zone)
     this.container.setData('originX', options.x)
     this.container.setData('originY', options.y)
+    this.draggable = options.draggable
 
     const textureSignature = cardFaceTextureSignature(
       options.name,
@@ -152,6 +160,34 @@ export class CardView {
     this.syncPosition(options, wasAssigned)
   }
 
+  beginDrag(): void {
+    if (this.destroyed || !this.draggable || this.assignedCardId === null) {
+      return
+    }
+    this.cancelMoveTween()
+    this.dragging = true
+  }
+
+  endDrag(animateToTarget: boolean): void {
+    if (!this.dragging) {
+      return
+    }
+    this.dragging = false
+    if (animateToTarget) {
+      this.moveToTarget()
+    } else {
+      this.cancelMoveTween()
+      this.container.setPosition(this.targetX, this.targetY)
+    }
+  }
+
+  cancelDrag(): void {
+    if (!this.dragging) {
+      return
+    }
+    this.endDrag(false)
+  }
+
   resetForPool(): void {
     if (this.destroyed) {
       return
@@ -173,6 +209,9 @@ export class CardView {
     this.assignedCardId = null
     this.targetX = 0
     this.targetY = 0
+    this.moveDurationMs = 0
+    this.dragging = false
+    this.draggable = false
   }
 
   destroy(): void {
@@ -205,7 +244,26 @@ export class CardView {
       this.scene.input.setDraggable(this.container)
     }
     if (options.onClick) {
-      this.container.on('pointerup', options.onClick)
+      let pointerDown = false
+      let pointerId: number | null = null
+      const clearPointer = (): void => {
+        pointerDown = false
+        pointerId = null
+      }
+      this.container.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        pointerDown = true
+        pointerId = Number.isInteger(pointer?.id) ? pointer.id : null
+      })
+      this.container.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+        const releasedPointerId = Number.isInteger(pointer?.id) ? pointer.id : null
+        const matchesPointer = pointerDown
+          && (pointerId === null || releasedPointerId === null || pointerId === releasedPointerId)
+        clearPointer()
+        if (matchesPointer) {
+          options.onClick?.()
+        }
+      })
+      this.container.on('pointerupoutside', clearPointer)
     }
     if (options.preview) {
       this.bindPreview?.(
@@ -221,7 +279,7 @@ export class CardView {
     if (this.container.input) {
       this.scene.input.setDraggable(this.container, false)
     }
-    this.container.disableInteractive()
+    this.container.removeInteractive()
     this.container.removeAllListeners()
   }
 
@@ -229,6 +287,7 @@ export class CardView {
     const positionChanged = options.x !== this.targetX || options.y !== this.targetY
     this.targetX = options.x
     this.targetY = options.y
+    this.moveDurationMs = cardMoveDurationMs(options.animationSpeed)
 
     if (!wasAssigned) {
       this.cancelMoveTween()
@@ -236,26 +295,41 @@ export class CardView {
       return
     }
 
-    const duration = cardMoveDurationMs(options.animationSpeed)
+    if (this.dragging) {
+      return
+    }
+
     if (!positionChanged) {
-      if (duration === 0 && this.moveTween) {
+      if (this.moveDurationMs === 0 && this.moveTween) {
         this.cancelMoveTween()
         this.container.setPosition(options.x, options.y)
+      } else if (
+        !this.moveTween
+        && (this.container.x !== this.targetX || this.container.y !== this.targetY)
+      ) {
+        this.container.setPosition(this.targetX, this.targetY)
       }
       return
     }
 
+    this.moveToTarget()
+  }
+
+  private moveToTarget(): void {
     this.cancelMoveTween()
-    if (duration === 0) {
-      this.container.setPosition(options.x, options.y)
+    if (
+      this.moveDurationMs === 0
+      || (this.container.x === this.targetX && this.container.y === this.targetY)
+    ) {
+      this.container.setPosition(this.targetX, this.targetY)
       return
     }
 
     const tween = this.scene.tweens.add({
       targets: this.container,
-      x: options.x,
-      y: options.y,
-      duration,
+      x: this.targetX,
+      y: this.targetY,
+      duration: this.moveDurationMs,
       ease: 'Cubic.Out',
       onComplete: () => {
         if (this.moveTween !== tween) {

@@ -86,8 +86,11 @@ describe('phaser renderer module architecture', () => {
     expect(battlefieldSource).not.toContain('renderStaticCard')
     expect(handSource).not.toContain('renderStaticCard')
     expect(presenterSource).toContain('ctx.syncCardViews')
-    expect(sceneSource.indexOf('this.cardViews?.detach()')).toBeLessThan(
-      sceneSource.indexOf('this.rootContainer?.removeAll(true)'),
+    expect(presenterSource.indexOf('ctx.syncCardViews')).toBeLessThan(
+      presenterSource.indexOf('renderHandAndControls(ctx'),
     )
+    expect(sceneSource).toContain('child !== cardLayer')
+    expect(sceneSource).not.toContain('this.cardViews?.detach()')
+    expect(sceneSource).not.toContain('this.rootContainer?.removeAll(true)')
   })
 })

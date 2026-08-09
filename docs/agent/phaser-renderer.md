@@ -45,13 +45,17 @@ Visible hand and battlefield cards use the retained path in `card-view.ts`,
 `card-view-pool.ts`, and `card-view-registry.ts`. The app view model projects
 both stable `cardId` and targeting-only `instanceId` values for battlefield
 cards. `battlefield-view.ts` and `hand-controls.ts` now emit descriptors;
-`GameplayPresenter` reconciles them once per pass. The registry detaches its
-stable layer before the remaining gameplay root is rebuilt, then reattaches it
-after sync. Pool release destroys every face child and clears data, listeners,
-input, drag state, alpha, depth, scale, rotation, and active tweens before an
-outer container can be reused. Static cards outside the board (previews,
-effect retention, log tiles, and target choices) continue to use
-`card-factory.ts`.
+`GameplayPresenter` reconciles them once per pass before phase controls and
+modal pickers are added. `CardgameScene` preserves the stable card layer while
+destroying the gameplay root's transient siblings; the registry reorders that
+existing child in place rather than detaching/re-adding it and accumulating
+Phaser child-destroy listeners. Pool release destroys every face child and
+clears data, listeners, input/hit areas, drag state, alpha, depth, scale,
+rotation, and active tweens before an outer container can be reused. Click
+handlers require a pointer-down from their current assignment so synchronous
+pool reuse during a drop cannot submit a second action from the same release.
+Static cards outside the board (previews, effect retention, log tiles, and
+target choices) continue to use `card-factory.ts`.
 
 Because `lobby-scene.ts` and `cardgame-scene.ts` must never import the
 composition root (that would create a cycle), they depend on the structural

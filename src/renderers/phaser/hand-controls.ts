@@ -29,19 +29,17 @@ export interface HandControlsContext {
   setStatus: (message: string) => void
 }
 
-export function renderHandAndControls(
+export function buildHandCardDescriptors(
   ctx: HandControlsContext,
   game: GameUiState,
   presentedActor = game.actor,
 ): CardViewDescriptor[] {
-  const scene = ctx.scene
   const layout = ctx.getLayout()
-  const rootContainer = ctx.getRootContainer()
-  const { battlefieldTargets, targetPicker } = ctx
   const actor = presentedActor
   const actorCards = game.players[actor].handCards
   const presentationIsCurrent = actor === game.actor
-  const canDrag = presentationIsCurrent && game.canInput && game.phase === 'main' && battlefieldTargets.getPendingPlayLandTargetSelection() === null
+  const canDrag = presentationIsCurrent && game.canInput && game.phase === 'main'
+    && ctx.battlefieldTargets.getPendingPlayLandTargetSelection() === null
   const response = presentationIsCurrent && game.canInput && game.phase === 'respond'
     ? buildCounterHandOptions(game)
     : null
@@ -74,7 +72,23 @@ export function renderHandAndControls(
         : `${draggable ? 'drag' : 'static'}:preview:hand:${card.id}:${card.name}`,
     })
   })
+  return cards
+}
 
+export function renderHandAndControls(
+  ctx: HandControlsContext,
+  game: GameUiState,
+  presentedActor = game.actor,
+): void {
+  const scene = ctx.scene
+  const layout = ctx.getLayout()
+  const rootContainer = ctx.getRootContainer()
+  const { battlefieldTargets, targetPicker } = ctx
+  const actor = presentedActor
+  const presentationIsCurrent = actor === game.actor
+  const response = presentationIsCurrent && game.canInput && game.phase === 'respond'
+    ? buildCounterHandOptions(game)
+    : null
   if (presentationIsCurrent && game.canInput && game.phase === 'plains_target') {
     if (!targetPicker.isTargetPickerOpen()) {
       const options: Array<{ effectTargetId: string; label: string; action: GameAction }> = game.legal.plainsReuseOptions.map((option, index) => ({
@@ -93,7 +107,7 @@ export function renderHandAndControls(
             allowCancel: false,
           },
         )
-        return cards
+        return
       }
       const mode = resolvePlainsReuseTargetSelectionMode(game)
       if (mode === 'popup_cards' && options.length > 0) {
@@ -119,7 +133,7 @@ export function renderHandAndControls(
         ctx.setStatus('Choose a highlighted battlefield target.')
       }
     }
-    return cards
+    return
   }
   if (presentationIsCurrent && game.canInput && game.phase === 'swamp_target') {
     if (!targetPicker.isTargetPickerOpen()) {
@@ -145,7 +159,7 @@ export function renderHandAndControls(
         },
       )
     }
-    return cards
+    return
   }
   if (presentationIsCurrent && game.canInput && game.phase === 'respond') {
     if (response && rootContainer) {
@@ -159,7 +173,7 @@ export function renderHandAndControls(
         onPass: () => ctx.submitAction({ type: 'pass_response', actor: game.actor }),
       })
     }
-    return cards
+    return
   }
 
   if (presentationIsCurrent && game.canInput && game.legal.canEndTurn && game.phase === 'main' && battlefieldTargets.getBattlefieldTargetEntries().length === 0) {
@@ -176,5 +190,4 @@ export function renderHandAndControls(
       ctx.submitAction({ type: 'end_turn', actor: game.actor })
     }, endTurnWidth, endTurnHeight))
   }
-  return cards
 }

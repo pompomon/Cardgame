@@ -12,7 +12,7 @@ import { renderBattlefields } from './battlefield-view'
 import type { CardViewDescriptor } from './card-view'
 import type { EffectController } from './effect-controller'
 import { renderGameHeader } from './game-header'
-import { renderHandAndControls } from './hand-controls'
+import { buildHandCardDescriptors, renderHandAndControls } from './hand-controls'
 import type { SceneLayout } from './layout'
 import { renderPlayerInfoBlocks } from './player-info'
 import type { TargetPickerController } from './target-picker'
@@ -50,7 +50,9 @@ export class GameplayPresenter {
 
     const battlefieldCards = renderBattlefields(ctx, game, presentedActor)
     renderPlayerInfoBlocks(ctx, view, presentedActor)
-    const handCards = renderHandAndControls(ctx, game, presentedActor)
+    const handCards = buildHandCardDescriptors(ctx, game, presentedActor)
     ctx.syncCardViews([...battlefieldCards, ...handCards], view)
+    renderHandAndControls(ctx, game, presentedActor)
+    ctx.getRootContainer()?.sort('depth')
   }
 }
