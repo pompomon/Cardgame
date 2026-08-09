@@ -74,6 +74,7 @@ export interface BoardAssetLoadHandle {
 interface BoardAssetLoaderOptions {
   readonly failedUrls?: FailedAssetUrlRegistry
   readonly onFailure?: (failure: AssetLoadFailure) => void
+  readonly onComplete?: () => void
 }
 
 const failedRuntimeAssetUrls = new FailedAssetUrlRegistry()
@@ -269,6 +270,7 @@ export function loadPhaserBoardAssetManifest(
       }
     }
     dispose()
+    options.onComplete?.()
   }
 
   port.onFileError(onFileError)
@@ -343,9 +345,11 @@ export function preloadPhaserBoardAssets(
   scene: Phaser.Scene,
   theme: BoardTheme,
   quality: RenderQualityPreference,
+  onComplete?: () => void,
 ): BoardAssetLoadHandle {
   return loadPhaserBoardAssetManifest(
     textureLoaderPortForScene(scene),
     buildPhaserBoardAssetManifest(theme, quality),
+    { onComplete },
   )
 }

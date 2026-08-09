@@ -50,6 +50,7 @@ export class CardgameScene extends Phaser.Scene {
   private cardPreview: CardPreviewController | null = null
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
+  private boardAssetManifestSignature: string | null = null
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -115,6 +116,7 @@ export class CardgameScene extends Phaser.Scene {
       view?.boardTheme ?? DEFAULT_BOARD_THEME,
       view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
     )
+    this.boardAssetManifestSignature = `${view?.boardTheme ?? DEFAULT_BOARD_THEME}:${view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE}`
   }
 
   create(): void {
@@ -242,6 +244,7 @@ export class CardgameScene extends Phaser.Scene {
       this.boardBackground = null
       this.boardAssetLoadHandle?.dispose()
       this.boardAssetLoadHandle = null
+      this.boardAssetManifestSignature = null
       this.effectController.reset()
       this.boardPresentation.reset()
     })
@@ -279,6 +282,22 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   private syncBoardBackground(view: AppViewModel): void {
+    const manifestSignature = `${view.boardTheme}:${view.renderQualityPreference}`
+    if (manifestSignature !== this.boardAssetManifestSignature) {
+      this.boardAssetLoadHandle?.dispose()
+      this.boardAssetManifestSignature = manifestSignature
+      this.boardAssetLoadHandle = preloadPhaserBoardAssets(
+        this,
+        view.boardTheme,
+        view.renderQualityPreference,
+        () => {
+          if (this.boardAssetManifestSignature === manifestSignature) {
+            this.renderView(this.rendererRef.currentView)
+          }
+        },
+      )
+      this.load.start()
+    }
     const manifest = buildPhaserBoardAssetManifest(view.boardTheme, view.renderQualityPreference)
     const backgroundTextureKey = resolveLoadedBoardBackgroundTextureKey(
       manifest,

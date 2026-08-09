@@ -295,4 +295,24 @@ describe('Phaser board texture loader', () => {
     expect(harness.errorListenerCount()).toBe(0)
     expect(harness.completeListenerCount()).toBe(0)
   })
+
+  it('notifies the scene after a dynamically queued manifest completes', () => {
+    const harness = createLoaderPort()
+    const onComplete = vi.fn()
+    loadPhaserBoardAssetManifest(
+      harness.port,
+      buildPhaserBoardAssetManifest('verdant', 'high'),
+      {
+        failedUrls: new FailedAssetUrlRegistry(),
+        onFailure: vi.fn(),
+        onComplete,
+      },
+    )
+
+    harness.emitComplete()
+
+    expect(onComplete).toHaveBeenCalledOnce()
+    expect(harness.errorListenerCount()).toBe(0)
+    expect(harness.completeListenerCount()).toBe(0)
+  })
 })

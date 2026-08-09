@@ -198,7 +198,10 @@ export class BoardBackgroundView {
       .setVisible(true)
       .setPosition(options.layout.width / 2, options.layout.height / 2)
       .setCrop(crop.x, crop.y, crop.width, crop.height)
-      .setDisplaySize(options.layout.width, options.layout.height)
+      .setScale(
+        options.layout.width / crop.width,
+        options.layout.height / crop.height,
+      )
   }
 
   private syncAmbience(

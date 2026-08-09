@@ -18,11 +18,15 @@ class FakeDisplayObject {
   frame: string | null = null
   crop: [number, number, number, number] | null = null
   displaySize: [number, number] | null = null
+  scale: [number, number] | null = null
 
   setOrigin(): this { return this }
   setDepth(): this { return this }
   setBlendMode(): this { return this }
-  setScale(): this { return this }
+  setScale(x: number, y = x): this {
+    this.scale = [x, y]
+    return this
+  }
   setPosition(x: number, y: number): this {
     this.x = x
     this.y = y
@@ -199,8 +203,27 @@ describe('Phaser board background view', () => {
     expect(harness.containers).toHaveLength(1)
     expect(harness.images).toHaveLength(1)
     expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
-    expect(harness.images[0].displaySize).toEqual([layout.width, layout.height])
-    expect(harness.images[0].crop).not.toBeNull()
+    expect(harness.images[0].crop).toEqual([0, 0, 1920, 1080])
+    expect(harness.images[0].scale).toEqual([layout.width / 1920, layout.height / 1080])
+    expect(harness.images[0].displaySize).toBeNull()
+  })
+
+  it('scales a portrait crop from its cropped source dimensions', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+    const portraitLayout = buildLayout(390, 844, 'vertical')
+
+    view.sync({
+      ...syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']),
+      layout: portraitLayout,
+    })
+
+    const crop = computeCoverFitCrop(1920, 1080, portraitLayout.width, portraitLayout.height)
+    expect(harness.images[0].scale).toEqual([
+      portraitLayout.width / crop.width,
+      portraitLayout.height / crop.height,
+    ])
   })
 
   it('switches the retained image texture and evicts stale large backgrounds', () => {
