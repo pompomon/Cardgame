@@ -20,6 +20,7 @@ import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
+import { CardViewRegistry } from './card-view-registry'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
@@ -52,6 +53,7 @@ export class CardgameScene extends Phaser.Scene {
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
   private readonly boardPresentation = new BoardPresentationCoordinator()
+  private readonly cardViews: CardViewRegistry
 
   private readonly effectController: EffectController
   private readonly battlefieldTargets: BattlefieldTargetsController
@@ -61,6 +63,19 @@ export class CardgameScene extends Phaser.Scene {
   constructor(rendererRef: PhaserRendererHost) {
     super(CARDGAME_SCENE_KEY)
     this.rendererRef = rendererRef
+    this.cardViews = new CardViewRegistry(this, (options) => renderStaticCard(
+      options.scene,
+      options.layout,
+      0,
+      0,
+      options.label,
+      {
+        highlight: options.highlight,
+        visualStyle: options.visualStyle,
+        dimensions: options.dimensions,
+      },
+      options.visualStyle,
+    ))
 
     this.effectController = new EffectController({
       scene: this,
@@ -100,6 +115,7 @@ export class CardgameScene extends Phaser.Scene {
       targetPicker: this.targetPicker,
       setStatus: (message) => this.setStatus(message),
       setBattlefieldDropZone: (zone) => this.setBattlefieldDropZone(zone),
+      syncRetainedCard: (options) => this.cardViews.syncCard(options),
       openMenuOverlay: (view) => this.openMenuOverlay(view),
     })
   }
@@ -247,6 +263,7 @@ export class CardgameScene extends Phaser.Scene {
       this.boardAssetManifestSignature = null
       this.effectController.reset()
       this.boardPresentation.reset()
+      this.cardViews.destroy()
     })
 
     this.renderView(this.rendererRef.currentView)
@@ -317,6 +334,7 @@ export class CardgameScene extends Phaser.Scene {
     const wasMenuOpen = this.menuOpen
     this.menuOverlay = null
     this.cardPreview?.clear()
+    this.cardViews.detachFromRoot(this.rootContainer)
     this.rootContainer?.removeAll(true)
     this.battlefieldTargets.clearTransientEntries()
     this.targetPicker.clearTransientPickerState()
@@ -336,12 +354,14 @@ export class CardgameScene extends Phaser.Scene {
         // animations queued from a previous match.
         this.effectController.reset()
         this.boardPresentation.reset(game.actor)
+        this.cardViews.reset()
       }
       this.lastRenderedSeed = currentSeed
     } else {
       this.lastRenderedSeed = null
       this.effectController.reset()
       this.boardPresentation.reset()
+      this.cardViews.reset()
     }
     const currentMenuSignature = this.menuOpen && view && game
       ? this.computeMenuSignature(view)
@@ -358,6 +378,7 @@ export class CardgameScene extends Phaser.Scene {
     this.clearRoot()
     if (!view || !this.rootContainer) {
       this.battlefieldTargets.reset()
+      this.cardViews.reset()
       preservedOverlay?.destroy(true)
       this.lastMenuSignature = null
       return
@@ -368,6 +389,7 @@ export class CardgameScene extends Phaser.Scene {
 
     if (!view.game) {
       this.battlefieldTargets.reset()
+      this.cardViews.reset()
       preservedOverlay?.destroy(true)
       this.closeMenuOverlay()
       this.lastMenuSignature = null
@@ -382,7 +404,9 @@ export class CardgameScene extends Phaser.Scene {
       effectsBusy,
       view.animationSpeed !== 'off',
     )
+    this.cardViews.beginFrame(this.rootContainer)
     this.gameplayPresenter.renderGame(view, presentedActor)
+    this.cardViews.endFrame()
     this.effectController.processAbilityEffects(view, presentedActor)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay

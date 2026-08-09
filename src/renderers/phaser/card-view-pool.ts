@@ -3,11 +3,11 @@ import { CardView, type CardViewRenderCard } from './card-view'
 
 export class CardViewPool {
   private readonly scene: Phaser.Scene
-  private readonly renderCard?: CardViewRenderCard
+  private readonly renderCard: CardViewRenderCard
   private readonly available: CardView[] = []
   private readonly allViews = new Set<CardView>()
 
-  constructor(scene: Phaser.Scene, renderCard?: CardViewRenderCard) {
+  constructor(scene: Phaser.Scene, renderCard: CardViewRenderCard) {
     this.scene = scene
     this.renderCard = renderCard
   }

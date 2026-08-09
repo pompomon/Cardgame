@@ -11,8 +11,8 @@ import {
 import type { AppViewModel, GameUiState } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
-import { renderStaticCard } from './card-factory'
 import type { CardPreviewController } from './card-preview-controller'
+import type { RetainedCardSyncOptions } from './card-view-registry'
 import { xForHandCardInBoardColumn, type SceneLayout } from './layout'
 import { buildCounterHandOptions } from './response-options'
 import { renderResponseControls } from './response-controls'
@@ -30,6 +30,7 @@ export interface HandControlsContext {
   battlefieldTargets: BattlefieldTargetsController
   targetPicker: TargetPickerController
   setStatus: (message: string) => void
+  syncRetainedCard: (options: RetainedCardSyncOptions) => Phaser.GameObjects.Container | null
 }
 
 export function renderHandAndControls(ctx: HandControlsContext, game: GameUiState, presentedActor = game.actor): void {
@@ -51,31 +52,26 @@ export function renderHandAndControls(ctx: HandControlsContext, game: GameUiStat
     const x = xForHandCardInBoardColumn(layout, index, actorCards.length)
     const y = layout.handCardsY
     const responseChoice = responseChoices.get(card.id)
-    const cardObject = renderStaticCard(scene, layout, x, y, card.name, {
+    ctx.syncRetainedCard({
+      cardId: card.id,
+      zone: 'hand',
+      label: card.name,
+      layout,
+      visualStyle: defaultVisualStyle,
+      x,
+      y,
+      width: layout.handCardWidth,
+      height: layout.handCardHeight,
       highlight: response?.requiredIslandId === card.id || responseChoice !== undefined,
       onClick: responseChoice
         ? () => ctx.submitAction(responseChoice.action)
         : undefined,
-      dimensions: {
-        width: layout.handCardWidth,
-        height: layout.handCardHeight,
-      },
-    }, defaultVisualStyle)
-    cardObject.setData('cardId', card.id)
-    cardObject.setData('originX', x)
-    cardObject.setData('originY', y)
-    if (canDrag && game.legal.playLandByCard[card.id]) {
-      cardObject.setSize(layout.handCardWidth, layout.handCardHeight)
-      cardObject.setInteractive({ draggable: true, useHandCursor: true })
-      scene.input.setDraggable(cardObject)
-    }
-    if (!response) {
-      ctx.getCardPreview()?.bind(cardObject, card.name, {
-        width: layout.handCardWidth,
-        height: layout.handCardHeight,
-      })
-    }
-    rootContainer?.add(cardObject)
+      draggable: canDrag && game.legal.playLandByCard[card.id] !== undefined,
+      animate: true,
+      bindPreview: response
+        ? undefined
+        : (cardObject, label, dimensions) => ctx.getCardPreview()?.bind(cardObject, label, dimensions),
+    })
   })
 
   if (presentationIsCurrent && game.canInput && game.phase === 'plains_target') {

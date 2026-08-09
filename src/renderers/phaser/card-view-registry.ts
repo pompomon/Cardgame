@@ -11,7 +11,7 @@ export class CardViewRegistry {
   private readonly seenThisFrame = new Set<string>()
   private root: Phaser.GameObjects.Container | null = null
 
-  constructor(scene: Phaser.Scene, renderCard?: CardViewRenderCard) {
+  constructor(scene: Phaser.Scene, renderCard: CardViewRenderCard) {
     this.pool = new CardViewPool(scene, renderCard)
   }
 

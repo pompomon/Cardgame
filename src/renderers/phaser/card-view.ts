@@ -1,6 +1,5 @@
 import type Phaser from 'phaser'
 import type { AppViewModel } from '../../app/types'
-import { renderStaticCard, type StaticCardConfig } from './card-factory'
 import { DEPTH_GAMEPLAY } from './depth'
 import type { SceneLayout } from './layout'
 
@@ -39,23 +38,6 @@ export interface CardViewSyncOptions {
   ) => void
 }
 
-function defaultRenderCard(options: CardViewRenderCardOptions): Phaser.GameObjects.Container {
-  const config: StaticCardConfig = {
-    highlight: options.highlight,
-    visualStyle: options.visualStyle,
-    dimensions: options.dimensions,
-  }
-  return renderStaticCard(
-    options.scene,
-    options.layout,
-    0,
-    0,
-    options.label,
-    config,
-    options.visualStyle,
-  )
-}
-
 function resetData(container: Phaser.GameObjects.Container): void {
   const dataManager = (container as { data?: { reset?: () => void } }).data
   dataManager?.reset?.()
@@ -73,7 +55,7 @@ export class CardView {
   private targetY: number | null = null
   private hasSyncedPosition = false
 
-  constructor(scene: Phaser.Scene, renderCard: CardViewRenderCard = defaultRenderCard) {
+  constructor(scene: Phaser.Scene, renderCard: CardViewRenderCard) {
     this.scene = scene
     this.renderCard = renderCard
     this.container = scene.add.container(0, 0)

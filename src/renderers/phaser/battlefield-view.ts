@@ -5,8 +5,8 @@
 import type Phaser from 'phaser'
 import type { AppViewModel, GameUiState } from '../../app/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
-import { renderStaticCard } from './card-factory'
 import type { CardPreviewController } from './card-preview-controller'
+import type { RetainedCardSyncOptions } from './card-view-registry'
 import type { EffectController } from './effect-controller'
 import type { BattlefieldCardPlacement } from './effect-anchoring'
 import { xForCardInBoardColumn, type SceneLayout } from './layout'
@@ -23,6 +23,7 @@ export interface BattlefieldViewContext {
   effectController: EffectController
   battlefieldTargets: BattlefieldTargetsController
   setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
+  syncRetainedCard: (options: RetainedCardSyncOptions) => Phaser.GameObjects.Container | null
 }
 
 export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiState, presentedActor = game.actor): void {
@@ -79,22 +80,24 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
       cardCount: nonActiveBattlefield.length,
     }
     effectController.recordCardPosition(card.instanceId, placement)
-    const renderedCard = renderStaticCard(
-      scene,
+    ctx.syncRetainedCard({
+      cardId: card.cardId,
+      instanceId: card.instanceId,
+      zone: 'battlefield',
+      label: card.name,
       layout,
-      cardX,
-      nonActiveCardY,
-      card.name,
-      {
-        highlight: targetEntry !== null,
-        onClick: targetEntry?.onSelect,
-      },
-      defaultVisualStyle,
-    )
-    if (!targetEntry) {
-      ctx.getCardPreview()?.bind(renderedCard, card.name)
-    }
-    rootContainer?.add(renderedCard)
+      visualStyle: defaultVisualStyle,
+      x: cardX,
+      y: nonActiveCardY,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      highlight: targetEntry !== null,
+      onClick: targetEntry?.onSelect,
+      animate: true,
+      bindPreview: targetEntry
+        ? undefined
+        : (renderedCard, label, dimensions) => ctx.getCardPreview()?.bind(renderedCard, label, dimensions),
+    })
   }
 
   // Active battlefield (below non-active, drop zone enabled, parchment with green tint).
@@ -143,21 +146,23 @@ export function renderBattlefields(ctx: BattlefieldViewContext, game: GameUiStat
       cardCount: activeBattlefield.length,
     }
     effectController.recordCardPosition(card.instanceId, placement)
-    const renderedCard = renderStaticCard(
-      scene,
+    ctx.syncRetainedCard({
+      cardId: card.cardId,
+      instanceId: card.instanceId,
+      zone: 'battlefield',
+      label: card.name,
       layout,
-      cardX,
-      activeCardY,
-      card.name,
-      {
-        highlight: targetEntry !== null,
-        onClick: targetEntry?.onSelect,
-      },
-      defaultVisualStyle,
-    )
-    if (!targetEntry) {
-      ctx.getCardPreview()?.bind(renderedCard, card.name)
-    }
-    rootContainer?.add(renderedCard)
+      visualStyle: defaultVisualStyle,
+      x: cardX,
+      y: activeCardY,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      highlight: targetEntry !== null,
+      onClick: targetEntry?.onSelect,
+      animate: true,
+      bindPreview: targetEntry
+        ? undefined
+        : (renderedCard, label, dimensions) => ctx.getCardPreview()?.bind(renderedCard, label, dimensions),
+    })
   }
 }

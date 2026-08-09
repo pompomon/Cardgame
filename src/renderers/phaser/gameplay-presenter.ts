@@ -10,6 +10,7 @@ import type { GameAction } from '../../game/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
 import { renderBattlefields } from './battlefield-view'
 import type { CardPreviewController } from './card-preview-controller'
+import type { RetainedCardSyncOptions } from './card-view-registry'
 import type { EffectController } from './effect-controller'
 import { renderGameHeader } from './game-header'
 import { renderHandAndControls } from './hand-controls'
@@ -30,6 +31,7 @@ export interface GameplayPresenterContext {
   targetPicker: TargetPickerController
   setStatus: (message: string) => void
   setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
+  syncRetainedCard: (options: RetainedCardSyncOptions) => Phaser.GameObjects.Container | null
   openMenuOverlay: (view: AppViewModel) => void
 }
 
