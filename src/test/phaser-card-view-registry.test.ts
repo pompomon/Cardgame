@@ -33,6 +33,25 @@ class FakeDataManager {
   }
 }
 
+class FakeHitArea {
+  width: number
+  height: number
+
+  constructor(
+    width: number,
+    height: number,
+  ) {
+    this.width = width
+    this.height = height
+  }
+
+  setSize(width: number, height: number): this {
+    this.width = width
+    this.height = height
+    return this
+  }
+}
+
 class FakeContainer {
   readonly data = new FakeDataManager()
   readonly children: FakeContainer[] = []
@@ -41,9 +60,9 @@ class FakeContainer {
   input: {
     enabled: boolean
     draggable: boolean
-    hitWidth: number
-    hitHeight: number
+    hitArea: FakeHitArea
   } | null = null
+  removedInteractiveCount = 0
   destroyed = false
   visible = true
   alpha = 1
@@ -151,11 +170,14 @@ class FakeContainer {
   }
 
   setInteractive(): this {
-    this.input = {
-      enabled: true,
-      draggable: false,
-      hitWidth: this.width,
-      hitHeight: this.height,
+    if (this.input) {
+      this.input.enabled = true
+    } else {
+      this.input = {
+        enabled: true,
+        draggable: false,
+        hitArea: new FakeHitArea(this.width, this.height),
+      }
     }
     return this
   }
@@ -168,6 +190,7 @@ class FakeContainer {
   }
 
   removeInteractive(): this {
+    this.removedInteractiveCount += 1
     this.input = null
     return this
   }
@@ -256,8 +279,7 @@ function createHarness(): Harness {
         container.input ??= {
           enabled: value,
           draggable: value,
-          hitWidth: container.width,
-          hitHeight: container.height,
+          hitArea: new FakeHitArea(container.width, container.height),
         }
         container.input.enabled = value
         container.input.draggable = value
@@ -452,7 +474,12 @@ describe('Phaser retained card views', () => {
     expect(container.children).toEqual([])
     expect(container.data.values.size).toBe(0)
     expect(container.listenerCount()).toBe(0)
-    expect(container.input).toBeNull()
+    expect(container.input).toMatchObject({
+      enabled: false,
+      draggable: false,
+      hitArea: { width: 0, height: 0 },
+    })
+    expect(container.removedInteractiveCount).toBe(0)
     expect(hiddenFace.destroyed).toBe(true)
 
     sync(registry, harness, [descriptor('public-card', { name: 'Island' })])
@@ -528,7 +555,8 @@ describe('Phaser retained card views', () => {
       height: 110,
     })])
     const container = registry.get('sized-card')!.container as unknown as FakeContainer
-    expect(container.input).toMatchObject({ hitWidth: 80, hitHeight: 110 })
+    const input = container.input
+    expect(input?.hitArea).toMatchObject({ width: 80, height: 110 })
 
     sync(registry, harness, [descriptor('sized-card', {
       preview: false,
@@ -537,7 +565,9 @@ describe('Phaser retained card views', () => {
       width: 120,
       height: 160,
     })])
-    expect(container.input).toMatchObject({ hitWidth: 120, hitHeight: 160 })
+    expect(container.input).toBe(input)
+    expect(container.input?.hitArea).toMatchObject({ width: 120, height: 160 })
+    expect(container.removedInteractiveCount).toBe(0)
   })
 
   it('keeps the stable card layer between chrome and modal controls', () => {
@@ -581,6 +611,7 @@ describe('Phaser retained card views', () => {
       sync(registry, harness, [handCard], 'normal')
       const container = registry.get('drag-card')!.container as unknown as FakeContainer
       registry.beginDrag(container as never)
+      expect(registry.isActiveDrag(container as never)).toBe(true)
       container.setPosition(250, 500)
 
       const battlefieldCard = descriptor('drag-card', {
@@ -606,6 +637,7 @@ describe('Phaser retained card views', () => {
       sync(registry, harness, [handCard], 'off')
       expect(container.x).toBe(300)
       registry.cancelActiveDrags()
+      expect(registry.isActiveDrag(container as never)).toBe(false)
       expect(container.x).toBe(80)
       expect(container.y).toBe(600)
       registry.destroy()

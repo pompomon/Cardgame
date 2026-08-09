@@ -204,6 +204,7 @@ export class CardView {
       .setRotation(0)
       .setPosition(0, 0)
       .setSize(0, 0)
+    this.resizeHitArea(0, 0)
     this.appearanceSignature = null
     this.interactionSignature = null
     this.assignedCardId = null
@@ -238,7 +239,12 @@ export class CardView {
 
     this.clearInteraction()
     if (options.draggable || options.preview || options.onClick) {
-      this.container.setInteractive({ useHandCursor: true })
+      if (this.container.input) {
+        this.container.setInteractive()
+      } else {
+        this.container.setInteractive({ useHandCursor: true })
+      }
+      this.resizeHitArea(options.width, options.height)
     }
     if (options.draggable) {
       this.scene.input.setDraggable(this.container)
@@ -278,9 +284,16 @@ export class CardView {
   private clearInteraction(): void {
     if (this.container.input) {
       this.scene.input.setDraggable(this.container, false)
+      this.container.disableInteractive(true)
     }
-    this.container.removeInteractive()
     this.container.removeAllListeners()
+  }
+
+  private resizeHitArea(width: number, height: number): void {
+    const hitArea = this.container.input?.hitArea
+    if (hitArea && typeof hitArea.setSize === 'function') {
+      hitArea.setSize(width, height)
+    }
   }
 
   private syncPosition(options: CardViewSyncOptions, wasAssigned: boolean): void {

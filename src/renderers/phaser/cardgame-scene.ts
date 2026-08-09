@@ -175,6 +175,9 @@ export class CardgameScene extends Phaser.Scene {
         return
       }
       const draggable = object as Phaser.GameObjects.Container
+      if (!this.cardViews?.isActiveDrag(draggable)) {
+        return
+      }
       draggable.x = dragX
       draggable.y = dragY
     }
@@ -194,7 +197,8 @@ export class CardgameScene extends Phaser.Scene {
     this.input.on('dragend', onDragEnd)
 
     const onDrop = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone): void => {
-      if (this.menuOpen) {
+      const card = object as Phaser.GameObjects.Container
+      if (this.menuOpen || !this.cardViews?.isActiveDrag(card)) {
         return
       }
       const game = this.rendererRef.currentView?.game
@@ -202,7 +206,6 @@ export class CardgameScene extends Phaser.Scene {
         return
       }
 
-      const card = object as Phaser.GameObjects.Container
       const cardId = card.getData('cardId')
       if (typeof cardId !== 'string') {
         return
@@ -393,7 +396,7 @@ export class CardgameScene extends Phaser.Scene {
     let preservedOverlay: Phaser.GameObjects.Container | null = null
     if (
       currentMenuSignature !== null
-      &&       currentMenuSignature === this.lastMenuSignature
+      && currentMenuSignature === this.lastMenuSignature
       && this.menuOverlay
     ) {
       preservedOverlay = this.menuOverlay

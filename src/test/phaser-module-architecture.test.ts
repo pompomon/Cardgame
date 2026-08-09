@@ -90,6 +90,7 @@ describe('phaser renderer module architecture', () => {
       presenterSource.indexOf('renderHandAndControls(ctx'),
     )
     expect(sceneSource).toContain('child !== cardLayer')
+    expect(sceneSource.match(/cardViews\?\.isActiveDrag/g)).toHaveLength(2)
     expect(sceneSource).not.toContain('this.cardViews?.detach()')
     expect(sceneSource).not.toContain('this.rootContainer?.removeAll(true)')
   })
