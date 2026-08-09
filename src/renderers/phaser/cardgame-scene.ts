@@ -6,22 +6,23 @@
 import Phaser from 'phaser'
 import {
   groupCardTargetOptions,
-  resolvePlayLandDrop,
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
+import { DEFAULT_ANIMATION_SPEED } from '../../app/animation-settings'
 import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
-import type { AppViewModel } from '../../app/types'
+import type { AppViewModel, GameUiState } from '../../app/types'
 import { buildPhaserBoardAssetManifest, resolveLoadedBoardBackgroundTextureKey } from './asset-manifest'
 import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
 import { preloadCardArt } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
-import { isCanceledPhaserPointer, shouldAnimateCardDragEnd, shouldResolveCardDrop } from './card-view'
+import type { CardViewDragSource } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
+import { DragController } from './drag-controller'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
@@ -29,7 +30,7 @@ import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
 import { BattlefieldTargetsController } from './battlefield-targets'
 import { preloadPhaserBoardAssets, type BoardAssetLoadHandle } from './texture-loader'
-import { installButtonState, popupActionWidth, snapCardToOrigin } from './ui-utils'
+import { installButtonState, popupActionWidth } from './ui-utils'
 import { UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
 import type { PhaserRendererHost } from './renderer-host'
@@ -51,6 +52,7 @@ export class CardgameScene extends Phaser.Scene {
   private lastLayoutSignature = ''
   private cardPreview: CardPreviewController | null = null
   private cardViews: CardViewRegistry | null = null
+  private dragController: DragController | null = null
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
@@ -148,12 +150,29 @@ export class CardgameScene extends Phaser.Scene {
       ),
       renderCard: (label) => renderStaticCard(this, this.currentLayout, 0, 0, label, { mode: 'preview' }, this.rendererRef.currentView?.cardVisualStyle),
     })
+    this.dragController?.destroy()
+    this.dragController = null
     this.cardViews?.destroy()
     this.cardViews = new CardViewRegistry({
       scene: this,
       bindPreview: (card, label, dimensions) => {
         this.cardPreview?.bind(card, label, dimensions)
       },
+    })
+    this.dragController = new DragController({
+      scene: this,
+      getCardViews: () => this.cardViews,
+      getGame: () => this.rendererRef.currentView?.game ?? null,
+      getDropZone: () => this.battlefieldDropZone,
+      getAnimationSpeed: () => this.rendererRef.currentView?.animationSpeed ?? DEFAULT_ANIMATION_SPEED,
+      isInteractionBlocked: () => this.menuOpen
+        || this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null,
+      createProxy: (source) => this.createDragProxy(source),
+      submitAction: (action) => this.rendererRef.controller?.submitAction(action),
+      beginTargetSelection: (game, cardId, options) => {
+        this.beginPlayLandTargetSelection(game, cardId, options)
+      },
+      setStatus: (message) => this.setStatus(message),
     })
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
@@ -163,110 +182,18 @@ export class CardgameScene extends Phaser.Scene {
       fontSize: this.currentLayout.bodyFontSize,
     })
 
-    const onDragStart = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject): void => {
-      if (this.menuOpen) {
-        return
-      }
-      this.cardViews?.beginDrag(object as Phaser.GameObjects.Container)
-    }
-    this.input.on('dragstart', onDragStart)
-
-    const onDrag = (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dragX: number, dragY: number): void => {
-      if (this.menuOpen) {
-        return
-      }
-      const draggable = object as Phaser.GameObjects.Container
-      if (!this.cardViews?.isActiveDrag(draggable)) {
-        return
-      }
-      draggable.x = dragX
-      draggable.y = dragY
-    }
-    this.input.on('drag', onDrag)
-
-    const onDragEnd = (pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, dropped: boolean): void => {
-      const card = object as Phaser.GameObjects.Container
-      const animateToTarget = shouldAnimateCardDragEnd(pointer, dropped, this.menuOpen)
-      this.cardViews?.endDrag(card, animateToTarget)
-      if (!animateToTarget) {
-        snapCardToOrigin(card)
-      }
-    }
-    this.input.on('dragend', onDragEnd)
-
-    const onDrop = (pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject, zone: Phaser.GameObjects.Zone): void => {
-      const card = object as Phaser.GameObjects.Container
-      if (isCanceledPhaserPointer(pointer)) {
-        this.cardViews?.endDrag(card, false)
-        snapCardToOrigin(card)
-        return
-      }
-      if (!shouldResolveCardDrop(
-        pointer,
-        this.menuOpen,
-        this.cardViews?.isActiveDrag(card) ?? false,
-      )) {
-        return
-      }
-      const game = this.rendererRef.currentView?.game
-      if (!game || zone !== this.battlefieldDropZone) {
-        return
-      }
-
-      const cardId = card.getData('cardId')
-      if (typeof cardId !== 'string') {
-        return
-      }
-
-      const resolution = resolvePlayLandDrop(game, cardId)
-      if (resolution.kind === 'invalid') {
-        this.setStatus('Invalid drop. Choose a playable card.')
-        this.cardViews?.endDrag(card, false)
-        snapCardToOrigin(card)
-        return
-      }
-
-      if (resolution.kind === 'single') {
-        this.battlefieldTargets.clearPendingPlayLandTargetSelection()
-        this.rendererRef.controller?.submitAction(resolution.action)
-        this.cardViews?.endDrag(card, true)
-        return
-      }
-
-      this.cardViews?.endDrag(card, false)
-      snapCardToOrigin(card)
-      const mode = resolvePlayLandTargetSelectionMode(game, cardId)
-      if (mode === 'battlefield_highlight') {
-        this.battlefieldTargets.beginPlayLandTargetSelection(cardId, resolution.options)
-        this.renderView(this.rendererRef.currentView)
-        this.setStatus('Choose a highlighted battlefield target.')
-        return
-      }
-      const groupedOptions = groupCardTargetOptions(game, { kind: 'play_land', cardId }, resolution.options)
-      this.battlefieldTargets.clearPendingPlayLandTargetSelection()
-      this.targetPicker.showTargetPicker(
-        groupedOptions.map((option) => ({
-          effectTargetId: option.effectTargetId,
-          label: option.label,
-          cardName: option.cardName,
-        })),
-        (targetId) => resolveTargetedPlayLandAction(game, cardId, targetId),
-      )
-    }
-    this.input.on('drop', onDrop)
-
     // Detach the resize listener on scene shutdown so a stop/start cycle (e.g.
     // when the user goes Back to Lobby and then starts a new match) does not
     // accumulate duplicate listeners on the reused scene instance.
     const onResize = (): void => {
-      this.cardViews?.cancelActiveDrags()
+      this.dragController?.cancel('resize')
       if (this.updateLayout()) {
         this.renderView(this.rendererRef.currentView)
       }
     }
     this.scale.on('resize', onResize)
     const onVisibilityChange = (): void => {
-      this.cardViews?.cancelActiveDrags()
+      this.dragController?.cancel('visibility')
       this.renderView(this.rendererRef.currentView)
     }
     if (typeof document !== 'undefined') {
@@ -274,13 +201,11 @@ export class CardgameScene extends Phaser.Scene {
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', onResize)
-      this.input.off('dragstart', onDragStart)
-      this.input.off('drag', onDrag)
-      this.input.off('dragend', onDragEnd)
-      this.input.off('drop', onDrop)
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibilityChange)
       }
+      this.dragController?.destroy()
+      this.dragController = null
       this.cardPreview?.destroy()
       this.cardPreview = null
       this.cardViews?.destroy()
@@ -304,6 +229,44 @@ export class CardgameScene extends Phaser.Scene {
       }
     })
     this.battlefieldDropZone = zone
+  }
+
+  private createDragProxy(source: CardViewDragSource): Phaser.GameObjects.Container {
+    const face = renderStaticCard(
+      this,
+      this.currentLayout,
+      0,
+      0,
+      source.name,
+      { dimensions: { width: source.width, height: source.height } },
+      this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
+    )
+    face.setPosition(0, 0)
+    return this.add.container(source.container.x, source.container.y, [face])
+  }
+
+  private beginPlayLandTargetSelection(
+    game: GameUiState,
+    cardId: string,
+    options: Array<{ effectTargetId?: string; label: string }>,
+  ): void {
+    const mode = resolvePlayLandTargetSelectionMode(game, cardId)
+    if (mode === 'battlefield_highlight') {
+      this.battlefieldTargets.beginPlayLandTargetSelection(cardId, options)
+      this.renderView(this.rendererRef.currentView)
+      this.setStatus('Choose a highlighted battlefield target.')
+      return
+    }
+    const groupedOptions = groupCardTargetOptions(game, { kind: 'play_land', cardId }, options)
+    this.battlefieldTargets.clearPendingPlayLandTargetSelection()
+    this.targetPicker.showTargetPicker(
+      groupedOptions.map((option) => ({
+        effectTargetId: option.effectTargetId,
+        label: option.label,
+        cardName: option.cardName,
+      })),
+      (targetId) => resolveTargetedPlayLandAction(game, cardId, targetId),
+    )
   }
 
   private updateLayout(): boolean {
@@ -382,6 +345,7 @@ export class CardgameScene extends Phaser.Scene {
     if (view && game) {
       const currentSeed = view.seed
       if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
+        this.dragController?.cancel('game-change')
         this.menuLogScrollOffset = null
         this.menuLogPinnedToBottom = true
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
@@ -392,6 +356,7 @@ export class CardgameScene extends Phaser.Scene {
       }
       this.lastRenderedSeed = currentSeed
     } else {
+      this.dragController?.cancel('game-change')
       this.lastRenderedSeed = null
       this.effectController.reset()
       this.cardViews?.reset()
@@ -438,6 +403,7 @@ export class CardgameScene extends Phaser.Scene {
       view.animationSpeed !== 'off',
     )
     this.gameplayPresenter.renderGame(view, presentedActor)
+    this.dragController?.reconcile()
     this.effectController.processAbilityEffects(view, presentedActor)
     if (preservedOverlay) {
       this.menuOverlay = preservedOverlay
@@ -519,7 +485,7 @@ export class CardgameScene extends Phaser.Scene {
     }
 
     this.cardPreview?.clear()
-    this.cardViews?.cancelActiveDrags()
+    this.dragController?.cancel('menu')
     this.targetPicker.closeTargetPickerOverlay()
     this.battlefieldTargets.reset()
     this.menuOpen = true

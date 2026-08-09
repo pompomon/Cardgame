@@ -7,7 +7,7 @@
 - [x] Phase 2 — Add base-path-safe HD board and sprite asset pipeline
 - [x] Phase 3 — Implement persistent board background and adaptive ambience
 - [x] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
-- [ ] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
+- [x] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 - [ ] Phase 6 — Add drop-zone visuals and contextual interaction feedback
 - [ ] Phase 7 — Implement adaptive desktop/mobile performance policy
 - [ ] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
@@ -539,6 +539,46 @@ public/sprites/
 - Cancellation paths clean up state and listeners.
 - Accessibility alternatives remain intact.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 5 implementation notes (2026-08-09)
+
+- Phase 5 was selected because it was the first unchecked phase in the
+  authoritative checklist. The Phase 0 acceptance baseline, shared settings
+  and asset pipeline from Phases 1–2, and retained background/card ownership
+  from Phases 3–4 were verified in the current tree before implementation.
+- Added `src/renderers/phaser/drag-state.ts` and
+  `src/renderers/phaser/drag-controller.ts`. One scene-owned controller now
+  validates mouse/touch/pen pointer sessions, applies a 12-pixel touch/pen
+  threshold, owns a high-depth retained drag proxy, submits only actions from
+  `resolvePlayLandDrop`, and suppresses duplicate or non-owning releases.
+- Integrated proxy snapshots and source dim/restore behavior with `CardView`
+  and `CardViewRegistry`. Invalid drops use a bounded return tween; resize,
+  visibility, menu, game-change, pointer-cancel/loss, stale-source, and scene
+  shutdown paths cancel idempotently and remove all controller listeners.
+  Targeted land choices still route through the existing battlefield and
+  popup target-selection flows.
+- Added `src/test/drag-state.test.ts`,
+  `src/test/phaser-drag-controller.test.ts`, and
+  `src/test/phaser-drag-accessibility.test.ts`; updated retained-card, depth,
+  and module-architecture coverage. Tests cover thresholds, mouse/touch/pen
+  transitions, overlapping pointers, release outside the source, legal-action
+  parity, duplicate release, invalid return, all cancellation paths, 1,000
+  retained-proxy moves, cleanup, and native accessibility alternatives.
+- Updated `docs/agent/architecture.md` and
+  `docs/agent/phaser-renderer.md` with the durable input ownership and depth
+  contracts. Targeted validation passed (8 files / 77 tests); required
+  validation passed: `npm run lint`, `npm run test` (71 files / 682 tests),
+  `npm run build` (with the existing non-failing chunk-size advisory), and
+  `codeql_checker` (0 alerts).
+- Independent `code-review` inspected the actual diff, surrounding renderer
+  code, and installed Phaser 4.1 input semantics. It reported no
+  merge-blocking defects. The safe single-active-pointer policy is now
+  controller-tested; optional drag-proxy pooling remains deferred to the
+  adaptive performance/lifecycle phases.
+- Manual browser smoke and a screenshot could not be captured because the
+  Playwright MCP required interactive browser OAuth in this environment.
+  Later-phase real-browser mobile/WebGL smoke, drop-zone visuals, quality
+  policy, and final verification remain unchecked as planned.
 
 ## Phase 6 — Add drop-zone visuals and contextual interaction feedback
 

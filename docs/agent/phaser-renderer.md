@@ -62,6 +62,16 @@ handlers require a pointer-down from their current assignment so synchronous
 pool reuse during a drop cannot submit a second action from the same release.
 Pointer-out clears that latch, and canceled pointers must never submit clicks
 or drops or animate a retained card toward a drop target.
+`drag-state.ts` and `drag-controller.ts` own the single active pointer session
+instead of moving retained cards through Phaser's built-in draggable state.
+Mouse input starts immediately; touch and pen input must cross the shared
+movement threshold before a proxy is created, preserving tap-to-preview.
+The controller moves one top-level proxy at `DEPTH_DRAG_PROXY`, dims the
+retained source, and resolves releases only through `resolvePlayLandDrop`.
+Duplicate releases cannot submit twice. Invalid drops tween the proxy back
+with a bounded duration. Resize, visibility change, menu open, game change,
+pointer cancellation/loss, and scene shutdown all cancel the session and
+restore the source.
 Static cards outside the board (previews, effect retention, log tiles, and
 target choices) continue to use `card-factory.ts`.
 
@@ -81,6 +91,7 @@ The cardgame scene anchors render order on constants and a z-order map in
 - `DEPTH_HEADER_STRIP = 9` — header strip
 - `DEPTH_HEADER = 10` — Menu button, Turn/Phase label, Winner banner
 - `DEPTH_CARD_PREVIEW_OVERLAY = 15` — enlarged card preview
+- `DEPTH_DRAG_PROXY = 18` — active card drag proxy
 - `DEPTH_MENU_OVERLAY = 20` — in-game menu overlay
 - `DEPTH_TARGET_PICKER_OVERLAY = 30` — target picker overlay
 

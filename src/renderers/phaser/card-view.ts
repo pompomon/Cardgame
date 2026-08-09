@@ -44,7 +44,16 @@ export interface CardViewContext {
   ) => void
 }
 
+export interface CardViewDragSource {
+  readonly cardId: string
+  readonly name: string
+  readonly width: number
+  readonly height: number
+  readonly container: Phaser.GameObjects.Container
+}
+
 const MAX_CARD_MOVE_DURATION_MS = 400
+const DRAG_SOURCE_ALPHA = 0.35
 const PROCEDURAL_CARD_FACE = 'procedural-card-face'
 const PROCEDURAL_CARD_BACK = 'procedural-card-back'
 const CARD_VIEW_INTERACTION_EVENTS = [
@@ -58,28 +67,6 @@ const CARD_VIEW_INTERACTION_EVENTS = [
 
 export function cardMoveDurationMs(speed: AnimationSpeed): number {
   return Math.min(durationMsForSpeed(speed), MAX_CARD_MOVE_DURATION_MS)
-}
-
-export function isCanceledPhaserPointer(
-  pointer: Pick<Phaser.Input.Pointer, 'wasCanceled'>,
-): boolean {
-  return pointer.wasCanceled === true
-}
-
-export function shouldAnimateCardDragEnd(
-  pointer: Pick<Phaser.Input.Pointer, 'wasCanceled'>,
-  dropped: boolean,
-  menuOpen: boolean,
-): boolean {
-  return !isCanceledPhaserPointer(pointer) && dropped && !menuOpen
-}
-
-export function shouldResolveCardDrop(
-  pointer: Pick<Phaser.Input.Pointer, 'wasCanceled'>,
-  menuOpen: boolean,
-  activeDrag: boolean,
-): boolean {
-  return !isCanceledPhaserPointer(pointer) && !menuOpen && activeDrag
 }
 
 export function cardFaceTextureSignature(
@@ -106,6 +93,9 @@ export class CardView {
   private appearanceSignature: string | null = null
   private interactionSignature: string | null = null
   private assignedCardId: string | null = null
+  private assignedName: string | null = null
+  private assignedWidth = 0
+  private assignedHeight = 0
   private targetX = 0
   private targetY = 0
   private moveDurationMs = 0
@@ -126,8 +116,22 @@ export class CardView {
     return this.assignedCardId
   }
 
-  get isDragging(): boolean {
-    return this.dragging
+  getDragSource(): CardViewDragSource | null {
+    if (
+      this.destroyed
+      || !this.draggable
+      || this.assignedCardId === null
+      || this.assignedName === null
+    ) {
+      return null
+    }
+    return {
+      cardId: this.assignedCardId,
+      name: this.assignedName,
+      width: this.assignedWidth,
+      height: this.assignedHeight,
+      container: this.container,
+    }
   }
 
   sync(options: CardViewSyncOptions): void {
@@ -137,9 +141,12 @@ export class CardView {
 
     const wasAssigned = this.assignedCardId !== null
     this.assignedCardId = options.cardId
+    this.assignedName = options.name
+    this.assignedWidth = options.width
+    this.assignedHeight = options.height
     this.container
       .setVisible(true)
-      .setAlpha(1)
+      .setAlpha(this.dragging ? DRAG_SOURCE_ALPHA : 1)
       .setDepth(DEPTH_GAMEPLAY)
       .setScale(1)
       .setRotation(0)
@@ -190,12 +197,20 @@ export class CardView {
     this.syncPosition(options, wasAssigned)
   }
 
-  beginDrag(): void {
-    if (this.destroyed || !this.draggable || this.assignedCardId === null) {
-      return
+  beginDrag(): boolean {
+    if (
+      this.destroyed
+      || this.dragging
+      || !this.draggable
+      || this.assignedCardId === null
+    ) {
+      return false
     }
     this.cancelMoveTween()
     this.dragging = true
+    this.container.setAlpha(DRAG_SOURCE_ALPHA)
+    this.container.emit('dragstart')
+    return true
   }
 
   endDrag(animateToTarget: boolean): void {
@@ -203,6 +218,8 @@ export class CardView {
       return
     }
     this.dragging = false
+    this.container.setAlpha(1)
+    this.container.emit('dragend')
     if (animateToTarget) {
       this.moveToTarget()
     } else {
@@ -222,6 +239,7 @@ export class CardView {
     if (this.destroyed) {
       return
     }
+    this.cancelDrag()
     this.cancelMoveTween()
     this.clearInteraction()
     this.container.removeAll(true)
@@ -238,6 +256,9 @@ export class CardView {
     this.appearanceSignature = null
     this.interactionSignature = null
     this.assignedCardId = null
+    this.assignedName = null
+    this.assignedWidth = 0
+    this.assignedHeight = 0
     this.targetX = 0
     this.targetY = 0
     this.moveDurationMs = 0
@@ -276,9 +297,6 @@ export class CardView {
       }
       this.resizeHitArea(options.width, options.height)
     }
-    if (options.draggable) {
-      this.scene.input.setDraggable(this.container)
-    }
     if (options.onClick) {
       let pointerDown = false
       let pointerId: number | null = null
@@ -293,7 +311,7 @@ export class CardView {
       this.container.on('pointerup', (pointer: Phaser.Input.Pointer) => {
         const releasedPointerId = Number.isInteger(pointer?.id) ? pointer.id : null
         const matchesPointer = pointerDown
-          && !isCanceledPhaserPointer(pointer)
+          && pointer.wasCanceled !== true
           && (pointerId === null || releasedPointerId === null || pointerId === releasedPointerId)
         clearPointer()
         if (matchesPointer) {
@@ -314,7 +332,6 @@ export class CardView {
 
   private clearInteraction(): void {
     if (this.container.input) {
-      this.scene.input.setDraggable(this.container, false)
       this.container.disableInteractive(true)
     }
     for (const event of CARD_VIEW_INTERACTION_EVENTS) {

@@ -54,6 +54,8 @@ src/
 │       ├── card-view.ts      Retained visible-card object owner
 │       ├── card-view-pool.ts Fully reset reusable CardView pool
 │       ├── card-view-registry.ts Stable card-id reconciliation + card layer
+│       ├── drag-state.ts    Pointer-type-aware drag state machine
+│       ├── drag-controller.ts Drag proxy, cancellation + legal-action owner
 │       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
 │       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)
 │       ├── cardgame-scene.ts CardgameScene: lifecycle/input wiring, menu
