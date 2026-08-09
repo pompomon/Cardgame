@@ -47,6 +47,15 @@ export interface CardViewContext {
 const MAX_CARD_MOVE_DURATION_MS = 400
 const PROCEDURAL_CARD_FACE = 'procedural-card-face'
 const PROCEDURAL_CARD_BACK = 'procedural-card-back'
+const CARD_VIEW_INTERACTION_EVENTS = [
+  'pointerdown',
+  'pointerup',
+  'pointerupoutside',
+  'pointerover',
+  'pointerout',
+  'dragstart',
+  'dragend',
+] as const
 
 export function cardMoveDurationMs(speed: AnimationSpeed): number {
   return Math.min(durationMsForSpeed(speed), MAX_CARD_MOVE_DURATION_MS)
@@ -286,7 +295,9 @@ export class CardView {
       this.scene.input.setDraggable(this.container, false)
       this.container.disableInteractive(true)
     }
-    this.container.removeAllListeners()
+    for (const event of CARD_VIEW_INTERACTION_EVENTS) {
+      this.container.removeAllListeners(event)
+    }
   }
 
   private resizeHitArea(width: number, height: number): void {

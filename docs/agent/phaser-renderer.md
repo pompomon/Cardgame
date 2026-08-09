@@ -50,9 +50,11 @@ modal pickers are added. `CardgameScene` preserves the stable card layer while
 destroying the gameplay root's transient siblings; the registry reorders that
 existing child in place rather than detaching/re-adding it and accumulating
 Phaser child-destroy listeners. Pool release destroys every face child and
-clears data and listeners, disables input, zeroes hit areas, and resets drag
-state, alpha, depth, scale, rotation, and active tweens before an outer
-container can be reused. Disabled Phaser interactive objects are retained
+clears data and interaction listeners, disables input, zeroes hit areas, and
+resets drag state, alpha, depth, scale, rotation, and active tweens before an
+outer container can be reused. Interaction cleanup must preserve Phaser's
+internal `destroy` listener so the parent layer can remove an evicted child.
+Disabled Phaser interactive objects are retained
 through pooling because `removeInteractive()` is deferred until the next frame;
 re-enabling one synchronously would otherwise drop it from the input list.
 Click
