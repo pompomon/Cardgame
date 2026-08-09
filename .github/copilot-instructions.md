@@ -99,7 +99,6 @@ and a short summary. See
 
 ## Code review skill
 
-For pull request reviews, use the repository-scoped
-`.github/skills/code-review` skill when available. It provides review-specific
+For pull request reviews, use the repository-scoped `code-review` skill (defined in `.github/skills/code-review/`) when available. It provides review-specific
 guidance for Cardgame performance, user experience, and implementation
 correctness.
