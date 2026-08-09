@@ -95,6 +95,7 @@ describe('phaser renderer module architecture', () => {
     )
     expect(sceneSource).toContain('child !== cardLayer')
     expect(sceneSource).toContain('new DragController({')
+    expect(sceneSource).toContain('isInteractionBlocked: () => this.menuOpen\n        || this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null')
     expect(sceneSource).toContain("this.dragController?.cancel('resize')")
     expect(sceneSource).toContain("this.dragController?.cancel('visibility')")
     expect(sceneSource).toContain("this.dragController?.cancel('menu')")

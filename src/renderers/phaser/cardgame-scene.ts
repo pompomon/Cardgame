@@ -165,7 +165,8 @@ export class CardgameScene extends Phaser.Scene {
       getGame: () => this.rendererRef.currentView?.game ?? null,
       getDropZone: () => this.battlefieldDropZone,
       getAnimationSpeed: () => this.rendererRef.currentView?.animationSpeed ?? DEFAULT_ANIMATION_SPEED,
-      isInteractionBlocked: () => this.menuOpen,
+      isInteractionBlocked: () => this.menuOpen
+        || this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null,
       createProxy: (source) => this.createDragProxy(source),
       submitAction: (action) => this.rendererRef.controller?.submitAction(action),
       beginTargetSelection: (game, cardId, options) => {
