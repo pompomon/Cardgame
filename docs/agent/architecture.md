@@ -50,7 +50,10 @@ src/
 │       ├── asset-manifest.ts   Board background/atlas texture manifests
 │       ├── texture-loader.ts   Tiered board loading + failed-URL suppression
 │       ├── board-background.ts Retained board background + ambience owner
-│       ├── card-factory.ts   Card GameObject factory (uses already-loaded textures)
+│       ├── card-factory.ts   Static card GameObject factory (previews/logs)
+│       ├── card-view.ts      Retained visible-card object owner
+│       ├── card-view-pool.ts Fully reset reusable CardView pool
+│       ├── card-view-registry.ts Stable card-id reconciliation + card layer
 │       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
 │       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)
 │       ├── cardgame-scene.ts CardgameScene: lifecycle/input wiring, menu
@@ -58,8 +61,8 @@ src/
 │       ├── gameplay-presenter.ts  Sequences the render-pass modules below
 │       ├── game-header.ts    Header strip (☰ Menu button, turn/winner label)
 │       ├── player-info.ts    Active/non-active player info panels
-│       ├── battlefield-view.ts  Both battlefields + card position registration
-│       ├── hand-controls.ts  Hand rendering + phase-specific controls
+│       ├── battlefield-view.ts  Battlefield chrome, positions + card descriptors
+│       ├── hand-controls.ts  Hand descriptors + phase-specific controls
 │       ├── log-tiles.ts   Log tile cap/legacy-fallback/empty/a11y content (pure, tested)
 │       ├── battlefield-targets.ts  Battlefield target pure state/a11y (tested)
 │       ├── target-picker.ts  Target-picker popup UI (explicit WebGL-safe culling)
