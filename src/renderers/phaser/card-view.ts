@@ -47,9 +47,39 @@ export interface CardViewContext {
 const MAX_CARD_MOVE_DURATION_MS = 400
 const PROCEDURAL_CARD_FACE = 'procedural-card-face'
 const PROCEDURAL_CARD_BACK = 'procedural-card-back'
+const CARD_VIEW_INTERACTION_EVENTS = [
+  'pointerdown',
+  'pointerup',
+  'pointerover',
+  'pointerout',
+  'dragstart',
+  'dragend',
+] as const
 
 export function cardMoveDurationMs(speed: AnimationSpeed): number {
   return Math.min(durationMsForSpeed(speed), MAX_CARD_MOVE_DURATION_MS)
+}
+
+export function isCanceledPhaserPointer(
+  pointer: Pick<Phaser.Input.Pointer, 'wasCanceled'>,
+): boolean {
+  return pointer.wasCanceled === true
+}
+
+export function shouldAnimateCardDragEnd(
+  pointer: Pick<Phaser.Input.Pointer, 'wasCanceled'>,
+  dropped: boolean,
+  menuOpen: boolean,
+): boolean {
+  return !isCanceledPhaserPointer(pointer) && dropped && !menuOpen
+}
+
+export function shouldResolveCardDrop(
+  pointer: Pick<Phaser.Input.Pointer, 'wasCanceled'>,
+  menuOpen: boolean,
+  activeDrag: boolean,
+): boolean {
+  return !isCanceledPhaserPointer(pointer) && !menuOpen && activeDrag
 }
 
 export function cardFaceTextureSignature(
@@ -263,13 +293,14 @@ export class CardView {
       this.container.on('pointerup', (pointer: Phaser.Input.Pointer) => {
         const releasedPointerId = Number.isInteger(pointer?.id) ? pointer.id : null
         const matchesPointer = pointerDown
+          && !isCanceledPhaserPointer(pointer)
           && (pointerId === null || releasedPointerId === null || pointerId === releasedPointerId)
         clearPointer()
         if (matchesPointer) {
           options.onClick?.()
         }
       })
-      this.container.on('pointerupoutside', clearPointer)
+      this.container.on('pointerout', clearPointer)
     }
     if (options.preview) {
       this.bindPreview?.(
@@ -286,7 +317,9 @@ export class CardView {
       this.scene.input.setDraggable(this.container, false)
       this.container.disableInteractive(true)
     }
-    this.container.removeAllListeners()
+    for (const event of CARD_VIEW_INTERACTION_EVENTS) {
+      this.container.removeAllListeners(event)
+    }
   }
 
   private resizeHitArea(width: number, height: number): void {

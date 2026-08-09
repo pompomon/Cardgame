@@ -8,6 +8,8 @@ import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import {
   cardFaceTextureSignature,
   cardMoveDurationMs,
+  shouldAnimateCardDragEnd,
+  shouldResolveCardDrop,
   type CardViewDescriptor,
 } from '../renderers/phaser/card-view'
 import { CardViewRegistry } from '../renderers/phaser/card-view-registry'
@@ -56,6 +58,7 @@ class FakeContainer {
   readonly data = new FakeDataManager()
   readonly children: FakeContainer[] = []
   readonly listeners = new Map<string, Listener[]>()
+  readonly childDestroyListeners = new Map<FakeContainer, Listener>()
   parentContainer: FakeContainer | null = null
   input: {
     enabled: boolean
@@ -80,6 +83,11 @@ class FakeContainer {
       entry.parentContainer?.remove(entry, false)
       entry.parentContainer = this
       this.children.push(entry)
+      const onDestroy = (): void => {
+        this.remove(entry, false)
+      }
+      entry.on('destroy', onDestroy)
+      this.childDestroyListeners.set(entry, onDestroy)
     }
     return this
   }
@@ -88,6 +96,11 @@ class FakeContainer {
     const index = this.children.indexOf(child)
     if (index >= 0) {
       this.children.splice(index, 1)
+      const onDestroy = this.childDestroyListeners.get(child)
+      if (onDestroy) {
+        child.off('destroy', onDestroy)
+        this.childDestroyListeners.delete(child)
+      }
       child.parentContainer = null
       if (destroyChild) {
         child.destroy(true)
@@ -202,6 +215,20 @@ class FakeContainer {
     return this
   }
 
+  off(event: string, listener: Listener): this {
+    const listeners = this.listeners.get(event)
+    if (!listeners) {
+      return this
+    }
+    const remaining = listeners.filter((entry) => entry !== listener)
+    if (remaining.length === 0) {
+      this.listeners.delete(event)
+    } else {
+      this.listeners.set(event, remaining)
+    }
+    return this
+  }
+
   removeAllListeners(event?: string): this {
     if (event === undefined) {
       this.listeners.clear()
@@ -229,7 +256,7 @@ class FakeContainer {
     if (this.destroyed) {
       return
     }
-    this.parentContainer?.remove(this, false)
+    this.emit('destroy', this)
     this.removeAll(destroyChildren)
     this.destroyed = true
   }
@@ -357,11 +384,12 @@ function descriptor(
   }
 }
 
-function createRegistry(harness: Harness): CardViewRegistry {
+function createRegistry(harness: Harness, maxPoolSize?: number): CardViewRegistry {
   return new CardViewRegistry({
     scene: harness.scene as never,
     renderCard: harness.renderCard as never,
     bindPreview: harness.bindPreview as never,
+    maxPoolSize,
   })
 }
 
@@ -473,7 +501,8 @@ describe('Phaser retained card views', () => {
     expect(container.rotation).toBe(0)
     expect(container.children).toEqual([])
     expect(container.data.values.size).toBe(0)
-    expect(container.listenerCount()).toBe(0)
+    expect(container.listeners.get('destroy')).toHaveLength(1)
+    expect(container.listenerCount()).toBe(1)
     expect(container.input).toMatchObject({
       enabled: false,
       draggable: false,
@@ -487,6 +516,23 @@ describe('Phaser retained card views', () => {
     expect(harness.renderCard.mock.calls.at(-1)?.[4]).toBe('Island')
     expect(container.getData('cardId')).toBe('public-card')
     expect([...container.data.values.values()]).not.toContain(HIDDEN_HAND_CARD_NAME)
+  })
+
+  it('preserves the Phaser parent lifecycle listener when pool eviction destroys a view', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness, 0)
+    sync(registry, harness, [descriptor('lifecycle-card', {
+      draggable: true,
+      interactionKey: 'drag:lifecycle-card',
+    })])
+    const container = registry.get('lifecycle-card')!.container as unknown as FakeContainer
+    const layer = registry.layer as unknown as FakeContainer
+    expect(layer.children).toContain(container)
+
+    sync(registry, harness, [])
+
+    expect(container.destroyed).toBe(true)
+    expect(layer.children).not.toContain(container)
   })
 
   it('rebuilds only the face when failed raster art falls back, then stays idempotent', () => {
@@ -541,6 +587,44 @@ describe('Phaser retained card views', () => {
     container.emit('pointerdown', { id: 4 })
     container.emit('pointerup', { id: 4 })
     expect(submitResponse).toHaveBeenCalledOnce()
+  })
+
+  it('rejects canceled and outside click releases before submitting an action', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+    const submitResponse = vi.fn()
+    sync(registry, harness, [descriptor('response-card', {
+      preview: false,
+      onClick: submitResponse,
+      interactionKey: 'response:response-card',
+    })])
+    const container = registry.get('response-card')!.container as unknown as FakeContainer
+
+    container.emit('pointerdown', { id: 1, wasCanceled: false })
+    container.emit('pointerout', { id: 1, wasCanceled: false })
+    container.emit('pointerup', { id: 1, wasCanceled: false })
+    container.emit('pointerdown', { id: 2, wasCanceled: false })
+    container.emit('pointerup', { id: 2, wasCanceled: true })
+    container.emit('pointerup', { id: 2, wasCanceled: false })
+    expect(submitResponse).not.toHaveBeenCalled()
+
+    container.emit('pointerdown', { id: 3, wasCanceled: false })
+    container.emit('pointerup', { id: 3, wasCanceled: false })
+    expect(submitResponse).toHaveBeenCalledOnce()
+  })
+
+  it('never animates a canceled drag release toward its drop target', () => {
+    expect(shouldAnimateCardDragEnd({ wasCanceled: true }, true, false)).toBe(false)
+    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, false, false)).toBe(false)
+    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, true, true)).toBe(false)
+    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, true, false)).toBe(true)
+  })
+
+  it('resolves drops only for active, uncanceled drags while the menu is closed', () => {
+    expect(shouldResolveCardDrop({ wasCanceled: true }, false, true)).toBe(false)
+    expect(shouldResolveCardDrop({ wasCanceled: false }, true, true)).toBe(false)
+    expect(shouldResolveCardDrop({ wasCanceled: false }, false, false)).toBe(false)
+    expect(shouldResolveCardDrop({ wasCanceled: false }, false, true)).toBe(true)
   })
 
   it('recreates hit areas after card dimensions change', () => {
