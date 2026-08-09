@@ -10,6 +10,7 @@ export const DEPTH_EFFECT_OVERLAY = 1
 export const DEPTH_HEADER_STRIP = 9
 export const DEPTH_HEADER = 10
 export const DEPTH_CARD_PREVIEW_OVERLAY = 15
+export const DEPTH_DRAG_PROXY = 18
 export const DEPTH_MENU_OVERLAY = 20
 export const DEPTH_TARGET_PICKER_OVERLAY = 30
 
@@ -21,6 +22,7 @@ export const SCENE_DEPTHS = {
   headerStrip: DEPTH_HEADER_STRIP,
   header: DEPTH_HEADER,
   cardPreviewOverlay: DEPTH_CARD_PREVIEW_OVERLAY,
+  dragProxy: DEPTH_DRAG_PROXY,
   menuOverlay: DEPTH_MENU_OVERLAY,
   targetPickerOverlay: DEPTH_TARGET_PICKER_OVERLAY,
 } as const

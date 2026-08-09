@@ -4,6 +4,7 @@ import {
   CardView,
   type CardViewContext,
   type CardViewDescriptor,
+  type CardViewDragSource,
 } from './card-view'
 import { CardViewPool } from './card-view-pool'
 import { DEPTH_GAMEPLAY } from './depth'
@@ -97,8 +98,12 @@ export class CardViewRegistry {
     this.attach(options.root)
   }
 
-  beginDrag(container: Phaser.GameObjects.Container): void {
-    this.findByContainer(container)?.beginDrag()
+  getDragSource(object: Phaser.GameObjects.GameObject): CardViewDragSource | null {
+    return this.findByContainer(object)?.getDragSource() ?? null
+  }
+
+  beginDrag(container: Phaser.GameObjects.Container): boolean {
+    return this.findByContainer(container)?.beginDrag() ?? false
   }
 
   endDrag(container: Phaser.GameObjects.Container, animateToTarget: boolean): void {
@@ -151,7 +156,7 @@ export class CardViewRegistry {
     this.pool.release(view)
   }
 
-  private findByContainer(container: Phaser.GameObjects.Container): CardView | null {
+  private findByContainer(container: Phaser.GameObjects.GameObject): CardView | null {
     for (const view of this.active.values()) {
       if (view.container === container) {
         return view

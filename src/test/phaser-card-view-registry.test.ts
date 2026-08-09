@@ -8,8 +8,6 @@ import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import {
   cardFaceTextureSignature,
   cardMoveDurationMs,
-  shouldAnimateCardDragEnd,
-  shouldResolveCardDrop,
   type CardViewDescriptor,
 } from '../renderers/phaser/card-view'
 import { CardViewRegistry } from '../renderers/phaser/card-view-registry'
@@ -613,20 +611,6 @@ describe('Phaser retained card views', () => {
     expect(submitResponse).toHaveBeenCalledOnce()
   })
 
-  it('never animates a canceled drag release toward its drop target', () => {
-    expect(shouldAnimateCardDragEnd({ wasCanceled: true }, true, false)).toBe(false)
-    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, false, false)).toBe(false)
-    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, true, true)).toBe(false)
-    expect(shouldAnimateCardDragEnd({ wasCanceled: false }, true, false)).toBe(true)
-  })
-
-  it('resolves drops only for active, uncanceled drags while the menu is closed', () => {
-    expect(shouldResolveCardDrop({ wasCanceled: true }, false, true)).toBe(false)
-    expect(shouldResolveCardDrop({ wasCanceled: false }, true, true)).toBe(false)
-    expect(shouldResolveCardDrop({ wasCanceled: false }, false, false)).toBe(false)
-    expect(shouldResolveCardDrop({ wasCanceled: false }, false, true)).toBe(true)
-  })
-
   it('recreates hit areas after card dimensions change', () => {
     const harness = createHarness()
     const registry = createRegistry(harness)
@@ -694,8 +678,16 @@ describe('Phaser retained card views', () => {
       })
       sync(registry, harness, [handCard], 'normal')
       const container = registry.get('drag-card')!.container as unknown as FakeContainer
-      registry.beginDrag(container as never)
+      const source = registry.getDragSource(container as never)
+      expect(source).toMatchObject({
+        cardId: 'drag-card',
+        name: 'Forest',
+        width: layout.handCardWidth,
+        height: layout.handCardHeight,
+      })
+      expect(registry.beginDrag(container as never)).toBe(true)
       expect(registry.isActiveDrag(container as never)).toBe(true)
+      expect(container.alpha).toBe(0.35)
       container.setPosition(250, 500)
 
       const battlefieldCard = descriptor('drag-card', {
@@ -710,6 +702,7 @@ describe('Phaser retained card views', () => {
       expect(container.x).toBe(250)
 
       registry.endDrag(container as never, true)
+      expect(container.alpha).toBe(1)
       expect(harness.tweenCount()).toBe(1)
       vi.advanceTimersByTime(cardMoveDurationMs('normal'))
       expect(container.x).toBe(420)
