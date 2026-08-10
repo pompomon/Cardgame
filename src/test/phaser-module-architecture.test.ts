@@ -31,6 +31,7 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
   { file: 'board-background.ts', concern: 'retained board background / ambience owner' },
+  { file: 'quality.ts', concern: 'adaptive desktop/mobile quality profile policy' },
 
   // Lobby
   { file: 'lobby-scene.ts', concern: 'lobby scene' },

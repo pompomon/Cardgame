@@ -74,6 +74,8 @@ src/
 │       ├── p2p-overlay.ts    Lobby P2P manual-signaling HTML overlay
 │       ├── a11y-navigation.ts  Keyboard/screen-reader nav mirroring Phaser UI
 │       ├── recording-file-actions.ts  Hidden file input + recording download
+│       ├── quality.ts     Adaptive PhaserQualityProfile policy (tier, DPR
+│       │                  bound, background variant, ambience, tweens)
 │       ├── layout.ts      Shared layout math + clamp
 │       ├── log-scroll.ts  Menu Replay Log scroll math
 │       ├── log-events.ts  formatLogEventTile/Text
