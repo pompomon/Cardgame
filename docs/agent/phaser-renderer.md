@@ -41,6 +41,24 @@ it cover-crops loaded backgrounds with `setCrop`, uses bounded quality-aware
 ambience sprites, and evicts stale large background textures after a theme
 switch.
 
+`quality.ts` turns the renderer-neutral render-quality *preference*
+(`src/app/render-quality.ts`) plus device signals — viewport size,
+phone-sizedness, `prefers-reduced-motion`, animation speed, and page
+visibility — into a frozen `PhaserQualityProfile` (`tier`,
+`maxDevicePixelRatio`, `backgroundVariant`, `ambience`, `maxParticles`,
+`effectDetail`, `enableMoveTweens`, `enableHoverTweens`, `enableShadows`,
+`antialias`). `CardgameScene`
+resolves the profile once per render pass and feeds it to the retained views,
+so a preference/orientation/visibility change reconciles existing objects
+instead of rebuilding the scene. `'auto'` never picks the high tier on
+phone-sized viewports, and phones are capped at DPR 2 regardless of tier.
+Phaser 4 has no `GameConfig.resolution` and its `ScaleManager` never
+multiplies the drawing buffer by `window.devicePixelRatio` (verified against
+phaser@4.1.0), so with `Phaser.Scale.RESIZE` the canvas already renders at CSS
+pixels — `maxDevicePixelRatio` is an explicit policy bound, not a scale-manager
+override. Do not change scale/resolution behavior without re-verifying those
+APIs.
+
 Visible hand and battlefield cards use the retained path in `card-view.ts`,
 `card-view-pool.ts`, and `card-view-registry.ts`. The app view model projects
 both stable `cardId` and targeting-only `instanceId` values for battlefield
@@ -188,7 +206,10 @@ the bottom of the visible strip".
   effect completion callback runs. The retained visual is renderer-owned and
   must also be cleared on queue reset, game changes, unmount, or scene shutdown;
   position history remains only the fallback for anchoring particles.
-- **Use the reduced quality tier on phone-sized viewports.** It lowers particle
+- **Use the reduced quality tier on phone-sized viewports.** The resolved
+  `PhaserQualityProfile.effectDetail` decides this: detail is reduced only on
+  phone-sized viewports and on the `low` tier, so balanced desktop viewports
+  (including `auto` on small desktops) keep full detail. It lowers particle
   counts and overdraw but must not alter queue ordering, duration, completion,
   or disabled-animation semantics.
 - **Every recipe completes and cleans up exactly once.** Coordinated trails and

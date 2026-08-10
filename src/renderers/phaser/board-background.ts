@@ -1,10 +1,8 @@
 import type Phaser from 'phaser'
-import type { AnimationSpeed } from '../../app/types'
 import type { BoardTheme } from '../../app/board-theme'
-import type { RenderQualityPreference } from '../../app/render-quality'
 import { DEPTH_BACKGROUND } from './depth'
 import type { SceneLayout } from './layout'
-import { isPhoneSizedViewport } from './quality'
+import type { PhaserQualityProfile } from './quality'
 
 export interface CoverFitCrop {
   readonly x: number
@@ -19,26 +17,16 @@ export interface BoardAmbiencePolicy {
   readonly tweenDurationMs: number
 }
 
-export interface BoardAmbiencePolicyInput {
-  readonly quality: RenderQualityPreference
-  readonly animationSpeed: AnimationSpeed
-  readonly width: number
-  readonly height: number
-  readonly documentHidden?: boolean
-}
-
 export interface BoardBackgroundSyncOptions {
   readonly layout: SceneLayout
   readonly theme: BoardTheme
-  readonly quality: RenderQualityPreference
-  readonly animationSpeed: AnimationSpeed
+  readonly profile: PhaserQualityProfile
   readonly backgroundTextureKey: string | null
   readonly backgroundCandidateKeys: readonly string[]
 }
 
 export interface BoardBackgroundViewContext {
   readonly scene: Phaser.Scene
-  readonly getDocumentHidden?: () => boolean
 }
 
 const AMBIENCE_FRAME = 'ambient-mote'
@@ -84,26 +72,23 @@ export function computeCoverFitCrop(
   }
 }
 
-export function resolveBoardAmbiencePolicy(input: BoardAmbiencePolicyInput): BoardAmbiencePolicy {
-  if (input.documentHidden || input.animationSpeed === 'off' || input.quality === 'low') {
+// Ambience is a pure projection of the resolved quality profile: the profile
+// already folds in reduced motion, animation speed, page visibility, viewport
+// size, and the user's render-quality preference.
+export function resolveBoardAmbiencePolicy(profile: PhaserQualityProfile): BoardAmbiencePolicy {
+  if (profile.ambience === 'off' || profile.maxParticles <= 0) {
     return { spriteCount: 0, alpha: 0, tweenDurationMs: 0 }
   }
-
-  const phone = isPhoneSizedViewport(input.width, input.height)
-  const spriteCount = input.quality === 'high'
-    ? (phone ? 4 : 8)
-    : (phone ? 2 : 4)
-
+  const full = profile.ambience === 'full'
   return {
-    spriteCount,
-    alpha: input.quality === 'high' ? 0.28 : 0.18,
-    tweenDurationMs: input.quality === 'high' ? 2600 : 3600,
+    spriteCount: profile.maxParticles,
+    alpha: full ? 0.28 : 0.18,
+    tweenDurationMs: full ? 2600 : 3600,
   }
 }
 
 export class BoardBackgroundView {
   private readonly scene: Phaser.Scene
-  private readonly getDocumentHidden: () => boolean
   private container: Phaser.GameObjects.Container | null = null
   private fallback: Phaser.GameObjects.Rectangle | null = null
   private background: Phaser.GameObjects.Image | null = null
@@ -115,7 +100,6 @@ export class BoardBackgroundView {
 
   constructor(ctx: BoardBackgroundViewContext) {
     this.scene = ctx.scene
-    this.getDocumentHidden = ctx.getDocumentHidden ?? (() => false)
   }
 
   sync(options: BoardBackgroundSyncOptions): void {
@@ -123,7 +107,7 @@ export class BoardBackgroundView {
     this.syncFallback(container, options)
     this.syncBackground(container, options)
     this.syncAmbience(container, options)
-    this.evictUnusedBackgroundTextures(options.backgroundTextureKey, options.backgroundCandidateKeys)
+    this.evictUnusedBackgroundTextures(this.currentTextureKey, options.backgroundCandidateKeys)
   }
 
   destroy(): void {
@@ -171,9 +155,14 @@ export class BoardBackgroundView {
     container: Phaser.GameObjects.Container,
     options: BoardBackgroundSyncOptions,
   ): void {
+    // Retain the currently displayed texture when the requested one is not
+    // resident yet (e.g. a theme/tier switch whose PNG is still loading).
+    // Hiding it here would flash the flat fallback color, and the eviction
+    // pass below would then drop a still-usable texture and force a
+    // multi-hundred-KB re-download.
     const textureKey = this.textureExists(options.backgroundTextureKey)
       ? options.backgroundTextureKey
-      : null
+      : (this.textureExists(this.currentTextureKey) ? this.currentTextureKey : null)
 
     if (textureKey === null) {
       this.background?.setVisible(false)
@@ -209,13 +198,7 @@ export class BoardBackgroundView {
     options: BoardBackgroundSyncOptions,
   ): void {
     const atlasKey = `board-atlas:ambience:${options.theme}`
-    const policy = resolveBoardAmbiencePolicy({
-      quality: options.quality,
-      animationSpeed: options.animationSpeed,
-      width: options.layout.width,
-      height: options.layout.height,
-      documentHidden: this.getDocumentHidden(),
-    })
+    const policy = resolveBoardAmbiencePolicy(options.profile)
     const availableCount = this.textureHasFrame(atlasKey, AMBIENCE_FRAME)
       ? policy.spriteCount
       : 0
@@ -239,11 +222,11 @@ export class BoardBackgroundView {
         .setTexture(atlasKey, AMBIENCE_FRAME)
         .setVisible(true)
         .setPosition(x, y)
-        .setScale(options.quality === 'high' ? 1.2 : 0.9)
+        .setScale(options.profile.ambience === 'full' ? 1.2 : 0.9)
         .setAlpha(policy.alpha)
     }
 
-    const tweenSignature = `${options.theme}:${options.quality}:${options.animationSpeed}:${availableCount}:${policy.alpha}:${policy.tweenDurationMs}`
+    const tweenSignature = `${options.theme}:${options.profile.tier}:${options.profile.ambience}:${availableCount}:${policy.alpha}:${policy.tweenDurationMs}`
     if (tweenSignature === this.ambienceTweenSignature) {
       return
     }
@@ -275,6 +258,16 @@ export class BoardBackgroundView {
     activeTextureKey: string | null,
     candidateKeys: readonly string[],
   ): void {
+    // Never evict while nothing is displayed: the active texture may simply
+    // not have finished loading yet.
+    if (activeTextureKey === null) {
+      for (const key of candidateKeys) {
+        if (this.scene.textures.exists(key)) {
+          this.knownBackgroundKeys.add(key)
+        }
+      }
+      return
+    }
     for (const key of candidateKeys) {
       if (this.scene.textures.exists(key)) {
         this.knownBackgroundKeys.add(key)

@@ -1,6 +1,7 @@
 import type Phaser from 'phaser'
 import type { BoardTheme } from '../../app/board-theme'
 import type { RenderQualityPreference } from '../../app/render-quality'
+import type { PhaserQualityTier } from './quality'
 import {
   buildPhaserBoardAssetManifest,
   resolveLoadedBoardBackgroundTextureKey,
@@ -344,7 +345,7 @@ function textureLoaderPortForScene(scene: Phaser.Scene): PhaserTextureLoaderPort
 export function preloadPhaserBoardAssets(
   scene: Phaser.Scene,
   theme: BoardTheme,
-  quality: RenderQualityPreference,
+  quality: RenderQualityPreference | PhaserQualityTier,
   onComplete?: () => void,
 ): BoardAssetLoadHandle {
   return loadPhaserBoardAssetManifest(

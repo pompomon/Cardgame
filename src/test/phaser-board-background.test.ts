@@ -7,6 +7,7 @@ import {
   type BoardBackgroundSyncOptions,
 } from '../renderers/phaser/board-background'
 import { buildLayout } from '../renderers/phaser/layout'
+import { resolvePhaserQualityProfile } from '../renderers/phaser/quality'
 
 class FakeDisplayObject {
   destroyed = false
@@ -157,6 +158,19 @@ function createSceneHarness(): {
 
 const layout = buildLayout(1280, 720, 'horizontal')
 
+function profileFor(
+  preference: 'auto' | 'high' | 'balanced' | 'low',
+  overrides: { width?: number; height?: number; animationSpeed?: 'off' | 'normal'; documentHidden?: boolean } = {},
+) {
+  return resolvePhaserQualityProfile({
+    preference,
+    width: overrides.width ?? 1280,
+    height: overrides.height ?? 720,
+    animationSpeed: overrides.animationSpeed ?? 'normal',
+    documentHidden: overrides.documentHidden,
+  })
+}
+
 function syncOptions(
   theme: BoardTheme,
   backgroundTextureKey: string | null,
@@ -165,8 +179,7 @@ function syncOptions(
   return {
     layout,
     theme,
-    quality: 'high',
-    animationSpeed: 'normal',
+    profile: profileFor('high'),
     backgroundTextureKey,
     backgroundCandidateKeys: candidateKeys,
   }
@@ -251,32 +264,18 @@ describe('Phaser board background view', () => {
     expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
   })
 
-  it('bounds ambience by quality, reduced motion, hidden-page state, and phone viewports', () => {
-    expect(resolveBoardAmbiencePolicy({
-      quality: 'high',
-      animationSpeed: 'normal',
-      width: 1280,
-      height: 720,
-    }).spriteCount).toBe(8)
-    expect(resolveBoardAmbiencePolicy({
-      quality: 'high',
-      animationSpeed: 'normal',
-      width: 390,
-      height: 844,
-    }).spriteCount).toBe(4)
-    expect(resolveBoardAmbiencePolicy({
-      quality: 'balanced',
-      animationSpeed: 'off',
-      width: 1280,
-      height: 720,
-    }).spriteCount).toBe(0)
-    expect(resolveBoardAmbiencePolicy({
-      quality: 'balanced',
-      animationSpeed: 'normal',
-      width: 1280,
-      height: 720,
-      documentHidden: true,
-    }).spriteCount).toBe(0)
+  it('projects ambience from the resolved quality profile', () => {
+    expect(resolveBoardAmbiencePolicy(profileFor('high')).spriteCount).toBe(8)
+    expect(resolveBoardAmbiencePolicy(profileFor('high', { width: 390, height: 844 })).spriteCount).toBe(4)
+    expect(resolveBoardAmbiencePolicy(profileFor('balanced')).spriteCount).toBe(4)
+    expect(resolveBoardAmbiencePolicy(profileFor('balanced', { animationSpeed: 'off' })).spriteCount).toBe(0)
+    expect(resolveBoardAmbiencePolicy(profileFor('balanced', { documentHidden: true })).spriteCount).toBe(0)
+    expect(resolveBoardAmbiencePolicy(profileFor('low')).spriteCount).toBe(0)
+
+    const full = resolveBoardAmbiencePolicy(profileFor('high'))
+    const reduced = resolveBoardAmbiencePolicy(profileFor('balanced'))
+    expect(full.alpha).toBeGreaterThan(reduced.alpha)
+    expect(full.tweenDurationMs).toBeLessThan(reduced.tweenDurationMs)
   })
 
   it('creates bounded ambience sprites once and removes them when quality disables ambience', () => {
@@ -294,9 +293,67 @@ describe('Phaser board background view', () => {
 
     view.sync({
       ...options,
-      quality: 'low',
+      profile: profileFor('low'),
     })
 
     expect(harness.sprites.every((sprite) => sprite.destroyed)).toBe(true)
+  })
+
+  it('reconciles a quality-profile downgrade in place without duplicating retained objects', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    harness.addTexture('board-atlas:ambience:classic', 16, 16, ['ambient-mote'])
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    view.sync({
+      ...syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']),
+      profile: profileFor('high'),
+    })
+
+    // The balanced-tier texture only becomes available after the tier switch
+    // triggers its load, mirroring the scene's manifest reload.
+    harness.addTexture('board-background:classic:balanced', 1280, 720)
+    view.sync({
+      ...syncOptions('classic', 'board-background:classic:balanced', ['board-background:classic:balanced']),
+      profile: profileFor('balanced'),
+    })
+
+    expect(harness.containers).toHaveLength(1)
+    expect(harness.images).toHaveLength(1)
+    expect(harness.images[0].textureKey).toBe('board-background:classic:balanced')
+    expect(harness.sprites.filter((sprite) => !sprite.destroyed)).toHaveLength(4)
+    expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
+  })
+
+  it('keeps the resident background and its texture when a replacement has not loaded yet', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+    // Theme/tier switch whose replacement PNG is still downloading.
+    view.sync(syncOptions('moonlit', null, ['board-background:moonlit:balanced']))
+
+    expect(harness.images).toHaveLength(1)
+    expect(harness.images[0].visible).toBe(true)
+    expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
+    expect(harness.removedTextures).toEqual([])
+  })
+
+  it('stops ambience when the page becomes hidden and restores it when visible again', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    harness.addTexture('board-atlas:ambience:classic', 16, 16, ['ambient-mote'])
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+    const options = syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd'])
+
+    view.sync(options)
+    expect(harness.sprites.filter((sprite) => !sprite.destroyed)).toHaveLength(8)
+
+    view.sync({ ...options, profile: profileFor('high', { documentHidden: true }) })
+    expect(harness.sprites.filter((sprite) => !sprite.destroyed)).toHaveLength(0)
+
+    view.sync(options)
+    expect(harness.sprites.filter((sprite) => !sprite.destroyed)).toHaveLength(8)
   })
 })

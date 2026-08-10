@@ -9,6 +9,7 @@ import { EffectController } from '../renderers/phaser/effect-controller'
 import type { BattlefieldCardPlacement } from '../renderers/phaser/effect-anchoring'
 import type { EffectAnchor, EffectDescriptor } from '../renderers/phaser/effects'
 import type { SceneLayout } from '../renderers/phaser/layout'
+import type { PhaserEffectDetail, PhaserQualityProfile } from '../renderers/phaser/quality'
 
 const layout = {
   boardColumnLeft: 100,
@@ -126,6 +127,79 @@ describe('Phaser effect controller', () => {
     expect(retainedCard.destroy).toHaveBeenCalledOnce()
     expect(onQueueDrained).toHaveBeenCalledOnce()
     expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
+  })
+
+  it('forwards the quality profile effect detail and falls back to the viewport heuristic', () => {
+    const view = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0,
+        events: [
+          { kind: 'play_land', actor: 0, cardName: 'Mountain', sourceInstanceId: 'p0-1' },
+        ],
+      },
+    } as unknown as AppViewModel
+    const qualities: Array<PhaserEffectDetail | undefined> = []
+    const playEffect = vi.fn((
+      _scene,
+      _anchor: EffectAnchor,
+      _descriptor: EffectDescriptor,
+      _durationMs: number,
+      done: () => void,
+      quality?: PhaserEffectDetail,
+    ) => {
+      qualities.push(quality)
+      done()
+    })
+
+    // A desktop-sized viewport would fall back to 'full', so a 'reduced'
+    // profile proves the profile wins over the viewport heuristic.
+    const desktopScene = { scale: { width: 1280, height: 720 } }
+    const reducedController = new EffectController({
+      scene: desktopScene as never,
+      getLayout: () => layout,
+      getCurrentView: () => view,
+      playEffect: playEffect as never,
+      getQualityProfile: () => ({ effectDetail: 'reduced' } as PhaserQualityProfile),
+    })
+    reducedController.recordCardPosition('p0-1', placement(0, 0, 1, 400, 490))
+    reducedController.processAbilityEffects(view)
+
+    // A phone-sized viewport would fall back to 'reduced', so a 'full'
+    // profile proves the override works in both directions.
+    const phoneScene = { scale: { width: 390, height: 844 } }
+    const fullController = new EffectController({
+      scene: phoneScene as never,
+      getLayout: () => layout,
+      getCurrentView: () => view,
+      playEffect: playEffect as never,
+      getQualityProfile: () => ({ effectDetail: 'full' } as PhaserQualityProfile),
+    })
+    fullController.recordCardPosition('p0-1', placement(0, 0, 1, 400, 490))
+    fullController.processAbilityEffects(view)
+
+    // Without a profile the viewport heuristic still applies.
+    const fallbackController = new EffectController({
+      scene: phoneScene as never,
+      getLayout: () => layout,
+      getCurrentView: () => view,
+      playEffect: playEffect as never,
+      getQualityProfile: () => null,
+    })
+    fallbackController.recordCardPosition('p0-1', placement(0, 0, 1, 400, 490))
+    fallbackController.processAbilityEffects(view)
+
+    const noProfileController = new EffectController({
+      scene: desktopScene as never,
+      getLayout: () => layout,
+      getCurrentView: () => view,
+      playEffect: playEffect as never,
+    })
+    noProfileController.recordCardPosition('p0-1', placement(0, 0, 1, 400, 490))
+    noProfileController.processAbilityEffects(view)
+
+    expect(qualities).toEqual(['reduced', 'full', 'reduced', 'full'])
   })
 
   it('reset() invalidates a still-in-flight effect so its later done() cannot affect the new game', () => {

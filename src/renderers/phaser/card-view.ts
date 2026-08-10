@@ -32,6 +32,10 @@ export interface CardViewSyncOptions extends CardViewDescriptor {
   readonly layout: SceneLayout
   readonly visualStyle: CardVisualStyle
   readonly animationSpeed: AnimationSpeed
+  // Adaptive quality policy (see quality.ts). When false, positions snap
+  // instead of tweening — used for reduced motion, animations-off, and hidden
+  // tabs. Defaults to enabled so existing call sites keep their behaviour.
+  readonly enableMoveTweens?: boolean
 }
 
 export interface CardViewContext {
@@ -350,7 +354,9 @@ export class CardView {
     const positionChanged = options.x !== this.targetX || options.y !== this.targetY
     this.targetX = options.x
     this.targetY = options.y
-    this.moveDurationMs = cardMoveDurationMs(options.animationSpeed)
+    this.moveDurationMs = options.enableMoveTweens === false
+      ? 0
+      : cardMoveDurationMs(options.animationSpeed)
 
     if (!wasAssigned) {
       this.cancelMoveTween()

@@ -9,7 +9,7 @@ import {
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
 } from '../../app/action-resolution'
-import { DEFAULT_ANIMATION_SPEED } from '../../app/animation-settings'
+import { DEFAULT_ANIMATION_SPEED, prefersReducedMotion } from '../../app/animation-settings'
 import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
@@ -28,6 +28,11 @@ import { DropZoneView } from './drop-zone-view'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
+import {
+  assetQualityTierForPreference,
+  resolvePhaserQualityProfile,
+  type PhaserQualityProfile,
+} from './quality'
 import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
 import { BattlefieldTargetsController } from './battlefield-targets'
@@ -61,6 +66,12 @@ export class CardgameScene extends Phaser.Scene {
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
+  private qualityProfile: PhaserQualityProfile = resolvePhaserQualityProfile({
+    preference: DEFAULT_RENDER_QUALITY_PREFERENCE,
+    width: BASE_WIDTH,
+    height: BASE_HEIGHT,
+    animationSpeed: DEFAULT_ANIMATION_SPEED,
+  })
   private readonly boardPresentation = new BoardPresentationCoordinator()
 
   private readonly effectController: EffectController
@@ -76,6 +87,7 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getLayout: () => this.currentLayout,
       getCurrentView: () => this.rendererRef.currentView,
+      getQualityProfile: () => this.qualityProfile,
       onQueueDrained: () => {
         this.effectFeedback = null
         if (this.boardPresentation.effectsDrained()) {
@@ -119,6 +131,7 @@ export class CardgameScene extends Phaser.Scene {
           layout: this.currentLayout,
           visualStyle: view.cardVisualStyle,
           animationSpeed: view.animationSpeed,
+          enableMoveTweens: this.qualityProfile.enableMoveTweens,
         })
       },
     })
@@ -130,21 +143,19 @@ export class CardgameScene extends Phaser.Scene {
     const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
     preloadCardArt(this, selectedStyle)
-    this.boardAssetLoadHandle?.dispose()
-    this.boardAssetLoadHandle = preloadPhaserBoardAssets(
-      this,
-      view?.boardTheme ?? DEFAULT_BOARD_THEME,
+    const theme = view?.boardTheme ?? DEFAULT_BOARD_THEME
+    this.qualityProfile = this.resolveQualityProfile(view ?? null)
+    const assetTier = assetQualityTierForPreference(
       view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
     )
-    this.boardAssetManifestSignature = `${view?.boardTheme ?? DEFAULT_BOARD_THEME}:${view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE}`
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = preloadPhaserBoardAssets(this, theme, assetTier)
+    this.boardAssetManifestSignature = `${theme}:${assetTier}`
   }
 
   create(): void {
     this.rootContainer = this.add.container(0, 0)
-    this.boardBackground = new BoardBackgroundView({
-      scene: this,
-      getDocumentHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
-    })
+    this.boardBackground = new BoardBackgroundView({ scene: this })
     this.dropZoneView = new DropZoneView(this, this.rootContainer)
     this.cardPreview = createCardPreviewController({
       scene: this,
@@ -304,15 +315,35 @@ export class CardgameScene extends Phaser.Scene {
     }
   }
 
+  // Resolves the adaptive quality profile for the current view and device
+  // state. Called on every render pass so preference, viewport, reduced-motion,
+  // and page-visibility changes reconcile retained views instead of forcing a
+  // scene rebuild.
+  private resolveQualityProfile(view: AppViewModel | null): PhaserQualityProfile {
+    const width = this.scale?.gameSize?.width ?? this.scale?.width ?? BASE_WIDTH
+    const height = this.scale?.gameSize?.height ?? this.scale?.height ?? BASE_HEIGHT
+    return resolvePhaserQualityProfile({
+      preference: view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+      width,
+      height,
+      animationSpeed: view?.animationSpeed ?? DEFAULT_ANIMATION_SPEED,
+      reducedMotion: prefersReducedMotion(),
+      documentHidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+    })
+  }
+
   private syncBoardBackground(view: AppViewModel): void {
-    const manifestSignature = `${view.boardTheme}:${view.renderQualityPreference}`
+    // Asset tier follows the user preference only (see quality.ts): the live
+    // viewport must not thrash megabyte background downloads on resize.
+    const assetTier = assetQualityTierForPreference(view.renderQualityPreference)
+    const manifestSignature = `${view.boardTheme}:${assetTier}`
     if (manifestSignature !== this.boardAssetManifestSignature) {
       this.boardAssetLoadHandle?.dispose()
       this.boardAssetManifestSignature = manifestSignature
       this.boardAssetLoadHandle = preloadPhaserBoardAssets(
         this,
         view.boardTheme,
-        view.renderQualityPreference,
+        assetTier,
         () => {
           if (this.boardAssetManifestSignature === manifestSignature) {
             this.renderView(this.rendererRef.currentView)
@@ -321,7 +352,7 @@ export class CardgameScene extends Phaser.Scene {
       )
       this.load.start()
     }
-    const manifest = buildPhaserBoardAssetManifest(view.boardTheme, view.renderQualityPreference)
+    const manifest = buildPhaserBoardAssetManifest(view.boardTheme, assetTier)
     const backgroundTextureKey = resolveLoadedBoardBackgroundTextureKey(
       manifest,
       (key) => this.textures.exists(key),
@@ -329,8 +360,7 @@ export class CardgameScene extends Phaser.Scene {
     this.boardBackground?.sync({
       layout: this.currentLayout,
       theme: view.boardTheme,
-      quality: view.renderQualityPreference,
-      animationSpeed: view.animationSpeed,
+      profile: this.qualityProfile,
       backgroundTextureKey,
       backgroundCandidateKeys: manifest.backgroundCandidates.map((candidate) => candidate.key),
     })
@@ -360,6 +390,7 @@ export class CardgameScene extends Phaser.Scene {
 
   renderView(view: AppViewModel | null): void {
     this.updateLayout()
+    this.qualityProfile = this.resolveQualityProfile(view)
     const game = view?.game ?? null
     if (view && game) {
       const currentSeed = view.seed

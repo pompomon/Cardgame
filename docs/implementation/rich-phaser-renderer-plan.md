@@ -9,7 +9,7 @@
 - [x] Phase 4 — Replace rebuild-heavy card rendering with retained `CardView` objects
 - [x] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 - [x] Phase 6 — Add drop-zone visuals and contextual interaction feedback
-- [ ] Phase 7 — Implement adaptive desktop/mobile performance policy
+- [x] Phase 7 — Implement adaptive desktop/mobile performance policy
 - [ ] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
 - [ ] Phase 9 — Add regression, lifecycle, and performance verification
 - [ ] Subagent verification — Architecture and ownership review
@@ -703,6 +703,94 @@ type PhaserQualityProfile = {
 - DPR and ambience are bounded on mobile.
 - Phaser API usage has been verified before scaling changes land.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 7 implementation notes (2026-08-10)
+
+- `src/renderers/phaser/quality.ts` now owns the adaptive policy. It exports a
+  frozen `PhaserQualityProfile` (`tier`, `maxDevicePixelRatio`,
+  `backgroundVariant`, `ambience`, `maxParticles`, `effectDetail`,
+  `enableMoveTweens`, `enableHoverTweens`, `enableShadows`, `antialias`) and
+  `resolvePhaserQualityProfile`,
+  which folds the shared `RenderQualityPreference` together with viewport
+  size/phone-sizedness, `prefers-reduced-motion`, animation speed, and page
+  visibility. `'auto'` never selects the high tier on phone-sized viewports and
+  only selects it on comfortably large desktop viewports; everything else falls
+  back to `balanced`. `resolveGameResolution` now derives its cap from the same
+  profile.
+- Phaser 4 API verification: `Phaser.Types.Core.GameConfig` has no
+  `resolution` option and `ScaleManager` (phaser@4.1.0) never multiplies the
+  canvas backing store by `window.devicePixelRatio` — only `zoom`,
+  `setGameSize`, and `resize` affect canvas size. With `Phaser.Scale.RESIZE`
+  the drawing buffer already matches CSS pixels, so no scale-manager or
+  resolution behavior was changed; `maxDevicePixelRatio` is an explicit policy
+  bound (phones capped at 2 regardless of tier) consumed by
+  `resolveGameResolution`; asset tiers never read it.
+- Shadows and antialiasing are explicit policy decisions on the profile:
+  `enableShadows` and `antialias` are both `true` on the high and balanced
+  tiers and `false` on the low tier, which minimizes overdraw and fill-rate
+  cost per the phase requirements (covered by `phaser-quality.test.ts`).
+- Asset tiers are intentionally derived from the *preference* only
+  (`assetQualityTierForPreference`, `'auto'` → `balanced`), never from the live
+  viewport: the large board PNGs are network-first cached, so a viewport-driven
+  tier would evict and re-download megabyte textures whenever a window crossed
+  a size threshold. `quality.ts` owns the tier → preferred background variant
+  mapping and `asset-manifest.ts` derives its ordered candidate list from it,
+  so the mapping has a single owner. The per-render profile still adapts
+  ambience, effect detail, and tweens to the device.
+- `BoardBackgroundView` now retains the currently displayed background (and its
+  texture) when the requested key is not resident yet, so a theme/tier switch
+  cannot flash the flat fallback color or evict a still-usable texture while
+  its replacement is loading.
+- Consumers reconcile retained objects instead of rebuilding the scene:
+  - `board-background.ts` takes the profile in `BoardBackgroundSyncOptions`;
+    `resolveBoardAmbiencePolicy(profile)` is now a pure projection of
+    `ambience`/`maxParticles`, so hidden tabs, reduced motion, and the low tier
+    all stop ambience sprites and their tweens in place.
+  - `cardgame-scene.ts` resolves the profile once per render pass, keys the
+    board asset manifest/preload on the preference-derived asset tier, and
+    passes `enableMoveTweens` to the card view registry.
+  - `card-view.ts` / `card-view-registry.ts` snap card positions instead of
+    tweening when the profile disables move tweens.
+  - `effect-controller.ts` takes `effectDetail` from the profile, falling back
+    to the previous viewport heuristic when no profile is available. Effect
+    detail is reduced only for phone-sized viewports and the low tier, matching
+    the pre-Phase-7 desktop behaviour.
+- Tests: extended `src/test/phaser-quality.test.ts` (tier selection across
+  desktop/phone/small/invalid viewports, explicit preferences, DPR caps,
+  background variant, ambience/particle bounds, reduced-motion/animations-off/
+  hidden-tab overrides and recovery, effect detail, frozen profile, tier
+  boundary values, unknown-preference fallback, asset-tier derivation);
+  `src/test/phaser-board-background.test.ts` (profile-driven ambience, in-place
+  tier downgrade without duplicate objects, hide/restore ambience, retaining a
+  resident background when its replacement has not loaded);
+  `src/test/phaser-card-view-registry.test.ts` (tween suppression);
+  `src/test/phaser-effect-controller.test.ts` (profile `effectDetail` is
+  forwarded to `playEffect`, overriding the viewport heuristic in both
+  directions, with the null/absent-profile fallback preserved);
+  `src/test/phaser-module-architecture.test.ts` (guards `quality.ts`).
+- Documentation: `docs/agent/architecture.md` module map and
+  `docs/agent/phaser-renderer.md` quality/effect sections updated.
+- Validation: `npm run lint`, `npm run test`, `npm run build`, and
+  `codeql_checker` — see the PR description for exact results.
+- Independent review: an independent `code-review` subagent inspected the diff
+  and surrounding code. Its merge-blocking finding (viewport-driven asset tier
+  causing background eviction/flash and repeated multi-hundred-KB downloads on
+  resize) and the related medium findings (offline cache fragmentation with the
+  permanent failed-URL registry, desktop effect-detail regression) were fixed
+  in a follow-up commit; extra tests were added for the gaps it identified. The
+  "Subagent verification" checklist items in this document cover the full
+  per-category reviews and remain unchecked.
+- Deferred/known limitations: no real-browser desktop/mobile smoke matrix or
+  frame-time measurement was captured in this environment (no interactive
+  browser); those belong to Phase 9. `maxDevicePixelRatio`,
+  `enableHoverTweens`, `enableShadows`, and `antialias` are policy fields with
+  no production consumer yet — Phaser 4 renders at CSS pixels (so DPR needs no
+  enforcement today), no renderer runs hover tweens, and the shadow/antialias
+  recommendations are recorded for the low tier ahead of the Phase 8/9 render
+  passes that will apply them. `prefersReducedMotion()` is sampled per render
+  rather than through a `matchMedia` change listener, so an OS-level toggle
+  applies on the next render pass. `FailedAssetUrlRegistry` entries are still
+  session-permanent; making them recoverable is Phase 8 cleanup work.
 
 ## Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
 

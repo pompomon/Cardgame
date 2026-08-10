@@ -6,6 +6,11 @@ import {
 } from '../../app/board-assets'
 import type { BoardTheme } from '../../app/board-theme'
 import type { RenderQualityPreference } from '../../app/render-quality'
+import {
+  assetQualityTierForPreference,
+  backgroundVariantForTier,
+  type PhaserQualityTier,
+} from './quality'
 
 export const BOARD_UI_ATLAS_FRAMES = [
   'zone-outline',
@@ -49,19 +54,24 @@ export interface PhaserBoardAssetManifest {
   readonly atlases: readonly PhaserAtlasAssetDescriptor[]
 }
 
-const BACKGROUND_VARIANTS_BY_QUALITY: Readonly<
-  Record<RenderQualityPreference, readonly BoardBackgroundVariant[]>
-> = Object.freeze({
-  auto: ['balanced', 'low', 'fallback'] as const,
-  high: ['hd', 'balanced', 'low', 'fallback'] as const,
-  balanced: ['balanced', 'low', 'fallback'] as const,
-  low: ['low', 'fallback'] as const,
-})
+// Ordered from most to least expensive. The candidate list for a tier starts
+// at that tier's preferred variant (owned by quality.ts) and degrades through
+// the cheaper variants.
+const BACKGROUND_VARIANTS_BY_COST: readonly BoardBackgroundVariant[] = Object.freeze([
+  'hd',
+  'balanced',
+  'low',
+  'fallback',
+] as const)
 
+// Accepts either the user preference or an already-resolved asset tier.
 export function boardBackgroundVariantsForQuality(
-  quality: RenderQualityPreference,
+  quality: RenderQualityPreference | PhaserQualityTier,
 ): readonly BoardBackgroundVariant[] {
-  return BACKGROUND_VARIANTS_BY_QUALITY[quality]
+  const tier = assetQualityTierForPreference(quality)
+  const preferred = backgroundVariantForTier(tier)
+  const startIndex = BACKGROUND_VARIANTS_BY_COST.indexOf(preferred)
+  return BACKGROUND_VARIANTS_BY_COST.slice(startIndex < 0 ? 0 : startIndex)
 }
 
 export function boardBackgroundTextureKey(
@@ -73,7 +83,7 @@ export function boardBackgroundTextureKey(
 
 export function buildPhaserBoardAssetManifest(
   theme: BoardTheme,
-  quality: RenderQualityPreference,
+  quality: RenderQualityPreference | PhaserQualityTier,
 ): PhaserBoardAssetManifest {
   const backgroundCandidates = boardBackgroundVariantsForQuality(quality).map((variant) => {
     const asset = boardBackgroundAssetLocation(theme, variant)
