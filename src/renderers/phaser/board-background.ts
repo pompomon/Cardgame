@@ -107,7 +107,7 @@ export class BoardBackgroundView {
     this.syncFallback(container, options)
     this.syncBackground(container, options)
     this.syncAmbience(container, options)
-    this.evictUnusedBackgroundTextures(options.backgroundTextureKey, options.backgroundCandidateKeys)
+    this.evictUnusedBackgroundTextures(this.currentTextureKey, options.backgroundCandidateKeys)
   }
 
   destroy(): void {
@@ -155,9 +155,14 @@ export class BoardBackgroundView {
     container: Phaser.GameObjects.Container,
     options: BoardBackgroundSyncOptions,
   ): void {
+    // Retain the currently displayed texture when the requested one is not
+    // resident yet (e.g. a theme/tier switch whose PNG is still loading).
+    // Hiding it here would flash the flat fallback color, and the eviction
+    // pass below would then drop a still-usable texture and force a
+    // multi-hundred-KB re-download.
     const textureKey = this.textureExists(options.backgroundTextureKey)
       ? options.backgroundTextureKey
-      : null
+      : (this.textureExists(this.currentTextureKey) ? this.currentTextureKey : null)
 
     if (textureKey === null) {
       this.background?.setVisible(false)
@@ -253,6 +258,16 @@ export class BoardBackgroundView {
     activeTextureKey: string | null,
     candidateKeys: readonly string[],
   ): void {
+    // Never evict while nothing is displayed: the active texture may simply
+    // not have finished loading yet.
+    if (activeTextureKey === null) {
+      for (const key of candidateKeys) {
+        if (this.scene.textures.exists(key)) {
+          this.knownBackgroundKeys.add(key)
+        }
+      }
+      return
+    }
     for (const key of candidateKeys) {
       if (this.scene.textures.exists(key)) {
         this.knownBackgroundKeys.add(key)

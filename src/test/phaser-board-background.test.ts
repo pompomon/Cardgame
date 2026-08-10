@@ -325,6 +325,21 @@ describe('Phaser board background view', () => {
     expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
   })
 
+  it('keeps the resident background and its texture when a replacement has not loaded yet', () => {
+    const harness = createSceneHarness()
+    harness.addTexture('board-background:classic:hd', 1920, 1080)
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+    // Theme/tier switch whose replacement PNG is still downloading.
+    view.sync(syncOptions('moonlit', null, ['board-background:moonlit:balanced']))
+
+    expect(harness.images).toHaveLength(1)
+    expect(harness.images[0].visible).toBe(true)
+    expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
+    expect(harness.removedTextures).toEqual([])
+  })
+
   it('stops ambience when the page becomes hidden and restores it when visible again', () => {
     const harness = createSceneHarness()
     harness.addTexture('board-background:classic:hd', 1920, 1080)

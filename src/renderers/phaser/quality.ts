@@ -39,10 +39,38 @@ const TIER_MAX_DEVICE_PIXEL_RATIO: Record<PhaserQualityTier, number> = {
   low: 1.5,
 }
 
+// Single owner of the tier -> preferred background variant mapping;
+// `asset-manifest.ts` derives its ordered candidate list from this.
 const TIER_BACKGROUND_VARIANT: Record<PhaserQualityTier, BoardBackgroundVariant> = {
   high: 'hd',
   balanced: 'balanced',
   low: 'low',
+}
+
+export function backgroundVariantForTier(tier: PhaserQualityTier): BoardBackgroundVariant {
+  return TIER_BACKGROUND_VARIANT[tier]
+}
+
+// Asset tiers are deliberately derived from the *preference* only, never from
+// the live viewport: the large background PNGs are network-first cached, and a
+// viewport-driven tier would re-download (and evict) megabyte textures every
+// time a window crosses a size threshold. 'auto' therefore resolves to the
+// safe balanced asset tier, while the per-render profile below still adapts
+// ambience, effects, and tweens to the device.
+export function assetQualityTierForPreference(
+  preference: RenderQualityPreference,
+): PhaserQualityTier {
+  switch (preference) {
+    case 'high':
+      return 'high'
+    case 'low':
+      return 'low'
+    case 'balanced':
+    case 'auto':
+      return 'balanced'
+    default:
+      return 'balanced'
+  }
 }
 
 export interface PhaserQualityProfile {
@@ -163,7 +191,9 @@ export function resolvePhaserQualityProfile(
     backgroundVariant: TIER_BACKGROUND_VARIANT[tier],
     ambience,
     maxParticles: resolveMaxParticles(ambience, phoneSized),
-    effectDetail: tier === 'high' && !phoneSized ? 'full' : 'reduced',
+    // Full-detail effects stay the desktop default (matching pre-profile
+    // behaviour); only phone-sized viewports and the low tier are reduced.
+    effectDetail: phoneSized || tier === 'low' ? 'reduced' : 'full',
     enableMoveTweens,
     enableHoverTweens: enableMoveTweens && tier !== 'low',
   })

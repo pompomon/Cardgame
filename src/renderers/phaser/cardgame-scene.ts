@@ -28,7 +28,11 @@ import { DropZoneView } from './drop-zone-view'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
-import { resolvePhaserQualityProfile, type PhaserQualityProfile } from './quality'
+import {
+  assetQualityTierForPreference,
+  resolvePhaserQualityProfile,
+  type PhaserQualityProfile,
+} from './quality'
 import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
 import { BattlefieldTargetsController } from './battlefield-targets'
@@ -141,9 +145,12 @@ export class CardgameScene extends Phaser.Scene {
     preloadCardArt(this, selectedStyle)
     const theme = view?.boardTheme ?? DEFAULT_BOARD_THEME
     this.qualityProfile = this.resolveQualityProfile(view ?? null)
+    const assetTier = assetQualityTierForPreference(
+      view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
+    )
     this.boardAssetLoadHandle?.dispose()
-    this.boardAssetLoadHandle = preloadPhaserBoardAssets(this, theme, this.qualityProfile.tier)
-    this.boardAssetManifestSignature = `${theme}:${this.qualityProfile.tier}`
+    this.boardAssetLoadHandle = preloadPhaserBoardAssets(this, theme, assetTier)
+    this.boardAssetManifestSignature = `${theme}:${assetTier}`
   }
 
   create(): void {
@@ -326,14 +333,17 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   private syncBoardBackground(view: AppViewModel): void {
-    const manifestSignature = `${view.boardTheme}:${this.qualityProfile.tier}`
+    // Asset tier follows the user preference only (see quality.ts): the live
+    // viewport must not thrash megabyte background downloads on resize.
+    const assetTier = assetQualityTierForPreference(view.renderQualityPreference)
+    const manifestSignature = `${view.boardTheme}:${assetTier}`
     if (manifestSignature !== this.boardAssetManifestSignature) {
       this.boardAssetLoadHandle?.dispose()
       this.boardAssetManifestSignature = manifestSignature
       this.boardAssetLoadHandle = preloadPhaserBoardAssets(
         this,
         view.boardTheme,
-        this.qualityProfile.tier,
+        assetTier,
         () => {
           if (this.boardAssetManifestSignature === manifestSignature) {
             this.renderView(this.rendererRef.currentView)
@@ -342,7 +352,7 @@ export class CardgameScene extends Phaser.Scene {
       )
       this.load.start()
     }
-    const manifest = buildPhaserBoardAssetManifest(view.boardTheme, this.qualityProfile.tier)
+    const manifest = buildPhaserBoardAssetManifest(view.boardTheme, assetTier)
     const backgroundTextureKey = resolveLoadedBoardBackgroundTextureKey(
       manifest,
       (key) => this.textures.exists(key),

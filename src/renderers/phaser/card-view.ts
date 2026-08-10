@@ -33,7 +33,7 @@ export interface CardViewSyncOptions extends CardViewDescriptor {
   readonly visualStyle: CardVisualStyle
   readonly animationSpeed: AnimationSpeed
   // Adaptive quality policy (see quality.ts). When false, positions snap
-  // instead of tweening — used for the low tier, reduced motion, and hidden
+  // instead of tweening — used for reduced motion, animations-off, and hidden
   // tabs. Defaults to enabled so existing call sites keep their behaviour.
   readonly enableMoveTweens?: boolean
 }

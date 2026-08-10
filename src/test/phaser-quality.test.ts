@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  assetQualityTierForPreference,
+  backgroundVariantForTier,
   isPhoneSizedViewport,
   resolveGameResolution,
   resolvePhaserQualityProfile,
@@ -105,10 +107,40 @@ describe('phaser adaptive quality profile', () => {
     expect(low.enableHoverTweens).toBe(false)
   })
 
-  it('reserves full-detail effects for high-tier non-phone viewports', () => {
+  it('reduces effect detail only for phone-sized viewports and the low tier', () => {
     expect(resolvePhaserQualityProfile({ preference: 'high', ...desktop }).effectDetail).toBe('full')
+    expect(resolvePhaserQualityProfile({ preference: 'balanced', ...desktop }).effectDetail).toBe('full')
+    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1024, height: 700 }).effectDetail).toBe('full')
     expect(resolvePhaserQualityProfile({ preference: 'high', ...phone }).effectDetail).toBe('reduced')
-    expect(resolvePhaserQualityProfile({ preference: 'balanced', ...desktop }).effectDetail).toBe('reduced')
+    expect(resolvePhaserQualityProfile({ preference: 'low', ...desktop }).effectDetail).toBe('reduced')
+  })
+
+  it('resolves the desktop high-tier viewport boundary inclusively', () => {
+    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 760 }).tier).toBe('high')
+    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1199, height: 760 }).tier).toBe('balanced')
+    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 759 }).tier).toBe('balanced')
+  })
+
+  it('falls back to the balanced tier for unknown preference values', () => {
+    const profile = resolvePhaserQualityProfile({
+      preference: 'ultra' as never,
+      ...desktop,
+    })
+    expect(profile.tier).toBe('balanced')
+    expect(assetQualityTierForPreference('ultra' as never)).toBe('balanced')
+  })
+
+  it('derives asset tiers from the preference only so viewport changes cannot thrash downloads', () => {
+    expect(assetQualityTierForPreference('auto')).toBe('balanced')
+    expect(assetQualityTierForPreference('balanced')).toBe('balanced')
+    expect(assetQualityTierForPreference('high')).toBe('high')
+    expect(assetQualityTierForPreference('low')).toBe('low')
+  })
+
+  it('owns the tier to background-variant mapping', () => {
+    expect(backgroundVariantForTier('high')).toBe('hd')
+    expect(backgroundVariantForTier('balanced')).toBe('balanced')
+    expect(backgroundVariantForTier('low')).toBe('low')
   })
 
   it('returns a frozen profile so retained views cannot mutate shared policy', () => {
