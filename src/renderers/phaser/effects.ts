@@ -36,6 +36,77 @@ export interface EffectDescriptor extends VisualEffectDescriptor {
 
 export type EffectQuality = 'full' | 'reduced'
 
+export interface EffectPlayback {
+  cancel(): void
+}
+
+class TrackedEffectPlayback implements EffectPlayback {
+  private readonly scene: Phaser.Scene
+  private readonly objects = new Set<Phaser.GameObjects.GameObject>()
+  private readonly tweens = new Set<Phaser.Tweens.Tween>()
+  private canceled = false
+
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene
+  }
+
+  track<T extends Phaser.GameObjects.GameObject>(object: T): T {
+    this.objects.add(object)
+    return object
+  }
+
+  tween(
+    target: Phaser.GameObjects.GameObject,
+    config: Omit<Phaser.Types.Tweens.TweenBuilderConfig, 'targets' | 'onComplete'>,
+    onComplete: () => void,
+  ): void {
+    let tween: Phaser.Tweens.Tween | null = null
+    let completedSynchronously = false
+    tween = this.scene.tweens.add({
+      ...config,
+      targets: target,
+      onComplete: () => {
+        completedSynchronously = true
+        if (tween) {
+          this.tweens.delete(tween)
+        }
+        if (this.canceled) {
+          return
+        }
+        this.objects.delete(target)
+        target.destroy()
+        onComplete()
+      },
+    })
+    if (this.canceled) {
+      tween.remove()
+      return
+    }
+    if (!completedSynchronously) {
+      this.tweens.add(tween)
+    }
+  }
+
+  cancel(): void {
+    if (this.canceled) {
+      return
+    }
+    this.canceled = true
+    for (const tween of this.tweens) {
+      tween.remove()
+    }
+    this.tweens.clear()
+    for (const object of this.objects) {
+      object.destroy()
+    }
+    this.objects.clear()
+  }
+}
+
+const COMPLETED_EFFECT_PLAYBACK: EffectPlayback = Object.freeze({
+  cancel: () => {},
+})
+
 // Map a structured LogEvent into an EffectDescriptor when there is a visual
 // recipe for it. Returns `null` for events that should not animate.
 export function effectDescriptorForEvent(
@@ -68,6 +139,7 @@ function makeCounter(total: number, onDone: () => void): () => void {
 
 function recipeLinkTrail(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   source: EffectAnchor,
   target: EffectAnchor,
   tint: number,
@@ -81,29 +153,28 @@ function recipeLinkTrail(
     onDone()
     return
   }
-  const trail = scene.add.rectangle(
+  const trail = playback.track(scene.add.rectangle(
     source.x + dx / 2,
     source.y + dy / 2,
     distance,
     4,
     tint,
     0.72,
-  )
+  ))
   trail.setRotation(Math.atan2(dy, dx))
   trail.setScale(0.15, 1)
   trail.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: trail,
+  playback.tween(trail, {
     scaleX: 1,
     alpha: 0,
     duration: Math.max(1, Math.floor(cappedDuration * 0.7)),
     ease: 'Sine.easeOut',
-    onComplete: () => { trail.destroy(); onDone() },
-  })
+  }, onDone)
 }
 
 function recipePlayLand(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
@@ -116,25 +187,26 @@ function recipePlayLand(
   for (let i = 0; i < ringCount; i += 1) {
     const startScale = 0.55 + i * 0.15
     const strokeAlpha = 0.9 - i * 0.22
-    const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
-      .setStrokeStyle(3 - i, tint, strokeAlpha)
+    const ring = playback.track(
+      scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
+        .setStrokeStyle(3 - i, tint, strokeAlpha),
+    )
     ring.setScale(startScale)
     ring.setAlpha(0.85 - i * 0.15)
     ring.setDepth(DEPTH_EFFECT_OVERLAY)
-    scene.tweens.add({
-      targets: ring,
+    playback.tween(ring, {
       scale: 1.65,
       alpha: 0,
       duration: cappedDuration,
       delay: i * Math.floor(cappedDuration * 0.12),
       ease: 'Quad.easeOut',
-      onComplete: () => { ring.destroy(); tick() },
-    })
+    }, tick)
   }
 }
 
 function recipeForestReturn(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
@@ -145,45 +217,44 @@ function recipeForestReturn(
   const leafCount = quality === 'reduced' ? 3 : 5
   const tick = makeCounter(leafCount + 1, onDone)
   // Contracting ring
-  const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
-    .setStrokeStyle(2, tint, 0.75)
+  const ring = playback.track(
+    scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
+      .setStrokeStyle(2, tint, 0.75),
+  )
   ring.setScale(1.25)
   ring.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: ring,
+  playback.tween(ring, {
     scale: 0.55,
     alpha: 0,
     duration: cappedDuration,
     ease: 'Sine.easeIn',
-    onComplete: () => { ring.destroy(); tick() },
-  })
+  }, tick)
   // Leaf particles start at orbit radius and converge toward anchor center
   const rx = anchor.width * 0.38
   const ry = anchor.height * 0.45
   for (let i = 0; i < leafCount; i += 1) {
     const angle = (Math.PI * 2 * i) / leafCount
-    const leaf = scene.add.rectangle(
+    const leaf = playback.track(scene.add.rectangle(
       anchor.x + Math.cos(angle) * rx,
       anchor.y + Math.sin(angle) * ry,
       6, 9, tint, 0.85,
-    )
+    ))
     leaf.setRotation(angle)
     leaf.setDepth(DEPTH_EFFECT_OVERLAY)
-    scene.tweens.add({
-      targets: leaf,
+    playback.tween(leaf, {
       x: anchor.x,
       y: anchor.y,
       alpha: 0,
       duration: cappedDuration,
       delay: i * Math.floor(cappedDuration * 0.06),
       ease: 'Sine.easeIn',
-      onComplete: () => { leaf.destroy(); tick() },
-    })
+    }, tick)
   }
 }
 
 function recipeSwampDiscard(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
@@ -194,18 +265,18 @@ function recipeSwampDiscard(
   const dropletCount = quality === 'reduced' ? 2 : 4
   const tick = makeCounter(dropletCount + 1, onDone)
   // Cloud base
-  const cloud = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.88, anchor.height * 0.88, tint, 0.18)
-    .setStrokeStyle(1, tint, 0.28)
+  const cloud = playback.track(
+    scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.88, anchor.height * 0.88, tint, 0.18)
+      .setStrokeStyle(1, tint, 0.28),
+  )
   cloud.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: cloud,
+  playback.tween(cloud, {
     alpha: 0,
     scaleX: 1.12,
     scaleY: 1.12,
     duration: Math.floor(cappedDuration * 0.55),
     ease: 'Sine.easeOut',
-    onComplete: () => { cloud.destroy(); tick() },
-  })
+  }, tick)
   // Droplets rise from slight vertical offset, spreading horizontally
   const floatY = anchor.height * 0.42
   const spread = anchor.width * 0.34
@@ -213,26 +284,25 @@ function recipeSwampDiscard(
     const xOffset = dropletCount > 1
       ? (i - (dropletCount - 1) / 2) * (spread / (dropletCount - 1))
       : 0
-    const droplet = scene.add.rectangle(
+    const droplet = playback.track(scene.add.rectangle(
       anchor.x + xOffset,
       anchor.y + anchor.height * 0.1,
       6, 8, tint, 0.82,
-    )
+    ))
     droplet.setDepth(DEPTH_EFFECT_OVERLAY)
-    scene.tweens.add({
-      targets: droplet,
+    playback.tween(droplet, {
       y: droplet.y - floatY,
       alpha: 0,
       duration: cappedDuration,
       delay: i * Math.floor(cappedDuration * 0.07),
       ease: 'Sine.easeOut',
-      onComplete: () => { droplet.destroy(); tick() },
-    })
+    }, tick)
   }
 }
 
 function recipeMountainDestroy(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
@@ -243,28 +313,28 @@ function recipeMountainDestroy(
   const emberCount = quality === 'reduced' ? 3 : 6
   const tick = makeCounter(emberCount + 2, onDone)
   // White flash
-  const flash = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, 0xffffff, 0.44)
+  const flash = playback.track(
+    scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, 0xffffff, 0.44),
+  )
   flash.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: flash,
+  playback.tween(flash, {
     alpha: 0,
     duration: Math.floor(cappedDuration * 0.28),
     ease: 'Power2',
-    onComplete: () => { flash.destroy(); tick() },
-  })
+  }, tick)
   // Ring
-  const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, tint, 0)
-    .setStrokeStyle(2, tint, 0.82)
+  const ring = playback.track(
+    scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, tint, 0)
+      .setStrokeStyle(2, tint, 0.82),
+  )
   ring.setScale(0.72)
   ring.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: ring,
+  playback.tween(ring, {
     scale: 1.42,
     alpha: 0,
     duration: cappedDuration,
     ease: 'Sine.easeOut',
-    onComplete: () => { ring.destroy(); tick() },
-  })
+  }, tick)
   // Embers: upward 140° arc
   const arcCenter = -Math.PI / 2
   const halfArc = (140 * Math.PI) / 360
@@ -273,23 +343,22 @@ function recipeMountainDestroy(
     const angle = emberCount > 1
       ? arcCenter - halfArc + (i * halfArc * 2) / (emberCount - 1)
       : arcCenter
-    const ember = scene.add.rectangle(anchor.x, anchor.y, 5, 5, tint, 0.92)
+    const ember = playback.track(scene.add.rectangle(anchor.x, anchor.y, 5, 5, tint, 0.92))
     ember.setDepth(DEPTH_EFFECT_OVERLAY)
-    scene.tweens.add({
-      targets: ember,
+    playback.tween(ember, {
       x: anchor.x + Math.cos(angle) * travelR * (anchor.width / Math.max(1, anchor.height)),
       y: anchor.y + Math.sin(angle) * travelR,
       alpha: 0,
       duration: cappedDuration,
       delay: i * Math.floor(cappedDuration * 0.04),
       ease: 'Quad.easeOut',
-      onComplete: () => { ember.destroy(); tick() },
-    })
+    }, tick)
   }
 }
 
 function recipePlainsReuse(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
@@ -300,33 +369,32 @@ function recipePlainsReuse(
   const beamCount = quality === 'reduced' ? 3 : 5
   const tick = makeCounter(beamCount + 1, onDone)
   // Contracting ring
-  const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
-    .setStrokeStyle(2, tint, 0.85)
+  const ring = playback.track(
+    scene.add.rectangle(anchor.x, anchor.y, anchor.width, anchor.height, tint, 0)
+      .setStrokeStyle(2, tint, 0.85),
+  )
   ring.setScale(1.42)
   ring.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: ring,
+  playback.tween(ring, {
     scale: 0.58,
     alpha: 0,
     duration: cappedDuration,
     ease: 'Sine.easeIn',
-    onComplete: () => { ring.destroy(); tick() },
-  })
+  }, tick)
   // Beams radiate outward from anchor center
   const beamLength = anchor.height * 0.55
   for (let i = 0; i < beamCount; i += 1) {
     const angle = (Math.PI * 2 * i) / beamCount
-    const beam = scene.add.rectangle(
+    const beam = playback.track(scene.add.rectangle(
       anchor.x,
       anchor.y,
       3,
       Math.max(8, Math.floor(beamLength * 0.35)),
       tint, 0.92,
-    )
+    ))
     beam.setRotation(angle)
     beam.setDepth(DEPTH_EFFECT_OVERLAY)
-    scene.tweens.add({
-      targets: beam,
+    playback.tween(beam, {
       x: anchor.x + Math.cos(angle) * beamLength,
       y: anchor.y + Math.sin(angle) * beamLength,
       scaleY: 1.85,
@@ -334,13 +402,13 @@ function recipePlainsReuse(
       duration: cappedDuration,
       delay: i * Math.floor(cappedDuration * 0.06),
       ease: 'Sine.easeOut',
-      onComplete: () => { beam.destroy(); tick() },
-    })
+    }, tick)
   }
 }
 
 function recipeCounterResolved(
   scene: Phaser.Scene,
+  playback: TrackedEffectPlayback,
   anchor: EffectAnchor,
   tint: number,
   cappedDuration: number,
@@ -351,30 +419,29 @@ function recipeCounterResolved(
   const vertexCount = quality === 'reduced' ? 3 : 6
   const tick = makeCounter(vertexCount + 1, onDone)
   // Ripple ring
-  const ring = scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, tint, 0)
-    .setStrokeStyle(2, tint, 0.78)
+  const ring = playback.track(
+    scene.add.rectangle(anchor.x, anchor.y, anchor.width * 0.9, anchor.height * 0.9, tint, 0)
+      .setStrokeStyle(2, tint, 0.78),
+  )
   ring.setScale(0.82)
   ring.setDepth(DEPTH_EFFECT_OVERLAY)
-  scene.tweens.add({
-    targets: ring,
+  playback.tween(ring, {
     scale: 1.62,
     alpha: 0,
     duration: cappedDuration,
     ease: 'Sine.easeOut',
-    onComplete: () => { ring.destroy(); tick() },
-  })
+  }, tick)
   // Vertex particles: start halfway out, expand to full hex radius
   const hexR = anchor.height * 0.44
   for (let i = 0; i < vertexCount; i += 1) {
     const angle = (Math.PI * 2 * i) / vertexCount
-    const vertex = scene.add.rectangle(
+    const vertex = playback.track(scene.add.rectangle(
       anchor.x + Math.cos(angle) * hexR * 0.48,
       anchor.y + Math.sin(angle) * hexR * 0.48,
       7, 7, tint, 0.92,
-    )
+    ))
     vertex.setDepth(DEPTH_EFFECT_OVERLAY)
-    scene.tweens.add({
-      targets: vertex,
+    playback.tween(vertex, {
       x: anchor.x + Math.cos(angle) * hexR,
       y: anchor.y + Math.sin(angle) * hexR,
       scale: 1.6,
@@ -382,8 +449,7 @@ function recipeCounterResolved(
       duration: cappedDuration,
       delay: i * Math.floor(cappedDuration * 0.05),
       ease: 'Quad.easeOut',
-      onComplete: () => { vertex.destroy(); tick() },
-    })
+    }, tick)
   }
 }
 
@@ -399,11 +465,12 @@ export function playAbilityEffect(
   durationMs: number,
   onDone: () => void,
   quality: EffectQuality = 'full',
-): void {
+): EffectPlayback {
   if (durationMs <= 0 || !scene.add || !scene.tweens) {
     onDone()
-    return
+    return COMPLETED_EFFECT_PLAYBACK
   }
+  const playback = new TrackedEffectPlayback(scene)
   const effectAnchor = descriptor.anchorOverride ?? anchor
   const cappedDuration = Math.min(durationMs, MAX_EFFECT_MS)
   const tint = colorToNumber(descriptor.palette.secondary, 0xffffff)
@@ -411,29 +478,30 @@ export function playAbilityEffect(
     && (descriptor.sourceAnchor.x !== effectAnchor.x || descriptor.sourceAnchor.y !== effectAnchor.y)
   const finish = hasLink ? makeCounter(2, onDone) : onDone
   if (hasLink) {
-    recipeLinkTrail(scene, descriptor.sourceAnchor!, effectAnchor, tint, cappedDuration, finish)
+    recipeLinkTrail(scene, playback, descriptor.sourceAnchor!, effectAnchor, tint, cappedDuration, finish)
   }
   switch (descriptor.kind) {
     case 'play_land':
-      recipePlayLand(scene, effectAnchor, tint, cappedDuration, quality, finish)
-      return
+      recipePlayLand(scene, playback, effectAnchor, tint, cappedDuration, quality, finish)
+      return playback
     case 'forest_return':
-      recipeForestReturn(scene, effectAnchor, tint, cappedDuration, quality, finish)
-      return
+      recipeForestReturn(scene, playback, effectAnchor, tint, cappedDuration, quality, finish)
+      return playback
     case 'swamp_discard':
-      recipeSwampDiscard(scene, effectAnchor, tint, cappedDuration, quality, finish)
-      return
+      recipeSwampDiscard(scene, playback, effectAnchor, tint, cappedDuration, quality, finish)
+      return playback
     case 'mountain_destroy':
-      recipeMountainDestroy(scene, effectAnchor, tint, cappedDuration, quality, finish)
-      return
+      recipeMountainDestroy(scene, playback, effectAnchor, tint, cappedDuration, quality, finish)
+      return playback
     case 'plains_reuse':
-      recipePlainsReuse(scene, effectAnchor, tint, cappedDuration, quality, finish)
-      return
+      recipePlainsReuse(scene, playback, effectAnchor, tint, cappedDuration, quality, finish)
+      return playback
     case 'counter_resolved':
-      recipeCounterResolved(scene, effectAnchor, tint, cappedDuration, quality, finish)
-      return
+      recipeCounterResolved(scene, playback, effectAnchor, tint, cappedDuration, quality, finish)
+      return playback
     default:
       finish()
+      return playback
   }
 }
 

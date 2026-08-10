@@ -146,6 +146,30 @@ describe('Phaser board texture loader', () => {
     ).toEqual(['board-background:verdant:balanced'])
   })
 
+  it('retries a transiently failed URL after the registry is cleared', () => {
+    const failedUrls = new FailedAssetUrlRegistry()
+    const first = createLoaderPort()
+    const firstHandle = loadPhaserBoardAssetManifest(
+      first.port,
+      buildPhaserBoardAssetManifest('verdant', 'high'),
+      { failedUrls, onFailure: vi.fn() },
+    )
+    first.emitError({ key: 'board-background:verdant:hd' })
+    firstHandle.dispose()
+
+    failedUrls.clear()
+    const retry = createLoaderPort()
+    loadPhaserBoardAssetManifest(
+      retry.port,
+      buildPhaserBoardAssetManifest('verdant', 'high'),
+      { failedUrls, onFailure: vi.fn() },
+    )
+
+    expect(
+      retry.queued.filter((asset) => asset.kind === 'image').map((asset) => asset.key),
+    ).toEqual(['board-background:verdant:hd'])
+  })
+
   it('queues a fallback before loader completion when image processing fails', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const harness = createLoaderPort()

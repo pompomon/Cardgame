@@ -253,6 +253,23 @@ describe('Phaser board background view', () => {
     expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
   })
 
+  it('keeps one large background resident across repeated theme and tier switches', () => {
+    const harness = createSceneHarness()
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    for (let index = 0; index < 25; index += 1) {
+      const theme: BoardTheme = index % 2 === 0 ? 'classic' : 'verdant'
+      const variant = index % 2 === 0 ? 'hd' : 'balanced'
+      const key = `board-background:${theme}:${variant}`
+      harness.addTexture(key, 1920, 1080)
+      view.sync(syncOptions(theme, key, [key]))
+    }
+
+    expect(harness.images).toHaveLength(1)
+    expect(harness.removedTextures).toHaveLength(24)
+    expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
+  })
+
   it('evicts the active large background texture on destroy', () => {
     const harness = createSceneHarness()
     harness.addTexture('board-background:classic:hd', 1920, 1080)

@@ -64,6 +64,10 @@ export class FailedAssetUrlRegistry {
     }
     return changed
   }
+
+  clear(): void {
+    this.urls.clear()
+  }
 }
 
 export interface BoardAssetLoadHandle {
@@ -79,6 +83,10 @@ interface BoardAssetLoaderOptions {
 }
 
 const failedRuntimeAssetUrls = new FailedAssetUrlRegistry()
+
+export function clearFailedRuntimeAssetUrls(): void {
+  failedRuntimeAssetUrls.clear()
+}
 
 function descriptorUrls(descriptor: PhaserAssetDescriptor): readonly string[] {
   switch (descriptor.kind) {

@@ -14,6 +14,7 @@ import { clamp, type LayoutSafeAreaInsets } from './layout'
 import { createP2POverlay, type P2POverlay } from './p2p-overlay'
 import { createRecordingFileInput, downloadRecordingJson, type RecordingFileInput } from './recording-file-actions'
 import { createSceneHost, type SceneHost } from './scene-host'
+import { clearFailedRuntimeAssetUrls } from './texture-loader'
 import { measureSafeAreaInsets } from './ui-utils'
 import { CARDGAME_SCENE_KEY, LOBBY_SCENE_KEY } from './scene-config'
 
@@ -30,6 +31,13 @@ export class PhaserRenderer implements AppRenderer {
   private safeAreaInsets: LayoutSafeAreaInsets = {}
   currentView: AppViewModel | null = null
 
+  private readonly handleOnline = (): void => {
+    clearFailedRuntimeAssetUrls()
+    if (this.activeSceneKey === CARDGAME_SCENE_KEY) {
+      this.cardgameScene?.retryFailedBoardAssets()
+    }
+  }
+
   safeAreaInsetsForViewport(width: number, height: number): LayoutSafeAreaInsets {
     // Clamp insets against the current viewport so stale CSS env readings
     // cannot consume the entire scene if orientation changes mid-session.
@@ -41,6 +49,9 @@ export class PhaserRenderer implements AppRenderer {
   }
 
   mount(container: HTMLElement, controller: ControllerApi): void {
+    if (this.container || this.sceneHost) {
+      this.unmount()
+    }
     this.container = container
     this.controller = controller
     container.classList.add('phaser-root')
@@ -71,6 +82,7 @@ export class PhaserRenderer implements AppRenderer {
         this.safeAreaInsets = measureSafeAreaInsets(container)
       },
     })
+    window.addEventListener('online', this.handleOnline)
   }
 
   render(view: AppViewModel): void {
@@ -136,6 +148,16 @@ export class PhaserRenderer implements AppRenderer {
   }
 
   unmount(): void {
+    if (
+      !this.container
+      && !this.sceneHost
+      && !this.fileInput
+      && !this.p2pOverlay
+      && !this.a11yNav
+    ) {
+      return
+    }
+    window.removeEventListener('online', this.handleOnline)
     this.sceneHost?.dispose()
     this.sceneHost = null
     this.fileInput?.remove()
@@ -145,6 +167,7 @@ export class PhaserRenderer implements AppRenderer {
     this.a11yNav?.remove()
     this.a11yNav = null
     this.safeAreaInsets = {}
+    clearFailedRuntimeAssetUrls()
 
     this.cardgameScene = null
     this.lobbyScene = null

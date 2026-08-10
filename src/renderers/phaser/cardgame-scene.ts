@@ -218,6 +218,14 @@ export class CardgameScene extends Phaser.Scene {
     this.scale.on('resize', onResize)
     const onVisibilityChange = (): void => {
       this.dragController?.cancel('visibility')
+      const currentView = this.rendererRef.currentView
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        const eventCount = currentView?.game?.events.length ?? 0
+        this.effectController.reset(eventCount)
+        this.lastEffectFeedbackEventCount = eventCount
+        this.effectFeedback = null
+        this.boardPresentation.reset(currentView?.game?.actor)
+      }
       this.renderView(this.rendererRef.currentView)
     }
     if (typeof document !== 'undefined') {
@@ -228,24 +236,54 @@ export class CardgameScene extends Phaser.Scene {
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibilityChange)
       }
-      this.dragController?.destroy()
-      this.dragController = null
-      this.cardPreview?.destroy()
-      this.cardPreview = null
-      this.cardViews?.destroy()
-      this.cardViews = null
-      this.dropZoneView?.destroy()
-      this.dropZoneView = null
-      this.boardBackground?.destroy()
-      this.boardBackground = null
-      this.boardAssetLoadHandle?.dispose()
-      this.boardAssetLoadHandle = null
-      this.boardAssetManifestSignature = null
-      this.effectController.reset()
-      this.boardPresentation.reset()
+      this.shutdownSceneResources()
     })
 
     this.renderView(this.rendererRef.currentView)
+  }
+
+  retryFailedBoardAssets(): void {
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = null
+    this.boardAssetManifestSignature = null
+    if (this.scene.isActive()) {
+      this.renderView(this.rendererRef.currentView)
+    }
+  }
+
+  private shutdownSceneResources(): void {
+    this.dragController?.destroy()
+    this.dragController = null
+    this.cardPreview?.destroy()
+    this.cardPreview = null
+    this.cardViews?.destroy()
+    this.cardViews = null
+    this.dropZoneView?.destroy()
+    this.dropZoneView = null
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = null
+    this.boardAssetManifestSignature = null
+    this.boardBackground?.destroy()
+    this.boardBackground = null
+    this.effectController.reset()
+    this.boardPresentation.reset()
+    this.targetPicker.clearTransientPickerState()
+    this.battlefieldTargets.reset()
+    this.rootContainer?.destroy(true)
+    this.rootContainer = null
+    this.statusText?.destroy()
+    this.statusText = null
+    this.battlefieldDropZone = null
+    this.menuOverlay = null
+    this.menuOpen = false
+    this.menuContentScrollOffset = null
+    this.menuLogScrollOffset = null
+    this.menuLogPinnedToBottom = true
+    this.lastRenderedSeed = null
+    this.lastMenuSignature = null
+    this.lastLayoutSignature = ''
+    this.lastEffectFeedbackEventCount = 0
+    this.effectFeedback = null
   }
 
   private setBattlefieldDropZone(zone: Phaser.GameObjects.Zone | null): void {

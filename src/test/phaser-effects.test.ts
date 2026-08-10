@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   clearEffectQueue,
   createEffectQueue,
@@ -234,5 +234,57 @@ describe('playAbilityEffect', () => {
     playAbilityEffect(scene, anchor, descriptor('play_land'), 100, () => { completed += 1 }, 'reduced')
     expect(rectangles).toBe(2)
     expect(completed).toBe(1)
+  })
+
+  it('cancels every active tween and object without completing the effect', () => {
+    const objects: Array<{ destroy: ReturnType<typeof vi.fn> }> = []
+    const tweens: Array<{
+      config: { onComplete?: () => void }
+      remove: ReturnType<typeof vi.fn>
+    }> = []
+    const scene = {
+      add: {
+        rectangle: () => {
+          const object = {
+            setStrokeStyle() { return this },
+            setScale() { return this },
+            setAlpha() { return this },
+            setDepth() { return this },
+            setRotation() { return this },
+            destroy: vi.fn(),
+          }
+          objects.push(object)
+          return object
+        },
+      },
+      tweens: {
+        add: (config: { onComplete?: () => void }) => {
+          const tween = { config, remove: vi.fn() }
+          tweens.push(tween)
+          return tween
+        },
+      },
+    } as unknown as import('phaser').Scene
+    const onDone = vi.fn()
+
+    const playback = playAbilityEffect(
+      scene,
+      anchor,
+      descriptor('play_land'),
+      100,
+      onDone,
+    )
+    expect(objects).toHaveLength(3)
+    expect(tweens).toHaveLength(3)
+
+    playback.cancel()
+    playback.cancel()
+
+    expect(tweens.every((tween) => tween.remove.mock.calls.length === 1)).toBe(true)
+    expect(objects.every((object) => object.destroy.mock.calls.length === 1)).toBe(true)
+    for (const tween of tweens) {
+      tween.config.onComplete?.()
+    }
+    expect(onDone).not.toHaveBeenCalled()
   })
 })

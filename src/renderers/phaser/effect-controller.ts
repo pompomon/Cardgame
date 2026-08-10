@@ -19,13 +19,13 @@ import {
 } from './effect-anchoring'
 import { EffectTargetRetention } from './effect-target-retention'
 import {
-  clearEffectQueue,
   createEffectQueue,
   effectDescriptorForEvent,
   enqueueEffect,
   playAbilityEffect,
   pumpEffectQueue,
   type EffectQueueState,
+  type EffectPlayback,
 } from './effects'
 import type { SceneLayout } from './layout'
 import { isPhoneSizedViewport, type PhaserQualityProfile } from './quality'
@@ -58,23 +58,25 @@ export class EffectController {
   private cardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private previousCardPositionRegistry = new Map<string, BattlefieldCardPlacement>()
   private readonly retainedEffectTargets = new EffectTargetRetention()
+  private activePlayback: EffectPlayback | null = null
+  private generation = 0
   private presentedActor = 0
 
   constructor(ctx: EffectControllerContext) {
     this.ctx = ctx
   }
 
-  reset(): void {
-    // Replace the queue object outright rather than just clearing it: a
-    // tween in flight from the previous game/scene holds a closure over the
-    // old `state` reference (see `pumpEffectQueue`), and will keep flipping
-    // its `playing` flag and re-pumping that stale object after `done`
-    // fires. Swapping to a fresh object here means that stale drain can
-    // never make `isBusyOrWillEnqueue` busy for, or enqueue into, the new
-    // game's queue.
+  reset(lastAnimatedEventCount = 0): void {
+    this.generation += 1
+    this.activePlayback?.cancel()
+    this.activePlayback = null
+    // Replace the queue object outright after canceling the tracked playback.
+    // The generation check also invalidates late completion callbacks from a
+    // custom runner that cannot be canceled, so stale drains cannot reach the
+    // new game/scene queue or its onDrained callback.
     this.effectQueue = createEffectQueue()
     this.retainedEffectTargets.clear()
-    this.lastAnimatedEventCount = 0
+    this.lastAnimatedEventCount = lastAnimatedEventCount
     this.previousCardPositionRegistry.clear()
     this.cardPositionRegistry.clear()
   }
@@ -134,17 +136,13 @@ export class EffectController {
     if (this.lastAnimatedEventCount > events.length) {
       // Engine state went backwards (e.g. replay rewind). Reset and wait
       // for renderView to seed `lastAnimatedEventCount = events.length`.
-      clearEffectQueue(this.effectQueue)
-      this.retainedEffectTargets.clear()
-      this.lastAnimatedEventCount = events.length
+      this.reset(events.length)
       return
     }
     if (view.animationSpeed === 'off') {
       // Drop any pending visuals immediately and snap the marker forward so
       // toggling the setting on later doesn't replay backlog.
-      clearEffectQueue(this.effectQueue)
-      this.retainedEffectTargets.clear()
-      this.lastAnimatedEventCount = events.length
+      this.reset(events.length)
       return
     }
     const visualStyle = view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
@@ -198,6 +196,7 @@ export class EffectController {
         durationMs: durationMsForSpeed(speed),
         onDrained: this.ctx.onQueueDrained,
         run: (descriptor, durationMs, done) => {
+          const generation = this.generation
           const layout = this.ctx.getLayout()
           const scene = this.ctx.scene
           const activeActor = this.presentedActor
@@ -212,10 +211,22 @@ export class EffectController {
           const quality = this.ctx.getQualityProfile?.()?.effectDetail
             ?? (isPhoneSizedViewport(scene.scale.width, scene.scale.height) ? 'reduced' : 'full')
           const playEffect = this.ctx.playEffect ?? playAbilityEffect
-          playEffect(scene, anchor, descriptor, durationMs, () => {
+          let playback: EffectPlayback | void
+          let completedSynchronously = false
+          playback = playEffect(scene, anchor, descriptor, durationMs, () => {
+            if (generation !== this.generation) {
+              return
+            }
+            completedSynchronously = true
+            if (this.activePlayback === playback) {
+              this.activePlayback = null
+            }
             this.retainedEffectTargets.releaseMountainTarget(descriptor)
             done()
           }, quality)
+          if (!completedSynchronously && generation === this.generation) {
+            this.activePlayback = playback ?? null
+          }
         },
       }
     })

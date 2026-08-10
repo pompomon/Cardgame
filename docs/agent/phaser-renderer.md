@@ -33,7 +33,10 @@ Board asset paths and URLs are renderer-neutral in `src/app/board-assets.ts`.
 `asset-manifest.ts` maps the selected theme/quality to Phaser texture keys,
 and `texture-loader.ts` queues one large background tier at a time. A failed
 background advances through the ordered fallback candidates; failed public
-URLs are remembered so scene restarts do not retry them. Shared UI, effect,
+URLs are remembered so scene restarts do not retry them. The renderer clears
+that suppression after an `online` event (and on unmount), then retries the
+active manifest so a transient offline failure does not last for the whole SPA
+session. Shared UI, effect,
 and per-theme ambience atlases are independent from the large backgrounds so
 future retained views can evict a background without discarding shared
 sprites. `board-background.ts` owns the retained scene-level background layer:
@@ -189,6 +192,16 @@ the bottom of the visible strip".
 - Cleanup containers (e.g. `effectsLayer`) deterministically. If you
   destroy/recreate a layer per render, add effect GameObjects to that
   layer so cleanup is meaningful. Otherwise drop the layer.
+- Renderer and scene cleanup must be idempotent. `PhaserRenderer` owns the
+  viewport/online listeners and `Phaser.Game`; scene shutdown owns drag,
+  preview, retained-card, drop-zone, board-background, loader, target-picker,
+  menu, and effect state. Null stale scene references so stop/start cycles
+  cannot reuse destroyed GameObjects.
+- Every ability recipe returns a cancellable playback owner that tracks its
+  temporary GameObjects and tweens. `EffectController.reset()` must cancel that
+  owner and invalidate stale completion callbacks before replacing the queue;
+  game resets, scene shutdown, animations-off, and hidden-page transitions use
+  that path.
 
 ## Effect queue (`effects.ts`)
 
@@ -237,6 +250,8 @@ the bottom of the visible strip".
   `state.playing` back to `false`. Don't reset `playing` here — doing so
   would let a follow-up `pumpEffectQueue` start a new effect concurrently
   with the still-running tween and double up rings on screen.
+  Lifecycle boundaries use `EffectController.reset()` instead: it cancels the
+  tracked playback before replacing the queue.
 
 The DOM renderer uses the same descriptor source and a separately bounded FIFO
 queue. It prefers exact `data-battlefield-card-id` / `data-card-id` anchors,

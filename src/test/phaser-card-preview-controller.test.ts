@@ -87,10 +87,15 @@ class FakeContainer {
       listener(...args)
     }
   }
+
+  listenerCount(event: string): number {
+    return this.listeners.get(event)?.length ?? 0
+  }
 }
 
 function createHarness(): {
   readonly card: FakeContainer
+  readonly input: FakeContainer
   readonly renderCard: ReturnType<typeof vi.fn>
   readonly controller: ReturnType<typeof createCardPreviewController>
 } {
@@ -111,7 +116,7 @@ function createHarness(): {
   })
   const card = new FakeContainer()
   controller.bind(card as unknown as Parameters<typeof controller.bind>[0], 'Forest')
-  return { card, renderCard, controller }
+  return { card, input, renderCard, controller }
 }
 
 describe('createCardPreviewController', () => {
@@ -132,5 +137,18 @@ describe('createCardPreviewController', () => {
     expect(renderCard).toHaveBeenCalledTimes(3)
 
     controller.destroy()
+  })
+
+  it('removes its scene listener idempotently and ignores binds after destroy', () => {
+    const { controller, input } = createHarness()
+    const lateCard = new FakeContainer()
+    expect(input.listenerCount('pointerdown')).toBe(1)
+
+    controller.destroy()
+    controller.destroy()
+    controller.bind(lateCard as never, 'Island')
+
+    expect(input.listenerCount('pointerdown')).toBe(0)
+    expect(lateCard.listeners.size).toBe(0)
   })
 })

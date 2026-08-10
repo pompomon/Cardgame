@@ -105,6 +105,9 @@ export class LobbyScene extends Phaser.Scene {
     this.scale.on('resize', onResize)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', onResize)
+      this.rootContainer?.destroy(true)
+      this.rootContainer = null
+      this.lastLayoutSignature = ''
     })
 
     this.renderView(this.rendererRef.currentView)
