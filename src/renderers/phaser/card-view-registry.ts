@@ -19,6 +19,7 @@ export interface CardViewRegistrySyncOptions {
   readonly layout: SceneLayout
   readonly visualStyle: CardVisualStyle
   readonly animationSpeed: AnimationSpeed
+  readonly enableMoveTweens?: boolean
 }
 
 export class CardViewRegistry {
@@ -90,6 +91,7 @@ export class CardViewRegistry {
         layout: options.layout,
         visualStyle: options.visualStyle,
         animationSpeed: options.animationSpeed,
+        enableMoveTweens: options.enableMoveTweens,
       })
       this.layer.moveTo(view.container, displayIndex)
       displayIndex += 1

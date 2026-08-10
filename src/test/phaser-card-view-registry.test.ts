@@ -396,12 +396,14 @@ function sync(
   harness: Harness,
   descriptors: readonly CardViewDescriptor[],
   animationSpeed: 'off' | 'fast' | 'normal' | 'slow' = 'off',
+  enableMoveTweens?: boolean,
 ): void {
   registry.sync(descriptors, {
     root: harness.root as never,
     layout,
     visualStyle: 'hd',
     animationSpeed,
+    enableMoveTweens,
   })
 }
 
@@ -473,6 +475,21 @@ describe('Phaser retained card views', () => {
       expect(container.getData('zone')).toBe('battlefield')
       registry.destroy()
     })
+  })
+
+  it('snaps card positions instead of tweening when the quality profile disables move tweens', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+
+    sync(registry, harness, [descriptor('quality-card')], 'normal', false)
+    const container = registry.get('quality-card')!.container
+    expect(container.x).toBe(100)
+
+    sync(registry, harness, [descriptor('quality-card', { x: 400 })], 'normal', false)
+
+    expect(harness.tweenCount()).toBe(0)
+    expect(container.x).toBe(400)
+    registry.destroy()
   })
 
   it('fully resets pooled views so hidden-hand content and input cannot leak on reuse', () => {

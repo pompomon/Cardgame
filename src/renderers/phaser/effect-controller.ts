@@ -28,7 +28,7 @@ import {
   type EffectQueueState,
 } from './effects'
 import type { SceneLayout } from './layout'
-import { isPhoneSizedViewport } from './quality'
+import { isPhoneSizedViewport, type PhaserQualityProfile } from './quality'
 
 const MAX_CARD_POSITION_HISTORY = 200
 
@@ -43,6 +43,9 @@ export interface EffectControllerContext {
     visualStyle: AppViewModel['cardVisualStyle'],
   ) => Phaser.GameObjects.Container
   playEffect?: typeof playAbilityEffect
+  // Adaptive quality policy (see quality.ts). Falls back to a viewport-size
+  // heuristic when the scene has not resolved a profile yet.
+  getQualityProfile?: () => PhaserQualityProfile | null
   onQueueDrained?: () => void
 }
 
@@ -206,7 +209,8 @@ export class EffectController {
             this.cardPositionRegistry,
             this.previousCardPositionRegistry,
           )
-          const quality = isPhoneSizedViewport(scene.scale.width, scene.scale.height) ? 'reduced' : 'full'
+          const quality = this.ctx.getQualityProfile?.()?.effectDetail
+            ?? (isPhoneSizedViewport(scene.scale.width, scene.scale.height) ? 'reduced' : 'full')
           const playEffect = this.ctx.playEffect ?? playAbilityEffect
           playEffect(scene, anchor, descriptor, durationMs, () => {
             this.retainedEffectTargets.releaseMountainTarget(descriptor)
