@@ -36,7 +36,9 @@ background advances through the ordered fallback candidates; failed public
 URLs are remembered so scene restarts do not retry them. The renderer clears
 that suppression after an `online` event (and on unmount), then retries the
 active manifest so a transient offline failure does not last for the whole SPA
-session. Shared UI, effect,
+session. Disposing a loader generation also turns any later file-processing
+completion into a failure before Phaser can add that stale asset to its global
+texture cache. Shared UI, effect,
 and per-theme ambience atlases are independent from the large backgrounds so
 future retained views can evict a background without discarding shared
 sprites. `board-background.ts` owns the retained scene-level background layer:

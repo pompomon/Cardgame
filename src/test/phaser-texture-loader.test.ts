@@ -270,6 +270,28 @@ describe('Phaser board texture loader', () => {
     expect(harness.port.textureExists('board-atlas:effects')).toBe(false)
   })
 
+  it('rejects a late file completion after its loader generation is disposed', () => {
+    const onError = vi.fn()
+    const originalOnProcessComplete = vi.fn()
+    const originalOnProcessError = vi.fn()
+    let disposed = false
+    const file: ProcessableLoaderFile = {
+      key: 'board-background:classic:hd',
+      src: '/boards/classic/background-hd.png',
+      type: 'image',
+      onProcessComplete: originalOnProcessComplete,
+      onProcessError: originalOnProcessError,
+    }
+    observeLoaderFileProcessingErrors(file, onError, () => disposed)
+
+    disposed = true
+    file.onProcessComplete?.()
+
+    expect(originalOnProcessComplete).not.toHaveBeenCalled()
+    expect(originalOnProcessError).toHaveBeenCalledOnce()
+    expect(onError).toHaveBeenCalledWith(file)
+  })
+
   it('rejects atlases missing required frames and suppresses later retries', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const first = createLoaderPort()

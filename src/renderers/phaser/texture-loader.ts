@@ -19,7 +19,10 @@ export interface PhaserTextureLoaderPort {
   removeTexture(key: string): void
   queueImage(key: string, url: string): void
   queueAtlas(key: string, textureUrl: string, atlasUrl: string): void
-  onFileError(listener: (file: LoaderFileFailure) => void): void
+  onFileError(
+    listener: (file: LoaderFileFailure) => void,
+    shouldCancelProcessing?: () => boolean,
+  ): void
   offFileError(listener: (file: LoaderFileFailure) => void): void
   onceComplete(listener: () => void): void
   offComplete(listener: () => void): void
@@ -112,6 +115,7 @@ function defaultFailureReporter(failure: AssetLoadFailure): void {
 export function observeLoaderFileProcessingErrors(
   file: ProcessableLoaderFile,
   onError: (file: LoaderFileFailure) => void,
+  shouldCancelProcessing: () => boolean = () => false,
 ): void {
   const originalOnProcessError = file.onProcessError
   if (typeof originalOnProcessError !== 'function') {
@@ -132,6 +136,10 @@ export function observeLoaderFileProcessingErrors(
   if (typeof file.onProcessComplete === 'function') {
     const originalOnProcessComplete = file.onProcessComplete
     file.onProcessComplete = () => {
+      if (shouldCancelProcessing()) {
+        file.onProcessError?.()
+        return
+      }
       try {
         originalOnProcessComplete.call(file)
       } catch {
@@ -283,7 +291,7 @@ export function loadPhaserBoardAssetManifest(
     options.onComplete?.()
   }
 
-  port.onFileError(onFileError)
+  port.onFileError(onFileError, () => disposed)
   port.onceComplete(onComplete)
   queueNextBackground()
   for (const atlas of manifest.atlases) {
@@ -322,14 +330,14 @@ function textureLoaderPortForScene(scene: Phaser.Scene): PhaserTextureLoaderPort
     queueAtlas: (key, textureUrl, atlasUrl) => {
       scene.load.atlas(key, textureUrl, atlasUrl)
     },
-    onFileError: (listener) => {
+    onFileError: (listener, shouldCancelProcessing) => {
       const onFileAdded = (
         _key: string,
         _type: string,
         _loader: Phaser.Loader.LoaderPlugin,
         file: ProcessableLoaderFile,
       ): void => {
-        observeLoaderFileProcessingErrors(file, listener)
+        observeLoaderFileProcessingErrors(file, listener, shouldCancelProcessing)
       }
       fileAddedListeners.set(listener, onFileAdded)
       scene.load.on(FILE_ADDED_EVENT, onFileAdded)
