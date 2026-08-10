@@ -39,10 +39,10 @@ export class GameplayPresenter {
     this.ctx = ctx
   }
 
-  renderGame(view: AppViewModel, presentedActor = view.game?.actor ?? 0): void {
+  renderGame(view: AppViewModel, presentedActor = view.game?.actor ?? 0): CardViewDescriptor[] {
     const game = view.game
     if (!game) {
-      return
+      return []
     }
     const { ctx } = this
 
@@ -54,5 +54,6 @@ export class GameplayPresenter {
     ctx.syncCardViews([...battlefieldCards, ...handCards], view)
     renderHandAndControls(ctx, game, presentedActor)
     ctx.getRootContainer()?.sort('depth')
+    return [...battlefieldCards, ...handCards]
   }
 }

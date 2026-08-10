@@ -14,6 +14,7 @@ import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../../app/render-quality'
 import { BoardPresentationCoordinator } from '../../app/board-presentation'
+import { visualEffectForEvent, type VisualEffectDescriptor } from '../../app/visual-effects'
 import type { AppViewModel, GameUiState } from '../../app/types'
 import { buildPhaserBoardAssetManifest, resolveLoadedBoardBackgroundTextureKey } from './asset-manifest'
 import { BoardBackgroundView } from './board-background'
@@ -23,6 +24,7 @@ import { createThemedButton, renderStaticCard } from './card-factory'
 import type { CardViewDragSource } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
 import { DragController } from './drag-controller'
+import { DropZoneView } from './drop-zone-view'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
 import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
@@ -50,9 +52,12 @@ export class CardgameScene extends Phaser.Scene {
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
+  private lastEffectFeedbackEventCount = 0
+  private effectFeedback: VisualEffectDescriptor | null = null
   private cardPreview: CardPreviewController | null = null
   private cardViews: CardViewRegistry | null = null
   private dragController: DragController | null = null
+  private dropZoneView: DropZoneView | null = null
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
@@ -72,6 +77,7 @@ export class CardgameScene extends Phaser.Scene {
       getLayout: () => this.currentLayout,
       getCurrentView: () => this.rendererRef.currentView,
       onQueueDrained: () => {
+        this.effectFeedback = null
         if (this.boardPresentation.effectsDrained()) {
           this.renderView(this.rendererRef.currentView)
           this.rendererRef.refreshA11yNavForCurrentView()
@@ -139,6 +145,7 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getDocumentHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
     })
+    this.dropZoneView = new DropZoneView(this, this.rootContainer)
     this.cardPreview = createCardPreviewController({
       scene: this,
       getRoot: () => this.rootContainer,
@@ -173,6 +180,12 @@ export class CardgameScene extends Phaser.Scene {
         this.beginPlayLandTargetSelection(game, cardId, options)
       },
       setStatus: (message) => this.setStatus(message),
+      onPointerMove: (x, y) => this.dropZoneView?.updatePointer(x, y),
+      onDragStateChange: (cardId, phase) => this.dropZoneView?.setDragState(
+        this.rendererRef.currentView?.game ?? null,
+        cardId,
+        phase,
+      ),
     })
     this.boardPresentation.reset()
     this.lastRenderedSeed = null
@@ -210,6 +223,8 @@ export class CardgameScene extends Phaser.Scene {
       this.cardPreview = null
       this.cardViews?.destroy()
       this.cardViews = null
+      this.dropZoneView?.destroy()
+      this.dropZoneView = null
       this.boardBackground?.destroy()
       this.boardBackground = null
       this.boardAssetLoadHandle?.dispose()
@@ -328,7 +343,11 @@ export class CardgameScene extends Phaser.Scene {
     const cardLayer = this.cardViews?.layer ?? null
     if (this.rootContainer) {
       for (const child of this.rootContainer.getAll()) {
-        if (child !== cardLayer && child !== preservedOverlay) {
+        if (
+          child !== cardLayer
+          && child !== this.dropZoneView?.rootChild
+          && child !== preservedOverlay
+        ) {
           this.rootContainer.remove(child, true)
         }
       }
@@ -351,6 +370,8 @@ export class CardgameScene extends Phaser.Scene {
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
         // animations queued from a previous match.
         this.effectController.reset()
+        this.lastEffectFeedbackEventCount = 0
+        this.effectFeedback = null
         this.cardViews?.reset()
         this.boardPresentation.reset(game.actor)
       }
@@ -359,6 +380,8 @@ export class CardgameScene extends Phaser.Scene {
       this.dragController?.cancel('game-change')
       this.lastRenderedSeed = null
       this.effectController.reset()
+      this.lastEffectFeedbackEventCount = 0
+      this.effectFeedback = null
       this.cardViews?.reset()
       this.boardPresentation.reset()
     }
@@ -402,7 +425,16 @@ export class CardgameScene extends Phaser.Scene {
       effectsBusy,
       view.animationSpeed !== 'off',
     )
-    this.gameplayPresenter.renderGame(view, presentedActor)
+    const cards = this.gameplayPresenter.renderGame(view, presentedActor)
+    this.syncEffectFeedback(view, effectsBusy)
+    this.dropZoneView?.sync({
+      game: view.game,
+      layout: this.currentLayout,
+      cards,
+      dragCardId: this.dragController?.activeCardId ?? null,
+      dragPhase: this.dragController?.phase ?? 'idle',
+      effect: this.effectFeedback,
+    })
     this.dragController?.reconcile()
     this.effectController.processAbilityEffects(view, presentedActor)
     if (preservedOverlay) {
@@ -428,6 +460,28 @@ export class CardgameScene extends Phaser.Scene {
       ? `${view.recording.metadata.seed}:${view.recording.metadata.mode}:${view.recording.metadata.aiLevel}:${view.recording.metadata.completed ? 1 : 0}`
       : 'none'
     return `${this.lastLayoutSignature}|seed:${view.seed}|${lines.length}|${last}|recording:${recordingMeta}|replay:${view.replay.active}:${view.replay.step}/${view.replay.totalSteps}:${view.replay.isPlaying}|saved:${view.recording.hasLocalSave ? 1 : 0}`
+  }
+
+  private syncEffectFeedback(view: AppViewModel, effectsBusy: boolean): void {
+    const events = view.game?.events ?? []
+    if (this.lastEffectFeedbackEventCount > events.length) {
+      this.lastEffectFeedbackEventCount = events.length
+      this.effectFeedback = null
+    }
+    if (this.lastEffectFeedbackEventCount === events.length) {
+      return
+    }
+    let latestEffect: VisualEffectDescriptor | null = null
+    for (let index = this.lastEffectFeedbackEventCount; index < events.length; index += 1) {
+      const effect = visualEffectForEvent(events[index], view.cardVisualStyle)
+      if (effect) {
+        latestEffect = effect
+      }
+    }
+    this.lastEffectFeedbackEventCount = events.length
+    if (latestEffect) {
+      this.effectFeedback = effectsBusy ? latestEffect : null
+    }
   }
 
   private createButton(

@@ -56,6 +56,8 @@ src/
 │       ├── card-view-registry.ts Stable card-id reconciliation + card layer
 │       ├── drag-state.ts    Pointer-type-aware drag state machine
 │       ├── drag-controller.ts Drag proxy, cancellation + legal-action owner
+│       ├── drop-zone-view.ts Retained drop-zone and target-ring feedback owner
+│       ├── interaction-feedback.ts Pure drag/effect feedback semantics
 │       ├── lobby-scene.ts LobbyScene (mode select, Settings, Recording)
 │       ├── lobby-actions.ts  Lobby row/action models + predicates (pure, tested)
 │       ├── cardgame-scene.ts CardgameScene: lifecycle/input wiring, menu

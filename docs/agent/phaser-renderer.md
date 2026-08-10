@@ -72,6 +72,12 @@ Duplicate releases cannot submit twice. Invalid drops tween the proxy back
 with a bounded duration. Resize, visibility change, menu open, game change,
 pointer cancellation/loss, and scene shutdown all cancel the session and
 restore the source.
+`drop-zone-view.ts` owns persistent, non-interactive battlefield outlines,
+labels, and target rings. It consumes only app-projected legal actions,
+retained-card descriptors, and drag-state notifications: pointer movement
+updates existing objects' visibility, tint, and text without creating Phaser
+display objects. `interaction-feedback.ts` keeps drag/effect feedback labels
+and unknown-effect fallback semantics pure; it must not add game-rule logic.
 Static cards outside the board (previews, effect retention, log tiles, and
 target choices) continue to use `card-factory.ts`.
 

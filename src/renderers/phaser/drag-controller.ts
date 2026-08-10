@@ -48,6 +48,8 @@ export interface DragControllerContext {
     options: Array<{ effectTargetId?: string; label: string }>,
   ) => void
   readonly setStatus: (message: string) => void
+  readonly onPointerMove?: (x: number, y: number) => void
+  readonly onDragStateChange?: (cardId: string | null, phase: DragStatePhase) => void
 }
 
 function pointerSnapshot(pointer: Phaser.Input.Pointer): DragPointerSnapshot {
@@ -98,6 +100,10 @@ export class DragController {
 
   get phase(): DragStatePhase {
     return this.state.phase
+  }
+
+  get activeCardId(): string | null {
+    return this.state.activeCardId
   }
 
   cancel(_reason: DragCancelReason): boolean {
@@ -174,6 +180,7 @@ export class DragController {
       snapshot.x + this.pointerOffsetX,
       snapshot.y + this.pointerOffsetY,
     )
+    this.ctx.onPointerMove?.(snapshot.x, snapshot.y)
   }
 
   private readonly handlePointerUp = (pointer: Phaser.Input.Pointer): void => {
@@ -258,6 +265,8 @@ export class DragController {
         pointer.x + this.pointerOffsetX,
         pointer.y + this.pointerOffsetY,
       )
+    this.ctx.onPointerMove?.(pointer.x, pointer.y)
+    this.notifyDragStateChange()
     return true
   }
 
@@ -305,5 +314,10 @@ export class DragController {
     this.pointerOffsetX = 0
     this.pointerOffsetY = 0
     this.state.complete()
+    this.notifyDragStateChange()
+  }
+
+  private notifyDragStateChange(): void {
+    this.ctx.onDragStateChange?.(this.state.activeCardId, this.state.phase)
   }
 }

@@ -26,6 +26,8 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'card-view-registry.ts', concern: 'stable card-id reconciliation' },
   { file: 'drag-state.ts', concern: 'pointer-type-aware drag state machine' },
   { file: 'drag-controller.ts', concern: 'drag proxy, cancellation, and action submission owner' },
+  { file: 'drop-zone-view.ts', concern: 'retained legal drop and target feedback owner' },
+  { file: 'interaction-feedback.ts', concern: 'pure interaction/effect feedback semantics' },
   { file: 'asset-manifest.ts', concern: 'board background / atlas texture manifests' },
   { file: 'texture-loader.ts', concern: 'tiered board texture loading / failure suppression' },
   { file: 'board-background.ts', concern: 'retained board background / ambience owner' },
