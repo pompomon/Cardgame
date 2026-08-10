@@ -12,9 +12,11 @@
 // node_modules/phaser/src/scale/ScaleManager.js has no devicePixelRatio
 // usage, and only `zoom` / `setGameSize` / `resize` affect canvas size). With
 // `Phaser.Scale.RESIZE` the drawing buffer therefore already matches CSS
-// pixels, so `maxDevicePixelRatio` below is an explicit policy bound used for
-// asset-tier decisions and by `resolveGameResolution` — we deliberately do
-// not change scale-manager behaviour.
+// pixels, so `maxDevicePixelRatio` below is an explicit policy bound consumed
+// only by `resolveGameResolution` (it clamps a reported device pixel ratio);
+// asset tiers are deliberately independent of it — see
+// `assetQualityTierForPreference`. We deliberately do not change
+// scale-manager behaviour.
 import type { BoardBackgroundVariant } from '../../app/board-assets'
 import type { RenderQualityPreference } from '../../app/render-quality'
 import type { AnimationSpeed } from '../../app/types'
@@ -83,6 +85,16 @@ export interface PhaserQualityProfile {
   readonly effectDetail: PhaserEffectDetail
   readonly enableMoveTweens: boolean
   readonly enableHoverTweens: boolean
+  /**
+   * Policy recommendation for drop shadows on cards/panels: the low tier
+   * drops them to reduce overdraw; every other tier keeps them.
+   */
+  readonly enableShadows: boolean
+  /**
+   * Policy recommendation for canvas antialiasing: disabled on the low tier
+   * so the renderer trades edge smoothing for fill-rate.
+   */
+  readonly antialias: boolean
 }
 
 export interface PhaserQualityProfileInput {
@@ -196,6 +208,8 @@ export function resolvePhaserQualityProfile(
     effectDetail: phoneSized || tier === 'low' ? 'reduced' : 'full',
     enableMoveTweens,
     enableHoverTweens: enableMoveTweens && tier !== 'low',
+    enableShadows: tier !== 'low',
+    antialias: tier !== 'low',
   })
 }
 

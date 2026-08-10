@@ -115,8 +115,19 @@ describe('phaser adaptive quality profile', () => {
     expect(resolvePhaserQualityProfile({ preference: 'low', ...desktop }).effectDetail).toBe('reduced')
   })
 
-  it('resolves the desktop high-tier viewport boundary inclusively', () => {
-    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 760 }).tier).toBe('high')
+  it('disables shadows and antialiasing only on the low tier', () => {
+    const high = resolvePhaserQualityProfile({ preference: 'high', ...desktop })
+    expect(high.enableShadows).toBe(true)
+    expect(high.antialias).toBe(true)
+    const balancedPhone = resolvePhaserQualityProfile({ preference: 'auto', ...phone })
+    expect(balancedPhone.enableShadows).toBe(true)
+    expect(balancedPhone.antialias).toBe(true)
+    const low = resolvePhaserQualityProfile({ preference: 'low', ...desktop })
+    expect(low.enableShadows).toBe(false)
+    expect(low.antialias).toBe(false)
+  })
+
+  it('resolves the desktop high-tier viewport boundary inclusively', () => {    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 760 }).tier).toBe('high')
     expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1199, height: 760 }).tier).toBe('balanced')
     expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 759 }).tier).toBe('balanced')
   })

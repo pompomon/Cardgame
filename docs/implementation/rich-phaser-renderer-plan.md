@@ -709,7 +709,8 @@ type PhaserQualityProfile = {
 - `src/renderers/phaser/quality.ts` now owns the adaptive policy. It exports a
   frozen `PhaserQualityProfile` (`tier`, `maxDevicePixelRatio`,
   `backgroundVariant`, `ambience`, `maxParticles`, `effectDetail`,
-  `enableMoveTweens`, `enableHoverTweens`) and `resolvePhaserQualityProfile`,
+  `enableMoveTweens`, `enableHoverTweens`, `enableShadows`, `antialias`) and
+  `resolvePhaserQualityProfile`,
   which folds the shared `RenderQualityPreference` together with viewport
   size/phone-sizedness, `prefers-reduced-motion`, animation speed, and page
   visibility. `'auto'` never selects the high tier on phone-sized viewports and
@@ -722,7 +723,12 @@ type PhaserQualityProfile = {
   `setGameSize`, and `resize` affect canvas size. With `Phaser.Scale.RESIZE`
   the drawing buffer already matches CSS pixels, so no scale-manager or
   resolution behavior was changed; `maxDevicePixelRatio` is an explicit policy
-  bound (phones capped at 2 regardless of tier).
+  bound (phones capped at 2 regardless of tier) consumed by
+  `resolveGameResolution`; asset tiers never read it.
+- Shadows and antialiasing are explicit policy decisions on the profile:
+  `enableShadows` and `antialias` are both `true` on the high and balanced
+  tiers and `false` on the low tier, which minimizes overdraw and fill-rate
+  cost per the phase requirements (covered by `phaser-quality.test.ts`).
 - Asset tiers are intentionally derived from the *preference* only
   (`assetQualityTierForPreference`, `'auto'` → `balanced`), never from the live
   viewport: the large board PNGs are network-first cached, so a viewport-driven
@@ -758,6 +764,9 @@ type PhaserQualityProfile = {
   tier downgrade without duplicate objects, hide/restore ambience, retaining a
   resident background when its replacement has not loaded);
   `src/test/phaser-card-view-registry.test.ts` (tween suppression);
+  `src/test/phaser-effect-controller.test.ts` (profile `effectDetail` is
+  forwarded to `playEffect`, overriding the viewport heuristic in both
+  directions, with the null/absent-profile fallback preserved);
   `src/test/phaser-module-architecture.test.ts` (guards `quality.ts`).
 - Documentation: `docs/agent/architecture.md` module map and
   `docs/agent/phaser-renderer.md` quality/effect sections updated.
@@ -773,10 +782,12 @@ type PhaserQualityProfile = {
   per-category reviews and remain unchecked.
 - Deferred/known limitations: no real-browser desktop/mobile smoke matrix or
   frame-time measurement was captured in this environment (no interactive
-  browser); those belong to Phase 9. `maxDevicePixelRatio` and
-  `enableHoverTweens` are policy fields with no production consumer yet —
-  Phaser 4 renders at CSS pixels (so DPR needs no enforcement today) and no
-  renderer runs hover tweens. `prefersReducedMotion()` is sampled per render
+  browser); those belong to Phase 9. `maxDevicePixelRatio`,
+  `enableHoverTweens`, `enableShadows`, and `antialias` are policy fields with
+  no production consumer yet — Phaser 4 renders at CSS pixels (so DPR needs no
+  enforcement today), no renderer runs hover tweens, and the shadow/antialias
+  recommendations are recorded for the low tier ahead of the Phase 8/9 render
+  passes that will apply them. `prefersReducedMotion()` is sampled per render
   rather than through a `matchMedia` change listener, so an OS-level toggle
   applies on the next render pass. `FailedAssetUrlRegistry` entries are still
   session-permanent; making them recoverable is Phase 8 cleanup work.
