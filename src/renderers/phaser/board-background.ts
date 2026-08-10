@@ -258,29 +258,26 @@ export class BoardBackgroundView {
     activeTextureKey: string | null,
     candidateKeys: readonly string[],
   ): void {
+    // Keep every requested key for the lifetime of the view. A disposed loader
+    // handle cannot cancel files already in flight, so an older manifest may
+    // enter the texture cache after a later theme has become active. Retaining
+    // the bounded key set lets the next sync (or destroy) evict that stale
+    // completion.
+    for (const key of candidateKeys) {
+      this.knownBackgroundKeys.add(key)
+    }
     // Never evict while nothing is displayed: the active texture may simply
     // not have finished loading yet.
     if (activeTextureKey === null) {
-      for (const key of candidateKeys) {
-        if (this.scene.textures.exists(key)) {
-          this.knownBackgroundKeys.add(key)
-        }
-      }
       return
     }
-    for (const key of candidateKeys) {
-      if (this.scene.textures.exists(key)) {
-        this.knownBackgroundKeys.add(key)
-      }
-    }
-    for (const key of [...this.knownBackgroundKeys]) {
+    for (const key of this.knownBackgroundKeys) {
       if (key === activeTextureKey) {
         continue
       }
       if (this.scene.textures.exists(key)) {
         this.scene.textures.remove(key)
       }
-      this.knownBackgroundKeys.delete(key)
     }
   }
 

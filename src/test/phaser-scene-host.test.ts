@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   destroy: vi.fn(),
   resize: vi.fn(),
+  stop: vi.fn(),
   removeResizeSync: vi.fn(),
   resizeCallback: null as ((size: { width: number; height: number }) => void) | null,
 }))
@@ -16,6 +17,10 @@ vi.mock('phaser', () => ({
     },
     Game: class {
       readonly scale = { resize: mocks.resize }
+      readonly scene = {
+        getScenes: () => [{ sys: { settings: { key: 'active-scene' } } }],
+        stop: mocks.stop,
+      }
       readonly destroy = mocks.destroy
     },
   },
@@ -67,7 +72,12 @@ describe('Phaser scene host lifecycle', () => {
     expect(onResize).toHaveBeenCalledWith({ width: 800, height: 450 })
     expect(mocks.resize).toHaveBeenCalledWith(800, 450)
     expect(mocks.removeResizeSync).toHaveBeenCalledOnce()
+    expect(mocks.stop).toHaveBeenCalledOnce()
+    expect(mocks.stop).toHaveBeenCalledWith('active-scene')
     expect(mocks.destroy).toHaveBeenCalledOnce()
     expect(mocks.destroy).toHaveBeenCalledWith(true)
+    expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.destroy.mock.invocationCallOrder[0],
+    )
   })
 })

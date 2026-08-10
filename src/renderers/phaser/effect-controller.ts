@@ -46,6 +46,7 @@ export interface EffectControllerContext {
   // Adaptive quality policy (see quality.ts). Falls back to a viewport-size
   // heuristic when the scene has not resolved a profile yet.
   getQualityProfile?: () => PhaserQualityProfile | null
+  shouldSuppressEffects?: () => boolean
   onQueueDrained?: () => void
 }
 
@@ -82,7 +83,7 @@ export class EffectController {
   }
 
   isBusyOrWillEnqueue(view: AppViewModel): boolean {
-    if (view.animationSpeed === 'off') {
+    if (view.animationSpeed === 'off' || this.ctx.shouldSuppressEffects?.()) {
       return false
     }
     if (this.effectQueue.playing || this.effectQueue.queue.length > 0) {
@@ -139,9 +140,9 @@ export class EffectController {
       this.reset(events.length)
       return
     }
-    if (view.animationSpeed === 'off') {
-      // Drop any pending visuals immediately and snap the marker forward so
-      // toggling the setting on later doesn't replay backlog.
+    if (view.animationSpeed === 'off' || this.ctx.shouldSuppressEffects?.()) {
+      // Drop pending visuals and snap the marker forward so restoring the
+      // setting or page visibility does not replay a hidden backlog.
       this.reset(events.length)
       return
     }

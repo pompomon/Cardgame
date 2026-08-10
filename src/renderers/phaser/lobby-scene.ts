@@ -18,6 +18,7 @@ import { buildLayout, orientationFromViewport, type SceneLayout } from './layout
 import { installButtonState } from './ui-utils'
 import { BUTTON_THEME, UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, LOBBY_SCENE_KEY, MIN_LOBBY_ROW_HEIGHT, type LobbySubmenu } from './scene-config'
+import { installSceneCleanup } from './scene-lifecycle'
 import type { PhaserRendererHost } from './renderer-host'
 
 // Re-exported for backwards-compatible imports (e.g. a11y-navigation.ts);
@@ -103,7 +104,7 @@ export class LobbyScene extends Phaser.Scene {
       }
     }
     this.scale.on('resize', onResize)
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    installSceneCleanup(this.events, () => {
       this.scale.off('resize', onResize)
       this.rootContainer?.destroy(true)
       this.rootContainer = null

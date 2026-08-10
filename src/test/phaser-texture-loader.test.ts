@@ -310,11 +310,13 @@ describe('Phaser board texture loader', () => {
     )
 
     expect(handle.resolveBackgroundTextureKey()).toBe('board-background:classic:balanced')
+    expect(handle.isActive()).toBe(true)
     expect(harness.queued.some((asset) => asset.kind === 'image')).toBe(false)
     expect(harness.errorListenerCount()).toBe(1)
     expect(harness.completeListenerCount()).toBe(1)
 
     harness.emitComplete()
+    expect(handle.isActive()).toBe(false)
     handle.dispose()
     expect(harness.errorListenerCount()).toBe(0)
     expect(harness.completeListenerCount()).toBe(0)

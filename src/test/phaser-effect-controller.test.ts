@@ -280,4 +280,34 @@ describe('Phaser effect controller', () => {
     expect(playEffect).toHaveBeenCalledOnce()
     expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
   })
+
+  it('discards events received while hidden instead of building an effect backlog', () => {
+    const currentView = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0,
+        events: [
+          { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 'p0-1' },
+        ],
+      },
+    } as unknown as AppViewModel
+    const playEffect = vi.fn()
+    let hidden = true
+    const controller = new EffectController({
+      scene: { scale: { width: 1280, height: 720 } } as never,
+      getLayout: () => layout,
+      getCurrentView: () => currentView,
+      playEffect: playEffect as never,
+      shouldSuppressEffects: () => hidden,
+    })
+
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
+    controller.processAbilityEffects(currentView)
+    hidden = false
+    controller.processAbilityEffects(currentView)
+
+    expect(playEffect).not.toHaveBeenCalled()
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
+  })
 })

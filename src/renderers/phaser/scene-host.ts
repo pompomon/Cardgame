@@ -55,6 +55,9 @@ export function createSceneHost({ container, scenes, onResize }: CreateSceneHost
       }
       disposed = true
       removeViewportResizeSync()
+      for (const scene of game.scene.getScenes<Phaser.Scene[]>(true)) {
+        game.scene.stop(scene.sys.settings.key)
+      }
       game.destroy(true)
     },
   }

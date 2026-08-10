@@ -46,6 +46,7 @@ src/
 │       ├── scene-config.ts   Scene-wide numeric constants + scene keys
 │       ├── theme.ts       Color palette, CardStyle, cardStyleForLand
 │       ├── scene-host.ts  Phaser.Game bootstrap + canvas host element
+│       ├── scene-lifecycle.ts Idempotent shutdown/destroy cleanup binding
 │       ├── card-art-loader.ts  Card art texture preloading
 │       ├── asset-manifest.ts   Board background/atlas texture manifests
 │       ├── texture-loader.ts   Tiered board loading + recoverable failed-URL suppression

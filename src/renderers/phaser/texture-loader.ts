@@ -72,6 +72,7 @@ export class FailedAssetUrlRegistry {
 
 export interface BoardAssetLoadHandle {
   readonly manifest: PhaserBoardAssetManifest
+  isActive(): boolean
   resolveBackgroundTextureKey(): string | null
   dispose(): void
 }
@@ -291,6 +292,7 @@ export function loadPhaserBoardAssetManifest(
 
   return {
     manifest,
+    isActive: () => !disposed,
     resolveBackgroundTextureKey: () =>
       resolveLoadedBoardBackgroundTextureKey(manifest, port.textureExists),
     dispose,

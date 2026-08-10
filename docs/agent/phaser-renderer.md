@@ -41,8 +41,8 @@ and per-theme ambience atlases are independent from the large backgrounds so
 future retained views can evict a background without discarding shared
 sprites. `board-background.ts` owns the retained scene-level background layer:
 it cover-crops loaded backgrounds with `setCrop`, uses bounded quality-aware
-ambience sprites, and evicts stale large background textures after a theme
-switch.
+ambience sprites, and remembers every bounded manifest candidate key so it can
+evict stale in-flight completions after a theme switch or during shutdown.
 
 `quality.ts` turns the renderer-neutral render-quality *preference*
 (`src/app/render-quality.ts`) plus device signals — viewport size,
@@ -193,7 +193,9 @@ the bottom of the visible strip".
   destroy/recreate a layer per render, add effect GameObjects to that
   layer so cleanup is meaningful. Otherwise drop the layer.
 - Renderer and scene cleanup must be idempotent. `PhaserRenderer` owns the
-  viewport/online listeners and `Phaser.Game`; scene shutdown owns drag,
+  viewport/online listeners and `Phaser.Game`; `scene-lifecycle.ts` binds each
+  scene cleanup to both `SHUTDOWN` and direct `DESTROY` without accumulating
+  the unused counterpart across restarts. Scene cleanup owns drag,
   preview, retained-card, drop-zone, board-background, loader, target-picker,
   menu, and effect state. Null stale scene references so stop/start cycles
   cannot reuse destroyed GameObjects.

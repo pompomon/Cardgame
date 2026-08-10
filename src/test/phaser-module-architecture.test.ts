@@ -15,6 +15,7 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'index.ts', concern: 'PhaserRenderer composition root' },
   { file: 'renderer-host.ts', concern: 'PhaserRendererHost interface (breaks scene -> root import cycle)' },
   { file: 'scene-host.ts', concern: 'Phaser.Game bootstrap' },
+  { file: 'scene-lifecycle.ts', concern: 'idempotent scene shutdown/destroy cleanup binding' },
   { file: 'theme.ts', concern: 'color palette / CardStyle' },
   { file: 'scene-config.ts', concern: 'scene-wide numeric constants + scene keys' },
 
@@ -53,7 +54,7 @@ const REQUIRED_MODULES: Array<{ file: string; concern: string }> = [
   { file: 'target-picker.ts', concern: 'target picker popup UI' },
 
   // Effects
-  { file: 'effect-controller.ts', concern: 'effect queue + card position registries' },
+  { file: 'effect-controller.ts', concern: 'cancellable effect queue + card position registries' },
 
   // P2P / a11y / recording utilities
   { file: 'p2p-overlay.ts', concern: 'P2P manual signaling overlay' },
