@@ -457,12 +457,15 @@ describe('DragController', () => {
     const harness = createHarness()
     const reasons: DragCancelReason[] = ['resize', 'visibility', 'menu', 'game-change']
     for (let index = 0; index < reasons.length; index += 1) {
-      start(harness, pointer(index + 1, 80, 600))
+      const activePointer = pointer(index + 1, 80, 600)
+      start(harness, activePointer)
       expect(harness.controller.cancel(reasons[index])).toBe(true)
+      harness.input.emit('pointerup', pointer(activePointer.id, 420, 220))
       expect(harness.controller.phase).toBe('idle')
     }
     start(harness, pointer(20, 80, 600))
     harness.input.emit('gameout')
+    harness.input.emit('pointerup', pointer(20, 420, 220))
 
     expect(harness.controller.phase).toBe('idle')
     expect(harness.submitted).toEqual([])

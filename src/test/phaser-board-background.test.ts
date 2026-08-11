@@ -98,7 +98,9 @@ function createSceneHarness(): {
   readonly sprites: FakeDisplayObject[]
   readonly containers: FakeContainer[]
   readonly removedTextures: string[]
+  readonly tweenRemovals: ReturnType<typeof vi.fn>[]
   addTexture: (key: string, width: number, height: number, frames?: readonly string[]) => void
+  textureCount: () => number
 } {
   const textureSizes = new Map<string, { width: number; height: number }>()
   const textureFrames = new Map<string, Set<string>>()
@@ -106,6 +108,7 @@ function createSceneHarness(): {
   const sprites: FakeDisplayObject[] = []
   const containers: FakeContainer[] = []
   const removedTextures: string[] = []
+  const tweenRemovals: ReturnType<typeof vi.fn>[] = []
   const scene = {
     add: {
       container: () => {
@@ -140,7 +143,11 @@ function createSceneHarness(): {
       },
     },
     tweens: {
-      add: vi.fn(() => ({ remove: vi.fn() })),
+      add: vi.fn(() => {
+        const remove = vi.fn()
+        tweenRemovals.push(remove)
+        return { remove }
+      }),
     },
   }
   return {
@@ -149,10 +156,12 @@ function createSceneHarness(): {
     sprites,
     containers,
     removedTextures,
+    tweenRemovals,
     addTexture: (key, width, height, frames = []) => {
       textureSizes.set(key, { width, height })
       textureFrames.set(key, new Set(frames))
     },
+    textureCount: () => textureSizes.size,
   }
 }
 
@@ -210,8 +219,11 @@ describe('Phaser board background view', () => {
     harness.addTexture('board-background:classic:hd', 1920, 1080)
     const view = new BoardBackgroundView({ scene: harness.scene as never })
 
-    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
-    view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
+    const options = syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd'])
+    view.sync(options)
+    for (let index = 0; index < 100; index += 1) {
+      view.sync(options)
+    }
 
     expect(harness.containers).toHaveLength(1)
     expect(harness.images).toHaveLength(1)
@@ -263,6 +275,7 @@ describe('Phaser board background view', () => {
       const key = `board-background:${theme}:${variant}`
       harness.addTexture(key, 1920, 1080)
       view.sync(syncOptions(theme, key, [key]))
+      expect(harness.textureCount()).toBeLessThanOrEqual(1)
     }
 
     expect(harness.images).toHaveLength(1)
@@ -270,15 +283,19 @@ describe('Phaser board background view', () => {
     expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
   })
 
-  it('evicts the active large background texture on destroy', () => {
+  it('evicts the active large texture and cancels ambience tweens on destroy', () => {
     const harness = createSceneHarness()
     harness.addTexture('board-background:classic:hd', 1920, 1080)
+    harness.addTexture('board-atlas:ambience:classic', 16, 16, ['ambient-mote'])
     const view = new BoardBackgroundView({ scene: harness.scene as never })
 
     view.sync(syncOptions('classic', 'board-background:classic:hd', ['board-background:classic:hd']))
     view.destroy()
+    view.destroy()
 
     expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
+    expect(harness.tweenRemovals).toHaveLength(8)
+    expect(harness.tweenRemovals.every((remove) => remove.mock.calls.length === 1)).toBe(true)
   })
 
   it('projects ambience from the resolved quality profile', () => {
@@ -314,6 +331,7 @@ describe('Phaser board background view', () => {
     })
 
     expect(harness.sprites.every((sprite) => sprite.destroyed)).toBe(true)
+    expect(harness.tweenRemovals.every((remove) => remove.mock.calls.length === 1)).toBe(true)
   })
 
   it('reconciles a quality-profile downgrade in place without duplicating retained objects', () => {

@@ -189,4 +189,26 @@ describe('Phaser renderer lifecycle', () => {
     expect(mocks.hostDispose).toHaveBeenCalledTimes(2)
     expect(fakeWindow.listenerCount('online')).toBe(0)
   })
+
+  it('leaves no global listeners or overlay owners across twenty renderer cycles', () => {
+    const fakeWindow = new FakeWindow()
+    vi.stubGlobal('window', fakeWindow)
+    const renderer = new PhaserRenderer()
+    const container = containerHarness()
+
+    for (let cycle = 0; cycle < 20; cycle += 1) {
+      renderer.mount(container, {} as never)
+      expect(fakeWindow.listenerCount('online')).toBe(1)
+      renderer.render(view({ actor: cycle % 2 } as AppViewModel['game']))
+      renderer.render(view(null))
+      renderer.unmount()
+      expect(fakeWindow.listenerCount('online')).toBe(0)
+    }
+
+    expect(mocks.hostDispose).toHaveBeenCalledTimes(20)
+    expect(mocks.fileInputRemove).toHaveBeenCalledTimes(20)
+    expect(mocks.p2pRemove).toHaveBeenCalledTimes(20)
+    expect(mocks.a11yRemove).toHaveBeenCalledTimes(20)
+    expect(mocks.clearFailedUrls).toHaveBeenCalledTimes(20)
+  })
 })

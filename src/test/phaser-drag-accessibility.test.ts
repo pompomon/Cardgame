@@ -3,6 +3,7 @@ import type { ControllerApi } from '../app/controller'
 import type { AppViewModel } from '../app/types'
 import { createA11yNav } from '../renderers/phaser/a11y-navigation'
 import type { CardgameScene } from '../renderers/phaser/cardgame-scene'
+import type { LobbyScene } from '../renderers/phaser/lobby-scene'
 
 type ClickListener = () => void
 
@@ -104,6 +105,29 @@ function gameplayView(): AppViewModel {
   } as unknown as AppViewModel
 }
 
+function lobbySettingsView(): AppViewModel {
+  return {
+    mode: 'local-hvh',
+    game: null,
+    aiLevel: 'basic',
+    cardVisualStyle: 'hd',
+    animationSpeed: 'normal',
+    boardTheme: 'verdant',
+    renderQualityPreference: 'balanced',
+    adventure: {
+      status: 'inactive',
+      hasSavedRun: false,
+    },
+    recording: {
+      hasLocalSave: false,
+      metadata: null,
+    },
+    replay: {
+      active: false,
+    },
+  } as unknown as AppViewModel
+}
+
 function installBrowserStubs(): void {
   vi.stubGlobal('document', {
     createElement: () => new FakeElement(),
@@ -119,7 +143,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Phaser drag accessibility parity', () => {
+describe('Phaser accessibility parity', () => {
   it('keeps native play-land actions available and blocks them behind the menu modal', () => {
     installBrowserStubs()
     const submitAction = vi.fn()
@@ -156,6 +180,39 @@ describe('Phaser drag accessibility parity', () => {
     expect((nav.element as unknown as FakeElement).children.some(
       (button) => button.textContent?.startsWith('Play Forest') === true,
     )).toBe(false)
+    nav.remove()
+  })
+
+  it('exposes the selected board and quality settings through native controls', () => {
+    installBrowserStubs()
+    const setBoardTheme = vi.fn()
+    const setRenderQualityPreference = vi.fn()
+    const controller = {
+      setBoardTheme,
+      setRenderQualityPreference,
+    } as unknown as ControllerApi
+    const container = new FakeElement()
+    const nav = createA11yNav(container as unknown as HTMLElement)
+
+    nav.update(lobbySettingsView(), true, {
+      controller,
+      lobbyScene: {
+        getActiveSubmenu: () => 'settings',
+        isAiLevelOptionsOpen: () => false,
+      } as unknown as LobbyScene,
+      cardgameScene: null,
+      openRecordingFilePicker: vi.fn(),
+      handleDownloadRecording: vi.fn(),
+    })
+
+    const buttons = (nav.element as unknown as FakeElement).children
+    expect(buttons.some((button) => button.textContent === 'Set board theme: Verdant (selected)')).toBe(true)
+    expect(buttons.some((button) => button.textContent === 'Set render quality: Balanced (selected)')).toBe(true)
+    buttons.find((button) => button.textContent === 'Set board theme: Moonlit')?.click()
+    buttons.find((button) => button.textContent === 'Set render quality: Low')?.click()
+
+    expect(setBoardTheme).toHaveBeenCalledWith('moonlit')
+    expect(setRenderQualityPreference).toHaveBeenCalledWith('low')
     nav.remove()
   })
 })

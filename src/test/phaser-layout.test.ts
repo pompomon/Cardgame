@@ -19,6 +19,47 @@ describe('phaser buildLayout', () => {
     expect(landscape.boardColumnLeft).toBe(landscape.safeAreaLeft + landscape.margin)
   })
 
+  it('keeps the Phase 9 mobile smoke-matrix layouts inside their safe areas', () => {
+    const cases = [
+      {
+        width: 390,
+        height: 844,
+        orientation: 'vertical' as const,
+        insets: { top: 44, right: 0, bottom: 34, left: 0 },
+      },
+      {
+        width: 844,
+        height: 390,
+        orientation: 'horizontal' as const,
+        insets: { top: 0, right: 34, bottom: 21, left: 44 },
+      },
+      {
+        width: 720,
+        height: 360,
+        orientation: 'horizontal' as const,
+        insets: { top: 0, right: 20, bottom: 16, left: 20 },
+      },
+    ]
+
+    for (const entry of cases) {
+      const layout = buildLayout(entry.width, entry.height, entry.orientation, entry.insets)
+      const safeRight = entry.width - layout.safeAreaRight
+      const safeBottom = entry.height - layout.safeAreaBottom
+
+      expect(layout.headerTop).toBeGreaterThanOrEqual(layout.safeAreaTop)
+      expect(layout.boardColumnLeft).toBeGreaterThanOrEqual(layout.safeAreaLeft)
+      expect(layout.boardColumnLeft + layout.boardColumnWidth).toBeLessThanOrEqual(safeRight + 0.5)
+      expect(layout.boardColumnTop).toBeGreaterThanOrEqual(layout.safeAreaTop)
+      expect(layout.boardColumnTop + layout.boardColumnHeight).toBeLessThanOrEqual(safeBottom + 0.5)
+      expect(layout.handColumnLeft).toBeGreaterThanOrEqual(layout.boardColumnLeft)
+      expect(layout.handColumnLeft + layout.handColumnWidth).toBeLessThanOrEqual(
+        layout.boardColumnLeft + layout.boardColumnWidth + 0.5,
+      )
+      expect(layout.handCardsY - layout.handCardHeight / 2).toBeGreaterThanOrEqual(layout.safeAreaTop)
+      expect(layout.handCardsY + layout.handCardHeight / 2).toBeLessThanOrEqual(safeBottom + 0.5)
+    }
+  })
+
   it('uses the full safe-area content width for the board in both orientations', () => {
     for (const layout of [
       buildLayout(1280, 820, 'horizontal'),

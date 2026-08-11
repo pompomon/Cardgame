@@ -142,6 +142,50 @@ describe('DropZoneView', () => {
     expect(objects[3]).toMatchObject({ visible: true, text: 'Target' })
   })
 
+  it('reuses target rings and hides surplus entries when the target set shrinks', () => {
+    const { view, objects } = harness()
+    const secondTarget: CardViewDescriptor = {
+      ...targetCard,
+      cardId: 'island',
+      instanceId: 'p0-2',
+      name: 'Island',
+      x: 520,
+    }
+    view.sync({
+      game: game(),
+      layout,
+      cards: [targetCard, secondTarget],
+      dragCardId: null,
+      dragPhase: 'idle',
+      effect: null,
+    })
+    expect(objects).toHaveLength(6)
+
+    view.sync({
+      game: game(),
+      layout,
+      cards: [targetCard],
+      dragCardId: null,
+      dragPhase: 'idle',
+      effect: null,
+    })
+    expect(objects).toHaveLength(6)
+    expect(objects[4].visible).toBe(false)
+    expect(objects[5].visible).toBe(false)
+
+    view.sync({
+      game: game(),
+      layout,
+      cards: [targetCard, { ...secondTarget, x: 540 }],
+      dragCardId: null,
+      dragPhase: 'idle',
+      effect: null,
+    })
+    expect(objects).toHaveLength(6)
+    expect(objects[4]).toMatchObject({ visible: true, x: 540 })
+    expect(objects[5].visible).toBe(true)
+  })
+
   it('does not create Phaser objects while updating pointer feedback', () => {
     const { view, objects } = harness()
     view.sync({ game: game(), layout, cards: [targetCard], dragCardId: 'forest', dragPhase: 'dragging', effect: null })

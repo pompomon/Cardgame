@@ -103,34 +103,30 @@ describe('CardgameScene lifecycle cleanup', () => {
       refreshA11yNavForCurrentView: vi.fn(),
     }
     const scene = new CardgameScene(rendererRef as never)
-    const first = installResources(scene)
 
-    shutdown(scene)
-    shutdown(scene)
+    for (let cycle = 0; cycle < 20; cycle += 1) {
+      const resources = installResources(scene)
+      shutdown(scene)
+      shutdown(scene)
 
-    for (const cleanup of Object.values(first)) {
-      expect(cleanup).toHaveBeenCalledOnce()
-    }
-    expect(scene).toMatchObject({
-      rootContainer: null,
-      statusText: null,
-      battlefieldDropZone: null,
-      menuOverlay: null,
-      menuOpen: false,
-      menuContentScrollOffset: null,
-      menuLogScrollOffset: null,
-      menuLogPinnedToBottom: true,
-      lastRenderedSeed: null,
-      lastMenuSignature: null,
-      lastLayoutSignature: '',
-      lastEffectFeedbackEventCount: 0,
-      effectFeedback: null,
-    })
-
-    const restarted = installResources(scene)
-    shutdown(scene)
-    for (const cleanup of Object.values(restarted)) {
-      expect(cleanup).toHaveBeenCalledOnce()
+      for (const cleanup of Object.values(resources)) {
+        expect(cleanup).toHaveBeenCalledOnce()
+      }
+      expect(scene).toMatchObject({
+        rootContainer: null,
+        statusText: null,
+        battlefieldDropZone: null,
+        menuOverlay: null,
+        menuOpen: false,
+        menuContentScrollOffset: null,
+        menuLogScrollOffset: null,
+        menuLogPinnedToBottom: true,
+        lastRenderedSeed: null,
+        lastMenuSignature: null,
+        lastLayoutSignature: '',
+        lastEffectFeedbackEventCount: 0,
+        effectFeedback: null,
+      })
     }
   })
 
