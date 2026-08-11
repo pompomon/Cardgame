@@ -134,6 +134,32 @@ describe('CardgameScene lifecycle cleanup', () => {
     }
   })
 
+  it('releases every retained owner across twenty scene restart cycles', () => {
+    const scene = new CardgameScene({
+      currentView: null,
+      refreshA11yNavForCurrentView: vi.fn(),
+    } as never)
+
+    for (let index = 0; index < 20; index += 1) {
+      const resources = installResources(scene)
+      shutdown(scene)
+
+      for (const cleanup of Object.values(resources)) {
+        expect(cleanup).toHaveBeenCalledOnce()
+      }
+    }
+
+    expect(scene).toMatchObject({
+      rootContainer: null,
+      statusText: null,
+      boardAssetLoadHandle: null,
+      boardBackground: null,
+      dragController: null,
+      cardViews: null,
+      dropZoneView: null,
+    })
+  })
+
   it('disposes a stale asset load and retries only while the scene is active', () => {
     const currentView = { game: null }
     const scene = new CardgameScene({
