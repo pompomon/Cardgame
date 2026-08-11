@@ -874,8 +874,7 @@ type PhaserQualityProfile = {
 - Updated `docs/agent/architecture.md` and
   `docs/agent/phaser-renderer.md` with the resulting ownership, lifecycle,
   effect-cancellation, and recoverable asset-loading rules.
-- Validation: `npm run lint`, `npm run test`, `npm run build`, and
-  `codeql_checker` — see the PR description for exact results.
+- Validation: lint ✔ / tests ✔ (733) / build ✔ / CodeQL ✔.
 
 ## Phase 9 — Add regression, lifecycle, and performance verification
 
