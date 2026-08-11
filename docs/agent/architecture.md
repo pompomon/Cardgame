@@ -46,9 +46,10 @@ src/
 │       ├── scene-config.ts   Scene-wide numeric constants + scene keys
 │       ├── theme.ts       Color palette, CardStyle, cardStyleForLand
 │       ├── scene-host.ts  Phaser.Game bootstrap + canvas host element
+│       ├── scene-lifecycle.ts Idempotent shutdown/destroy cleanup binding
 │       ├── card-art-loader.ts  Card art texture preloading
 │       ├── asset-manifest.ts   Board background/atlas texture manifests
-│       ├── texture-loader.ts   Tiered board loading + failed-URL suppression
+│       ├── texture-loader.ts   Tiered board loading + recoverable failed-URL suppression
 │       ├── board-background.ts Retained board background + ambience owner
 │       ├── card-factory.ts   Static card GameObject factory (previews/logs)
 │       ├── card-view.ts      Retained visible-card object owner
@@ -70,7 +71,7 @@ src/
 │       ├── log-tiles.ts   Log tile cap/legacy-fallback/empty/a11y content (pure, tested)
 │       ├── battlefield-targets.ts  Battlefield target pure state/a11y (tested)
 │       ├── target-picker.ts  Target-picker popup UI (explicit WebGL-safe culling)
-│       ├── effect-controller.ts  Effect queue + card position registries
+│       ├── effect-controller.ts  Cancellable effect queue + card position registries
 │       ├── p2p-overlay.ts    Lobby P2P manual-signaling HTML overlay
 │       ├── a11y-navigation.ts  Keyboard/screen-reader nav mirroring Phaser UI
 │       ├── recording-file-actions.ts  Hidden file input + recording download

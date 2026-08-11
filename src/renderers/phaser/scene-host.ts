@@ -44,12 +44,20 @@ export function createSceneHost({ container, scenes, onResize }: CreateSceneHost
     onResize(size)
     game.scale.resize(size.width, size.height)
   })
+  let disposed = false
 
   return {
     canvasHost,
     game,
     dispose: () => {
+      if (disposed) {
+        return
+      }
+      disposed = true
       removeViewportResizeSync()
+      for (const scene of game.scene.getScenes<Phaser.Scene[]>(true)) {
+        game.scene.stop(scene.sys.settings.key)
+      }
       game.destroy(true)
     },
   }

@@ -57,8 +57,10 @@ export class TargetPickerController {
   }
 
   closeTargetPickerOverlay(): void {
+    const picker = this.pendingTargetPicker
+    this.pendingTargetPicker = null
     this.pendingTargetPickerA11yEntries = []
-    this.pendingTargetPicker?.destroy(true)
+    picker?.destroy(true)
   }
 
   // Called from CardgameScene.clearRoot(): the popup itself (a child of the

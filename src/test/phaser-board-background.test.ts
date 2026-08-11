@@ -253,6 +253,23 @@ describe('Phaser board background view', () => {
     expect(harness.removedTextures).toEqual(['board-background:classic:hd'])
   })
 
+  it('keeps one large background resident across repeated theme and tier switches', () => {
+    const harness = createSceneHarness()
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+
+    for (let index = 0; index < 25; index += 1) {
+      const theme: BoardTheme = index % 2 === 0 ? 'classic' : 'verdant'
+      const variant = index % 2 === 0 ? 'hd' : 'balanced'
+      const key = `board-background:${theme}:${variant}`
+      harness.addTexture(key, 1920, 1080)
+      view.sync(syncOptions(theme, key, [key]))
+    }
+
+    expect(harness.images).toHaveLength(1)
+    expect(harness.removedTextures).toHaveLength(24)
+    expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
+  })
+
   it('evicts the active large background texture on destroy', () => {
     const harness = createSceneHarness()
     harness.addTexture('board-background:classic:hd', 1920, 1080)
@@ -338,6 +355,37 @@ describe('Phaser board background view', () => {
     expect(harness.images[0].visible).toBe(true)
     expect(harness.images[0].textureKey).toBe('board-background:classic:hd')
     expect(harness.removedTextures).toEqual([])
+  })
+
+  it('evicts an older manifest texture that completes after a theme switch', () => {
+    const harness = createSceneHarness()
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+    const staleKey = 'board-background:classic:hd'
+    const activeKey = 'board-background:verdant:balanced'
+
+    view.sync(syncOptions('classic', null, [staleKey]))
+    harness.addTexture(activeKey, 1280, 720)
+    view.sync(syncOptions('verdant', activeKey, [activeKey]))
+    harness.addTexture(staleKey, 1920, 1080)
+    view.sync(syncOptions('verdant', activeKey, [activeKey]))
+
+    expect(harness.images[0].textureKey).toBe(activeKey)
+    expect(harness.removedTextures).toEqual([staleKey])
+  })
+
+  it('evicts a stale in-flight completion during scene cleanup even without another sync', () => {
+    const harness = createSceneHarness()
+    const view = new BoardBackgroundView({ scene: harness.scene as never })
+    const staleKey = 'board-background:classic:hd'
+    const activeKey = 'board-background:moonlit:balanced'
+
+    view.sync(syncOptions('classic', null, [staleKey]))
+    harness.addTexture(activeKey, 1280, 720)
+    view.sync(syncOptions('moonlit', activeKey, [activeKey]))
+    harness.addTexture(staleKey, 1920, 1080)
+    view.destroy()
+
+    expect(harness.removedTextures).toEqual([staleKey, activeKey])
   })
 
   it('stops ambience when the page becomes hidden and restores it when visible again', () => {

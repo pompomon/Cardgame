@@ -146,6 +146,30 @@ describe('Phaser board texture loader', () => {
     ).toEqual(['board-background:verdant:balanced'])
   })
 
+  it('retries a transiently failed URL after the registry is cleared', () => {
+    const failedUrls = new FailedAssetUrlRegistry()
+    const first = createLoaderPort()
+    const firstHandle = loadPhaserBoardAssetManifest(
+      first.port,
+      buildPhaserBoardAssetManifest('verdant', 'high'),
+      { failedUrls, onFailure: vi.fn() },
+    )
+    first.emitError({ key: 'board-background:verdant:hd' })
+    firstHandle.dispose()
+
+    failedUrls.clear()
+    const retry = createLoaderPort()
+    loadPhaserBoardAssetManifest(
+      retry.port,
+      buildPhaserBoardAssetManifest('verdant', 'high'),
+      { failedUrls, onFailure: vi.fn() },
+    )
+
+    expect(
+      retry.queued.filter((asset) => asset.kind === 'image').map((asset) => asset.key),
+    ).toEqual(['board-background:verdant:hd'])
+  })
+
   it('queues a fallback before loader completion when image processing fails', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const harness = createLoaderPort()
@@ -246,6 +270,28 @@ describe('Phaser board texture loader', () => {
     expect(harness.port.textureExists('board-atlas:effects')).toBe(false)
   })
 
+  it('rejects a late file completion after its loader generation is disposed', () => {
+    const onError = vi.fn()
+    const originalOnProcessComplete = vi.fn()
+    const originalOnProcessError = vi.fn()
+    let disposed = false
+    const file: ProcessableLoaderFile = {
+      key: 'board-background:classic:hd',
+      src: '/boards/classic/background-hd.png',
+      type: 'image',
+      onProcessComplete: originalOnProcessComplete,
+      onProcessError: originalOnProcessError,
+    }
+    observeLoaderFileProcessingErrors(file, onError, () => disposed)
+
+    disposed = true
+    file.onProcessComplete?.()
+
+    expect(originalOnProcessComplete).not.toHaveBeenCalled()
+    expect(originalOnProcessError).toHaveBeenCalledOnce()
+    expect(onError).toHaveBeenCalledWith(file)
+  })
+
   it('rejects atlases missing required frames and suppresses later retries', () => {
     const failedUrls = new FailedAssetUrlRegistry()
     const first = createLoaderPort()
@@ -286,11 +332,13 @@ describe('Phaser board texture loader', () => {
     )
 
     expect(handle.resolveBackgroundTextureKey()).toBe('board-background:classic:balanced')
+    expect(handle.isActive()).toBe(true)
     expect(harness.queued.some((asset) => asset.kind === 'image')).toBe(false)
     expect(harness.errorListenerCount()).toBe(1)
     expect(harness.completeListenerCount()).toBe(1)
 
     harness.emitComplete()
+    expect(handle.isActive()).toBe(false)
     handle.dispose()
     expect(harness.errorListenerCount()).toBe(0)
     expect(harness.completeListenerCount()).toBe(0)

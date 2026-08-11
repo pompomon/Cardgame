@@ -31,6 +31,7 @@ export function createCardPreviewController(options: {
   let overlay: Phaser.GameObjects.Container | null = null
   let pinnedLabel: string | null = null
   let sourcePointerActive = false
+  let destroyed = false
 
   const clear = (): void => {
     overlay?.destroy(true)
@@ -39,6 +40,9 @@ export function createCardPreviewController(options: {
     sourcePointerActive = false
   }
   const show = (label: string, pinned: boolean): void => {
+    if (destroyed) {
+      return
+    }
     const context = options.getContext()
     if (!context || isCardPreviewSuppressed(context)) {
       clear()
@@ -77,6 +81,9 @@ export function createCardPreviewController(options: {
 
   return {
     bind(card, label, sourceDimensions) {
+      if (destroyed) {
+        return
+      }
       const layout = options.getLayout()
       card.setSize(
         sourceDimensions?.width ?? layout.cardWidth,
@@ -127,6 +134,10 @@ export function createCardPreviewController(options: {
     },
     clear,
     destroy() {
+      if (destroyed) {
+        return
+      }
+      destroyed = true
       clear()
       options.scene.input.off('pointerdown', onScenePointerDown)
     },

@@ -214,15 +214,19 @@ describe('Phaser effect controller', () => {
       },
     } as unknown as AppViewModel
     const runs: Array<{ done: () => void }> = []
+    const cancel = vi.fn()
     const playEffect = vi.fn((_scene, _anchor, _descriptor, _durationMs, done: () => void) => {
       runs.push({ done })
+      return { cancel }
     })
     const scene = { scale: { width: 1280, height: 720 } }
+    const onQueueDrained = vi.fn()
     const controller = new EffectController({
       scene: scene as never,
       getLayout: () => layout,
       getCurrentView: () => currentView,
       playEffect: playEffect as never,
+      onQueueDrained,
     })
 
     controller.recordCardPosition('p0-1', placement(0, 0, 1, 400, 490))
@@ -233,6 +237,7 @@ describe('Phaser effect controller', () => {
     // Simulate starting a new game/scene while the previous effect's tween
     // is still in flight (its `done` callback hasn't fired yet).
     controller.reset()
+    expect(cancel).toHaveBeenCalledOnce()
     const newGameView = {
       animationSpeed: 'normal',
       cardVisualStyle: 'classic',
@@ -244,5 +249,65 @@ describe('Phaser effect controller', () => {
     // or enqueue into the new game's (now separate) queue.
     runs[0].done()
     expect(controller.isBusyOrWillEnqueue(newGameView)).toBe(false)
+    expect(onQueueDrained).not.toHaveBeenCalled()
+  })
+
+  it('discards current events without replaying them after a visibility cleanup', () => {
+    const currentView = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0,
+        events: [
+          { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 'p0-1' },
+        ],
+      },
+    } as unknown as AppViewModel
+    const playEffect = vi.fn((_scene, _anchor, _descriptor, _durationMs, _done: () => void) => ({
+      cancel: vi.fn(),
+    }))
+    const controller = new EffectController({
+      scene: { scale: { width: 1280, height: 720 } } as never,
+      getLayout: () => layout,
+      getCurrentView: () => currentView,
+      playEffect: playEffect as never,
+    })
+
+    controller.processAbilityEffects(currentView)
+    controller.reset(currentView.game!.events.length)
+    controller.processAbilityEffects(currentView)
+
+    expect(playEffect).toHaveBeenCalledOnce()
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
+  })
+
+  it('discards events received while hidden instead of building an effect backlog', () => {
+    const currentView = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0,
+        events: [
+          { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 'p0-1' },
+        ],
+      },
+    } as unknown as AppViewModel
+    const playEffect = vi.fn()
+    let hidden = true
+    const controller = new EffectController({
+      scene: { scale: { width: 1280, height: 720 } } as never,
+      getLayout: () => layout,
+      getCurrentView: () => currentView,
+      playEffect: playEffect as never,
+      shouldSuppressEffects: () => hidden,
+    })
+
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
+    controller.processAbilityEffects(currentView)
+    hidden = false
+    controller.processAbilityEffects(currentView)
+
+    expect(playEffect).not.toHaveBeenCalled()
+    expect(controller.isBusyOrWillEnqueue(currentView)).toBe(false)
   })
 })

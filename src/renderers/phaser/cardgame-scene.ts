@@ -36,10 +36,15 @@ import {
 import { createMenuOverlay } from './menu-overlay'
 import { TargetPickerController } from './target-picker'
 import { BattlefieldTargetsController } from './battlefield-targets'
-import { preloadPhaserBoardAssets, type BoardAssetLoadHandle } from './texture-loader'
+import {
+  clearFailedRuntimeAssetUrls,
+  preloadPhaserBoardAssets,
+  type BoardAssetLoadHandle,
+} from './texture-loader'
 import { installButtonState, popupActionWidth } from './ui-utils'
 import { UI_THEME } from './theme'
 import { BASE_HEIGHT, BASE_WIDTH, CARDGAME_SCENE_KEY } from './scene-config'
+import { installSceneCleanup } from './scene-lifecycle'
 import type { PhaserRendererHost } from './renderer-host'
 
 export class CardgameScene extends Phaser.Scene {
@@ -66,6 +71,7 @@ export class CardgameScene extends Phaser.Scene {
   private boardBackground: BoardBackgroundView | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
+  private boardAssetRetryPending = false
   private qualityProfile: PhaserQualityProfile = resolvePhaserQualityProfile({
     preference: DEFAULT_RENDER_QUALITY_PREFERENCE,
     width: BASE_WIDTH,
@@ -73,6 +79,19 @@ export class CardgameScene extends Phaser.Scene {
     animationSpeed: DEFAULT_ANIMATION_SPEED,
   })
   private readonly boardPresentation = new BoardPresentationCoordinator()
+  private readonly handleVisibilityChange = (): void => {
+    this.dragController?.cancel('visibility')
+    const currentView = this.rendererRef.currentView
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      const eventCount = currentView?.game?.events.length ?? 0
+      this.effectController.reset(eventCount)
+      this.lastEffectFeedbackEventCount = eventCount
+      this.effectFeedback = null
+      this.boardPresentation.reset(currentView?.game?.actor)
+    }
+    this.renderView(currentView)
+    this.rendererRef.refreshA11yNavForCurrentView()
+  }
 
   private readonly effectController: EffectController
   private readonly battlefieldTargets: BattlefieldTargetsController
@@ -88,6 +107,8 @@ export class CardgameScene extends Phaser.Scene {
       getLayout: () => this.currentLayout,
       getCurrentView: () => this.rendererRef.currentView,
       getQualityProfile: () => this.qualityProfile,
+      shouldSuppressEffects: () => typeof document !== 'undefined'
+        && document.visibilityState === 'hidden',
       onQueueDrained: () => {
         this.effectFeedback = null
         if (this.boardPresentation.effectsDrained()) {
@@ -149,6 +170,7 @@ export class CardgameScene extends Phaser.Scene {
       view?.renderQualityPreference ?? DEFAULT_RENDER_QUALITY_PREFERENCE,
     )
     this.boardAssetLoadHandle?.dispose()
+    this.boardAssetRetryPending = false
     this.boardAssetLoadHandle = preloadPhaserBoardAssets(this, theme, assetTier)
     this.boardAssetManifestSignature = `${theme}:${assetTier}`
   }
@@ -216,36 +238,67 @@ export class CardgameScene extends Phaser.Scene {
       }
     }
     this.scale.on('resize', onResize)
-    const onVisibilityChange = (): void => {
-      this.dragController?.cancel('visibility')
-      this.renderView(this.rendererRef.currentView)
-    }
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', onVisibilityChange)
+      document.addEventListener('visibilitychange', this.handleVisibilityChange)
     }
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    installSceneCleanup(this.events, () => {
       this.scale.off('resize', onResize)
       if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', onVisibilityChange)
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange)
       }
-      this.dragController?.destroy()
-      this.dragController = null
-      this.cardPreview?.destroy()
-      this.cardPreview = null
-      this.cardViews?.destroy()
-      this.cardViews = null
-      this.dropZoneView?.destroy()
-      this.dropZoneView = null
-      this.boardBackground?.destroy()
-      this.boardBackground = null
-      this.boardAssetLoadHandle?.dispose()
-      this.boardAssetLoadHandle = null
-      this.boardAssetManifestSignature = null
-      this.effectController.reset()
-      this.boardPresentation.reset()
+      this.shutdownSceneResources()
     })
 
     this.renderView(this.rendererRef.currentView)
+  }
+
+  retryFailedBoardAssets(): void {
+    if (this.boardAssetLoadHandle?.isActive()) {
+      this.boardAssetRetryPending = true
+      return
+    }
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = null
+    this.boardAssetManifestSignature = null
+    if (this.scene.isActive()) {
+      this.renderView(this.rendererRef.currentView)
+    }
+  }
+
+  private shutdownSceneResources(): void {
+    this.dragController?.destroy()
+    this.dragController = null
+    this.cardPreview?.destroy()
+    this.cardPreview = null
+    this.cardViews?.destroy()
+    this.cardViews = null
+    this.dropZoneView?.destroy()
+    this.dropZoneView = null
+    this.boardAssetLoadHandle?.dispose()
+    this.boardAssetLoadHandle = null
+    this.boardAssetManifestSignature = null
+    this.boardAssetRetryPending = false
+    this.boardBackground?.destroy()
+    this.boardBackground = null
+    this.effectController.reset()
+    this.boardPresentation.reset()
+    this.targetPicker.clearTransientPickerState()
+    this.battlefieldTargets.reset()
+    this.rootContainer?.destroy(true)
+    this.rootContainer = null
+    this.statusText?.destroy()
+    this.statusText = null
+    this.battlefieldDropZone = null
+    this.menuOverlay = null
+    this.menuOpen = false
+    this.menuContentScrollOffset = null
+    this.menuLogScrollOffset = null
+    this.menuLogPinnedToBottom = true
+    this.lastRenderedSeed = null
+    this.lastMenuSignature = null
+    this.lastLayoutSignature = ''
+    this.lastEffectFeedbackEventCount = 0
+    this.effectFeedback = null
   }
 
   private setBattlefieldDropZone(zone: Phaser.GameObjects.Zone | null): void {
@@ -337,7 +390,15 @@ export class CardgameScene extends Phaser.Scene {
     // viewport must not thrash megabyte background downloads on resize.
     const assetTier = assetQualityTierForPreference(view.renderQualityPreference)
     const manifestSignature = `${view.boardTheme}:${assetTier}`
-    if (manifestSignature !== this.boardAssetManifestSignature) {
+    const currentLoadIsActive = this.boardAssetLoadHandle?.isActive() === true
+    // Phaser silently rejects files whose type/key already exists in its active
+    // loader queues. Let the current generation finish before replacing it so
+    // shared atlas files remain available to the successor manifest.
+    if (
+      manifestSignature !== this.boardAssetManifestSignature
+      && !currentLoadIsActive
+    ) {
+      this.boardAssetRetryPending = false
       this.boardAssetLoadHandle?.dispose()
       this.boardAssetManifestSignature = manifestSignature
       this.boardAssetLoadHandle = preloadPhaserBoardAssets(
@@ -346,6 +407,11 @@ export class CardgameScene extends Phaser.Scene {
         assetTier,
         () => {
           if (this.boardAssetManifestSignature === manifestSignature) {
+            if (this.boardAssetRetryPending) {
+              this.boardAssetRetryPending = false
+              this.boardAssetManifestSignature = null
+              clearFailedRuntimeAssetUrls()
+            }
             this.renderView(this.rendererRef.currentView)
           }
         },
@@ -389,6 +455,15 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   renderView(view: AppViewModel | null): void {
+    if (
+      this.boardAssetRetryPending
+      && this.boardAssetLoadHandle?.isActive() !== true
+    ) {
+      this.boardAssetRetryPending = false
+      this.boardAssetLoadHandle = null
+      this.boardAssetManifestSignature = null
+      clearFailedRuntimeAssetUrls()
+    }
     this.updateLayout()
     this.qualityProfile = this.resolveQualityProfile(view)
     const game = view?.game ?? null
