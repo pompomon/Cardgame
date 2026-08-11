@@ -935,6 +935,23 @@ Then run CodeQL review before finalizing the implementation PR.
 - Performance targets are met or documented with approved follow-up issues.
 - `npm run lint`, `npm run test`, `npm run build`, and CodeQL pass.
 
+### Phase 9 implementation notes (2026-08-11)
+
+- Added repeated mount/unmount and retained-owner cleanup regression coverage in
+  `src/test/phaser-renderer-lifecycle.test.ts` and
+  `src/test/phaser-cardgame-scene-lifecycle.test.ts`.
+- Added `docs/implementation/rich-phaser-renderer-verification.md`, which
+  links every automated acceptance target to its regression coverage and
+  records the required browser smoke matrix and frame-time budgets.
+- Targeted tests passed (8 files / 74 tests). Full validation passed:
+  `npm run lint`, `npm run test` (77 files / 735 tests), `npm run build`, and
+  CodeQL (trivial test/documentation-only change).
+- The phase remains unchecked: the required interactive desktop/mobile/offline
+  matrix and 120-second p95 frame-time traces cannot be completed in this
+  sandbox. The independent review also requires a lifecycle integration harness
+  that executes actual scene `create()`/shutdown listener registration rather
+  than only mocked retained-owner cleanup.
+
 ## Autonomous implementation workflow
 
 Implement the renderer evolution in small logical commits, each scoped to one reviewable concern. A suggested commit sequence is:
