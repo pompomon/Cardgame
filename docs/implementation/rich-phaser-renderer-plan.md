@@ -10,7 +10,7 @@
 - [x] Phase 5 — Add dedicated mouse/touch drag-and-drop controller
 - [x] Phase 6 — Add drop-zone visuals and contextual interaction feedback
 - [x] Phase 7 — Implement adaptive desktop/mobile performance policy
-- [ ] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
+- [x] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
 - [ ] Phase 9 — Add regression, lifecycle, and performance verification
 - [ ] Subagent verification — Architecture and ownership review
 - [ ] Subagent verification — Lifecycle, memory, and listener-cleanup review
@@ -833,6 +833,49 @@ type PhaserQualityProfile = {
 - No known listener, tween, timer, texture, or drag-state leaks remain.
 - Renderer transitions and game resets are stable.
 - `npm run lint`, `npm run test`, and `npm run build` pass.
+
+### Phase 8 implementation notes (2026-08-11)
+
+- Added `scene-lifecycle.ts` as the shared idempotent cleanup binding for both
+  Phaser scene `SHUTDOWN` and direct `DESTROY`. Lobby and cardgame scene
+  restarts now detach resize and visibility listeners, destroy retained roots,
+  and clear stale object and layout references before the next `create()`.
+- Hardened renderer ownership across mount, remount, scene transitions, and
+  unmount. `PhaserRenderer` removes its online listener and HTML overlays,
+  `SceneHost.dispose()` removes viewport synchronization, stops active scenes,
+  and destroys the Phaser game exactly once.
+- Centralized cardgame-scene teardown for drag, preview, retained-card,
+  drop-zone, background, loader, target-picker, battlefield-target, menu, and
+  effect state. Game-seed changes and hidden-page transitions cancel active
+  drags and effects so stale retained state cannot cross lifecycle boundaries;
+  visibility restoration re-renders the current view and accessibility mirror.
+- Ability effects now return cancellable playback owners that track temporary
+  GameObjects and tweens. `EffectController.reset()` cancels active playback,
+  replaces the bounded queue, clears retained targets and position registries,
+  and uses a generation guard to ignore late completion callbacks.
+- Board-asset loader handles are idempotently disposable and expose whether
+  their generation is still active. Disposal detaches loader listeners and
+  rejects late file processing; manifest replacement is serialized behind the
+  active generation so shared atlas requests are not dropped.
+- Failed runtime asset URLs are cleared on connectivity recovery and renderer
+  teardown instead of remaining session-permanent. Online recovery defers while
+  a loader is active, then retries the current manifest without racing it.
+- `BoardBackgroundView` tracks the bounded set of requested background keys,
+  keeps one usable background resident while a replacement loads, evicts stale
+  theme/tier textures (including late completions), and removes all owned
+  background textures on destruction.
+- Added lifecycle coverage in
+  `src/test/phaser-cardgame-scene-lifecycle.test.ts`,
+  `src/test/phaser-renderer-lifecycle.test.ts`,
+  `src/test/phaser-scene-host.test.ts`, and
+  `src/test/phaser-scene-lifecycle.test.ts`; extended background, loader,
+  preview, effect, and architecture tests for idempotent cleanup, listener
+  removal, cancellation, recovery, eviction, and restart behavior.
+- Updated `docs/agent/architecture.md` and
+  `docs/agent/phaser-renderer.md` with the resulting ownership, lifecycle,
+  effect-cancellation, and recoverable asset-loading rules.
+- Validation: `npm run lint`, `npm run test`, `npm run build`, and
+  `codeql_checker` — see the PR description for exact results.
 
 ## Phase 9 — Add regression, lifecycle, and performance verification
 
