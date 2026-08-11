@@ -390,7 +390,14 @@ export class CardgameScene extends Phaser.Scene {
     // viewport must not thrash megabyte background downloads on resize.
     const assetTier = assetQualityTierForPreference(view.renderQualityPreference)
     const manifestSignature = `${view.boardTheme}:${assetTier}`
-    if (manifestSignature !== this.boardAssetManifestSignature) {
+    const currentLoadIsActive = this.boardAssetLoadHandle?.isActive() === true
+    // Phaser silently rejects files whose type/key already exists in its active
+    // loader queues. Let the current generation finish before replacing it so
+    // shared atlas files remain available to the successor manifest.
+    if (
+      manifestSignature !== this.boardAssetManifestSignature
+      && !currentLoadIsActive
+    ) {
       this.boardAssetRetryPending = false
       this.boardAssetLoadHandle?.dispose()
       this.boardAssetManifestSignature = manifestSignature

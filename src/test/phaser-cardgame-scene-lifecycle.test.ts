@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AppViewModel } from '../app/types'
 
 const phaserMocks = vi.hoisted(() => ({
   isActive: vi.fn(() => false),
@@ -184,6 +185,42 @@ describe('CardgameScene lifecycle cleanup', () => {
       boardAssetRetryPending: true,
       boardAssetManifestSignature: 'classic:high',
     })
+  })
+
+  it('defers a changed asset manifest while the existing loader generation is active', () => {
+    const scene = new CardgameScene({
+      currentView: { game: null },
+      refreshA11yNavForCurrentView: vi.fn(),
+    } as never)
+    const activeHandle = {
+      dispose: vi.fn(),
+      isActive: () => true,
+    }
+    const syncBackground = vi.fn()
+    Object.assign(scene, {
+      boardAssetLoadHandle: activeHandle,
+      boardAssetManifestSignature: 'classic:high',
+      boardBackground: { sync: syncBackground },
+      textures: { exists: () => false },
+    })
+    const lifecycle = scene as unknown as {
+      syncBoardBackground(view: AppViewModel): void
+    }
+
+    lifecycle.syncBoardBackground({
+      boardTheme: 'verdant',
+      renderQualityPreference: 'balanced',
+    } as AppViewModel)
+
+    expect(activeHandle.dispose).not.toHaveBeenCalled()
+    expect(scene).toMatchObject({
+      boardAssetLoadHandle: activeHandle,
+      boardAssetManifestSignature: 'classic:high',
+    })
+    expect(syncBackground).toHaveBeenCalledWith(expect.objectContaining({
+      theme: 'verdant',
+      backgroundTextureKey: null,
+    }))
   })
 
   it('cancels hidden-page visuals and refreshes accessibility on hide and restore', () => {
