@@ -142,6 +142,21 @@ describe('DropZoneView', () => {
     expect(objects[3]).toMatchObject({ visible: true, text: 'Target' })
   })
 
+  it('reuses the drop zone, label, and target rings across repeated syncs with unchanged descriptors', () => {
+    const { view, objects } = harness()
+    const options = { game: game(), layout, cards: [targetCard], dragCardId: null, dragPhase: 'idle' as const, effect: null }
+
+    view.sync(options)
+    expect(objects).toHaveLength(4)
+
+    for (let index = 0; index < 50; index += 1) {
+      view.sync(options)
+    }
+
+    expect(objects).toHaveLength(4)
+    expect(objects[2]).toMatchObject({ visible: true, x: 400, y: 480 })
+  })
+
   it('does not create Phaser objects while updating pointer feedback', () => {
     const { view, objects } = harness()
     view.sync({ game: game(), layout, cards: [targetCard], dragCardId: 'forest', dragPhase: 'dragging', effect: null })

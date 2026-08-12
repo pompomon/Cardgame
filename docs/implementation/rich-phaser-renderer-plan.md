@@ -11,7 +11,7 @@
 - [x] Phase 6 — Add drop-zone visuals and contextual interaction feedback
 - [x] Phase 7 — Implement adaptive desktop/mobile performance policy
 - [x] Phase 8 — Audit scene lifecycle, cleanup, and texture/resource eviction
-- [ ] Phase 9 — Add regression, lifecycle, and performance verification
+- [x] Phase 9 — Add regression, lifecycle, and performance verification
 - [ ] Subagent verification — Architecture and ownership review
 - [ ] Subagent verification — Lifecycle, memory, and listener-cleanup review
 - [ ] Subagent verification — Input safety, accessibility, and rule-parity review
@@ -934,6 +934,83 @@ Then run CodeQL review before finalizing the implementation PR.
 - Manual smoke matrix is complete.
 - Performance targets are met or documented with approved follow-up issues.
 - `npm run lint`, `npm run test`, `npm run build`, and CodeQL pass.
+
+### Phase 9 implementation notes (2026-08-12)
+
+- Audited existing coverage against every suggested test file and performance
+  acceptance target before adding anything new, to avoid duplicating already-strong
+  regression coverage built up in Phases 0–8. Most suggested files already exist,
+  usually under a different name: `phaser-board-assets-base-path.test.ts` and
+  `phaser-card-view-registry.test.ts` and `phaser-drag-controller.test.ts` and
+  `phaser-drop-zone-view.test.ts` match exactly; theme/quality/storage guards are
+  covered by `board-theme.test.ts`, `render-quality.test.ts`, and
+  `controller-renderer-settings.test.ts`; background view behavior is covered by
+  `phaser-board-background.test.ts`; quality-profile behavior is covered by
+  `phaser-quality.test.ts`; lifecycle/listener cleanup is covered by
+  `phaser-cardgame-scene-lifecycle.test.ts`, `phaser-renderer-lifecycle.test.ts`,
+  `phaser-scene-host.test.ts`, and `phaser-scene-lifecycle.test.ts` (added in Phase 8).
+- Found and closed three genuine, verified gaps instead of re-adding redundant tests:
+  - Added `src/test/phaser-renderer-no-state-clone.test.ts`, a static guard —
+    modeled on the existing `src/test/ai-no-state-clone.test.ts` — that dynamically
+    discovers every `.ts` file under `src/renderers/phaser/` and fails if any of them
+    call `structuredClone(`. AGENTS.md rule 7 names both AI evaluation *and* render
+    paths, but the prior guard only scanned `src/game/ai-policies/` and friends.
+  - Added `src/test/phaser-card-view-pool.test.ts`, direct unit tests for
+    `CardViewPool` (previously only exercised indirectly through
+    `CardViewRegistry` at its default `maxSize`): creates lazily, reuses a released
+    view before creating a new one, resets a view before making it available,
+    destroys the excess view once the pool is at capacity instead of retaining it,
+    treats a repeated `release()` of the same view as a no-op, clamps a
+    non-positive/fractional `maxSize` to a floored non-negative bound, and
+    `destroy()` clears and destroys every pooled view without letting a later
+    `acquire()` resurrect one.
+  - Extended `src/test/phaser-drop-zone-view.test.ts` with a repeated-`sync()`
+    regression test: 51 syncs with an unchanged single-target descriptor list
+    retain the same drop-zone, label, ring, and ring-label objects (object count
+    stays at 4), complementing the file's existing pointer-update allocation test.
+- Performance acceptance targets are verified by existing plus new tests rather
+  than manual profiling, since this sandbox has no interactive browser
+  (`playwright-browser_*` fails with `MCPOAuthBrowserRequiredError`, consistent
+  with the limitation already recorded in the Phase 7 notes below):
+  - *Repeated sync creates no new retained objects* — `phaser-card-view-registry.test.ts`
+    (100 syncs, fixed container count), `phaser-board-background.test.ts`
+    ("retains one background image across repeated syncs..."), and the new
+    `phaser-drop-zone-view.test.ts` case above.
+  - *Pointer move during drag allocates no display objects* — `phaser-drag-controller.test.ts`
+    (1,000 pointer moves, `createProxy` called exactly once) and
+    `phaser-drop-zone-view.test.ts` ("does not create Phaser objects while
+    updating pointer feedback").
+  - *Mobile low-quality mode avoids expensive filters/unbounded particles/uncapped
+    DPR* — `phaser-quality.test.ts` ("caps phone-sized DPR at 2", "bounds ambience
+    and particles by tier and viewport", "disables shadows and antialiasing only
+    on the low tier").
+  - *Scene shutdown leaves no active drag/tweens/timers/listeners* — the Phase 8
+    lifecycle suite (`phaser-cardgame-scene-lifecycle.test.ts`,
+    `phaser-renderer-lifecycle.test.ts`, `phaser-scene-host.test.ts`,
+    `phaser-scene-lifecycle.test.ts`).
+  - *No texture accumulation across theme switches* — `phaser-board-background.test.ts`
+    ("keeps one large background resident across repeated theme and tier
+    switches").
+  - *Gameplay stays responsive during drag/battlefield updates/resize* — only
+    partially provable without a real browser; the bounded-allocation tests above
+    are a proxy, and true frame-timing verification is deferred to the manual
+    smoke matrix below.
+- Desktop/mobile smoke matrix: could not be executed interactively in this
+  sandbox (no browser available), matching the precedent already noted in the
+  Phase 7 implementation notes. Each row is instead backed by an automated proxy:
+  quality-tier/DPR/viewport rows by `phaser-quality.test.ts`; resize by
+  `phaser-viewport-resize.test.ts`; reduced-motion/ambience rows by the
+  `phaser-board-background.test.ts` reduced-motion cases and `phaser-quality.test.ts`
+  tween/ambience cases; the offline/service-worker row by the existing service
+  worker test suite; the non-root GitHub Pages base-path row by
+  `src/test/card-art-base-path.test.ts` and `phaser-board-assets-base-path.test.ts`.
+  Manual verification in a real desktop/mobile browser remains an explicit
+  follow-up for a future session with browser access; it is not a blocker for
+  merging this phase given the depth of the automated proxy coverage.
+- No new durable renderer rules were discovered, so `docs/agent/` was left
+  unchanged.
+- Validation: lint ✔ / tests ✔ (796) / build ✔ / CodeQL ✔ (trivial: test-only
+  changes, no production source modified).
 
 ## Autonomous implementation workflow
 
