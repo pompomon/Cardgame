@@ -75,6 +75,15 @@ describe('buildLogA11yLines', () => {
     expect(lines).toEqual(['P1 draws Forest'])
   })
 
+  it('keeps redacted hidden draws in a non-empty structured event stream', () => {
+    const lines = buildLogA11yLines([
+      { kind: 'game_started' },
+      { kind: 'hidden_draw', actor: 1 },
+    ], ['Player 2 draws Swamp.'])
+    expect(lines).toEqual(['Game started', 'P2 draws a hidden card'])
+    expect(lines.join(' ')).not.toContain('Swamp')
+  })
+
   it('falls back to legacyLog verbatim when events is empty (legacy back-filled recording)', () => {
     const lines = buildLogA11yLines([], ['P1 draws Forest', 'P2 draws Island'])
     expect(lines).toEqual(['P1 draws Forest', 'P2 draws Island'])

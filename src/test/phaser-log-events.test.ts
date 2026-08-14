@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatLogEventText, formatLogEventTile, isLandTileEvent } from '../renderers/phaser/log-events'
+import type { UiLogEvent } from '../app/types'
 import type { LogEvent } from '../game/types'
 
 describe('phaser log-events', () => {
@@ -9,6 +10,18 @@ describe('phaser log-events', () => {
     expect(tile).toEqual({ actor: 0, label: 'draws Forest', cardName: 'Forest', glyph: '+' })
     expect(formatLogEventText(event)).toBe('P1 draws Forest')
     expect(isLandTileEvent(event)).toBe(true)
+  })
+
+  it('renders hidden draws without card art or a card name', () => {
+    const event: UiLogEvent = { kind: 'hidden_draw', actor: 1 }
+    expect(formatLogEventTile(event)).toEqual({
+      actor: 1,
+      label: 'draws a hidden card',
+      cardName: null,
+      glyph: '+',
+    })
+    expect(formatLogEventText(event)).toBe('P2 draws a hidden card')
+    expect(isLandTileEvent(event)).toBe(false)
   })
 
   it('renders ability resolutions with target attribution', () => {

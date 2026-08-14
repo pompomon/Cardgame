@@ -183,11 +183,32 @@ describe('buildViewModel hand-redaction', () => {
     const vm = buildViewModel(state, false)
 
     expect(vm.game?.log).toEqual(['Player 2 draws a hidden card.'])
-    expect(vm.game?.events).toEqual([])
+    expect(vm.game?.events).toEqual([{ kind: 'hidden_draw', actor: 1 }])
     expect(JSON.stringify({
       log: vm.game?.log,
       events: vm.game?.events,
     })).not.toContain('Swamp')
+  })
+
+  it('redacts hidden-player draw names from legacy logs without structured events', () => {
+    const state = createState(102)
+    state.mode = 'local-hvai'
+    state.controllers = ['human', 'ai']
+    state.game!.log = [
+      'Player 2 draws Mountain.',
+      'Player 1 draws Forest.',
+      'Player 2 loses by drawing from empty deck.',
+    ]
+    state.game!.events = []
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.game?.log).toEqual([
+      'Player 2 draws a hidden card.',
+      'Player 1 draws Forest.',
+      'Player 2 loses by drawing from empty deck.',
+    ])
+    expect(vm.game?.events).toEqual([])
   })
 
   it('redacts the AI hand from the human with opaque slot ids', () => {

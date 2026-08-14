@@ -32,6 +32,7 @@ describe('visual effect descriptors', () => {
 
   it('returns null for events without a visual recipe', () => {
     expect(visualEffectForEvent({ kind: 'turn_start', turn: 2, actor: 1 }, 'hd')).toBeNull()
+    expect(visualEffectForEvent({ kind: 'hidden_draw', actor: 1 }, 'hd')).toBeNull()
   })
 
   it('uses the played land palette for land-entry effects', () => {
