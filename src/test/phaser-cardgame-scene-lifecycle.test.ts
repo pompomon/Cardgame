@@ -49,6 +49,7 @@ interface ResourceHarness {
   readonly previewDestroy: ReturnType<typeof vi.fn>
   readonly cardsDestroy: ReturnType<typeof vi.fn>
   readonly dropZoneDestroy: ReturnType<typeof vi.fn>
+  readonly cardArtDispose: ReturnType<typeof vi.fn>
   readonly loadDispose: ReturnType<typeof vi.fn>
   readonly backgroundDestroy: ReturnType<typeof vi.fn>
   readonly rootDestroy: ReturnType<typeof vi.fn>
@@ -61,6 +62,7 @@ function installResources(scene: CardgameScene): ResourceHarness {
     previewDestroy: vi.fn(),
     cardsDestroy: vi.fn(),
     dropZoneDestroy: vi.fn(),
+    cardArtDispose: vi.fn(),
     loadDispose: vi.fn(),
     backgroundDestroy: vi.fn(),
     rootDestroy: vi.fn(),
@@ -71,6 +73,7 @@ function installResources(scene: CardgameScene): ResourceHarness {
     cardPreview: { destroy: resources.previewDestroy },
     cardViews: { destroy: resources.cardsDestroy },
     dropZoneView: { destroy: resources.dropZoneDestroy },
+    cardArtLoadHandle: { dispose: resources.cardArtDispose, isActive: () => false },
     boardAssetLoadHandle: { dispose: resources.loadDispose, isActive: () => false },
     boardAssetManifestSignature: 'classic:high',
     boardBackground: { destroy: resources.backgroundDestroy },
@@ -82,7 +85,7 @@ function installResources(scene: CardgameScene): ResourceHarness {
     menuContentScrollOffset: 10,
     menuLogScrollOffset: 20,
     menuLogPinnedToBottom: false,
-    lastRenderedSeed: 42,
+    lastRenderedGameKey: '1:42',
     lastMenuSignature: 'menu',
     lastLayoutSignature: 'layout',
     lastEffectFeedbackEventCount: 4,
@@ -120,7 +123,7 @@ describe('CardgameScene lifecycle cleanup', () => {
       menuContentScrollOffset: null,
       menuLogScrollOffset: null,
       menuLogPinnedToBottom: true,
-      lastRenderedSeed: null,
+      lastRenderedGameKey: null,
       lastMenuSignature: null,
       lastLayoutSignature: '',
       lastEffectFeedbackEventCount: 0,
@@ -132,6 +135,36 @@ describe('CardgameScene lifecycle cleanup', () => {
     for (const cleanup of Object.values(restarted)) {
       expect(cleanup).toHaveBeenCalledOnce()
     }
+  })
+
+  it('installs cleanup before preload can begin', () => {
+    const listeners = new Map<string, () => void>()
+    const events = {
+      once: (event: string, listener: () => void) => {
+        listeners.set(event, listener)
+      },
+      off: (event: string) => {
+        listeners.delete(event)
+      },
+    }
+    const scene = new CardgameScene({
+      currentView: null,
+      refreshA11yNavForCurrentView: vi.fn(),
+    } as never)
+    Object.assign(scene, { events })
+    scene.init()
+    const resources = installResources(scene)
+
+    listeners.get('shutdown')?.()
+
+    for (const cleanup of Object.values(resources)) {
+      expect(cleanup).toHaveBeenCalledOnce()
+    }
+    expect(scene).toMatchObject({
+      cardArtLoadHandle: null,
+      boardAssetLoadHandle: null,
+      removeSceneCleanup: null,
+    })
   })
 
   it('disposes a stale asset load and retries only while the scene is active', () => {

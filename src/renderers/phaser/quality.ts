@@ -24,8 +24,6 @@ import type { AnimationSpeed } from '../../app/types'
 const DEFAULT_GAME_RESOLUTION = 1
 const MOBILE_MAX_SHORT_EDGE = 480
 const MOBILE_MAX_LONG_EDGE = 950
-const DESKTOP_HIGH_TIER_MIN_WIDTH = 1200
-const DESKTOP_HIGH_TIER_MIN_HEIGHT = 760
 
 const MAX_MOBILE_DEVICE_PIXEL_RATIO = 2
 
@@ -90,11 +88,6 @@ export interface PhaserQualityProfile {
    * drops them to reduce overdraw; every other tier keeps them.
    */
   readonly enableShadows: boolean
-  /**
-   * Policy recommendation for canvas antialiasing: disabled on the low tier
-   * so the renderer trades edge smoothing for fill-rate.
-   */
-  readonly antialias: boolean
 }
 
 export interface PhaserQualityProfileInput {
@@ -128,14 +121,10 @@ export function isPhoneSizedViewport(width: number, height: number): boolean {
   return shortEdge <= MOBILE_MAX_SHORT_EDGE && longEdge <= MOBILE_MAX_LONG_EDGE
 }
 
-// 'auto' resolves conservatively: phone-sized viewports get the balanced tier
-// (never 'high'), and desktop-sized viewports only reach 'high' once the
-// viewport is comfortably large. Unknown/awkward sizes fall back to balanced.
+// Automatic quality is intentionally deterministic. It starts balanced on
+// every viewport; users who want the more expensive profile can select high.
 function resolveTier(
   preference: RenderQualityPreference,
-  phoneSized: boolean,
-  width: number,
-  height: number,
 ): PhaserQualityTier {
   switch (preference) {
     case 'high':
@@ -145,12 +134,7 @@ function resolveTier(
     case 'low':
       return 'low'
     case 'auto':
-      if (phoneSized) {
-        return 'balanced'
-      }
-      return width >= DESKTOP_HIGH_TIER_MIN_WIDTH && height >= DESKTOP_HIGH_TIER_MIN_HEIGHT
-        ? 'high'
-        : 'balanced'
+      return 'balanced'
     default:
       return 'balanced'
   }
@@ -190,7 +174,7 @@ export function resolvePhaserQualityProfile(
   const width = normalizeViewportDimension(input.width)
   const height = normalizeViewportDimension(input.height)
   const phoneSized = isPhoneSizedViewport(width, height)
-  const tier = resolveTier(input.preference, phoneSized, width, height)
+  const tier = resolveTier(input.preference)
   const motionSuppressed = input.reducedMotion === true
     || input.animationSpeed === 'off'
     || input.documentHidden === true
@@ -209,7 +193,6 @@ export function resolvePhaserQualityProfile(
     enableMoveTweens,
     enableHoverTweens: enableMoveTweens && tier !== 'low',
     enableShadows: tier !== 'low',
-    antialias: tier !== 'low',
   })
 }
 

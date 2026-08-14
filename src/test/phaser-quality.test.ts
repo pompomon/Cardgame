@@ -23,8 +23,8 @@ describe('phaser quality policy', () => {
     expect(resolveGameResolution({ width: 1280, height: 820, devicePixelRatio: 2 })).toBe(2)
   })
 
-  it('caps very high non-mobile DPR values at the desktop limit', () => {
-    expect(resolveGameResolution({ width: 1440, height: 900, devicePixelRatio: 4 })).toBe(2.5)
+  it('caps very high non-mobile DPR values at the balanced automatic limit', () => {
+    expect(resolveGameResolution({ width: 1440, height: 900, devicePixelRatio: 4 })).toBe(2)
   })
 
   it('falls back to resolution 1 when DPR is invalid', () => {
@@ -37,8 +37,8 @@ describe('phaser adaptive quality profile', () => {
   const desktop = { width: 1440, height: 900 } as const
   const phone = { width: 390, height: 844 } as const
 
-  it('resolves auto to high on roomy desktop viewports and balanced on phones', () => {
-    expect(resolvePhaserQualityProfile({ preference: 'auto', ...desktop }).tier).toBe('high')
+  it('starts automatic quality at balanced on desktop and phone viewports', () => {
+    expect(resolvePhaserQualityProfile({ preference: 'auto', ...desktop }).tier).toBe('balanced')
     expect(resolvePhaserQualityProfile({ preference: 'auto', ...phone }).tier).toBe('balanced')
   })
 
@@ -115,21 +115,18 @@ describe('phaser adaptive quality profile', () => {
     expect(resolvePhaserQualityProfile({ preference: 'low', ...desktop }).effectDetail).toBe('reduced')
   })
 
-  it('disables shadows and antialiasing only on the low tier', () => {
+  it('disables shadows only on the low tier', () => {
     const high = resolvePhaserQualityProfile({ preference: 'high', ...desktop })
     expect(high.enableShadows).toBe(true)
-    expect(high.antialias).toBe(true)
     const balancedPhone = resolvePhaserQualityProfile({ preference: 'auto', ...phone })
     expect(balancedPhone.enableShadows).toBe(true)
-    expect(balancedPhone.antialias).toBe(true)
     const low = resolvePhaserQualityProfile({ preference: 'low', ...desktop })
     expect(low.enableShadows).toBe(false)
-    expect(low.antialias).toBe(false)
   })
 
-  it('resolves the desktop high-tier viewport boundary inclusively', () => {    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 760 }).tier).toBe('high')
-    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1199, height: 760 }).tier).toBe('balanced')
-    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 759 }).tier).toBe('balanced')
+  it('keeps automatic quality balanced across desktop viewport boundaries', () => {
+    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1200, height: 760 }).tier).toBe('balanced')
+    expect(resolvePhaserQualityProfile({ preference: 'auto', width: 1920, height: 1080 }).tier).toBe('balanced')
   })
 
   it('falls back to the balanced tier for unknown preference values', () => {

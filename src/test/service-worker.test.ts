@@ -71,12 +71,13 @@ function loadServiceWorker(cacheKeys: readonly string[] = []): ServiceWorkerHarn
   const cachePut = vi.fn(async (key: Request | string, response: Response) => {
     cachePutCalls.push({ key, response })
   })
+  const cachesMatch = vi.fn(async (key: Request | string) => cachedResponses.get(cacheKey(key)))
   const cache = {
     addAll: vi.fn(async () => undefined),
+    match: cachesMatch,
     put: cachePut,
   }
   const cachesOpen = vi.fn(async () => cache)
-  const cachesMatch = vi.fn(async (key: Request | string) => cachedResponses.get(cacheKey(key)))
   const cacheDelete = vi.fn(async () => true)
   const caches = {
     delete: cacheDelete,
@@ -155,6 +156,8 @@ describe('service worker fetch handling', () => {
       'cardgame-%2FCardgame%2F-shell-v7',
       'cardgame-%2FCardgame%2F-assets-v7',
       'cardgame-%2FCardgame%2F-shell-v8',
+      'cardgame-shell-v8',
+      'cardgame-assets-v7',
       'cardgame-%2FOther%2F-shell-v7',
       'unrelated-cache',
     ])
@@ -164,6 +167,8 @@ describe('service worker fetch handling', () => {
     expect(harness.cacheDelete.mock.calls.map(([key]) => key)).toEqual([
       'cardgame-%2FCardgame%2F-shell-v7',
       'cardgame-%2FCardgame%2F-assets-v7',
+      'cardgame-shell-v8',
+      'cardgame-assets-v7',
     ])
   })
 

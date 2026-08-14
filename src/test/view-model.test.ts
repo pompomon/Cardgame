@@ -59,6 +59,7 @@ describe('buildViewModel', () => {
     expect(vm.cardVisualStyle).toBe('classic')
     expect(vm.boardTheme).toBe('classic')
     expect(vm.renderQualityPreference).toBe('auto')
+    expect(vm.gameGeneration).toBe(0)
     expect(vm.adventure.status).toBe('inactive')
     // The structured event stream is exposed alongside the log strings so
     // renderers (Phaser visual log, ability animations) can consume it.
@@ -144,6 +145,8 @@ describe('buildViewModel', () => {
     const vm = buildViewModel(state, false)
 
     expect(vm.game).not.toBe(state.game)
+    expect(vm.controllers).not.toBe(state.controllers)
+    expect(Object.isFrozen(vm.controllers)).toBe(true)
     expect(vm.game?.players).not.toBe(state.game!.players)
     expect(vm.game?.players[0]).not.toBe(state.game!.players[0])
     expect(vm.game?.players[1]).not.toBe(state.game!.players[1])
@@ -170,6 +173,23 @@ describe('buildViewModel', () => {
 })
 
 describe('buildViewModel hand-redaction', () => {
+  it('redacts hidden-player draw names from projected logs and events', () => {
+    const state = createState(100)
+    state.mode = 'local-hvai'
+    state.controllers = ['human', 'ai']
+    state.game!.log = ['Player 2 draws Swamp.']
+    state.game!.events = [{ kind: 'draw', actor: 1, cardName: 'Swamp' }]
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.game?.log).toEqual(['Player 2 draws a hidden card.'])
+    expect(vm.game?.events).toEqual([])
+    expect(JSON.stringify({
+      log: vm.game?.log,
+      events: vm.game?.events,
+    })).not.toContain('Swamp')
+  })
+
   it('redacts the AI hand from the human with opaque slot ids', () => {
     const state = createState(101)
     state.mode = 'local-hvai'

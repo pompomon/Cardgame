@@ -18,8 +18,13 @@ import { visualEffectForEvent, type VisualEffectDescriptor } from '../../app/vis
 import type { AppViewModel, GameUiState } from '../../app/types'
 import { buildPhaserBoardAssetManifest, resolveLoadedBoardBackgroundTextureKey } from './asset-manifest'
 import { BoardBackgroundView } from './board-background'
+import { BattlefieldView } from './battlefield-view'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
-import { preloadCardArt, type CardArtLoadHandle } from './card-art-loader'
+import {
+  clearFailedCardArtUrls,
+  preloadCardArt,
+  type CardArtLoadHandle,
+} from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
 import type { CardViewDragSource } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
@@ -27,7 +32,7 @@ import { DragController } from './drag-controller'
 import { DropZoneView } from './drop-zone-view'
 import { EffectController } from './effect-controller'
 import { GameplayPresenter } from './gameplay-presenter'
-import { buildLayout, orientationFromViewport, type SceneLayout } from './layout'
+import { buildLayout, orientationFromViewport, statusTextBox, type SceneLayout } from './layout'
 import {
   assetQualityTierForPreference,
   resolvePhaserQualityProfile,
@@ -57,8 +62,8 @@ export class CardgameScene extends Phaser.Scene {
   private menuContentScrollOffset: number | null = null
   private menuLogScrollOffset: number | null = null
   private menuLogPinnedToBottom = true
-  // Tracks the seed of the game currently rendered in this scene.
-  private lastRenderedSeed: number | null = null
+  // Tracks the controller-owned game generation and seed currently rendered.
+  private lastRenderedGameKey: string | null = null
   private lastMenuSignature: string | null = null
   private currentLayout: SceneLayout = buildLayout(BASE_WIDTH, BASE_HEIGHT, 'horizontal')
   private lastLayoutSignature = ''
@@ -69,6 +74,7 @@ export class CardgameScene extends Phaser.Scene {
   private dragController: DragController | null = null
   private dropZoneView: DropZoneView | null = null
   private boardBackground: BoardBackgroundView | null = null
+  private battlefieldView: BattlefieldView | null = null
   private cardArtLoadHandle: CardArtLoadHandle | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
@@ -93,6 +99,13 @@ export class CardgameScene extends Phaser.Scene {
     this.renderView(currentView)
     this.rendererRef.refreshA11yNavForCurrentView()
   }
+  private readonly handleResize = (): void => {
+    this.dragController?.cancel('resize')
+    if (this.updateLayout()) {
+      this.renderView(this.rendererRef.currentView)
+    }
+  }
+  private removeSceneCleanup: (() => void) | null = null
 
   private readonly effectController: EffectController
   private readonly battlefieldTargets: BattlefieldTargetsController
@@ -108,6 +121,14 @@ export class CardgameScene extends Phaser.Scene {
       getLayout: () => this.currentLayout,
       getCurrentView: () => this.rendererRef.currentView,
       getQualityProfile: () => this.qualityProfile,
+      renderRetainedCard: (x, y, cardName, visualStyle) => renderStaticCard(
+        this,
+        this.currentLayout,
+        x,
+        y,
+        cardName,
+        { visualStyle, enableShadows: this.qualityProfile.enableShadows },
+      ),
       shouldSuppressEffects: () => typeof document !== 'undefined'
         && document.visibilityState === 'hidden',
       onQueueDrained: () => {
@@ -126,6 +147,8 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getLayout: () => this.currentLayout,
       getRootContainer: () => this.rootContainer,
+      getEnableShadows: () => this.qualityProfile.enableShadows,
+      getEnableHoverEffects: () => this.qualityProfile.enableHoverTweens,
       isMenuOpen: () => this.menuOpen,
       getVisualStyle: () => this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
       clearCardPreview: () => this.cardPreview?.clear(),
@@ -136,13 +159,17 @@ export class CardgameScene extends Phaser.Scene {
       scene: this,
       getLayout: () => this.currentLayout,
       getRootContainer: () => this.rootContainer,
+      getEnableShadows: () => this.qualityProfile.enableShadows,
       submitAction: (action) => this.rendererRef.controller?.submitAction(action),
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
-      effectController: this.effectController,
       battlefieldTargets: this.battlefieldTargets,
       targetPicker: this.targetPicker,
       setStatus: (message) => this.setStatus(message),
-      setBattlefieldDropZone: (zone) => this.setBattlefieldDropZone(zone),
+      syncBattlefields: (game, presentedActor) => this.battlefieldView?.sync(
+        game,
+        presentedActor,
+        this.qualityProfile.enableShadows,
+      ) ?? [],
       openMenuOverlay: (view) => this.openMenuOverlay(view),
       syncCardViews: (cards, view) => {
         if (!this.cardViews || !this.rootContainer) {
@@ -154,12 +181,18 @@ export class CardgameScene extends Phaser.Scene {
           visualStyle: view.cardVisualStyle,
           animationSpeed: view.animationSpeed,
           enableMoveTweens: this.qualityProfile.enableMoveTweens,
+          enableShadows: this.qualityProfile.enableShadows,
         })
       },
     })
   }
 
+  init(): void {
+    this.ensureSceneCleanup()
+  }
+
   preload(): void {
+    this.ensureSceneCleanup()
     const view = this.rendererRef.currentView
       ?? this.rendererRef.controller?.getViewModel()
     const selectedStyle = view?.cardVisualStyle
@@ -178,8 +211,18 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.ensureSceneCleanup()
     this.rootContainer = this.add.container(0, 0)
     this.boardBackground = new BoardBackgroundView({ scene: this })
+    this.battlefieldView?.destroy()
+    this.battlefieldView = new BattlefieldView({
+      scene: this,
+      getLayout: () => this.currentLayout,
+      getRootContainer: () => this.rootContainer,
+      effectController: this.effectController,
+      battlefieldTargets: this.battlefieldTargets,
+      setBattlefieldDropZone: (zone) => this.setBattlefieldDropZone(zone),
+    })
     this.dropZoneView = new DropZoneView(this, this.rootContainer)
     this.cardPreview = createCardPreviewController({
       scene: this,
@@ -190,7 +233,15 @@ export class CardgameScene extends Phaser.Scene {
         this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null,
         this.menuOpen,
       ),
-      renderCard: (label) => renderStaticCard(this, this.currentLayout, 0, 0, label, { mode: 'preview' }, this.rendererRef.currentView?.cardVisualStyle),
+      renderCard: (label) => renderStaticCard(
+        this,
+        this.currentLayout,
+        0,
+        0,
+        label,
+        { mode: 'preview', enableShadows: this.qualityProfile.enableShadows },
+        this.rendererRef.currentView?.cardVisualStyle,
+      ),
     })
     this.dragController?.destroy()
     this.dragController = null
@@ -207,6 +258,7 @@ export class CardgameScene extends Phaser.Scene {
       getGame: () => this.rendererRef.currentView?.game ?? null,
       getDropZone: () => this.battlefieldDropZone,
       getAnimationSpeed: () => this.rendererRef.currentView?.animationSpeed ?? DEFAULT_ANIMATION_SPEED,
+      shouldAnimate: () => this.qualityProfile.enableMoveTweens,
       isInteractionBlocked: () => this.menuOpen
         || this.battlefieldTargets.getPendingPlayLandTargetSelection() !== null,
       createProxy: (source) => this.createDragProxy(source),
@@ -223,35 +275,38 @@ export class CardgameScene extends Phaser.Scene {
       ),
     })
     this.boardPresentation.reset()
-    this.lastRenderedSeed = null
+    this.lastRenderedGameKey = null
     this.updateLayout()
-    this.statusText = this.add.text(this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset, '', {
+    const statusBox = statusTextBox(this.currentLayout)
+    this.statusText = this.add.text(statusBox.x, statusBox.y, '', {
       color: UI_THEME.secondaryText,
       fontSize: this.currentLayout.bodyFontSize,
+      wordWrap: { width: statusBox.width },
+      maxLines: statusBox.maxLines,
     })
+    this.statusText.setOrigin(0, 1)
 
     // Detach the resize listener on scene shutdown so a stop/start cycle (e.g.
     // when the user goes Back to Lobby and then starts a new match) does not
     // accumulate duplicate listeners on the reused scene instance.
-    const onResize = (): void => {
-      this.dragController?.cancel('resize')
-      if (this.updateLayout()) {
-        this.renderView(this.rendererRef.currentView)
-      }
-    }
-    this.scale.on('resize', onResize)
+    this.scale.off('resize', this.handleResize)
+    this.scale.on('resize', this.handleResize)
     if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange)
       document.addEventListener('visibilitychange', this.handleVisibilityChange)
     }
-    installSceneCleanup(this.events, () => {
-      this.scale.off('resize', onResize)
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', this.handleVisibilityChange)
-      }
-      this.shutdownSceneResources()
-    })
 
     this.renderView(this.rendererRef.currentView)
+  }
+
+  private ensureSceneCleanup(): void {
+    if (this.removeSceneCleanup) {
+      return
+    }
+    this.removeSceneCleanup = installSceneCleanup(this.events, () => {
+      this.removeSceneCleanup = null
+      this.shutdownSceneResources()
+    })
   }
 
   retryFailedBoardAssets(): void {
@@ -285,6 +340,10 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   private shutdownSceneResources(): void {
+    this.scale?.off?.('resize', this.handleResize)
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    }
     this.dragController?.destroy()
     this.dragController = null
     this.cardPreview?.destroy()
@@ -301,6 +360,8 @@ export class CardgameScene extends Phaser.Scene {
     this.boardAssetRetryPending = false
     this.boardBackground?.destroy()
     this.boardBackground = null
+    this.battlefieldView?.destroy()
+    this.battlefieldView = null
     this.effectController.reset()
     this.boardPresentation.reset()
     this.targetPicker.clearTransientPickerState()
@@ -315,7 +376,7 @@ export class CardgameScene extends Phaser.Scene {
     this.menuContentScrollOffset = null
     this.menuLogScrollOffset = null
     this.menuLogPinnedToBottom = true
-    this.lastRenderedSeed = null
+    this.lastRenderedGameKey = null
     this.lastMenuSignature = null
     this.lastLayoutSignature = ''
     this.lastEffectFeedbackEventCount = 0
@@ -323,6 +384,9 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   private setBattlefieldDropZone(zone: Phaser.GameObjects.Zone | null): void {
+    if (zone === this.battlefieldDropZone) {
+      return
+    }
     zone?.once(Phaser.GameObjects.Events.DESTROY, () => {
       if (this.battlefieldDropZone === zone) {
         this.battlefieldDropZone = null
@@ -338,7 +402,10 @@ export class CardgameScene extends Phaser.Scene {
       0,
       0,
       source.name,
-      { dimensions: { width: source.width, height: source.height } },
+      {
+        dimensions: { width: source.width, height: source.height },
+        enableShadows: this.qualityProfile.enableShadows,
+      },
       this.rendererRef.currentView?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
     )
     face.setPosition(0, 0)
@@ -383,9 +450,12 @@ export class CardgameScene extends Phaser.Scene {
 
   private setStatus(message: string): void {
     if (this.statusText) {
+      const box = statusTextBox(this.currentLayout)
       this.statusText.setText(message)
-      this.statusText.setPosition(this.currentLayout.safeAreaLeft + this.currentLayout.margin, this.currentLayout.height - this.currentLayout.statusBottomOffset)
+      this.statusText.setPosition(box.x, box.y)
       this.statusText.setFontSize(this.currentLayout.bodyFontSize)
+      this.statusText.setWordWrapWidth(box.width)
+      this.statusText.setMaxLines(box.maxLines)
     }
   }
 
@@ -464,6 +534,7 @@ export class CardgameScene extends Phaser.Scene {
         if (
           child !== cardLayer
           && child !== this.dropZoneView?.rootChild
+          && child !== this.battlefieldView?.rootChild
           && child !== preservedOverlay
         ) {
           this.rootContainer.remove(child, true)
@@ -472,7 +543,6 @@ export class CardgameScene extends Phaser.Scene {
     }
     this.battlefieldTargets.clearTransientEntries()
     this.targetPicker.clearTransientPickerState()
-    this.battlefieldDropZone = null
     this.menuOpen = wasMenuOpen
   }
 
@@ -480,18 +550,24 @@ export class CardgameScene extends Phaser.Scene {
     if (
       this.boardAssetRetryPending
       && this.boardAssetLoadHandle?.isActive() !== true
+      && this.cardArtLoadHandle?.isActive() !== true
     ) {
       this.boardAssetRetryPending = false
       this.boardAssetLoadHandle = null
       this.boardAssetManifestSignature = null
       clearFailedRuntimeAssetUrls()
+      clearFailedCardArtUrls()
+      this.queueCurrentCardArt()
     }
     this.updateLayout()
     this.qualityProfile = this.resolveQualityProfile(view)
     const game = view?.game ?? null
     if (view && game) {
-      const currentSeed = view.seed
-      if (this.lastRenderedSeed !== null && this.lastRenderedSeed !== currentSeed) {
+      const currentGameKey = `${view.gameGeneration}:${view.seed}`
+      if (
+        this.lastRenderedGameKey !== null
+        && this.lastRenderedGameKey !== currentGameKey
+      ) {
         this.dragController?.cancel('game-change')
         this.menuLogScrollOffset = null
         this.menuLogPinnedToBottom = true
@@ -503,10 +579,10 @@ export class CardgameScene extends Phaser.Scene {
         this.cardViews?.reset()
         this.boardPresentation.reset(game.actor)
       }
-      this.lastRenderedSeed = currentSeed
+      this.lastRenderedGameKey = currentGameKey
     } else {
       this.dragController?.cancel('game-change')
-      this.lastRenderedSeed = null
+      this.lastRenderedGameKey = null
       this.effectController.reset()
       this.lastEffectFeedbackEventCount = 0
       this.effectFeedback = null
@@ -526,6 +602,7 @@ export class CardgameScene extends Phaser.Scene {
     }
     this.clearRoot(preservedOverlay)
     if (!view || !this.rootContainer) {
+      this.battlefieldView?.reset()
       this.battlefieldTargets.reset()
       this.cardViews?.reset()
       preservedOverlay?.destroy(true)
@@ -541,6 +618,7 @@ export class CardgameScene extends Phaser.Scene {
     this.syncBoardBackground(view)
 
     if (!view.game) {
+      this.battlefieldView?.reset()
       this.battlefieldTargets.reset()
       this.cardViews?.reset()
       preservedOverlay?.destroy(true)
@@ -625,7 +703,10 @@ export class CardgameScene extends Phaser.Scene {
     height = 44,
     fontSize = this.currentLayout.actionButtonFontSize,
   ): Phaser.GameObjects.Container {
-    return createThemedButton(this, label, x, y, fontSize, width, height, onClick)
+    return createThemedButton(this, label, x, y, fontSize, width, height, onClick, {
+      enableShadows: this.qualityProfile.enableShadows,
+      enableHoverEffects: this.qualityProfile.enableHoverTweens,
+    })
   }
 
   closeMenuOverlay(): void {

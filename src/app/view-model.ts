@@ -43,8 +43,8 @@ function cloneLogEvent(event: LogEvent): LogEvent {
 
 function cloneControllers(
   controllers: readonly [ControllerKind, ControllerKind],
-): [ControllerKind, ControllerKind] {
-  return [controllers[0], controllers[1]]
+): readonly [ControllerKind, ControllerKind] {
+  return Object.freeze([controllers[0], controllers[1]])
 }
 
 function projectTutorialState(state: AppState): AppViewModel['tutorial'] {
@@ -196,7 +196,18 @@ function projectHandCards(
   return hand.map((card) => ({ id: card.id, name: card.name }))
 }
 
-export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewModel {
+function isHiddenDrawEvent(
+  event: LogEvent | undefined,
+  controllers: readonly [ControllerKind, ControllerKind],
+): event is Extract<LogEvent, { kind: 'draw' }> {
+  return event?.kind === 'draw' && shouldHideHandFromViewer(controllers, event.actor)
+}
+
+export function buildViewModel(
+  state: AppState,
+  p2pConnected: boolean,
+  gameGeneration = 0,
+): AppViewModel {
   const replayActive = state.replay !== null
   const replayStep = state.replay?.step ?? 0
   const replayTotalSteps = state.replay?.record.timeline.length ?? 0
@@ -220,6 +231,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       offer: state.offer,
       answer: state.answer,
       seed: state.seed,
+      gameGeneration,
       controllers: cloneControllers(state.controllers),
       aiLevel: state.aiLevel,
       cardVisualStyle: state.cardVisualStyle,
@@ -247,6 +259,16 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   }
 
   const game = state.game
+  const sourceEvents = game.events ?? []
+  const projectedEvents = sourceEvents
+    .filter((event) => !isHiddenDrawEvent(event, state.controllers))
+    .map(cloneLogEvent)
+  const projectedLog = game.log.map((entry, index) => {
+    const event = sourceEvents[index]
+    return isHiddenDrawEvent(event, state.controllers)
+      ? `Player ${event.actor + 1} draws a hidden card.`
+      : entry
+  })
   const actor = activeActor(game)
   const actorControl = state.controllers[actor]
   const canInput = !replayActive && actorControl === 'human' && canAct(game, actor)
@@ -325,6 +347,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     offer: state.offer,
     answer: state.answer,
     seed: state.seed,
+    gameGeneration,
     controllers: cloneControllers(state.controllers),
     aiLevel: state.aiLevel,
     cardVisualStyle: state.cardVisualStyle,
@@ -380,12 +403,12 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
         canEndTurn: legalActions.some((action) => action.type === 'end_turn'),
         canPassResponse: legalActions.some((action) => action.type === 'pass_response'),
       },
-      log: [...game.log],
+      log: projectedLog,
       // Older persisted snapshots (e.g. Adventure mid-round saves written before
       // LogEvent existed) may not carry an `events` array. Defend against that
       // here so renderers iterating `events` can't crash on legacy data even if
       // the snapshot loader missed back-filling.
-      events: (game.events ?? []).map(cloneLogEvent),
+      events: projectedEvents,
       isReplay: replayActive,
       revealedEnemyHandForSwamp,
     },

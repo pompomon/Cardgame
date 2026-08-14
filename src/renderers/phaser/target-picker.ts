@@ -38,6 +38,8 @@ export interface TargetPickerContext {
   getRootContainer: () => Phaser.GameObjects.Container | null
   isMenuOpen: () => boolean
   getVisualStyle: () => AppViewModel['cardVisualStyle']
+  getEnableShadows?: () => boolean
+  getEnableHoverEffects?: () => boolean
   clearCardPreview: () => void
   submitAction: (action: GameAction) => void
   refreshA11yNav: () => void
@@ -179,6 +181,10 @@ export class TargetPickerController {
     optionsViewport.setMask(maskShape.createGeometryMask())
 
     const visualStyle = this.ctx.getVisualStyle() ?? DEFAULT_CARD_VISUAL_STYLE
+    const buttonOptions = {
+      enableShadows: this.ctx.getEnableShadows?.(),
+      enableHoverEffects: this.ctx.getEnableHoverEffects?.(),
+    }
     options.slice(0, optionCount).forEach((option, index) => {
       const selectOption = (): void => {
         const action = resolver(option.effectTargetId)
@@ -200,6 +206,7 @@ export class TargetPickerController {
           layout.popupButtonHeight,
           layout.popupButtonFontSize,
           visualStyle,
+          buttonOptions,
         )
         : createThemedButton(
           scene,
@@ -210,6 +217,7 @@ export class TargetPickerController {
           buttonWidth,
           layout.popupButtonHeight,
           selectOption,
+          buttonOptions,
         )
       // Tag row bounds so cullRowsToViewport (below) can explicitly hide
       // buttons that scroll outside the options viewport, independent of
@@ -286,7 +294,7 @@ export class TargetPickerController {
       const cancelButton = createThemedButton(scene, 'Cancel', 0, cancelY, layout.popupButtonFontSize, cancelWidth, cancelHeight, () => {
         config.onCancel?.()
         overlay.destroy(true)
-      })
+      }, buttonOptions)
       overlay.add(cancelButton)
     }
 
@@ -313,6 +321,7 @@ export class TargetPickerController {
         toggleWidth,
         showAllButtonHeight,
         toggleShowAll,
+        buttonOptions,
       )
       overlay.add(showAllButton)
       this.pendingTargetPickerA11yEntries.push({

@@ -5,6 +5,7 @@ type Listener = (pointer: { id?: number; wasCanceled?: boolean; wasTouch?: boole
 
 class FakeDisplayObject {
   private readonly listeners = new Map<string, Listener[]>()
+  readonly scales: number[] = []
 
   add(): this { return this }
   fillRoundedRect(): this { return this }
@@ -12,7 +13,10 @@ class FakeDisplayObject {
   lineStyle(): this { return this }
   setInteractive(): this { return this }
   setOrigin(): this { return this }
-  setScale(): this { return this }
+  setScale(scale: number): this {
+    this.scales.push(scale)
+    return this
+  }
   setSize(): this { return this }
   strokeRoundedRect(): this { return this }
 
@@ -47,6 +51,28 @@ function createScene(): {
 }
 
 describe('Phaser button pointer ownership', () => {
+  it('suppresses hover and pressed scaling when quality effects are disabled', () => {
+    const button = buildButton(
+      createScene() as never,
+      'End Turn',
+      0,
+      0,
+      '16px',
+      120,
+      44,
+      vi.fn(),
+      { fill: 0, stroke: 0, text: '#fff' },
+      { enableShadows: false, enableHoverEffects: false },
+    ) as unknown as FakeDisplayObject
+
+    button.emit('pointerover', { id: 1 })
+    button.emit('pointerdown', { id: 1 })
+    button.emit('pointerup', { id: 1 })
+    button.emit('pointerout', { id: 1 })
+
+    expect(button.scales.every((scale) => scale === 1)).toBe(true)
+  })
+
   it('submits only a matching, non-cancelled pointer release', () => {
     const onClick = vi.fn()
     const button = buildButton(

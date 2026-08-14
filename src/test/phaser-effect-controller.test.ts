@@ -202,6 +202,33 @@ describe('Phaser effect controller', () => {
     expect(qualities).toEqual(['reduced', 'full', 'reduced', 'full'])
   })
 
+  it('discards visual effects when the resolved quality profile suppresses motion', () => {
+    const view = {
+      animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0,
+        events: [
+          { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 'p0-1' },
+        ],
+      },
+    } as unknown as AppViewModel
+    const playEffect = vi.fn()
+    const controller = new EffectController({
+      scene: { scale: { width: 1280, height: 720 } } as never,
+      getLayout: () => layout,
+      getCurrentView: () => view,
+      getQualityProfile: () => ({ enableMoveTweens: false } as PhaserQualityProfile),
+      playEffect: playEffect as never,
+    })
+
+    expect(controller.isBusyOrWillEnqueue(view)).toBe(false)
+    controller.processAbilityEffects(view)
+
+    expect(playEffect).not.toHaveBeenCalled()
+    expect(controller.isBusyOrWillEnqueue(view)).toBe(false)
+  })
+
   it('reset() invalidates a still-in-flight effect so its later done() cannot affect the new game', () => {
     const currentView = {
       animationSpeed: 'normal',

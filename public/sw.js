@@ -12,6 +12,7 @@ const workerUrl = new URL(self.location.href)
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const CACHE_NAMESPACE = `cardgame-${encodeURIComponent(BASE_PATH)}-`
+const LEGACY_CACHE_NAME = /^cardgame-(?:shell|assets)-v\d+$/
 const APP_SHELL_CACHE = `${CACHE_NAMESPACE}shell-${CACHE_VERSION}`
 const ASSET_CACHE = `${CACHE_NAMESPACE}assets-${CACHE_VERSION}`
 const INDEX_URL = `${BASE_PATH}index.html`
@@ -57,9 +58,12 @@ self.addEventListener('activate', (event) => {
         Promise.all(
           keys
             .filter((key) =>
-              key.startsWith(CACHE_NAMESPACE)
-              && key !== APP_SHELL_CACHE
-              && key !== ASSET_CACHE,
+              (
+                key.startsWith(CACHE_NAMESPACE)
+                && key !== APP_SHELL_CACHE
+                && key !== ASSET_CACHE
+              )
+              || LEGACY_CACHE_NAME.test(key),
             )
             .map((key) => caches.delete(key)),
         ),
@@ -102,7 +106,8 @@ self.addEventListener('fetch', (event) => {
         return response
       })
       .catch(async () => {
-        const fallback = await caches.match(INDEX_URL)
+        const cache = await caches.open(APP_SHELL_CACHE)
+        const fallback = await cache.match(INDEX_URL)
         return fallback ?? Response.error()
       })
     event.waitUntil(
@@ -145,7 +150,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       networkResponse
         .catch(async () => {
-          const cached = await caches.match(event.request)
+          const cache = await caches.open(ASSET_CACHE)
+          const cached = await cache.match(event.request)
           return cached ?? Response.error()
         }),
     )
@@ -153,7 +159,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   let cacheWrite = Promise.resolve()
-  const responsePromise = caches.match(event.request).then(async (cached) => {
+  const responsePromise = caches.open(ASSET_CACHE).then((cache) =>
+    cache.match(event.request),
+  ).then(async (cached) => {
       if (cached) {
         return cached
       }

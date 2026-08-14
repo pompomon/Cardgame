@@ -397,6 +397,7 @@ function sync(
   descriptors: readonly CardViewDescriptor[],
   animationSpeed: 'off' | 'fast' | 'normal' | 'slow' = 'off',
   enableMoveTweens?: boolean,
+  enableShadows?: boolean,
 ): void {
   registry.sync(descriptors, {
     root: harness.root as never,
@@ -404,10 +405,28 @@ function sync(
     visualStyle: 'hd',
     animationSpeed,
     enableMoveTweens,
+    enableShadows,
   })
 }
 
 describe('Phaser retained card views', () => {
+  it('reconciles card shadows when the quality profile changes', () => {
+    const harness = createHarness()
+    const registry = createRegistry(harness)
+    const card = descriptor('quality-card')
+
+    sync(registry, harness, [card], 'off', false, true)
+    expect(harness.renderCard.mock.calls.at(-1)?.[5]).toMatchObject({
+      enableShadows: true,
+    })
+
+    sync(registry, harness, [card], 'off', false, false)
+    expect(harness.renderCard).toHaveBeenCalledTimes(2)
+    expect(harness.renderCard.mock.calls.at(-1)?.[5]).toMatchObject({
+      enableShadows: false,
+    })
+  })
+
   it('reconciles create, update, remove, reorder, and pool reuse by stable card id', () => {
     const harness = createHarness()
     const registry = createRegistry(harness)

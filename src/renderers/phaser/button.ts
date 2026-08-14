@@ -18,6 +18,11 @@ export interface ButtonTheme {
   text: string
 }
 
+export interface ButtonRenderOptions {
+  readonly enableShadows?: boolean
+  readonly enableHoverEffects?: boolean
+}
+
 export function buildButton(
   scene: Phaser.Scene,
   label: string,
@@ -28,6 +33,7 @@ export function buildButton(
   height: number,
   onClick: () => void,
   theme: ButtonTheme,
+  options: ButtonRenderOptions = {},
 ): Phaser.GameObjects.Container {
   const isTouchPointer = (pointer: Phaser.Input.Pointer | undefined): boolean => pointer?.wasTouch === true
   let pressedPointerId: number | null = null
@@ -51,7 +57,7 @@ export function buildButton(
     height,
     radius: 10,
     strokeWidth: 1,
-    shadow: true,
+    shadow: options.enableShadows !== false,
     shadowAlpha: 0.2,
     shadowOffset: 3,
   })
@@ -66,14 +72,14 @@ export function buildButton(
   button.setSize(width, height)
   button.setInteractive({ useHandCursor: true })
   button.on('pointerover', (pointer: Phaser.Input.Pointer) => {
-    if (isTouchPointer(pointer)) {
+    if (isTouchPointer(pointer) || options.enableHoverEffects === false) {
       return
     }
     button.setScale(1.015)
   })
   button.on('pointerout', (pointer: Phaser.Input.Pointer) => {
     clearPressedPointer()
-    if (isTouchPointer(pointer)) {
+    if (isTouchPointer(pointer) || options.enableHoverEffects === false) {
       return
     }
     button.setScale(1)
@@ -81,7 +87,7 @@ export function buildButton(
   button.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
     pointerDown = true
     pressedPointerId = Number.isInteger(pointer?.id) ? pointer.id : null
-    if (isTouchPointer(pointer)) {
+    if (isTouchPointer(pointer) || options.enableHoverEffects === false) {
       button.setScale(1)
       return
     }
@@ -97,7 +103,7 @@ export function buildButton(
         || pressedPointerId === releasedPointerId
       )
     clearPressedPointer()
-    if (isTouchPointer(pointer)) {
+    if (isTouchPointer(pointer) || options.enableHoverEffects === false) {
       button.setScale(1)
     } else {
       button.setScale(1.015)

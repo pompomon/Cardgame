@@ -36,6 +36,7 @@ export interface CardViewSyncOptions extends CardViewDescriptor {
   // instead of tweening — used for reduced motion, animations-off, and hidden
   // tabs. Defaults to enabled so existing call sites keep their behaviour.
   readonly enableMoveTweens?: boolean
+  readonly enableShadows?: boolean
 }
 
 export interface CardViewContext {
@@ -177,6 +178,7 @@ export class CardView {
       options.layout.bodyFontSize,
       options.layout.titleFontSize,
       options.highlight ? 1 : 0,
+      options.enableShadows !== false ? 1 : 0,
     ].join(':')
     if (appearanceSignature !== this.appearanceSignature) {
       this.container.removeAll(true)
@@ -189,6 +191,7 @@ export class CardView {
         {
           highlight: options.highlight,
           dimensions: { width: options.width, height: options.height },
+          enableShadows: options.enableShadows,
         },
         options.visualStyle,
       )

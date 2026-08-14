@@ -83,7 +83,7 @@ export class EffectController {
   }
 
   isBusyOrWillEnqueue(view: AppViewModel): boolean {
-    if (view.animationSpeed === 'off' || this.ctx.shouldSuppressEffects?.()) {
+    if (this.shouldSuppressEffects(view)) {
       return false
     }
     if (this.effectQueue.playing || this.effectQueue.queue.length > 0) {
@@ -140,7 +140,7 @@ export class EffectController {
       this.reset(events.length)
       return
     }
-    if (view.animationSpeed === 'off' || this.ctx.shouldSuppressEffects?.()) {
+    if (this.shouldSuppressEffects(view)) {
       // Drop pending visuals and snap the marker forward so restoring the
       // setting or page visibility does not replay a hidden backlog.
       this.reset(events.length)
@@ -231,5 +231,11 @@ export class EffectController {
         },
       }
     })
+  }
+
+  private shouldSuppressEffects(view: AppViewModel): boolean {
+    return view.animationSpeed === 'off'
+      || this.ctx.shouldSuppressEffects?.() === true
+      || this.ctx.getQualityProfile?.()?.enableMoveTweens === false
   }
 }

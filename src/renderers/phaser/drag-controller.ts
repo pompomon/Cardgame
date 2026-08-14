@@ -39,6 +39,7 @@ export interface DragControllerContext {
   readonly getGame: () => GameUiState | null
   readonly getDropZone: () => Phaser.GameObjects.Zone | null
   readonly getAnimationSpeed: () => AnimationSpeed
+  readonly shouldAnimate?: () => boolean
   readonly isInteractionBlocked: () => boolean
   readonly createProxy: (source: CardViewDragSource) => Phaser.GameObjects.Container | null
   readonly submitAction: (action: Extract<GameAction, { type: 'play_land' }>) => void
@@ -278,7 +279,9 @@ export class DragController {
   private returnInvalidDrop(): void {
     const proxy = this.proxy
     const source = this.source
-    const duration = invalidDropReturnDurationMs(this.ctx.getAnimationSpeed())
+    const duration = this.ctx.shouldAnimate?.() === false
+      ? 0
+      : invalidDropReturnDurationMs(this.ctx.getAnimationSpeed())
     if (!proxy || !source || duration === 0 || !this.isCurrentSource(source)) {
       this.finishImmediately()
       return

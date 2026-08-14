@@ -6,11 +6,10 @@
 // from scene lifecycle/input wiring.
 import type Phaser from 'phaser'
 import type { AppViewModel } from '../../app/types'
+import type { GameUiState } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import type { BattlefieldTargetsController } from './battlefield-targets'
-import { renderBattlefields } from './battlefield-view'
 import type { CardViewDescriptor } from './card-view'
-import type { EffectController } from './effect-controller'
 import { renderGameHeader } from './game-header'
 import { buildHandCardDescriptors, renderHandAndControls } from './hand-controls'
 import type { SceneLayout } from './layout'
@@ -21,13 +20,13 @@ export interface GameplayPresenterContext {
   scene: Phaser.Scene
   getLayout: () => SceneLayout
   getRootContainer: () => Phaser.GameObjects.Container | null
+  getEnableShadows: () => boolean
   submitAction: (action: GameAction) => void
   createButton: (label: string, x: number, y: number, onClick: () => void, width?: number, height?: number, fontSize?: string) => Phaser.GameObjects.Container
-  effectController: EffectController
   battlefieldTargets: BattlefieldTargetsController
   targetPicker: TargetPickerController
   setStatus: (message: string) => void
-  setBattlefieldDropZone: (zone: Phaser.GameObjects.Zone | null) => void
+  syncBattlefields: (game: GameUiState, presentedActor: number) => CardViewDescriptor[]
   openMenuOverlay: (view: AppViewModel) => void
   syncCardViews: (cards: readonly CardViewDescriptor[], view: AppViewModel) => void
 }
@@ -48,7 +47,7 @@ export class GameplayPresenter {
 
     renderGameHeader(ctx, game, view)
 
-    const battlefieldCards = renderBattlefields(ctx, game, presentedActor)
+    const battlefieldCards = ctx.syncBattlefields(game, presentedActor)
     renderPlayerInfoBlocks(ctx, view, presentedActor)
     const handCards = buildHandCardDescriptors(ctx, game, presentedActor)
     ctx.syncCardViews([...battlefieldCards, ...handCards], view)

@@ -12,6 +12,7 @@ export interface PlayerInfoContext {
   scene: Phaser.Scene
   getLayout: () => SceneLayout
   getRootContainer: () => Phaser.GameObjects.Container | null
+  getEnableShadows?: () => boolean
 }
 
 function renderInfoPanel(
@@ -38,7 +39,7 @@ function renderInfoPanel(
     width: safeWidth,
     height: safeHeight,
     radius: 10,
-    shadow: true,
+    shadow: ctx.getEnableShadows?.() !== false,
     shadowAlpha: 0.18,
     shadowOffset: 3,
   })

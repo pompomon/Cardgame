@@ -103,6 +103,23 @@ export function clamp(value: number, minValue: number, maxValue: number): number
   return Math.min(upper, Math.max(lower, value))
 }
 
+export interface StatusTextBox {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly maxLines: number
+}
+
+export function statusTextBox(layout: SceneLayout): StatusTextBox {
+  const horizontalMargin = Math.max(0, layout.margin)
+  return {
+    x: layout.safeAreaLeft + horizontalMargin,
+    y: layout.height - layout.statusBottomOffset,
+    width: Math.max(1, layout.safeAreaWidth - horizontalMargin * 2),
+    maxLines: 2,
+  }
+}
+
 function xForCardInColumn(
   left: number,
   width: number,

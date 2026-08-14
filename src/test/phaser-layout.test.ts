@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildLayout,
+  statusTextBox,
   MENU_LOG_REMAINDER_RESERVE,
   MENU_LOG_VIEWPORT_MIN_HEIGHT,
 } from '../renderers/phaser/layout'
@@ -30,6 +31,23 @@ describe('phaser buildLayout', () => {
         layout.safeAreaLeft + layout.safeAreaWidth - layout.margin,
       )
     }
+  })
+
+  it('bounds two-line status and tutorial hints inside a phone safe area', () => {
+    const layout = buildLayout(390, 844, 'vertical', {
+      top: 47,
+      right: 12,
+      bottom: 34,
+      left: 12,
+    })
+    const box = statusTextBox(layout)
+
+    expect(box.x).toBeGreaterThanOrEqual(layout.safeAreaLeft)
+    expect(box.x + box.width).toBeLessThanOrEqual(
+      layout.safeAreaLeft + layout.safeAreaWidth,
+    )
+    expect(box.y).toBeLessThanOrEqual(layout.height - layout.safeAreaBottom)
+    expect(box.maxLines).toBe(2)
   })
 
   it('places the active battlefield below the non-active battlefield (active anchored at bottom)', () => {

@@ -114,6 +114,7 @@ export class AppController implements ControllerApi {
   private p2p: P2PLink | null = null
   private replayInterval: ReturnType<typeof setInterval> | null = null
   private aiTimeout: ReturnType<typeof setTimeout> | null = null
+  private gameGeneration = 0
 
   constructor(renderer: RendererKind) {
     this.state = {
@@ -150,7 +151,16 @@ export class AppController implements ControllerApi {
   }
 
   getViewModel(): AppViewModel {
-    return buildViewModel(this.state, this.p2p?.isConnected() ?? false)
+    return buildViewModel(
+      this.state,
+      this.p2p?.isConnected() ?? false,
+      this.gameGeneration,
+    )
+  }
+
+  private beginGameSession(game: GameState): void {
+    this.gameGeneration += 1
+    this.state.game = game
   }
 
   private notify(): void {
@@ -275,7 +285,7 @@ export class AppController implements ControllerApi {
     const [playerDeck, opponentDeck] = deckPairForAdventureGame(run, seed)
     this.state.mode = 'adventure-hvai'
     this.state.seed = seed
-    this.state.game = createInitialGame(seed, [playerDeck, opponentDeck])
+    this.beginGameSession(createInitialGame(seed, [playerDeck, opponentDeck]))
     this.state.controllers = ['human', 'ai']
     this.state.offer = ''
     this.state.answer = ''
@@ -289,7 +299,7 @@ export class AppController implements ControllerApi {
     const seed = run.activeGameSeed ?? Date.now()
     this.state.mode = 'adventure-hvai'
     this.state.seed = seed
-    this.state.game = snapshot
+    this.beginGameSession(snapshot)
     this.state.controllers = ['human', 'ai']
     this.state.offer = ''
     this.state.answer = ''
@@ -476,7 +486,7 @@ export class AppController implements ControllerApi {
           return
         }
         this.state.seed = packet.payload.seed
-        this.state.game = createInitialGame(packet.payload.seed)
+        this.beginGameSession(createInitialGame(packet.payload.seed))
         this.state.p2pStarted = true
         if (this.state.mode) {
           this.initializeRecording(this.state.mode)
@@ -542,7 +552,7 @@ export class AppController implements ControllerApi {
           return
         }
         this.state.seed = packet.payload.seed
-        this.state.game = createInitialGame(packet.payload.seed)
+        this.beginGameSession(createInitialGame(packet.payload.seed))
         if (this.state.mode) {
           this.initializeRecording(this.state.mode)
         }
@@ -566,7 +576,7 @@ export class AppController implements ControllerApi {
         // both peers stay in sync.
         this.clearAiTimeout()
         this.state.seed = this.state.pendingRematchSeed
-        this.state.game = createInitialGame(this.state.seed)
+        this.beginGameSession(createInitialGame(this.state.seed))
         this.initializeRecording(this.state.mode)
         this.state.pendingRematchSeed = null
         this.state.status = 'Rematch started.'
@@ -832,9 +842,11 @@ export class AppController implements ControllerApi {
     }
     this.state.mode = mode
     this.state.seed = mode === 'tutorial' ? TUTORIAL_SEED : Date.now()
-    this.state.game = mode === 'tutorial'
-      ? createInitialGame(this.state.seed, createTutorialDecks())
-      : createInitialGame(this.state.seed)
+    this.beginGameSession(
+      mode === 'tutorial'
+        ? createInitialGame(this.state.seed, createTutorialDecks())
+        : createInitialGame(this.state.seed),
+    )
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
@@ -1048,11 +1060,11 @@ export class AppController implements ControllerApi {
     this.clearAiTimeout()
     if (this.state.mode === 'tutorial') {
       this.state.seed = TUTORIAL_SEED
-      this.state.game = createInitialGame(this.state.seed, createTutorialDecks())
+      this.beginGameSession(createInitialGame(this.state.seed, createTutorialDecks()))
       this.state.recording = null
     } else {
       this.state.seed = newSeed
-      this.state.game = createInitialGame(this.state.seed)
+      this.beginGameSession(createInitialGame(this.state.seed))
       this.initializeRecording(this.state.mode)
     }
     this.state.status = 'Rematch started.'
@@ -1113,7 +1125,7 @@ export class AppController implements ControllerApi {
     // the in-memory adventure view-state from storage instead so the user
     // can resume the adventure run after exiting the replay.
     this.refreshAdventureFromStorage()
-    this.state.game = snapshotFromRecord(parsed.record, 0)
+    this.beginGameSession(snapshotFromRecord(parsed.record, 0))
     this.state.status = 'Recording loaded. Use replay controls to play or jump to final state.'
     this.notify()
   }
@@ -1252,7 +1264,7 @@ export class AppController implements ControllerApi {
     }
     const finalState = snapshotFromRecord(this.state.replay.record, this.state.replay.record.timeline.length)
     this.clearReplay()
-    this.state.game = finalState
+    this.beginGameSession(finalState)
     this.state.status = 'Exited replay at final recorded game state.'
     this.notify()
     this.scheduleAiIfNeeded()

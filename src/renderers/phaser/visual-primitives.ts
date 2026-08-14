@@ -163,13 +163,15 @@ export function buildCardFrame(
   height: number,
   stroke: number,
   strokeWidth: number,
-  options: { highlight?: boolean } = {},
+  options: { highlight?: boolean; shadow?: boolean } = {},
 ): Phaser.GameObjects.Container {
   const frame = scene.add.container(0, 0)
-  const shadow = scene.add.graphics()
-  shadow.fillStyle(0x000000, 0.28)
-  shadow.fillRoundedRect(-width / 2 + 3, -height / 2 + 4, width, height, 9)
-  frame.add(shadow)
+  if (options.shadow !== false) {
+    const shadow = scene.add.graphics()
+    shadow.fillStyle(0x000000, 0.28)
+    shadow.fillRoundedRect(-width / 2 + 3, -height / 2 + 4, width, height, 9)
+    frame.add(shadow)
+  }
   const border = scene.add.graphics()
   border.lineStyle(strokeWidth, stroke, options.highlight ? 1 : 0.92)
   border.strokeRoundedRect(-width / 2, -height / 2, width, height, 8)
@@ -198,6 +200,7 @@ export interface BattlefieldBackdropConfig {
   width: number
   height: number
   kind: 'active' | 'non-active'
+  shadow?: boolean
   /** Border stroke colour — should match the CSS --battlefield-*-stroke token. */
   stroke: number
 }
@@ -222,7 +225,7 @@ export function buildBattlefieldBackdrop(
   y: number,
   config: BattlefieldBackdropConfig,
 ): Phaser.GameObjects.Container {
-  const { width, height, kind, stroke } = config
+  const { width, height, kind, stroke, shadow: enableShadow = true } = config
   const radius = 12
   const isActive = kind === 'active'
   const hw = width / 2
@@ -230,10 +233,12 @@ export function buildBattlefieldBackdrop(
   const container = scene.add.container(x, y)
 
   // Layer 1: Drop shadow
-  const shadow = scene.add.graphics()
-  shadow.fillStyle(0x000000, 0.26)
-  shadow.fillRoundedRect(-hw + 4, -hh + 4, width, height, radius)
-  container.add(shadow)
+  if (enableShadow) {
+    const shadow = scene.add.graphics()
+    shadow.fillStyle(0x000000, 0.26)
+    shadow.fillRoundedRect(-hw + 4, -hh + 4, width, height, radius)
+    container.add(shadow)
+  }
 
   // Layer 2: Parchment base
   const base = scene.add.graphics()

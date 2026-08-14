@@ -109,6 +109,18 @@ describe('controller recording and replay', () => {
     installMemoryStorage()
   })
 
+  it('increments game generation for same-seed tutorial rematches', () => {
+    const controller = new AppController('dom')
+    controller.startGame('tutorial')
+    const first = controller.getViewModel()
+
+    controller.rematch()
+    const rematch = controller.getViewModel()
+
+    expect(rematch.seed).toBe(first.seed)
+    expect(rematch.gameGeneration).toBe(first.gameGeneration + 1)
+  })
+
   it('records local and AI actions in timeline', () => {
     withFakeTimers(() => {
       const controller = new AppController('dom')
@@ -778,6 +790,7 @@ describe('controller recording and replay', () => {
       expect(internals.state.pendingP2PStartSeed).toBeNull()
       expect(internals.state.pendingRematchSeed).toBeNull()
       expect(internals.state.p2pStarted).toBe(false)
+      controller.exitReplay()
       const action = firstPlayableAction(controller)
       expect(action).toBeTruthy()
       if (action) {

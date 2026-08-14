@@ -30,6 +30,7 @@ function makeView(): AppViewModel {
     offer: '',
     answer: '',
     seed: 1,
+    gameGeneration: 0,
     controllers: ['human', 'human'],
     aiLevel: 'basic',
     cardVisualStyle: 'classic',

@@ -18,7 +18,12 @@ import {
   type CardRenderMode,
 } from './card-rendering'
 import type { SceneLayout } from './layout'
-import { buildButton, BUTTON_TEXT_HORIZONTAL_PADDING, BUTTON_TEXT_MAX_LINES } from './button'
+import {
+  buildButton,
+  BUTTON_TEXT_HORIZONTAL_PADDING,
+  BUTTON_TEXT_MAX_LINES,
+  type ButtonRenderOptions,
+} from './button'
 import { buildCardFrame, buildCoverImage, buildLabelStrip, buildPolishedPanel, buildRoundedCoverImage } from './visual-primitives'
 import { colorHexToNumber, parseFontPx } from './ui-utils'
 import {
@@ -121,13 +126,16 @@ export function renderHiddenCard(
   x: number,
   y: number,
   dimensions: { width: number; height: number } = { width: layout.cardWidth, height: layout.cardHeight },
+  enableShadows = true,
 ): Phaser.GameObjects.Container {
   const cardWidth = dimensions.width
   const cardHeight = dimensions.height
   const card = scene.add.container(x, y)
   if (canRenderCardBackTexture((key) => scene.textures?.exists(key) ?? false)) {
     card.add(buildCoverImage(scene, CARD_BACK_KEY, cardWidth, cardHeight, Math.max(cardWidth, cardHeight)))
-    card.add(buildCardFrame(scene, cardWidth, cardHeight, COLOR_CARD_BACK_STROKE, 1))
+    card.add(buildCardFrame(scene, cardWidth, cardHeight, COLOR_CARD_BACK_STROKE, 1, {
+      shadow: enableShadows,
+    }))
     return card
   }
   const back = buildPolishedPanel(scene, 0, 0, {
@@ -136,7 +144,7 @@ export function renderHiddenCard(
     width: cardWidth,
     height: cardHeight,
     radius: 8,
-    shadow: true,
+    shadow: enableShadows,
     shadowAlpha: 0.25,
     shadowOffset: 3,
   })
@@ -164,6 +172,7 @@ export interface StaticCardConfig {
   mode?: CardRenderMode
   visualStyle?: AppViewModel['cardVisualStyle']
   dimensions?: { width: number; height: number }
+  enableShadows?: boolean
 }
 
 export function renderStaticCard(
@@ -176,7 +185,7 @@ export function renderStaticCard(
   defaultVisualStyle?: AppViewModel['cardVisualStyle'],
 ): Phaser.GameObjects.Container {
   if (label === HIDDEN_HAND_CARD_NAME) {
-    return renderHiddenCard(scene, layout, x, y, config.dimensions)
+    return renderHiddenCard(scene, layout, x, y, config.dimensions, config.enableShadows)
   }
   const visualStyle = config.visualStyle ?? defaultVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
   const style = cardStyleForLand(label, visualStyle)
@@ -204,7 +213,7 @@ export function renderStaticCard(
         height: cardHeight,
         radius: 8,
         strokeWidth,
-        shadow: true,
+        shadow: config.enableShadows !== false,
         shadowAlpha: 0.24,
         shadowOffset: 3,
       })
@@ -253,7 +262,10 @@ export function renderStaticCard(
       text.setShadow(0, 1, '#000000', 2, false, true)
       card.add(text)
     }
-    card.add(buildCardFrame(scene, cardWidth, cardHeight, strokeColor, strokeWidth, { highlight: config.highlight }))
+    card.add(buildCardFrame(scene, cardWidth, cardHeight, strokeColor, strokeWidth, {
+      highlight: config.highlight,
+      shadow: config.enableShadows,
+    }))
   } else if (content.showLabel) {
     const text = scene.add.text(0, 0, label, {
       color: style.text,
@@ -283,6 +295,7 @@ export function createCardChoiceButton(
   height: number,
   fontSize: string,
   visualStyle: AppViewModel['cardVisualStyle'],
+  options: ButtonRenderOptions = {},
 ): Phaser.GameObjects.Container {
   const style = cardStyleForLand(cardName, visualStyle)
   const background = buildPolishedPanel(scene, 0, 0, {
@@ -292,7 +305,7 @@ export function createCardChoiceButton(
     height,
     radius: 10,
     strokeWidth: 2,
-    shadow: true,
+    shadow: options.enableShadows !== false,
     shadowAlpha: 0.2,
     shadowOffset: 3,
   })
@@ -336,6 +349,7 @@ export function createThemedButton(
   width: number,
   height: number,
   onClick: () => void,
+  options: ButtonRenderOptions = {},
 ): Phaser.GameObjects.Container {
-  return buildButton(scene, label, x, y, fontSize, width, height, onClick, BUTTON_THEME)
+  return buildButton(scene, label, x, y, fontSize, width, height, onClick, BUTTON_THEME, options)
 }

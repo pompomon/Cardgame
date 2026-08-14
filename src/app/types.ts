@@ -193,7 +193,8 @@ export interface AppViewModel {
   offer: string
   answer: string
   seed: number
-  controllers: [ControllerKind, ControllerKind]
+  gameGeneration: number
+  controllers: readonly [ControllerKind, ControllerKind]
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
   animationSpeed: AnimationSpeed
@@ -215,7 +216,7 @@ export interface AppViewModel {
     metadata: {
       seed: number
       mode: Mode
-      controllers: [ControllerKind, ControllerKind]
+      controllers: readonly [ControllerKind, ControllerKind]
       aiLevel: AiLevel
       completed: boolean
     } | null
