@@ -19,7 +19,7 @@ import type { AppViewModel, GameUiState } from '../../app/types'
 import { buildPhaserBoardAssetManifest, resolveLoadedBoardBackgroundTextureKey } from './asset-manifest'
 import { BoardBackgroundView } from './board-background'
 import { buildCardPreviewContext, createCardPreviewController, type CardPreviewController } from './card-preview-controller'
-import { preloadCardArt } from './card-art-loader'
+import { preloadCardArt, type CardArtLoadHandle } from './card-art-loader'
 import { createThemedButton, renderStaticCard } from './card-factory'
 import type { CardViewDragSource } from './card-view'
 import { CardViewRegistry } from './card-view-registry'
@@ -69,6 +69,7 @@ export class CardgameScene extends Phaser.Scene {
   private dragController: DragController | null = null
   private dropZoneView: DropZoneView | null = null
   private boardBackground: BoardBackgroundView | null = null
+  private cardArtLoadHandle: CardArtLoadHandle | null = null
   private boardAssetLoadHandle: BoardAssetLoadHandle | null = null
   private boardAssetManifestSignature: string | null = null
   private boardAssetRetryPending = false
@@ -163,7 +164,8 @@ export class CardgameScene extends Phaser.Scene {
       ?? this.rendererRef.controller?.getViewModel()
     const selectedStyle = view?.cardVisualStyle
       ?? DEFAULT_CARD_VISUAL_STYLE
-    preloadCardArt(this, selectedStyle)
+    this.cardArtLoadHandle?.dispose()
+    this.cardArtLoadHandle = preloadCardArt(this, selectedStyle)
     const theme = view?.boardTheme ?? DEFAULT_BOARD_THEME
     this.qualityProfile = this.resolveQualityProfile(view ?? null)
     const assetTier = assetQualityTierForPreference(
@@ -253,7 +255,10 @@ export class CardgameScene extends Phaser.Scene {
   }
 
   retryFailedBoardAssets(): void {
-    if (this.boardAssetLoadHandle?.isActive()) {
+    if (
+      this.boardAssetLoadHandle?.isActive()
+      || this.cardArtLoadHandle?.isActive()
+    ) {
       this.boardAssetRetryPending = true
       return
     }
@@ -261,8 +266,22 @@ export class CardgameScene extends Phaser.Scene {
     this.boardAssetLoadHandle = null
     this.boardAssetManifestSignature = null
     if (this.scene.isActive()) {
+      this.queueCurrentCardArt()
       this.renderView(this.rendererRef.currentView)
     }
+  }
+
+  private queueCurrentCardArt(): void {
+    if (!this.load || !this.textures) {
+      return
+    }
+    const view = this.rendererRef.currentView
+      ?? this.rendererRef.controller?.getViewModel()
+    this.cardArtLoadHandle?.dispose()
+    this.cardArtLoadHandle = preloadCardArt(
+      this,
+      view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
+    )
   }
 
   private shutdownSceneResources(): void {
@@ -274,6 +293,8 @@ export class CardgameScene extends Phaser.Scene {
     this.cardViews = null
     this.dropZoneView?.destroy()
     this.dropZoneView = null
+    this.cardArtLoadHandle?.dispose()
+    this.cardArtLoadHandle = null
     this.boardAssetLoadHandle?.dispose()
     this.boardAssetLoadHandle = null
     this.boardAssetManifestSignature = null
@@ -411,6 +432,7 @@ export class CardgameScene extends Phaser.Scene {
               this.boardAssetRetryPending = false
               this.boardAssetManifestSignature = null
               clearFailedRuntimeAssetUrls()
+              this.queueCurrentCardArt()
             }
             this.renderView(this.rendererRef.currentView)
           }

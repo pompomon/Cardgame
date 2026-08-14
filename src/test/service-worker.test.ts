@@ -8,6 +8,7 @@ const ORIGIN = 'https://example.test'
 const BASE_PATH = '/Cardgame/'
 
 type FetchListener = (event: FetchEventStub) => void
+type ExtendableListener = (event: { waitUntil: (promise: Promise<unknown>) => void }) => void
 
 type FetchEventStub = {
   request: Request
@@ -25,6 +26,8 @@ type ServiceWorkerHarness = {
   cachedResponses: Map<string, Response>
   cachesMatch: ReturnType<typeof vi.fn>
   cachePut: ReturnType<typeof vi.fn>
+  cacheDelete: ReturnType<typeof vi.fn>
+  activateListener: ExtendableListener
   fetchListener: FetchListener
   fetchMock: ReturnType<typeof vi.fn>
   waitUntilPromises: Promise<unknown>[]
@@ -60,7 +63,7 @@ async function flushPromises(): Promise<void> {
   await Promise.resolve()
 }
 
-function loadServiceWorker(): ServiceWorkerHarness {
+function loadServiceWorker(cacheKeys: readonly string[] = []): ServiceWorkerHarness {
   const listeners = new Map<string, EventListener>()
   const cachedResponses = new Map<string, Response>()
   const cachePutCalls: CachePutCall[] = []
@@ -74,9 +77,10 @@ function loadServiceWorker(): ServiceWorkerHarness {
   }
   const cachesOpen = vi.fn(async () => cache)
   const cachesMatch = vi.fn(async (key: Request | string) => cachedResponses.get(cacheKey(key)))
+  const cacheDelete = vi.fn(async () => true)
   const caches = {
-    delete: vi.fn(async () => true),
-    keys: vi.fn(async () => []),
+    delete: cacheDelete,
+    keys: vi.fn(async () => [...cacheKeys]),
     match: cachesMatch,
     open: cachesOpen,
   }
@@ -84,9 +88,9 @@ function loadServiceWorker(): ServiceWorkerHarness {
     addEventListener: vi.fn((type: string, listener: EventListener) => {
       listeners.set(type, listener)
     }),
-    clients: { claim: vi.fn() },
+    clients: { claim: vi.fn(async () => undefined) },
     location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}`),
-    skipWaiting: vi.fn(),
+    skipWaiting: vi.fn(async () => undefined),
   }
   const fetchMock = vi.fn()
   const source = readFileSync(SERVICE_WORKER_PATH, 'utf8')
@@ -100,10 +104,14 @@ function loadServiceWorker(): ServiceWorkerHarness {
   )
 
   const fetchListener = listeners.get('fetch')
+  const activateListener = listeners.get('activate')
   expect(fetchListener, 'expected service worker to register a fetch listener').toBeDefined()
+  expect(activateListener, 'expected service worker to register an activate listener').toBeDefined()
 
   return {
     cachePut,
+    cacheDelete,
+    activateListener: activateListener as unknown as ExtendableListener,
     cachePutCalls,
     cachedResponses,
     cachesMatch,
@@ -111,6 +119,16 @@ function loadServiceWorker(): ServiceWorkerHarness {
     fetchMock,
     waitUntilPromises,
   }
+
+}
+
+async function dispatchActivate(harness: ServiceWorkerHarness): Promise<void> {
+  harness.activateListener({
+    waitUntil: (promise) => {
+      harness.waitUntilPromises.push(promise)
+    },
+  })
+  await Promise.all(harness.waitUntilPromises)
 }
 
 function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise<Response> | null {
@@ -132,6 +150,23 @@ describe('service worker fetch handling', () => {
     vi.restoreAllMocks()
   })
 
+  it('deletes only stale caches owned by the configured base path', async () => {
+    const harness = loadServiceWorker([
+      'cardgame-%2FCardgame%2F-shell-v7',
+      'cardgame-%2FCardgame%2F-assets-v7',
+      'cardgame-%2FCardgame%2F-shell-v8',
+      'cardgame-%2FOther%2F-shell-v7',
+      'unrelated-cache',
+    ])
+
+    await dispatchActivate(harness)
+
+    expect(harness.cacheDelete.mock.calls.map(([key]) => key)).toEqual([
+      'cardgame-%2FCardgame%2F-shell-v7',
+      'cardgame-%2FCardgame%2F-assets-v7',
+    ])
+  })
+
   describe('unhashed public asset network-first caching', () => {
     it('uses the network response when a cached card also exists', async () => {
       const harness = loadServiceWorker()
@@ -151,6 +186,8 @@ describe('service worker fetch handling', () => {
       expect(harness.cachesMatch).not.toHaveBeenCalled()
       expect(clone).toHaveBeenCalledTimes(1)
       expectSingleCachePut(harness, request, networkClone)
+      expect(harness.waitUntilPromises).toHaveLength(1)
+      await Promise.all(harness.waitUntilPromises)
     })
 
     it('caches successful network card responses', async () => {

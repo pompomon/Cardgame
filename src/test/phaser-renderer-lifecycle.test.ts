@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     sceneGet: vi.fn(() => ({})),
     hostDispose: vi.fn(),
     clearFailedUrls: vi.fn(),
+    clearFailedCardArtUrls: vi.fn(),
     fileInputRemove: vi.fn(),
     p2pRemove: vi.fn(),
     p2pUpdate: vi.fn(),
@@ -90,6 +91,10 @@ vi.mock('../renderers/phaser/ui-utils', () => ({
 
 vi.mock('../renderers/phaser/texture-loader', () => ({
   clearFailedRuntimeAssetUrls: mocks.clearFailedUrls,
+}))
+
+vi.mock('../renderers/phaser/card-art-loader', () => ({
+  clearFailedCardArtUrls: mocks.clearFailedCardArtUrls,
 }))
 
 import { PhaserRenderer } from '../renderers/phaser'

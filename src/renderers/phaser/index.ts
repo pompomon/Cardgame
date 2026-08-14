@@ -8,6 +8,7 @@ import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel } from '../../app/types'
 import type { AppRenderer } from '../types'
 import { createA11yNav, type A11yNav } from './a11y-navigation'
+import { clearFailedCardArtUrls } from './card-art-loader'
 import { CardgameScene } from './cardgame-scene'
 import { LobbyScene } from './lobby-scene'
 import { clamp, type LayoutSafeAreaInsets } from './layout'
@@ -33,6 +34,7 @@ export class PhaserRenderer implements AppRenderer {
 
   private readonly handleOnline = (): void => {
     clearFailedRuntimeAssetUrls()
+    clearFailedCardArtUrls()
     if (this.activeSceneKey === CARDGAME_SCENE_KEY) {
       this.cardgameScene?.retryFailedBoardAssets()
     }
@@ -168,6 +170,7 @@ export class PhaserRenderer implements AppRenderer {
     this.a11yNav = null
     this.safeAreaInsets = {}
     clearFailedRuntimeAssetUrls()
+    clearFailedCardArtUrls()
 
     this.cardgameScene = null
     this.lobbyScene = null

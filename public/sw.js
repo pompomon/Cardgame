@@ -1,6 +1,4 @@
 const CACHE_VERSION = 'v8'
-const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
-const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
 
 function normalizeBasePath(value) {
   if (!value || value === '/') {
@@ -13,6 +11,9 @@ function normalizeBasePath(value) {
 const workerUrl = new URL(self.location.href)
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
+const CACHE_NAMESPACE = `cardgame-${encodeURIComponent(BASE_PATH)}-`
+const APP_SHELL_CACHE = `${CACHE_NAMESPACE}shell-${CACHE_VERSION}`
+const ASSET_CACHE = `${CACHE_NAMESPACE}assets-${CACHE_VERSION}`
 const INDEX_URL = `${BASE_PATH}index.html`
 const FALLBACK_URL = `${BASE_PATH}404.html`
 const CORE = [BASE_PATH, INDEX_URL, FALLBACK_URL]
@@ -42,22 +43,30 @@ function toBaseRelativePath(pathname) {
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) => cache.addAll(CORE)),
+    Promise.all([
+      caches.open(APP_SHELL_CACHE).then((cache) => cache.addAll(CORE)),
+      self.skipWaiting(),
+    ]),
   )
-  self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== APP_SHELL_CACHE && key !== ASSET_CACHE)
-          .map((key) => caches.delete(key)),
+    Promise.all([
+      caches.keys().then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) =>
+              key.startsWith(CACHE_NAMESPACE)
+              && key !== APP_SHELL_CACHE
+              && key !== ASSET_CACHE,
+            )
+            .map((key) => caches.delete(key)),
+        ),
       ),
-    ),
+      self.clients.claim(),
+    ]),
   )
-  self.clients.claim()
 })
 
 self.addEventListener('fetch', (event) => {
@@ -79,19 +88,30 @@ self.addEventListener('fetch', (event) => {
     // cached app shell under INDEX_URL, since 404.html performs a redirect
     // and is not a valid offline fallback document.
     const isIndexNavigation = relativePath === '/' || relativePath === '/index.html'
+    let cacheWrite = Promise.resolve()
+    const responsePromise = fetch(event.request)
+      .then((response) => {
+        if (response.ok && isIndexNavigation) {
+          const clone = response.clone()
+          cacheWrite = caches.open(APP_SHELL_CACHE)
+            .then((cache) => cache.put(INDEX_URL, clone))
+            .catch(() => {
+              // A valid navigation response must still win when storage fails.
+            })
+        }
+        return response
+      })
+      .catch(async () => {
+        const fallback = await caches.match(INDEX_URL)
+        return fallback ?? Response.error()
+      })
+    event.waitUntil(
+      responsePromise.then(() => cacheWrite).catch(() => {
+        // Fetch failures are handled by the response fallback above.
+      }),
+    )
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok && isIndexNavigation) {
-            const clone = response.clone()
-            void caches.open(APP_SHELL_CACHE).then((cache) => cache.put(INDEX_URL, clone))
-          }
-          return response
-        })
-        .catch(async () => {
-          const fallback = await caches.match(INDEX_URL)
-          return fallback ?? Response.error()
-        }),
+      responsePromise,
     )
     return
   }
@@ -132,17 +152,26 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  event.respondWith(
-    caches.match(event.request).then(async (cached) => {
+  let cacheWrite = Promise.resolve()
+  const responsePromise = caches.match(event.request).then(async (cached) => {
       if (cached) {
         return cached
       }
       const response = await fetch(event.request)
       if (response.ok) {
         const clone = response.clone()
-        void caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, clone))
+        cacheWrite = caches.open(ASSET_CACHE)
+          .then((cache) => cache.put(event.request, clone))
+          .catch(() => {
+            // Return the valid network response even when storage is full.
+          })
       }
       return response
+    })
+  event.waitUntil(
+    responsePromise.then(() => cacheWrite).catch(() => {
+      // The response promise carries network failures to respondWith().
     }),
   )
+  event.respondWith(responsePromise)
 })
