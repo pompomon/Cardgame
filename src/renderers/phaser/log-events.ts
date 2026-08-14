@@ -1,4 +1,5 @@
-import type { BasicLand, LogEvent } from '../../game/types'
+import type { UiLogEvent } from '../../app/types'
+import type { BasicLand } from '../../game/types'
 import { isBasicLand } from '../../game/types'
 
 // Pure helpers for rendering structured `LogEvent` values into renderer-
@@ -20,7 +21,7 @@ function playerLabel(actor: number): string {
   return `P${actor + 1}`
 }
 
-export function formatLogEventTile(event: LogEvent): LogEventTile {
+export function formatLogEventTile(event: UiLogEvent): LogEventTile {
   switch (event.kind) {
     case 'game_started':
       return { actor: null, label: 'Game started', cardName: null, glyph: '🏳' }
@@ -30,6 +31,8 @@ export function formatLogEventTile(event: LogEvent): LogEventTile {
       return { actor: event.actor, label: `Turn ${event.turn} • main phase`, cardName: null, glyph: '▶' }
     case 'draw':
       return { actor: event.actor, label: `draws ${event.cardName}`, cardName: event.cardName, glyph: '+' }
+    case 'hidden_draw':
+      return { actor: event.actor, label: 'draws a hidden card', cardName: null, glyph: '+' }
     case 'play_land':
       return { actor: event.actor, label: `plays ${event.cardName}`, cardName: event.cardName, glyph: '◆' }
     case 'ability_forest_return':
@@ -64,7 +67,7 @@ export function formatLogEventTile(event: LogEvent): LogEventTile {
 
 // Plain-text rendering used by accessibility mirrors and tests so the visual
 // log degrades gracefully (matching the pre-LogEvent text log's intent).
-export function formatLogEventText(event: LogEvent): string {
+export function formatLogEventText(event: UiLogEvent): string {
   const tile = formatLogEventTile(event)
   if (tile.actor === null) {
     return tile.label
@@ -72,7 +75,7 @@ export function formatLogEventText(event: LogEvent): string {
   return `${playerLabel(tile.actor)} ${tile.label}`
 }
 
-export function isLandTileEvent(event: LogEvent): boolean {
+export function isLandTileEvent(event: UiLogEvent): boolean {
   const tile = formatLogEventTile(event)
   return tile.cardName !== null && isBasicLand(tile.cardName)
 }

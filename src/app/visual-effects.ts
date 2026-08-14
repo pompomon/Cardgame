@@ -1,6 +1,6 @@
 import { cardVisualPaletteFor } from './card-visuals'
-import type { CardVisualStyle } from './types'
-import type { BasicLand, LogEvent } from '../game/types'
+import type { CardVisualStyle, UiLogEvent } from './types'
+import type { BasicLand } from '../game/types'
 
 export type VisualEffectKind =
   | 'play_land'
@@ -52,7 +52,7 @@ function descriptor(
 }
 
 export function visualEffectForEvent(
-  event: LogEvent,
+  event: UiLogEvent,
   visualStyle: CardVisualStyle,
 ): VisualEffectDescriptor | null {
   switch (event.kind) {

@@ -18,9 +18,9 @@ import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
 import { isRenderQualityPreference } from '../app/render-quality'
 import { visualEffectForEvent } from '../app/visual-effects'
-import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState } from '../app/types'
+import type { AppViewModel, GameUiState, Mode, PlayLandOption, PlayerUiState, UiLogEvent } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
-import { isBasicLand, type GameAction, type LogEvent } from '../game/types'
+import { isBasicLand, type GameAction } from '../game/types'
 import { canPreviewCard, isCardPreviewSuppressed } from './card-preview'
 import type { AppRenderer } from './types'
 import {
@@ -435,7 +435,7 @@ export class DomRenderer implements AppRenderer {
   private lastDomAnimatedEventCount = 0
   // Seed of the last render pass; resets the event cursor on new game.
   private lastDomEffectSeed: number | null = null
-  private domEffectQueue: LogEvent[] = []
+  private domEffectQueue: UiLogEvent[] = []
   private domEffectPlaying = false
   private domEffectGeneration = 0
   private domCardAnchorHistory = new Map<string, DomEffectAnchor>()

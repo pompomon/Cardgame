@@ -11,6 +11,7 @@ import type {
   PlayLandOption,
   SwampDiscardOption,
   UiCard,
+  UiLogEvent,
 } from './types'
 import { HIDDEN_HAND_CARD_NAME } from './types'
 
@@ -203,6 +204,28 @@ function isHiddenDrawEvent(
   return event?.kind === 'draw' && shouldHideHandFromViewer(controllers, event.actor)
 }
 
+function hiddenDrawActorFromLegacyLog(
+  entry: string,
+  controllers: readonly [ControllerKind, ControllerKind],
+): number | null {
+  const match = /^Player ([12]) draws [^\r\n]+\.$/.exec(entry)
+  if (!match) {
+    return null
+  }
+  const actor = match[1] === '1' ? 0 : 1
+  return shouldHideHandFromViewer(controllers, actor) ? actor : null
+}
+
+function projectLogEvent(
+  event: LogEvent,
+  controllers: readonly [ControllerKind, ControllerKind],
+): UiLogEvent {
+  if (isHiddenDrawEvent(event, controllers)) {
+    return { kind: 'hidden_draw', actor: event.actor }
+  }
+  return cloneLogEvent(event)
+}
+
 export function buildViewModel(
   state: AppState,
   p2pConnected: boolean,
@@ -260,14 +283,13 @@ export function buildViewModel(
 
   const game = state.game
   const sourceEvents = game.events ?? []
-  const projectedEvents = sourceEvents
-    .filter((event) => !isHiddenDrawEvent(event, state.controllers))
-    .map(cloneLogEvent)
+  const projectedEvents = sourceEvents.map((event) => projectLogEvent(event, state.controllers))
   const projectedLog = game.log.map((entry, index) => {
     const event = sourceEvents[index]
-    return isHiddenDrawEvent(event, state.controllers)
-      ? `Player ${event.actor + 1} draws a hidden card.`
-      : entry
+    const hiddenActor = isHiddenDrawEvent(event, state.controllers)
+      ? event.actor
+      : hiddenDrawActorFromLegacyLog(entry, state.controllers)
+    return hiddenActor === null ? entry : `Player ${hiddenActor + 1} draws a hidden card.`
   })
   const actor = activeActor(game)
   const actorControl = state.controllers[actor]

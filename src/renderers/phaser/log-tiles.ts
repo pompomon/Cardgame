@@ -6,8 +6,8 @@
 // Phaser scene. See docs/agent/phaser-renderer.md "Cap the visual log and
 // the a11y mirror."
 import type Phaser from 'phaser'
-import type { AppViewModel } from '../../app/types'
-import { isBasicLand, type LogEvent } from '../../game/types'
+import type { AppViewModel, UiLogEvent } from '../../app/types'
+import { isBasicLand } from '../../game/types'
 import { addCardArtToContainer } from './card-factory'
 import type { SceneLayout } from './layout'
 import { formatLogEventText, formatLogEventTile } from './log-events'
@@ -23,7 +23,7 @@ export interface LogEntrySelection<T> {
 // (keeping the tail, per the repo-wide "cap arrays, keep the most recent"
 // convention) so a long replay or a hostile/corrupted recording can't
 // balloon the renderer with thousands of GameObjects or a11y mirror lines.
-export function selectVisibleLogEvents(events: readonly LogEvent[]): LogEntrySelection<LogEvent> {
+export function selectVisibleLogEvents(events: readonly UiLogEvent[]): LogEntrySelection<UiLogEvent> {
   const total = events.length
   if (total <= MAX_RENDERED_LOG_TILES) {
     return { visible: events, omittedCount: 0 }
@@ -44,7 +44,7 @@ export function selectVisibleLegacyLogLines(lines: readonly string[]): LogEntryS
 // falls back to raw log strings; when both are empty, a fixed placeholder.
 // Exported directly so this exact behavior — including the "N older entries
 // omitted" prefix — is unit testable without any Phaser scene.
-export function buildLogA11yLines(events: readonly LogEvent[], legacyLog: readonly string[]): string[] {
+export function buildLogA11yLines(events: readonly UiLogEvent[], legacyLog: readonly string[]): string[] {
   const lines: string[] = []
   if (events.length > 0) {
     const { visible, omittedCount } = selectVisibleLogEvents(events)
@@ -81,7 +81,7 @@ export interface LogTilesContent {
 export function buildLogTiles(
   scene: Phaser.Scene,
   layout: SceneLayout,
-  events: readonly LogEvent[],
+  events: readonly UiLogEvent[],
   contentWidth: number,
   visualStyle: AppViewModel['cardVisualStyle'],
   options: { activeActor: number; legacyLog?: readonly string[] },

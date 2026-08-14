@@ -1,6 +1,5 @@
 import type Phaser from 'phaser'
-import type { AnimationSpeed } from '../../app/types'
-import type { LogEvent } from '../../game/types'
+import type { AnimationSpeed, UiLogEvent } from '../../app/types'
 import { MAX_EFFECT_MS, MAX_QUEUED_EFFECTS } from '../../app/animation-settings'
 import {
   visualEffectForEvent,
@@ -110,7 +109,7 @@ const COMPLETED_EFFECT_PLAYBACK: EffectPlayback = Object.freeze({
 // Map a structured LogEvent into an EffectDescriptor when there is a visual
 // recipe for it. Returns `null` for events that should not animate.
 export function effectDescriptorForEvent(
-  event: LogEvent,
+  event: UiLogEvent,
   visualStyle: EffectDescriptor['visualStyle'],
 ): EffectDescriptor | null {
   return visualEffectForEvent(event, visualStyle)

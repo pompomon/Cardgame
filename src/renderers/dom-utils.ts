@@ -1,4 +1,4 @@
-import type { AppViewModel, AnimationSpeed, CardVisualStyle, RendererKind } from '../app/types'
+import type { AppViewModel, AnimationSpeed, CardVisualStyle, RendererKind, UiLogEvent } from '../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { AI_LEVEL_OPTIONS } from '../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../app/animation-settings'
@@ -8,7 +8,7 @@ import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../app/render-quality'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { visualEffectForEvent, type VisualEffectDescriptor } from '../app/visual-effects'
 import { getInstallUiState } from '../app/install-support'
-import { isBasicLand, type BasicLand, type LogEvent } from '../game/types'
+import { isBasicLand, type BasicLand } from '../game/types'
 
 const failedRasterCardArtUrls = new Set<string>()
 
@@ -361,7 +361,7 @@ function isReducedDomEffectQuality(): boolean {
 // animation completes. Guards: no-op when `animationSpeed === 'off'`, when
 // no target element is found, or when RAF is unavailable (SSR/test env).
 export function scheduleDomEffect(
-  event: LogEvent,
+  event: UiLogEvent,
   animationSpeed: AnimationSpeed,
   visualStyle: CardVisualStyle,
   activeActor = 'actor' in event && typeof event.actor === 'number' ? event.actor : 0,

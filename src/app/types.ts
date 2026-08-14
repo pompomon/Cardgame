@@ -116,6 +116,10 @@ export interface UiCard {
 // Renderers replace this sentinel with a face-down tile.
 export const HIDDEN_HAND_CARD_NAME = '__hidden__'
 
+// Renderer-facing event stream. Hidden draws retain their position without
+// exposing the engine event's cardName.
+export type UiLogEvent = LogEvent | { kind: 'hidden_draw'; actor: number }
+
 export interface UiBattlefieldCard {
   instanceId: string
   cardId: string
@@ -169,7 +173,7 @@ export interface GameUiState {
     canPassResponse: boolean
   }
   log: string[]
-  events: readonly LogEvent[]
+  events: readonly UiLogEvent[]
   isReplay: boolean
   // When the local human actor is in the middle of choosing a Swamp discard
   // target (either by playing a Swamp directly in `main` phase, or by
