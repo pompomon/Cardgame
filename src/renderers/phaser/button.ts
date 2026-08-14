@@ -1,4 +1,4 @@
-import Phaser from 'phaser'
+import type Phaser from 'phaser'
 
 import { clamp } from './layout'
 import { buildPolishedPanel } from './visual-primitives'
@@ -30,6 +30,12 @@ export function buildButton(
   theme: ButtonTheme,
 ): Phaser.GameObjects.Container {
   const isTouchPointer = (pointer: Phaser.Input.Pointer | undefined): boolean => pointer?.wasTouch === true
+  let pressedPointerId: number | null = null
+  let pointerDown = false
+  const clearPressedPointer = (): void => {
+    pressedPointerId = null
+    pointerDown = false
+  }
   const requestedPx = Number.parseFloat(fontSize)
   const derivedPx = clamp(height * BUTTON_TEXT_HEIGHT_RATIO, MIN_BUTTON_FONT_PX, MAX_BUTTON_FONT_PX)
   const widthScale = width < BUTTON_TEXT_NARROW_WIDTH_THRESHOLD ? BUTTON_TEXT_NARROW_WIDTH_SCALE : 1
@@ -66,12 +72,15 @@ export function buildButton(
     button.setScale(1.015)
   })
   button.on('pointerout', (pointer: Phaser.Input.Pointer) => {
+    clearPressedPointer()
     if (isTouchPointer(pointer)) {
       return
     }
     button.setScale(1)
   })
   button.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    pointerDown = true
+    pressedPointerId = Number.isInteger(pointer?.id) ? pointer.id : null
     if (isTouchPointer(pointer)) {
       button.setScale(1)
       return
@@ -79,12 +88,23 @@ export function buildButton(
     button.setScale(0.985)
   })
   button.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+    const releasedPointerId = Number.isInteger(pointer?.id) ? pointer.id : null
+    const ownsRelease = pointerDown
+      && pointer.wasCanceled !== true
+      && (
+        pressedPointerId === null
+        || releasedPointerId === null
+        || pressedPointerId === releasedPointerId
+      )
+    clearPressedPointer()
     if (isTouchPointer(pointer)) {
       button.setScale(1)
-      return
+    } else {
+      button.setScale(1.015)
     }
-    button.setScale(1.015)
+    if (ownsRelease) {
+      onClick()
+    }
   })
-  button.on('pointerup', onClick)
   return button
 }

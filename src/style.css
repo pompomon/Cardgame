@@ -942,6 +942,18 @@ textarea {
   border: 0;
 }
 
+.phaser-a11y-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* When any descendant button receives keyboard focus, expand the nav itself
    so the focused button is actually visible to sighted keyboard users.
    Without this rule, the parent's `overflow: hidden` + `clip: rect(0 0 0 0)`

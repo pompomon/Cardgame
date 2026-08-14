@@ -170,7 +170,7 @@ describe('buildViewModel', () => {
 })
 
 describe('buildViewModel hand-redaction', () => {
-  it('redacts the AI hand from the human in local-hvai while keeping handCount and card ids', () => {
+  it('redacts the AI hand from the human with opaque slot ids', () => {
     const state = createState(101)
     state.mode = 'local-hvai'
     state.controllers = ['human', 'ai']
@@ -188,9 +188,13 @@ describe('buildViewModel hand-redaction', () => {
 
     // Human hand stays visible.
     expect(vm.game?.players[0].handCards.map((c) => c.name)).toEqual(['Forest', 'Island'])
-    // AI hand is fully redacted but the count + ids remain.
+    // AI hand is fully redacted and engine ids do not cross the view boundary.
     expect(vm.game?.players[1].handCount).toBe(3)
-    expect(vm.game?.players[1].handCards.map((c) => c.id)).toEqual(['a-1', 'a-2', 'a-3'])
+    expect(vm.game?.players[1].handCards.map((c) => c.id)).toEqual([
+      'hidden-hand:1:0',
+      'hidden-hand:1:1',
+      'hidden-hand:1:2',
+    ])
     expectAllCardsHidden(vm.game!.players[1].handCards)
   })
 
@@ -227,6 +231,27 @@ describe('buildViewModel hand-redaction', () => {
     const vm = buildViewModel(state, false)
     expect(vm.game?.players[0].handCards[0].name).toBe('Forest')
     expect(vm.game?.players[1].handCards[0].name).toBe('Swamp')
+  })
+
+  it('redacts remote hands and omits remote-turn legal action payloads', () => {
+    const state = createState(109)
+    state.mode = 'p2p-host'
+    state.controllers = ['human', 'remote']
+    state.game!.currentPlayer = 1
+    state.game!.players[1].hand = [
+      { id: 'p1-swamp-0', name: 'Swamp', type: 'land' },
+    ]
+
+    const vm = buildViewModel(state, true)
+
+    expect(vm.game?.canInput).toBe(false)
+    expect(vm.game?.players[1].handCards).toEqual([
+      { id: 'hidden-hand:1:0', name: HIDDEN_HAND_CARD_NAME },
+    ])
+    expect(vm.game?.legal.playLandByCard).toEqual({})
+    expect(vm.game?.legal.counterOptions).toEqual([])
+    expect(vm.game?.legal.swampDiscardOptions).toEqual([])
+    expect(JSON.stringify(vm.game)).not.toContain('p1-swamp-0')
   })
 
   it('reveals real AI hand names during direct Swamp discard targeting (hvai)', () => {

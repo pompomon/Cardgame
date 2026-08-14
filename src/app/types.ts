@@ -111,9 +111,9 @@ export interface UiCard {
 
 // Sentinel `UiCard.name` value used by the view model to redact an AI's hand
 // when a human is playing the opposing side, so the human cannot "peek" at
-// the AI's cards through the renderer. The card `id` stays real (so renderers
-// can keep slot positions stable across turns) but the displayed face is
-// replaced with this constant, which renderers turn into a face-down tile.
+// the AI's or remote peer's cards through the renderer. Hidden cards receive
+// opaque slot ids in the view model because engine card ids encode card names.
+// Renderers replace this sentinel with a face-down tile.
 export const HIDDEN_HAND_CARD_NAME = '__hidden__'
 
 export interface UiBattlefieldCard {

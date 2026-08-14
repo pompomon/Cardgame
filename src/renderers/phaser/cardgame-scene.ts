@@ -511,7 +511,11 @@ export class CardgameScene extends Phaser.Scene {
       return
     }
 
-    this.setStatus(view.status)
+    this.setStatus(
+      view.tutorial.active && view.tutorial.hint
+        ? `Tutorial hint: ${view.tutorial.hint}`
+        : view.status,
+    )
     this.syncBoardBackground(view)
 
     if (!view.game) {

@@ -41,6 +41,12 @@ function cloneLogEvent(event: LogEvent): LogEvent {
   return { ...event }
 }
 
+function cloneControllers(
+  controllers: readonly [ControllerKind, ControllerKind],
+): [ControllerKind, ControllerKind] {
+  return [controllers[0], controllers[1]]
+}
+
 function projectTutorialState(state: AppState): AppViewModel['tutorial'] {
   if (state.mode !== 'tutorial' || !state.game) {
     return { active: false, stepId: null, hint: null }
@@ -170,10 +176,10 @@ function shouldHideHandFromViewer(
   // side: in `local-hvai` / `adventure-hvai` the human shares the screen
   // with the AI and could otherwise read the AI's cards. Keep both hands
   // visible for `local-hvh` (both human) and `local-aivai` (no human to
-  // protect). For P2P, the local side is `human` and the opposing side is
-  // `remote`, so this predicate is false there too — and the remote opponent
-  // never sends raw hand data over the wire anyway.
-  return controllers[playerIndex] === 'ai' && controllers[1 - playerIndex] === 'human'
+  // protect). P2P peers are treated like AI opponents at this presentation
+  // boundary: the protocol is trusted-peer rather than cryptographically
+  // private, but renderer state must still avoid disclosing the remote hand.
+  return controllers[playerIndex] !== 'human' && controllers[1 - playerIndex] === 'human'
 }
 
 function projectHandCards(
@@ -182,7 +188,10 @@ function projectHandCards(
   playerIndex: number,
 ): UiCard[] {
   if (shouldHideHandFromViewer(controllers, playerIndex)) {
-    return hand.map((card) => ({ id: card.id, name: HIDDEN_HAND_CARD_NAME }))
+    return hand.map((_card, index) => ({
+      id: `hidden-hand:${playerIndex}:${index}`,
+      name: HIDDEN_HAND_CARD_NAME,
+    }))
   }
   return hand.map((card) => ({ id: card.id, name: card.name }))
 }
@@ -197,7 +206,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     ? {
       seed: state.recording.metadata.seed,
       mode: state.recording.metadata.mode,
-      controllers: state.recording.metadata.controllers,
+      controllers: cloneControllers(state.recording.metadata.controllers),
       aiLevel: state.recording.metadata.aiLevel,
       completed: state.recording.metadata.completed,
     }
@@ -211,7 +220,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       offer: state.offer,
       answer: state.answer,
       seed: state.seed,
-      controllers: state.controllers,
+      controllers: cloneControllers(state.controllers),
       aiLevel: state.aiLevel,
       cardVisualStyle: state.cardVisualStyle,
       animationSpeed: state.animationSpeed,
@@ -241,7 +250,9 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   const actor = activeActor(game)
   const actorControl = state.controllers[actor]
   const canInput = !replayActive && actorControl === 'human' && canAct(game, actor)
-  const legalActions = getLegalActions(game, actor)
+  // AI and remote turns are driven outside the renderers. Do not project their
+  // action payloads because card ids encode names and can expose hidden hands.
+  const legalActions = canInput ? getLegalActions(game, actor) : []
 
   // Determine whether the local human is currently choosing a Swamp discard
   // target. Two qualifying contexts:
@@ -314,7 +325,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     offer: state.offer,
     answer: state.answer,
     seed: state.seed,
-    controllers: state.controllers,
+    controllers: cloneControllers(state.controllers),
     aiLevel: state.aiLevel,
     cardVisualStyle: state.cardVisualStyle,
     animationSpeed: state.animationSpeed,

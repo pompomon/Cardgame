@@ -127,6 +127,11 @@ describe('Phaser drag accessibility parity', () => {
     const container = new FakeElement()
     const nav = createA11yNav(container as unknown as HTMLElement)
     const view = gameplayView()
+    view.tutorial = {
+      active: true,
+      stepId: 'play-island-first',
+      hint: 'Play Island before another land.',
+    }
 
     nav.update(view, false, {
       controller,
@@ -138,6 +143,8 @@ describe('Phaser drag accessibility parity', () => {
     const playButton = (nav.element as unknown as FakeElement).children.find(
       (button) => button.textContent === 'Play Forest: Play Forest',
     )
+    expect(container.children.find((child) => child.className === 'phaser-a11y-status')?.textContent)
+      .toBe('Tutorial hint: Play Island before another land.')
     expect(playButton).toBeTruthy()
     playButton?.click()
     expect(submitAction).toHaveBeenCalledOnce()

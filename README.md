@@ -33,6 +33,12 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Phaser lobby groups controls into top-level actions plus **Settings** and **Recording** submenus.
 - Card faces render pixel-art land icons (Forest/Island/Mountain/Plains/Swamp) plus text labels.
 
+### P2P privacy model
+
+- Both renderers redact the remote player's hand from normal UI and accessibility state.
+- P2P mode is designed for trusted peers, not adversarial secrecy: both clients derive the
+  deterministic deck from the synchronized seed, so a modified client can reconstruct it.
+
 ## Card visual styles
 
 - Lobby includes a shared **Card Visual Style** selector for both renderers (under **Settings** in Phaser).

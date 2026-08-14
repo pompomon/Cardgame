@@ -16,6 +16,7 @@ import type { AiLevel } from '../../game/ai-levels'
 // Mode entries shown on the lobby root menu. Shared with the a11y nav so the
 // two surfaces can never drift out of sync.
 export const LOBBY_MODE_OPTIONS: Array<{ mode: Mode; label: string }> = [
+  { mode: 'tutorial', label: 'Tutorial (Learn to Play)' },
   { mode: 'local-hvh', label: 'Local Human vs Human' },
   { mode: 'local-hvai', label: 'Local Human vs AI' },
   { mode: 'local-aivai', label: 'Local AI vs AI' },

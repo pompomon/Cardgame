@@ -30,8 +30,9 @@ function adventure(overrides: Partial<AdventureUiState> = {}): AdventureUiState 
 }
 
 describe('lobby-actions predicates', () => {
-  it('LOBBY_MODE_OPTIONS lists all six modes in the historical order', () => {
+  it('LOBBY_MODE_OPTIONS includes tutorial and every multiplayer mode', () => {
     expect(LOBBY_MODE_OPTIONS.map((entry) => entry.mode)).toEqual([
+      'tutorial',
       'local-hvh',
       'local-hvai',
       'local-aivai',

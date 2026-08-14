@@ -39,6 +39,12 @@ export function createA11yNav(container: HTMLElement): A11yNav {
   nav.className = 'phaser-a11y-nav'
   nav.setAttribute('aria-label', 'Cardgame controls')
   container.appendChild(nav)
+  const liveRegion = document.createElement('p')
+  liveRegion.className = 'phaser-a11y-status'
+  liveRegion.setAttribute('role', 'status')
+  liveRegion.setAttribute('aria-live', 'polite')
+  liveRegion.setAttribute('aria-atomic', 'true')
+  container.appendChild(liveRegion)
 
   let keySignature: string | null = null
 
@@ -362,6 +368,10 @@ export function createA11yNav(container: HTMLElement): A11yNav {
   }
 
   const update = (view: AppViewModel, lobbyActive: boolean, deps: A11yNavDeps): void => {
+    const tutorialHint = view.tutorial?.active ? view.tutorial.hint : null
+    liveRegion.textContent = tutorialHint
+      ? `Tutorial hint: ${tutorialHint}`
+      : view.status
     if (!deps.controller) {
       nav.innerHTML = ''
       keySignature = null
@@ -412,6 +422,7 @@ export function createA11yNav(container: HTMLElement): A11yNav {
 
   const remove = (): void => {
     nav.remove()
+    liveRegion.remove()
   }
 
   return { element: nav, update, remove }
