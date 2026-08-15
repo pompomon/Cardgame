@@ -6,6 +6,7 @@ import { ADVENTURE_RUN_STORAGE_KEY } from '../app/adventure-persistence'
 import { AppController } from '../app/controller'
 import { parseGameRecordJson } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
+import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { createInitialGame } from '../game/engine'
 import { withFakeTimers } from './helpers/timers'
 
@@ -259,8 +260,14 @@ describe('controller recording and replay', () => {
     const parsedPayload = JSON.parse(payload ?? '{}') as GameRecordFile
     parsedPayload.metadata.mode = 'p2p-host'
     parsedPayload.metadata.controllers = ['human', 'remote']
+    parsedPayload.initialState.log.push('Player 2 draws Swamp.')
+    parsedPayload.initialState.events.push({ kind: 'draw', actor: 1, cardName: 'Swamp' })
 
     controller.importRecordingJson(JSON.stringify(parsedPayload))
+    const replayView = controller.getViewModel()
+    expect(replayView.controllers).toEqual(['human', 'remote'])
+    expect(replayView.game?.players[1].handCards.every((card) => card.name === HIDDEN_HAND_CARD_NAME)).toBe(true)
+    expect(replayView.game?.events.at(-1)).toEqual({ kind: 'hidden_draw', actor: 1 })
     controller.exitReplay()
 
     const view = controller.getViewModel()

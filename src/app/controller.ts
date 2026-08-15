@@ -1111,10 +1111,7 @@ export class AppController implements ControllerApi {
     this.state.seed = parsed.record.metadata.seed
     this.state.aiLevel = parsed.record.metadata.aiLevel
     const [controller0, controller1] = parsed.record.metadata.controllers
-    this.state.controllers = [
-      controller0 === 'remote' ? 'human' : controller0,
-      controller1 === 'remote' ? 'human' : controller1,
-    ]
+    this.state.controllers = [controller0, controller1]
     this.state.offer = ''
     this.state.answer = ''
     this.state.p2pStarted = false
@@ -1262,8 +1259,14 @@ export class AppController implements ControllerApi {
     if (!this.state.replay) {
       return
     }
-    const finalState = snapshotFromRecord(this.state.replay.record, this.state.replay.record.timeline.length)
+    const record = this.state.replay.record
+    const finalState = snapshotFromRecord(record, record.timeline.length)
+    const [controller0, controller1] = record.metadata.controllers
     this.clearReplay()
+    this.state.controllers = [
+      controller0 === 'remote' ? 'human' : controller0,
+      controller1 === 'remote' ? 'human' : controller1,
+    ]
     this.beginGameSession(finalState)
     this.state.status = 'Exited replay at final recorded game state.'
     this.notify()
