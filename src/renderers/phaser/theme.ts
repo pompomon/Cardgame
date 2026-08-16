@@ -19,6 +19,25 @@ export const COLOR_BORDER_STRONG = 0x5d7cff
 export const COLOR_LOG_PANEL_FILL = 0x161f4d
 export const COLOR_LOG_VIEWPORT_FILL = 0x0f1740
 
+// Physical Tabletop tokens — keep mirrored with the CSS custom properties of
+// the same intent in src/style.css (--table-wood-*, --felt-*, --ledger-*,
+// --stack-*).
+export const COLOR_TABLE_WOOD_LIGHT = 0x8a5c36  // = --table-wood-light
+export const COLOR_TABLE_WOOD_BASE = 0x6b4328   // = --table-wood-base
+export const COLOR_TABLE_WOOD_DARK = 0x422818   // = --table-wood-dark
+export const COLOR_FELT_BASE = 0x1f5c3d         // = --felt-base
+export const COLOR_FELT_SHADOW = 0x123723       // = --felt-shadow
+export const COLOR_FELT_ACTIVE_GLOW = 0xffe296  // ≈ --felt-active-glow
+export const COLOR_LEDGER_SURFACE = 0xecdcae        // = --ledger-surface
+export const COLOR_LEDGER_SURFACE_STRONG = 0xe2cd92 // = --ledger-surface-strong
+export const COLOR_LEDGER_BORDER = 0x8a6d3a         // = --ledger-border
+export const COLOR_LEDGER_TEXT = '#3b2b12'          // = --ledger-text
+export const COLOR_STACK_EDGE = 0x5d7cff            // = --stack-edge
+// Neutral player-info panel fill: restrained borders + active-only lighting
+// (see COLOR_FELT_ACTIVE_GLOW) now carry the active/non-active distinction
+// instead of a saturated full-panel colour fill.
+export const COLOR_PLAYER_PANEL_FILL = 0x1f2a5e
+
 export const UI_THEME = {
   buttonFill: 0x28368a,
   buttonStroke: COLOR_BORDER_STRONG,

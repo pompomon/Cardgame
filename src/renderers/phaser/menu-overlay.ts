@@ -8,6 +8,7 @@ import { cullRowsToViewport } from './log-row-visibility'
 import { computeLogScrollLayout } from './log-scroll'
 import { buildLogA11yLines, buildLogTiles } from './log-tiles'
 import { bindScrollableViewport } from './scrollable-viewport'
+import { COLOR_LEDGER_BORDER, COLOR_LEDGER_SURFACE, COLOR_LEDGER_SURFACE_STRONG, COLOR_LEDGER_TEXT } from './theme'
 
 const SCROLL_INDICATOR_RIGHT_OFFSET = 10
 const LOG_VIEWPORT_HORIZONTAL_PADDING = 10
@@ -42,6 +43,11 @@ export interface MenuOverlayInput {
   menuContentScrollOffset: number | null
   menuLogScrollOffset: number | null
   menuLogPinnedToBottom: boolean
+  // Physical Tabletop: the Replay Log renders as an independently
+  // collapsible parchment ledger strip, separate from the overall Menu
+  // open/close state tracked by `menuOpen`.
+  menuLogExpanded: boolean
+  toggleMenuLogExpanded: () => void
   createButton: (
     label: string,
     x: number,
@@ -339,7 +345,10 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
   }, closeButtonWidth, layout.popupButtonHeight, layout.popupButtonFontSize))
   const buttonStackBottomY = closeButtonY + layout.popupButtonHeight / 2
 
-  // Replay Log section: heading + masked scrollable viewport.
+  // Replay Log section: an independently collapsible parchment ledger,
+  // separate from the overall Menu open/close state (`menuOpen`). The
+  // heading acts as the ledger's tab: clicking it toggles
+  // `menuLogExpanded` and rebuilds the overlay, without closing the Menu.
   const logTitleY = buttonStackBottomY + sectionGap + 14
   const logViewportTopWithHeading = logTitleY + 14 + sectionGap
   const logViewportWidth = fullButtonWidth
@@ -359,10 +368,27 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
   let isInnerLogViewportScrollable = false
   if (maxViewportHeight > 0) {
     if (showHeading) {
-      content.add(scene.add.text(-fullButtonWidth / 2, logTitleY, 'Replay Log', {
-        color: theme.primaryText,
+      const caret = input.menuLogExpanded ? '\u25be' : '\u25b8'
+      const ledgerTabWidth = fullButtonWidth
+      const ledgerTabHeight = Math.min(40, Math.max(16, parseFloat(layout.bodyFontSize) || 16)) + 12
+      const ledgerTabBackground = scene.add.rectangle(
+        0,
+        logTitleY,
+        ledgerTabWidth,
+        ledgerTabHeight,
+        COLOR_LEDGER_SURFACE_STRONG,
+        0.92,
+      ).setStrokeStyle(1, COLOR_LEDGER_BORDER).setInteractive({ useHandCursor: true })
+      content.add(ledgerTabBackground)
+      const ledgerTab = scene.add.text(-fullButtonWidth / 2 + 10, logTitleY, `${caret} Replay Log`, {
+        color: COLOR_LEDGER_TEXT,
         fontSize: layout.bodyFontSize,
-      }).setOrigin(0, 0.5))
+      }).setOrigin(0, 0.5)
+      content.add(ledgerTab)
+      ledgerTabBackground.on('pointerup', () => {
+        input.toggleMenuLogExpanded()
+      })
+      contentBottomY = Math.max(contentBottomY, logTitleY + ledgerTabHeight / 2 + sectionGap)
     }
     const a11yMirror = scene.add.text(
       -fullButtonWidth / 2,
@@ -373,6 +399,7 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     a11yMirror.setData('log-a11y-mirror', true)
     content.add(a11yMirror)
 
+    if (input.menuLogExpanded) {
     const logViewportHeight = Math.min(layout.menuLogViewportHeight, maxViewportHeight)
     const logViewportY = logViewportTop + logViewportHeight / 2
     const logViewportBackground = scene.add.rectangle(
@@ -380,9 +407,9 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
       logViewportY,
       logViewportWidth,
       logViewportHeight,
-      theme.viewportFill,
+      COLOR_LEDGER_SURFACE,
       layout.popupViewportAlpha,
-    ).setStrokeStyle(1, theme.buttonStroke)
+    ).setStrokeStyle(2, COLOR_LEDGER_BORDER)
     content.add(logViewportBackground)
     innerLogViewportBackground = logViewportBackground
 
@@ -396,7 +423,7 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
       game.events,
       tileColumnWidth,
       visualStyle,
-      { activeActor: game.actor, legacyLog: game.log },
+      { activeActor: game.actor, legacyLog: game.log, textColor: COLOR_LEDGER_TEXT, pillTextColor: COLOR_LEDGER_TEXT },
     )
     logContent.add(tilesColumn)
 
@@ -471,12 +498,13 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
           applyScroll,
         )
         content.add(scene.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-          color: theme.secondaryText,
+          color: COLOR_LEDGER_TEXT,
           fontSize: layout.smallFontSize,
         }).setOrigin(1, 0.5))
       }
     }
     contentBottomY = Math.max(contentBottomY, logViewportTop + logViewportHeight)
+    }
   }
 
   const contentMaxScroll = Math.max(0, contentBottomY - contentViewportHeight)

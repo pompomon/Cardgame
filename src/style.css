@@ -39,8 +39,8 @@
      Both battlefields share the same felt tone; only the restrained border
      colour (--battlefield-*-stroke, already defined above) and the active-
      player lighting glow distinguish whose turn it is. Keep these mirrored
-     with the Phaser COLOR_TABLE_*/COLOR_FELT_* constants in
-     src/renderers/phaser/theme.ts. */
+     with the Phaser table/felt colour constants (COLOR_TABLE_... and
+     COLOR_FELT_...) in src/renderers/phaser/theme.ts. */
   --table-wood-base: #6b4328;
   --table-wood-light: #8a5c36;
   --table-wood-dark: #422818;
