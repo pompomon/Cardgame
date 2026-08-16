@@ -55,6 +55,23 @@ consequences:
   plain-value version first (`top: 18px; …`) and the `env()` override
   after, so non-supporting browsers keep the previous behavior. Make sure
   later mobile media-query overrides don't undo safe-area insets.
+- **Never let a `/* … */` comment contain the literal sequence `*/`
+  anywhere but its closing delimiter** (e.g. writing `FOO_*/BAR_*` inside
+  prose). The production build's CSS minifier (lightningcss) tokenizes the
+  comment as closed at the first `*/` it sees, so the remaining prose is
+  parsed as CSS and fails the build with a cryptic `Unexpected token
+  Delim('*')` error that only reproduces in `npm run build`, not `tsc` or
+  `vitest`. Spell out `COLOR_TABLE_...`/`COLOR_FELT_...` instead of using a
+  glob-style `*` shorthand when referencing paired token names in comments.
+- **Status signal convention: restrained borders + active-player lighting,
+  not full-panel color fills.** The battlefield insets
+  (`.battlefield-active`/`.battlefield-non-active`) and player info panels
+  share the same felt/neutral base fill regardless of whose turn it is;
+  only the border color/width and an active-only soft glow
+  (`--felt-active-glow`) signal turn state. Don't reintroduce a saturated
+  full-rect color wash to indicate the active player — mirror this
+  convention in `src/renderers/phaser/visual-primitives.ts` and
+  `player-info.ts` as well.
 
 ## Re-render orchestration
 
