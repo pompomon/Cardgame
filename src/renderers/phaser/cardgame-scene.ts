@@ -627,6 +627,22 @@ export class CardgameScene extends Phaser.Scene {
     return this.menuOpen
   }
 
+  isMenuLogExpanded(): boolean {
+    return this.menuLogExpanded
+  }
+
+  toggleMenuLogExpanded(): void {
+    this.menuLogExpanded = !this.menuLogExpanded
+    const overlayToRebuild = this.menuOverlay
+    this.menuOverlay = null
+    this.lastMenuSignature = null
+    overlayToRebuild?.destroy(true)
+    if (this.lastMenuView) {
+      this.openMenuOverlay(this.lastMenuView)
+    }
+    this.rendererRef.refreshA11yNavForCurrentView()
+  }
+
   isTargetPickerOpen(): boolean {
     return this.targetPicker.isTargetPickerOpen()
   }
@@ -672,14 +688,7 @@ export class CardgameScene extends Phaser.Scene {
       menuLogPinnedToBottom: this.menuLogPinnedToBottom,
       menuLogExpanded: this.menuLogExpanded,
       toggleMenuLogExpanded: () => {
-        this.menuLogExpanded = !this.menuLogExpanded
-        const overlayToRebuild = this.menuOverlay
-        this.menuOverlay = null
-        this.lastMenuSignature = null
-        overlayToRebuild?.destroy(true)
-        if (this.lastMenuView) {
-          this.openMenuOverlay(this.lastMenuView)
-        }
+        this.toggleMenuLogExpanded()
       },
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
       popupActionWidth: (maxWidth, ratio, minWidth) => popupActionWidth(maxWidth, ratio, minWidth),

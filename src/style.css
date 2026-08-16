@@ -620,6 +620,11 @@ textarea {
   box-shadow: none;
 }
 
+.dom-card-stack--empty .dom-card-stack__layer:nth-child(1),
+.dom-card-stack--empty .dom-card-stack__layer:nth-child(2) {
+  display: none;
+}
+
 .dom-card-stack__count {
   position: absolute;
   inset: auto -4px -8px auto;

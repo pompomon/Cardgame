@@ -358,6 +358,11 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
   // still has somewhere to render. This preserves access to the replay log on short
   // viewports rather than removing it entirely.
   const showHeading = maxViewportHeightWithHeading >= MIN_READABLE_LOG_VIEWPORT_HEIGHT
+  const showLedgerToggle = showHeading || !input.menuLogExpanded
+  const ledgerTabHeight = Math.min(40, Math.max(16, parseFloat(layout.bodyFontSize) || 16)) + 12
+  const ledgerToggleY = showHeading
+    ? logTitleY
+    : buttonStackBottomY + sectionGap + ledgerTabHeight / 2
   const logViewportTop = showHeading
     ? logViewportTopWithHeading
     : Math.max(buttonStackBottomY + sectionGap, contentViewportVisibleHeight - MIN_READABLE_LOG_VIEWPORT_HEIGHT)
@@ -367,20 +372,19 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
   let innerLogViewportBackground: Phaser.GameObjects.Rectangle | null = null
   let isInnerLogViewportScrollable = false
   if (maxViewportHeight > 0) {
-    if (showHeading) {
+    if (showLedgerToggle) {
       const caret = input.menuLogExpanded ? '\u25be' : '\u25b8'
       const ledgerTabWidth = fullButtonWidth
-      const ledgerTabHeight = Math.min(40, Math.max(16, parseFloat(layout.bodyFontSize) || 16)) + 12
       const ledgerTabBackground = scene.add.rectangle(
         0,
-        logTitleY,
+        ledgerToggleY,
         ledgerTabWidth,
         ledgerTabHeight,
         COLOR_LEDGER_SURFACE_STRONG,
         0.92,
       ).setStrokeStyle(1, COLOR_LEDGER_BORDER).setInteractive({ useHandCursor: true })
       content.add(ledgerTabBackground)
-      const ledgerTab = scene.add.text(-fullButtonWidth / 2 + 10, logTitleY, `${caret} Replay Log`, {
+      const ledgerTab = scene.add.text(-fullButtonWidth / 2 + 10, ledgerToggleY, `${caret} Replay Log`, {
         color: COLOR_LEDGER_TEXT,
         fontSize: layout.bodyFontSize,
       }).setOrigin(0, 0.5)
@@ -388,7 +392,7 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
       ledgerTabBackground.on('pointerup', () => {
         input.toggleMenuLogExpanded()
       })
-      contentBottomY = Math.max(contentBottomY, logTitleY + ledgerTabHeight / 2 + sectionGap)
+      contentBottomY = Math.max(contentBottomY, ledgerToggleY + ledgerTabHeight / 2 + sectionGap)
     }
     const a11yMirror = scene.add.text(
       -fullButtonWidth / 2,
@@ -400,82 +404,59 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
     content.add(a11yMirror)
 
     if (input.menuLogExpanded) {
-    const logViewportHeight = Math.min(layout.menuLogViewportHeight, maxViewportHeight)
-    const logViewportY = logViewportTop + logViewportHeight / 2
-    const logViewportBackground = scene.add.rectangle(
-      0,
-      logViewportY,
-      logViewportWidth,
-      logViewportHeight,
-      COLOR_LEDGER_SURFACE,
-      layout.popupViewportAlpha,
-    ).setStrokeStyle(2, COLOR_LEDGER_BORDER)
-    content.add(logViewportBackground)
-    innerLogViewportBackground = logViewportBackground
+      const logViewportHeight = Math.min(layout.menuLogViewportHeight, maxViewportHeight)
+      const logViewportY = logViewportTop + logViewportHeight / 2
+      const logViewportBackground = scene.add.rectangle(
+        0,
+        logViewportY,
+        logViewportWidth,
+        logViewportHeight,
+        COLOR_LEDGER_SURFACE,
+        layout.popupViewportAlpha,
+      ).setStrokeStyle(2, COLOR_LEDGER_BORDER)
+      content.add(logViewportBackground)
+      innerLogViewportBackground = logViewportBackground
 
-    const logContent = scene.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
-    content.add(logContent)
-    const visualStyle = view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
-    const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
-    const { container: tilesColumn, contentHeight: logContentHeight } = buildLogTiles(
-      scene,
-      layout,
-      game.events,
-      tileColumnWidth,
-      visualStyle,
-      { activeActor: game.actor, legacyLog: game.log, textColor: COLOR_LEDGER_TEXT, pillTextColor: COLOR_LEDGER_TEXT },
-    )
-    logContent.add(tilesColumn)
+      const logContent = scene.add.container(-logViewportWidth / 2 + LOG_VIEWPORT_HORIZONTAL_PADDING, logViewportTop + 8)
+      content.add(logContent)
+      const visualStyle = view.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
+      const tileColumnWidth = Math.max(40, logViewportWidth - LOG_VIEWPORT_HORIZONTAL_PADDING * 2)
+      const { container: tilesColumn, contentHeight: logContentHeight } = buildLogTiles(
+        scene,
+        layout,
+        game.events,
+        tileColumnWidth,
+        visualStyle,
+        { activeActor: game.actor, legacyLog: game.log, textColor: COLOR_LEDGER_TEXT },
+      )
+      logContent.add(tilesColumn)
 
-    const logMask = scene.add.graphics()
-    logMask.fillStyle(0xffffff)
-    logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
-    logMask.setVisible(false)
-    content.add(logMask)
-    logContent.setMask(logMask.createGeometryMask())
+      const logMask = scene.add.graphics()
+      logMask.fillStyle(0xffffff)
+      logMask.fillRect(-logViewportWidth / 2, logViewportTop, logViewportWidth, logViewportHeight)
+      logMask.setVisible(false)
+      content.add(logMask)
+      logContent.setMask(logMask.createGeometryMask())
 
-    const logContentTopY = logViewportTop + 8
-    const logViewportBottom = logViewportTop + logViewportHeight
-    // Use the shared scroll helper so menu log clamp + pin-to-bottom
-    // semantics remain covered by unit tests. bottomPadding=16 matches the
-    // legacy `+ 16` term — 8px top inset above the tile column plus 8px
-    // breathing room below the last tile.
-    const initialScroll = computeLogScrollLayout({
-      contentTopY: logContentTopY,
-      viewportTopY: logViewportTop,
-      viewportBottomY: logViewportBottom,
-      contentHeight: logContentHeight,
-      bottomPadding: 16,
-      requestedOffset: input.menuLogScrollOffset,
-      pinnedToBottom: input.menuLogPinnedToBottom,
-    })
-    const maxScroll = initialScroll.maxScroll
-    let scrollOffset = initialScroll.scrollOffset
-    setMenuLogScrollState(scrollOffset, initialScroll.pinnedToBottom)
-    logContent.y = initialScroll.contentY
-    cullRowsToViewport({
-      rowsContainer: tilesColumn,
-      columnOriginY: logContent.y,
-      viewportTopY: logViewportTop,
-      viewportBottomY: logViewportBottom,
-      mode: 'contained',
-    })
-    const applyScroll = (deltaY: number): void => {
-      if (maxScroll <= 0) {
-        return
-      }
-      const next = computeLogScrollLayout({
+      const logContentTopY = logViewportTop + 8
+      const logViewportBottom = logViewportTop + logViewportHeight
+      // Use the shared scroll helper so menu log clamp + pin-to-bottom
+      // semantics remain covered by unit tests. bottomPadding=16 matches the
+      // legacy `+ 16` term — 8px top inset above the tile column plus 8px
+      // breathing room below the last tile.
+      const initialScroll = computeLogScrollLayout({
         contentTopY: logContentTopY,
         viewportTopY: logViewportTop,
         viewportBottomY: logViewportBottom,
         contentHeight: logContentHeight,
         bottomPadding: 16,
-        requestedOffset: scrollOffset + deltaY,
-        pinnedToBottom: false,
+        requestedOffset: input.menuLogScrollOffset,
+        pinnedToBottom: input.menuLogPinnedToBottom,
       })
-      scrollOffset = next.scrollOffset
-      setMenuLogScrollState(scrollOffset, next.pinnedToBottom)
-      logContent.y = next.contentY
+      const maxScroll = initialScroll.maxScroll
+      let scrollOffset = initialScroll.scrollOffset
+      setMenuLogScrollState(scrollOffset, initialScroll.pinnedToBottom)
+      logContent.y = initialScroll.contentY
       cullRowsToViewport({
         rowsContainer: tilesColumn,
         columnOriginY: logContent.y,
@@ -483,27 +464,50 @@ export function createMenuOverlay(input: MenuOverlayInput): Phaser.GameObjects.C
         viewportBottomY: logViewportBottom,
         mode: 'contained',
       })
-    }
-
-    if (maxScroll > 0) {
-      isInnerLogViewportScrollable = true
-      logViewportBackground.setInteractive()
-      logViewportBackground.on('pointerdown', swallowPointerEvent)
-      logViewportBackground.on('pointerup', swallowPointerEvent)
-      logViewportBackground.on('pointermove', swallowPointerEvent)
-      deferredMenuLogScrollSetup = () => {
-        bindScrollableViewport(
-          scene,
-          logViewportBackground,
-          applyScroll,
-        )
-        content.add(scene.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
-          color: COLOR_LEDGER_TEXT,
-          fontSize: layout.smallFontSize,
-        }).setOrigin(1, 0.5))
+      const applyScroll = (deltaY: number): void => {
+        if (maxScroll <= 0) {
+          return
+        }
+        const next = computeLogScrollLayout({
+          contentTopY: logContentTopY,
+          viewportTopY: logViewportTop,
+          viewportBottomY: logViewportBottom,
+          contentHeight: logContentHeight,
+          bottomPadding: 16,
+          requestedOffset: scrollOffset + deltaY,
+          pinnedToBottom: false,
+        })
+        scrollOffset = next.scrollOffset
+        setMenuLogScrollState(scrollOffset, next.pinnedToBottom)
+        logContent.y = next.contentY
+        cullRowsToViewport({
+          rowsContainer: tilesColumn,
+          columnOriginY: logContent.y,
+          viewportTopY: logViewportTop,
+          viewportBottomY: logViewportBottom,
+          mode: 'contained',
+        })
       }
-    }
-    contentBottomY = Math.max(contentBottomY, logViewportTop + logViewportHeight)
+
+      if (maxScroll > 0) {
+        isInnerLogViewportScrollable = true
+        logViewportBackground.setInteractive()
+        logViewportBackground.on('pointerdown', swallowPointerEvent)
+        logViewportBackground.on('pointerup', swallowPointerEvent)
+        logViewportBackground.on('pointermove', swallowPointerEvent)
+        deferredMenuLogScrollSetup = () => {
+          bindScrollableViewport(
+            scene,
+            logViewportBackground,
+            applyScroll,
+          )
+          content.add(scene.add.text(logViewportWidth / 2 - SCROLL_INDICATOR_RIGHT_OFFSET, logViewportTop + logViewportHeight / 2, 'Scroll or drag', {
+            color: COLOR_LEDGER_TEXT,
+            fontSize: layout.smallFontSize,
+          }).setOrigin(1, 0.5))
+        }
+      }
+      contentBottomY = Math.max(contentBottomY, logViewportTop + logViewportHeight)
     }
   }
 

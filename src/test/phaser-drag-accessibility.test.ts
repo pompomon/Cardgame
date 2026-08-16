@@ -158,4 +158,35 @@ describe('Phaser drag accessibility parity', () => {
     )).toBe(false)
     nav.remove()
   })
+
+  it('exposes replay log expand/collapse in the menu a11y controls', () => {
+    installBrowserStubs()
+    const controller = {} as ControllerApi
+    const container = new FakeElement()
+    const nav = createA11yNav(container as unknown as HTMLElement)
+    const view = gameplayView()
+    const toggleMenuLogExpanded = vi.fn()
+    const cardgameScene = {
+      isTargetPickerOpen: () => false,
+      isMenuOverlayOpen: () => true,
+      isMenuLogExpanded: () => false,
+      toggleMenuLogExpanded,
+    } as unknown as CardgameScene
+
+    nav.update(view, false, {
+      controller,
+      lobbyScene: null,
+      cardgameScene,
+      openRecordingFilePicker: vi.fn(),
+      handleDownloadRecording: vi.fn(),
+    })
+
+    const toggleButton = (nav.element as unknown as FakeElement).children.find(
+      (button) => button.textContent === 'Expand Replay Log',
+    )
+    expect(toggleButton).toBeTruthy()
+    toggleButton?.click()
+    expect(toggleMenuLogExpanded).toHaveBeenCalledOnce()
+    nav.remove()
+  })
 })
