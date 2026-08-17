@@ -275,6 +275,12 @@ and removes active overlays on unmount or game changes.
   pin-to-bottom semantics remain unit-tested.
 - **Reuse the shared `clamp` from `layout.ts`** rather than redeclaring a
   local one in `log-scroll.ts`.
+- **The Replay Log's expand/collapse state (`menuLogExpanded`) is tracked
+  independently of `menuOpen`.** Toggling it rebuilds the menu overlay
+  in-place (destroy + `openMenuOverlay(lastMenuView)`) rather than closing
+  the whole Menu; keep `log-scroll.ts`/`scrollable-viewport.ts` scroll math
+  untouched when changing collapse behavior — only the visual skin and the
+  new state flag should change.
 
 ## Lobby fallbacks
 

@@ -218,6 +218,18 @@ export function createA11yNav(container: HTMLElement): A11yNav {
     const menuModalOpen = cardgameScene?.isMenuOverlayOpen() ?? false
     if (menuModalOpen) {
       entries.push({ key: 'menu-close', label: 'Close Menu', onClick: () => closeSceneMenu() })
+      const menuLogExpanded = typeof cardgameScene?.isMenuLogExpanded === 'function'
+        ? cardgameScene.isMenuLogExpanded()
+        : true
+      entries.push({
+        key: 'menu-log-toggle',
+        label: `${menuLogExpanded ? 'Collapse' : 'Expand'} Replay Log`,
+        onClick: () => {
+          if (typeof cardgameScene?.toggleMenuLogExpanded === 'function') {
+            cardgameScene.toggleMenuLogExpanded()
+          }
+        },
+      })
     }
     entries.push({ key: 'recorder-download', label: 'Download Recording', onClick: () => {
       closeSceneMenu()

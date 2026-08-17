@@ -84,7 +84,7 @@ export function buildLogTiles(
   events: readonly LogEvent[],
   contentWidth: number,
   visualStyle: AppViewModel['cardVisualStyle'],
-  options: { activeActor: number; legacyLog?: readonly string[] },
+  options: { activeActor: number; legacyLog?: readonly string[]; textColor?: string; pillTextColor?: string },
 ): LogTilesContent {
   const container = scene.add.container(0, 0)
   const fontSize = parseFloat(layout.smallFontSize) || 12
@@ -94,6 +94,8 @@ export function buildLogTiles(
   const pillWidth = Math.max(22, Math.round(fontSize * 2.2))
   const tileHeight = Math.max(iconSize + tilePadding * 2, Math.round(fontSize * 2))
   const activeActor = options.activeActor
+  const textColor = options.textColor ?? UI_THEME.secondaryText
+  const pillTextColor = options.pillTextColor ?? UI_THEME.primaryText
 
   // Legacy fallback: when the structured event stream is missing (e.g.
   // back-filled to [] for a pre-LogEvent recording) but we still have raw
@@ -104,7 +106,7 @@ export function buildLogTiles(
     const { visible: visibleLines, omittedCount } = selectVisibleLegacyLogLines(options.legacyLog)
     if (omittedCount > 0) {
       const note = scene.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
-        color: UI_THEME.secondaryText,
+        color: textColor,
         fontSize: layout.smallFontSize,
         wordWrap: { width: Math.max(20, contentWidth) },
       }).setOrigin(0, 0)
@@ -116,7 +118,7 @@ export function buildLogTiles(
     }
     for (const line of visibleLines) {
       const labelText = scene.add.text(0, 0, line, {
-        color: UI_THEME.secondaryText,
+        color: textColor,
         fontSize: layout.smallFontSize,
         wordWrap: { width: Math.max(20, contentWidth) },
         maxLines: 2,
@@ -134,7 +136,7 @@ export function buildLogTiles(
 
   if (events.length === 0) {
     const empty = scene.add.text(0, 0, 'No log entries yet.', {
-      color: UI_THEME.secondaryText,
+      color: textColor,
       fontSize: layout.smallFontSize,
       wordWrap: { width: Math.max(40, contentWidth) },
     }).setOrigin(0, 0)
@@ -152,7 +154,7 @@ export function buildLogTiles(
   const { visible: visibleEvents, omittedCount } = selectVisibleLogEvents(events)
   if (omittedCount > 0) {
     const note = scene.add.text(0, cursorY + tilePadding, `… ${omittedCount} older entries omitted`, {
-      color: UI_THEME.secondaryText,
+      color: textColor,
       fontSize: layout.smallFontSize,
       wordWrap: { width: Math.max(20, contentWidth) },
     }).setOrigin(0, 0)
@@ -178,7 +180,7 @@ export function buildLogTiles(
     contentX += iconSize + 6
     const labelWidth = Math.max(20, contentWidth - contentX)
     const labelText = scene.add.text(0, 0, tile.label, {
-      color: UI_THEME.secondaryText,
+      color: textColor,
       fontSize: layout.smallFontSize,
       wordWrap: { width: labelWidth },
       maxLines: 2,
@@ -198,7 +200,7 @@ export function buildLogTiles(
         .setStrokeStyle(1, COLOR_BORDER_SUBTLE)
         .setOrigin(0, 0.5)
       const pillText = scene.add.text(pillWidth / 2, verticalCenter, `P${tile.actor + 1}`, {
-        color: UI_THEME.primaryText,
+        color: pillTextColor,
         fontSize: layout.smallFontSize,
       }).setOrigin(0.5, 0.5)
       row.add(pillBg)
@@ -210,7 +212,7 @@ export function buildLogTiles(
       addCardArtToContainer(scene, tile.cardName, visualStyle, iconX, verticalCenter, iconSize, row)
     } else {
       const glyph = scene.add.text(iconX, verticalCenter, tile.glyph, {
-        color: UI_THEME.secondaryText,
+        color: textColor,
         fontSize: layout.smallFontSize,
       }).setOrigin(0.5, 0.5)
       row.add(glyph)

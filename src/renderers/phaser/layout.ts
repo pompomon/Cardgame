@@ -199,9 +199,14 @@ export function buildLayout(
     ),
   )
   const actionButtonGap = clamp(actionButtonHeight * 0.2, 6, 12)
-  const cardWidth = clamp(safeWidth * (orientation === 'vertical' ? 0.13 : 0.09), 60, 120)
-  const cardHeight = clamp(cardWidth * 1.35, 84, 162)
-  const cardGap = clamp(cardWidth * 1.08, 66, 156)
+  // Physical Tabletop: cards are enlarged (~15% wider/taller than the prior
+  // baseline) so card art and the reserved label strip both read clearly.
+  // The effective-size fitting logic further down still shrinks cards to
+  // fit their battlefield row on tight viewports, so these are safe upper
+  // targets rather than guaranteed final sizes.
+  const cardWidth = clamp(safeWidth * (orientation === 'vertical' ? 0.15 : 0.105), 68, 138)
+  const cardHeight = clamp(cardWidth * 1.35, 96, 186)
+  const cardGap = clamp(cardWidth * 1.08, 76, 180)
 
   const headerTop = safeAreaTop + margin
   const headerHeight = actionButtonHeight + clamp(minDimension * 0.012, 6, 14)

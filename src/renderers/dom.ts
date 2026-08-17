@@ -129,11 +129,32 @@ function renderBattlefieldCard(
   return `<div class="dom-battlefield-card ${isTarget ? 'dom-battlefield-card--target' : ''}" data-battlefield-card-id="${escapeHtml(entry.instanceId)}"${previewAttrs}>${renderCardTile(entry.name, style)}${targetButton}</div>`
 }
 
+// Physical-tabletop deck/graveyard stack: a small offset 3-card silhouette
+// (reusing the hidden-hand-card stripe pattern) with the count badged on
+// top. An empty stack collapses to a flat, unshadowed placeholder instead of
+// drawing phantom cards.
+function renderCardStack(label: string, count: number): string {
+  const emptyClass = count > 0 ? '' : ' dom-card-stack--empty'
+  return `
+    <div class="dom-card-stack${emptyClass}" role="img" aria-label="${label}: ${count} cards">
+      <div class="dom-card-stack__layer"></div>
+      <div class="dom-card-stack__layer"></div>
+      <div class="dom-card-stack__layer"></div>
+      <span class="dom-card-stack__count" aria-hidden="true">${count}</span>
+      <span class="dom-card-stack__label" aria-hidden="true">${escapeHtml(label)}</span>
+    </div>
+  `
+}
+
 function renderPlayerSummary(player: PlayerUiState, playerIndex: number, controller: string, kind: 'active' | 'non-active'): string {
   return `
     <article class="player player-${kind} dom-player-summary" aria-label="Player ${playerIndex + 1} summary">
       <h3>Player ${playerIndex + 1} (${escapeHtml(controller)})${kind === 'active' ? ' — Active' : ''}</h3>
-      <p>Hand: ${player.handCount} • Deck: ${player.deckCount} • Graveyard: ${player.graveyardCount}</p>
+      <p>Hand: ${player.handCount}</p>
+      <div class="dom-player-stacks">
+        ${renderCardStack('Deck', player.deckCount)}
+        ${renderCardStack('Graveyard', player.graveyardCount)}
+      </div>
     </article>
   `
 }

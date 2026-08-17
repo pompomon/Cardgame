@@ -3,6 +3,7 @@ import type { BoardTheme } from '../../app/board-theme'
 import { DEPTH_BACKGROUND } from './depth'
 import type { SceneLayout } from './layout'
 import type { PhaserQualityProfile } from './quality'
+import { COLOR_TABLE_WOOD_BASE, COLOR_TABLE_WOOD_DARK, COLOR_TABLE_WOOD_LIGHT } from './theme'
 
 export interface CoverFitCrop {
   readonly x: number
@@ -31,9 +32,9 @@ export interface BoardBackgroundViewContext {
 
 const AMBIENCE_FRAME = 'ambient-mote'
 const THEME_FALLBACK_COLORS: Record<BoardTheme, number> = {
-  classic: 0x1b1148,
-  moonlit: 0x0d1638,
-  verdant: 0x12351f,
+  classic: COLOR_TABLE_WOOD_BASE,
+  moonlit: COLOR_TABLE_WOOD_DARK,
+  verdant: COLOR_TABLE_WOOD_LIGHT,
 }
 
 function positiveFinite(value: number): number {

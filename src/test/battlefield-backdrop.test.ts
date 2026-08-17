@@ -20,7 +20,7 @@ function ruleBody(selector: string): string {
   return (match?.[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
-describe('battlefield parchment backdrops', () => {
+describe('physical-tabletop felt backdrops', () => {
   describe('CSS tokens', () => {
     it('defines the --parchment-base token in :root', () => {
       expect(styleCss).toContain('--parchment-base:')
@@ -34,9 +34,13 @@ describe('battlefield parchment backdrops', () => {
       expect(value).toMatch(/^#[0-9a-fA-F]{3,8}$/)
     })
 
+    it('defines the --felt-base and --felt-active-glow tokens in :root', () => {
+      expect(styleCss).toContain('--felt-base:')
+      expect(styleCss).toContain('--felt-active-glow:')
+    })
   })
 
-  describe('gradient backgrounds', () => {
+  describe('felt play-area gradients', () => {
     it('.battlefield-active uses at least 2 gradient layers', () => {
       const body = ruleBody('.battlefield-active')
       const gradientCount = (body.match(/gradient\(/g) ?? []).length
@@ -49,12 +53,20 @@ describe('battlefield parchment backdrops', () => {
       expect(gradientCount).toBeGreaterThanOrEqual(2)
     })
 
-    it('active and non-active share the same parchment base gradient (visual consistency)', () => {
+    it('active and non-active share the same felt base gradient (visual consistency)', () => {
+      // Both battlefield states share one felt gradient declaration; only
+      // border colour + active-only glow differ.
       const activeBg = ruleBody('.battlefield-active')
       const nonActiveBg = ruleBody('.battlefield-non-active')
-      // Both should end with the same parchment linear-gradient as their fallback layer
-      expect(activeBg).toContain('#c4a060')
-      expect(nonActiveBg).toContain('#c4a060')
+      expect(activeBg).toContain('var(--felt-base)')
+      expect(nonActiveBg).toContain('var(--felt-base)')
+    })
+
+    it('only the active battlefield gets the lighting glow, not a full-panel colour tint', () => {
+      const activeBg = ruleBody('.battlefield-active')
+      const nonActiveBg = ruleBody('.battlefield-non-active')
+      expect(activeBg).toContain('--felt-active-glow')
+      expect(nonActiveBg).not.toContain('--felt-active-glow')
     })
   })
 

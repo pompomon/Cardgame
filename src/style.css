@@ -34,8 +34,29 @@
   --battlefield-active-bg: #7a5c2e;
   --battlefield-active-stroke: #72b048;
   --battlefield-nonactive-stroke: #b46878;
-  --player-active-bg: #1e4f7a;
-  --player-nonactive-bg: #4a1f5e;
+
+  /* Physical Tabletop — continuous wood table + felt play-area insets.
+     Both battlefields share the same felt tone; only the restrained border
+     colour (--battlefield-*-stroke, already defined above) and the active-
+     player lighting glow distinguish whose turn it is. Keep these mirrored
+     with the Phaser table/felt colour constants (COLOR_TABLE_... and
+     COLOR_FELT_...) in src/renderers/phaser/theme.ts. */
+  --table-wood-base: #6b4328;
+  --table-wood-light: #8a5c36;
+  --table-wood-dark: #422818;
+  --felt-base: #1f5c3d;
+  --felt-shadow: #123723;
+  --felt-active-glow: rgba(255, 226, 150, 0.4);
+
+  /* Parchment ledger (Replay Log) surface. */
+  --ledger-surface: #ecdcae;
+  --ledger-surface-strong: #e2cd92;
+  --ledger-border: #8a6d3a;
+  --ledger-text: #3b2b12;
+
+  /* Deck/graveyard physical card-stack shadow + edge tokens. */
+  --stack-shadow: rgba(0, 0, 0, 0.45);
+  --stack-edge: #5d7cff;
 
   /* Patterned tiles */
   --hidden-tile-stripe-a: #2c3a78;
@@ -281,31 +302,35 @@ textarea {
   image-rendering: auto;
 }
 
-/* Parchment backdrops (fantasy style): warm tan base with directional light,
-   edge vignette, and a status tint layer. The --battlefield-*-bg tokens
-   remain plain colours so color-mix() in .dom-drop-zone--over still works. */
+/* Physical Tabletop felt play-area insets. Both battlefields share the same
+   felt gradient (--felt-base → --felt-shadow) — status is communicated by a
+   restrained border colour (--battlefield-*-stroke) plus, for the active
+   side only, a soft directional lighting glow, not by a full-panel colour
+   tint. The --battlefield-active-bg token remains a plain colour so
+   color-mix() in .dom-drop-zone--over still works. */
 .battlefield-active {
   background:
-    radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.28) 100%),
-    linear-gradient(160deg, rgba(46, 110, 30, 0.40) 0%, rgba(15, 65, 8, 0.62) 100%),
-    linear-gradient(130deg, #c4a060 0%, #9e7e3a 48%, #b89050 100%);
-  border-color: var(--battlefield-active-stroke);
+    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.12) 0%, transparent 62%),
+    linear-gradient(160deg, var(--felt-base) 0%, var(--felt-shadow) 100%);
+  border: 2px solid var(--battlefield-active-stroke);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3), 0 0 18px 2px var(--felt-active-glow);
 }
 
 .battlefield-non-active {
   background:
-    radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.28) 100%),
-    linear-gradient(160deg, rgba(110, 30, 45, 0.40) 0%, rgba(75, 12, 25, 0.62) 100%),
-    linear-gradient(130deg, #c4a060 0%, #9e7e3a 48%, #b89050 100%);
+    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.12) 0%, transparent 62%),
+    linear-gradient(160deg, var(--felt-base) 0%, var(--felt-shadow) 100%);
   border-color: var(--battlefield-nonactive-stroke);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .player-active {
-  background: var(--player-active-bg);
+  border-color: var(--battlefield-active-stroke);
+  box-shadow: 0 0 14px 1px var(--felt-active-glow);
 }
 
 .player-non-active {
-  background: var(--player-nonactive-bg);
+  border-color: var(--battlefield-nonactive-stroke);
 }
 
 .battlefield-layout {
@@ -323,11 +348,14 @@ textarea {
   background: var(--surface-panel);
 }
 
+/* Parchment ledger: the Replay Log reads like a collapsible bound ledger
+   rather than a dark UI panel. Ink-toned text on aged parchment. */
 .log {
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--ledger-border);
   border-radius: 8px;
   padding: 10px;
-  background: var(--surface-log-viewport);
+  background: linear-gradient(180deg, var(--ledger-surface) 0%, var(--ledger-surface-strong) 100%);
+  color: var(--ledger-text);
   max-width: 25vw;
   max-height: 60vh;
   overflow: auto;
@@ -345,6 +373,7 @@ textarea {
 
 .log h3 {
   margin-top: 0;
+  color: var(--ledger-text);
 }
 
 .log ul {
@@ -408,7 +437,7 @@ textarea {
 /* DOM renderer HD/mobile foundation. Scoped under `.dom-cardgame` so Phaser
    host and Phaser accessibility overlays keep their existing sizing. */
 .dom-cardgame {
-  --dom-card-width: clamp(104px, 30vw, 156px);
+  --dom-card-width: clamp(116px, 34vw, 176px);
   --dom-card-height: calc(var(--dom-card-width) * 1.38);
   --dom-radius: 18px;
 }
@@ -495,6 +524,15 @@ textarea {
 .dom-board {
   display: grid;
   gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  /* Continuous wooden table: a subtle grain stripe layer over a lit
+     directional wood gradient. Both felt insets (.battlefield-active /
+     .battlefield-non-active) sit on top of this shared surface. */
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 2px, transparent 2px, transparent 7px),
+    linear-gradient(160deg, var(--table-wood-light) 0%, var(--table-wood-base) 46%, var(--table-wood-dark) 100%);
+  box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.35);
 }
 
 .dom-board__opponent,
@@ -509,7 +547,7 @@ textarea {
   bottom: 0;
   z-index: 8;
   padding: 10px 0 0;
-  background: linear-gradient(0deg, var(--surface-panel) 80%, rgba(31, 42, 94, 0));
+  background: linear-gradient(0deg, var(--table-wood-dark) 80%, rgba(66, 40, 24, 0));
 }
 
 .dom-player-summary,
@@ -530,6 +568,82 @@ textarea {
 
 .dom-section-heading h4 {
   margin: 0;
+}
+
+/* Deck/graveyard physical card stacks: 3 slightly offset "cards" behind the
+   count label, reusing the same face-down stripe pattern as hidden hand
+   cards for visual consistency. An empty stack collapses to a flat single
+   edge instead of drawing phantom cards. */
+.dom-player-stacks {
+  display: flex;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.dom-card-stack {
+  position: relative;
+  width: 34px;
+  height: 46px;
+}
+
+.dom-card-stack__layer {
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  border: 1px solid var(--stack-edge);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--hidden-tile-stripe-a),
+    var(--hidden-tile-stripe-a) 5px,
+    var(--hidden-tile-stripe-b) 5px,
+    var(--hidden-tile-stripe-b) 10px
+  );
+  box-shadow: 0 2px 4px var(--stack-shadow);
+}
+
+.dom-card-stack__layer:nth-child(1) {
+  transform: translate(0, 4px);
+  opacity: 0.55;
+}
+
+.dom-card-stack__layer:nth-child(2) {
+  transform: translate(0, 2px);
+  opacity: 0.78;
+}
+
+.dom-card-stack__layer:nth-child(3) {
+  transform: translate(0, 0);
+}
+
+.dom-card-stack--empty .dom-card-stack__layer {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+.dom-card-stack--empty .dom-card-stack__layer:nth-child(1),
+.dom-card-stack--empty .dom-card-stack__layer:nth-child(2) {
+  display: none;
+}
+
+.dom-card-stack__count {
+  position: absolute;
+  inset: auto -4px -8px auto;
+  min-width: 18px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(9, 13, 35, 0.85);
+  color: var(--text-primary);
+  font-size: 0.72em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.dom-card-stack__label {
+  display: block;
+  margin-top: 2px;
+  text-align: center;
+  font-size: 0.7em;
+  color: var(--text-secondary);
 }
 
 .dom-battlefield-row,
@@ -635,6 +749,7 @@ textarea {
   z-index: 1;
   margin-top: 7px;
   padding: 7px 8px;
+  min-height: 1.4em;
   border-radius: 10px;
   background: rgba(9, 13, 35, 0.78);
   color: var(--tile-text, var(--text-primary));
@@ -725,8 +840,25 @@ textarea {
   min-height: 44px;
   display: flex;
   align-items: center;
+  gap: 6px;
   font-weight: 800;
+  color: var(--ledger-text);
   cursor: pointer;
+  list-style: none;
+}
+
+.dom-log-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.dom-log-drawer summary::before {
+  content: '▸';
+  display: inline-block;
+  transition: transform 150ms ease;
+}
+
+.dom-log-drawer[open] summary::before {
+  transform: rotate(90deg);
 }
 
 .dom-target-hint {
@@ -821,7 +953,7 @@ textarea {
 
 @media (min-width: 760px) {
   .dom-cardgame {
-    --dom-card-width: clamp(126px, 14vw, 174px);
+    --dom-card-width: clamp(142px, 16vw, 196px);
   }
 
   .dom-card-preview__card {

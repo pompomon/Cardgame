@@ -1,5 +1,10 @@
 import Phaser from 'phaser'
 import { computeRoundedCoverTextureSize, paintRoundedCover, roundedCoverTextureKey } from './rounded-cover'
+// Physical Tabletop felt palette. Keep in sync with the CSS tokens in
+// src/style.css (--felt-base, --felt-shadow, --felt-active-glow) and with
+// the COLOR_FELT_*/COLOR_TABLE_WOOD_* constants in
+// src/renderers/phaser/theme.ts.
+import { COLOR_FELT_ACTIVE_GLOW, COLOR_FELT_BASE, COLOR_FELT_SHADOW } from './theme'
 
 export interface PolishedPanelConfig {
   fill: number
@@ -183,16 +188,10 @@ export function buildCardFrame(
   return frame
 }
 
-// Parchment battlefield backdrop palette. Keep in sync with the CSS tokens in
-// src/style.css (e.g. --parchment-base, --battlefield-*-stroke) and with the
-// COLOR_BATTLEFIELD_*_STROKE constants in src/renderers/phaser/index.ts.
-const BATTLEFIELD_PARCHMENT_BASE = 0xc4a060  // warm aged tan (= --parchment-base)
-const BATTLEFIELD_PARCHMENT_LIGHT = 0xd8bc80 // upper-left highlight shimmer
-const BATTLEFIELD_PARCHMENT_DARK = 0x7a5c2e  // lower-right depth shadow
-const BATTLEFIELD_ACTIVE_TINT = 0x3a7a28     // forest green tint (= active status)
-const BATTLEFIELD_ACTIVE_TINT_ALPHA = 0.38
-const BATTLEFIELD_NON_ACTIVE_TINT = 0x8a1c30 // deep crimson tint (= non-active status)
-const BATTLEFIELD_NON_ACTIVE_TINT_ALPHA = 0.38
+// Physical Tabletop felt palette. Keep in sync with the CSS tokens in
+// src/style.css (--felt-base, --felt-shadow, --felt-active-glow) and with
+// the COLOR_FELT_*/COLOR_TABLE_WOOD_* constants in
+// src/renderers/phaser/theme.ts.
 
 export interface BattlefieldBackdropConfig {
   width: number
@@ -203,18 +202,19 @@ export interface BattlefieldBackdropConfig {
 }
 
 /**
- * Builds a layered parchment-style backdrop for a battlefield panel.
+ * Builds a felt-inset backdrop for a battlefield play area.
  *
  * Visual layers (bottom → top):
  *   1. Drop shadow
- *   2. Warm tan parchment base
- *   3. Upper-left diagonal highlight (simulates curled-page brightening)
- *   4. Lower-right darkening zone (depth)
- *   5. Edge vignette strips (top + bottom)
- *   6. Status tint (forest-green for active, deep-crimson for non-active)
- *   7. Decorative stroke
+ *   2. Felt base gradient (linear, dark → base)
+ *   3. Soft upper-left sheen highlight
+ *   4. Restrained decorative stroke
+ *   5. Active-only soft directional lighting glow along the top edge
  *
- * Entirely procedural — no external texture assets required.
+ * Entirely procedural — no external texture assets required. Both active
+ * and non-active insets share the same felt tone; only the border colour
+ * and (for the active side) the lighting glow communicate whose turn it is
+ * — no full-panel colour tint.
  */
 export function buildBattlefieldBackdrop(
   scene: Phaser.Scene,
@@ -235,58 +235,34 @@ export function buildBattlefieldBackdrop(
   shadow.fillRoundedRect(-hw + 4, -hh + 4, width, height, radius)
   container.add(shadow)
 
-  // Layer 2: Parchment base
+  // Layer 2: Felt base (shared tone for both active/non-active insets)
   const base = scene.add.graphics()
-  base.fillStyle(BATTLEFIELD_PARCHMENT_BASE, 1)
+  base.fillStyle(COLOR_FELT_SHADOW, 1)
   base.fillRoundedRect(-hw, -hh, width, height, radius)
+  base.fillStyle(COLOR_FELT_BASE, 0.9)
+  base.fillRoundedRect(-hw, -hh, width, height * 0.7, { tl: radius, tr: radius, bl: 0, br: 0 })
   container.add(base)
 
-  // Layer 3: Upper-left diagonal highlight (parchment curl / light source)
-  const highlight = scene.add.graphics()
-  highlight.fillStyle(BATTLEFIELD_PARCHMENT_LIGHT, 0.2)
-  highlight.fillRoundedRect(
-    -hw + 2, -hh + 2,
-    width * 0.62, Math.min(height * 0.48, height - 4),
-    radius - 2,
-  )
-  container.add(highlight)
+  // Layer 3: Soft upper-left sheen (subtle, not a status colour tint)
+  const sheen = scene.add.graphics()
+  sheen.fillStyle(0xffffff, 0.08)
+  sheen.fillRoundedRect(-hw + 2, -hh + 2, width * 0.6, Math.min(height * 0.4, height - 4), radius - 2)
+  container.add(sheen)
 
-  // Layer 4: Lower-right depth shadow
-  const darkCorner = scene.add.graphics()
-  darkCorner.fillStyle(BATTLEFIELD_PARCHMENT_DARK, 0.24)
-  darkCorner.fillRoundedRect(
-    -hw + width * 0.38, -hh + height * 0.52,
-    width * 0.62, height * 0.48,
-    { tl: 0, tr: 0, bl: 0, br: radius },
-  )
-  container.add(darkCorner)
-
-  // Layer 5a: Top-edge vignette
-  const vigEdge = Math.max(4, height * 0.16)
-  const vigTop = scene.add.graphics()
-  vigTop.fillStyle(0x000000, 0.2)
-  vigTop.fillRoundedRect(-hw, -hh, width, vigEdge, { tl: radius, tr: radius, bl: 0, br: 0 })
-  container.add(vigTop)
-
-  // Layer 5b: Bottom-edge vignette
-  const vigBottom = scene.add.graphics()
-  vigBottom.fillStyle(0x000000, 0.16)
-  vigBottom.fillRoundedRect(-hw, hh - vigEdge, width, vigEdge, { tl: 0, tr: 0, bl: radius, br: radius })
-  container.add(vigBottom)
-
-  // Layer 6: Status tint overlay
-  const tintColor = isActive ? BATTLEFIELD_ACTIVE_TINT : BATTLEFIELD_NON_ACTIVE_TINT
-  const tintAlpha = isActive ? BATTLEFIELD_ACTIVE_TINT_ALPHA : BATTLEFIELD_NON_ACTIVE_TINT_ALPHA
-  const tint = scene.add.graphics()
-  tint.fillStyle(tintColor, tintAlpha)
-  tint.fillRoundedRect(-hw, -hh, width, height, radius)
-  container.add(tint)
-
-  // Layer 7: Decorative stroke
+  // Layer 4: Restrained decorative stroke — the primary status signal.
   const strokeLine = scene.add.graphics()
-  strokeLine.lineStyle(2, stroke, 0.88)
+  strokeLine.lineStyle(isActive ? 3 : 2, stroke, 0.92)
   strokeLine.strokeRoundedRect(-hw, -hh, width, height, radius)
   container.add(strokeLine)
+
+  // Layer 5: Active-only soft directional lighting glow along the top edge.
+  if (isActive) {
+    const glow = scene.add.graphics()
+    const glowHeight = Math.max(6, height * 0.22)
+    glow.fillStyle(COLOR_FELT_ACTIVE_GLOW, 0.16)
+    glow.fillRoundedRect(-hw, -hh, width, glowHeight, { tl: radius, tr: radius, bl: 0, br: 0 })
+    container.add(glow)
+  }
 
   container.setSize(width, height)
   return container

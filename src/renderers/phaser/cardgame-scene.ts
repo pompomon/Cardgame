@@ -57,6 +57,11 @@ export class CardgameScene extends Phaser.Scene {
   private menuContentScrollOffset: number | null = null
   private menuLogScrollOffset: number | null = null
   private menuLogPinnedToBottom = true
+  // Physical Tabletop: the Replay Log's collapsed/expanded state, tracked
+  // independently of `menuOpen` so it behaves like a ledger the player can
+  // tuck away without closing the whole Menu overlay.
+  private menuLogExpanded = true
+  private lastMenuView: AppViewModel | null = null
   // Tracks the seed of the game currently rendered in this scene.
   private lastRenderedSeed: number | null = null
   private lastMenuSignature: string | null = null
@@ -294,6 +299,7 @@ export class CardgameScene extends Phaser.Scene {
     this.menuContentScrollOffset = null
     this.menuLogScrollOffset = null
     this.menuLogPinnedToBottom = true
+    this.menuLogExpanded = true
     this.lastRenderedSeed = null
     this.lastMenuSignature = null
     this.lastLayoutSignature = ''
@@ -473,6 +479,7 @@ export class CardgameScene extends Phaser.Scene {
         this.dragController?.cancel('game-change')
         this.menuLogScrollOffset = null
         this.menuLogPinnedToBottom = true
+        this.menuLogExpanded = true
         // Reset ability-effect bookkeeping so a fresh game doesn't replay
         // animations queued from a previous match.
         this.effectController.reset()
@@ -610,6 +617,7 @@ export class CardgameScene extends Phaser.Scene {
     this.menuContentScrollOffset = null
     this.menuLogScrollOffset = null
     this.menuLogPinnedToBottom = true
+    this.menuLogExpanded = true
     this.lastMenuSignature = null
     overlay?.destroy(true)
     this.rendererRef.refreshA11yNavForCurrentView()
@@ -617,6 +625,22 @@ export class CardgameScene extends Phaser.Scene {
 
   isMenuOverlayOpen(): boolean {
     return this.menuOpen
+  }
+
+  isMenuLogExpanded(): boolean {
+    return this.menuLogExpanded
+  }
+
+  toggleMenuLogExpanded(): void {
+    this.menuLogExpanded = !this.menuLogExpanded
+    const overlayToRebuild = this.menuOverlay
+    this.menuOverlay = null
+    this.lastMenuSignature = null
+    overlayToRebuild?.destroy(true)
+    if (this.lastMenuView) {
+      this.openMenuOverlay(this.lastMenuView)
+    }
+    this.rendererRef.refreshA11yNavForCurrentView()
   }
 
   isTargetPickerOpen(): boolean {
@@ -649,6 +673,7 @@ export class CardgameScene extends Phaser.Scene {
     this.targetPicker.closeTargetPickerOverlay()
     this.battlefieldTargets.reset()
     this.menuOpen = true
+    this.lastMenuView = view
     this.statusText?.setVisible(false)
 
     const overlay = createMenuOverlay({
@@ -661,6 +686,10 @@ export class CardgameScene extends Phaser.Scene {
       menuContentScrollOffset: this.menuContentScrollOffset,
       menuLogScrollOffset: this.menuLogScrollOffset,
       menuLogPinnedToBottom: this.menuLogPinnedToBottom,
+      menuLogExpanded: this.menuLogExpanded,
+      toggleMenuLogExpanded: () => {
+        this.toggleMenuLogExpanded()
+      },
       createButton: (label, x, y, onClick, width, height, fontSize) => this.createButton(label, x, y, onClick, width, height, fontSize),
       popupActionWidth: (maxWidth, ratio, minWidth) => popupActionWidth(maxWidth, ratio, minWidth),
       onDestroy: (destroyedOverlay) => {
