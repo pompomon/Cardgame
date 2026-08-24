@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:bench": "vitest bench src/test/ai-perf.bench.ts --outputJson .ai-bench-report.json && node scripts/check-ai-bench.mjs .ai-bench-report.json",
     "generate:card-art": "node scripts/generate-card-art.mjs",
-    "generate:photoreal-card-art": "node scripts/generate-photoreal-card-art.mjs"
+    "generate:photoreal-card-art": "node scripts/generate-photoreal-card-art.mjs",
+    "generate:board-backgrounds": "node scripts/generate-board-backgrounds.mjs"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
