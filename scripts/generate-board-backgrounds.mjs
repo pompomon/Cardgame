@@ -181,6 +181,8 @@ function drawDust(buffer, theme, seed) {
 function drawPattern(buffer, theme, seed) {
   const tile = theme.tileSize
   const plankCount = theme.planks
+  const grainStrength = clamp(Number.isFinite(theme.grain) ? theme.grain : 0.18, 0, 1)
+  const highlight = rgbFromList(theme.highlight)
   for (let y = 0; y < buffer.height; y += 1) {
     for (let x = 0; x < buffer.width; x += 1) {
       const nx = x / (tile * 1.2)
@@ -188,12 +190,12 @@ function drawPattern(buffer, theme, seed) {
       const plankBand = Math.floor((x / buffer.width) * plankCount + (y / buffer.height) * 0.75)
       const grain = hash2d(seed + plankBand, Math.floor(nx * 33), Math.floor(ny * 22))
       const streak = Math.sin((x + seed * 17) / 18 + (y + seed * 9) / 12) * 0.5 + 0.5
-      const woodMix = clamp((grain * 0.8 + streak * 0.2 + (plankBand % 2) * 0.1), 0, 1)
+      const woodMix = clamp((grain * (0.45 + grainStrength) + streak * 0.2 + (plankBand % 2) * 0.1), 0, 1)
       const dark = { r: theme.woodDark[0], g: theme.woodDark[1], b: theme.woodDark[2] }
       const light = { r: theme.woodLight[0], g: theme.woodLight[1], b: theme.woodLight[2] }
       const base = { r: theme.woodBase[0], g: theme.woodBase[1], b: theme.woodBase[2] }
       const selected = blendColor(base, woodMix > 0.5 ? light : dark, 0.6)
-      const warm = blendColor(selected, theme.highlight, 0.12 + streak * 0.08)
+      const warm = blendColor(selected, highlight, 0.12 + streak * 0.08)
       setPixel(buffer, x, y, warm)
     }
   }
