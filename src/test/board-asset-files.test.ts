@@ -1,6 +1,9 @@
-import { readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+
+import { generateThemeOutputs } from '../../scripts/generate-board-backgrounds.mjs'
 import {
   ALL_BOARD_ATLAS_ASSETS,
   ALL_BOARD_BACKGROUND_ASSETS,
@@ -94,6 +97,58 @@ describe('board asset files', () => {
       expect(Object.keys(atlas.frames ?? {})).toEqual(expectedFrames(asset.name))
       expect(atlas.meta?.size?.w ?? atlas.meta?.size?.width).toBe(textureSize.width)
       expect(atlas.meta?.size?.h ?? atlas.meta?.size?.height).toBe(textureSize.height)
+    }
+  })
+
+  it('renders deterministic outputs for every board background preset', () => {
+    const firstRoot = mkdtempSync(join(tmpdir(), 'board-bg-'))
+    const secondRoot = mkdtempSync(join(tmpdir(), 'board-bg-'))
+
+    try {
+      const smallVariants = [
+        ['hd', 96, 54],
+        ['balanced', 64, 36],
+        ['low', 48, 27],
+        ['fallback', 32, 18],
+      ] as const
+      const expectedSizes = new Map<string, { width: number; height: number }>(smallVariants.map(
+        ([variantName, width, height]) => [variantName, { width, height }],
+      ))
+      const expectedFiles = generateThemeOutputs({ outputRoot: firstRoot, variants: smallVariants })
+      generateThemeOutputs({ outputRoot: secondRoot, variants: smallVariants })
+
+      expect(expectedFiles).toHaveLength(12)
+      expect(expectedFiles).toEqual([
+        'classic/background-hd.png',
+        'classic/background-balanced.png',
+        'classic/background-low.png',
+        'classic/background-fallback.png',
+        'moonlit/background-hd.png',
+        'moonlit/background-balanced.png',
+        'moonlit/background-low.png',
+        'moonlit/background-fallback.png',
+        'verdant/background-hd.png',
+        'verdant/background-balanced.png',
+        'verdant/background-low.png',
+        'verdant/background-fallback.png',
+      ])
+
+      for (const relativePath of expectedFiles) {
+        const firstPath = join(firstRoot, relativePath)
+        const secondPath = join(secondRoot, relativePath)
+        const firstBytes = readFileSync(firstPath)
+        const secondBytes = readFileSync(secondPath)
+        expect(firstBytes).toEqual(secondBytes)
+
+        const info = readPngSize(firstPath)
+        const variantName = relativePath.split('/').slice(-1)[0].replace(/^background-/, '').replace(/\.png$/, '')
+        expect(info.width).toBe(expectedSizes.get(variantName)?.width)
+        expect(info.height).toBe(expectedSizes.get(variantName)?.height)
+        expect(info.width / info.height).toBeCloseTo(16 / 9, 5)
+      }
+    } finally {
+      rmSync(firstRoot, { recursive: true, force: true })
+      rmSync(secondRoot, { recursive: true, force: true })
     }
   })
 })

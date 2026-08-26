@@ -221,6 +221,10 @@ function drawFeltCenter(buffer, theme, seed) {
   const cy = buffer.height * 0.5
   const rx = buffer.width * 0.58
   const ry = buffer.height * 0.68
+  const colorBase = { r: theme.feltBase[0], g: theme.feltBase[1], b: theme.feltBase[2] }
+  const colorLight = { r: theme.feltLight[0], g: theme.feltLight[1], b: theme.feltLight[2] }
+  const colorDark = { r: theme.feltDark[0], g: theme.feltDark[1], b: theme.feltDark[2] }
+  const accent = { r: theme.accent[0], g: theme.accent[1], b: theme.accent[2] }
 
   for (let y = 0; y < buffer.height; y += 1) {
     const dy = (y - cy) / ry
@@ -229,23 +233,15 @@ function drawFeltCenter(buffer, theme, seed) {
       const dist = dx * dx + dy * dy
       if (dist > 1.15) continue
       const falloff = clamp(1 - dist, 0, 1)
-      const colorBase = {
-        r: theme.feltBase[0],
-        g: theme.feltBase[1],
-        b: theme.feltBase[2],
-      }
-      const colorLight = {
-        r: theme.feltLight[0],
-        g: theme.feltLight[1],
-        b: theme.feltLight[2],
-      }
       const weave = hash2d(seed + 91, Math.floor(x / 22), Math.floor(y / 22))
       const stripe = Math.sin((x + seed * 9) * 0.18) * 0.5 + 0.5
-      const blend = clamp(0.35 + weave * 0.35 + stripe * 0.2 + falloff * 0.2, 0, 1)
-      const chosen = blendColor(colorBase, colorLight, blend)
+      const tonalMix = clamp(0.35 + weave * 0.35 + stripe * 0.2 + falloff * 0.2, 0, 1)
+      const withDark = blendColor(colorBase, colorDark, 0.18 + tonalMix * 0.22)
+      const withLight = blendColor(withDark, colorLight, 0.22 + tonalMix * 0.42)
+      const withAccent = blendColor(withLight, accent, 0.06 + falloff * 0.18 + (1 - tonalMix) * 0.04)
       const index = (y * buffer.width + x) * 4
       const current = { r: buffer.data[index], g: buffer.data[index + 1], b: buffer.data[index + 2] }
-      const composite = blendColor(current, chosen, 0.72 * falloff + 0.14)
+      const composite = blendColor(current, withAccent, 0.72 * falloff + 0.14)
       buffer.data[index] = composite.r
       buffer.data[index + 1] = composite.g
       buffer.data[index + 2] = composite.b
@@ -253,8 +249,15 @@ function drawFeltCenter(buffer, theme, seed) {
   }
 }
 
-function renderBackground(themeName, width, height) {
-  const theme = JSON.parse(readFileSync(THEMES_PATH, 'utf8'))[themeName]
+export function readThemes() {
+  return JSON.parse(readFileSync(THEMES_PATH, 'utf8'))
+}
+
+export function renderBackground(themeName, width, height, themes = readThemes()) {
+  const theme = themes[themeName]
+  if (!theme) {
+    throw new Error(`Unknown board background theme: ${themeName}`)
+  }
   const buffer = createBuffer(width, height)
   const seed = themeName.length * 13.37 + width * 0.31 + height * 0.17
 
@@ -268,24 +271,25 @@ function renderBackground(themeName, width, height) {
   return encodePng(width, height, rgba)
 }
 
-function ensureOutputFolder(themeName) {
-  mkdirSync(resolve(OUTPUT_ROOT, themeName), { recursive: true })
-}
-
-function writeVariant(themeName, name, width, height) {
-  ensureOutputFolder(themeName)
-  const png = renderBackground(themeName, width, height)
-  writeFileSync(resolve(OUTPUT_ROOT, themeName, `background-${name}.png`), png)
+export function generateThemeOutputs({ outputRoot = OUTPUT_ROOT, themes = readThemes(), variants = OUTPUT_VARIANTS } = {}) {
+  for (const themeName of Object.keys(themes)) {
+    mkdirSync(resolve(outputRoot, themeName), { recursive: true })
+    for (const [variantName, width, height] of variants) {
+      const png = renderBackground(themeName, width, height, themes)
+      writeFileSync(resolve(outputRoot, themeName, `background-${variantName}.png`), png)
+    }
+  }
+  return Object.keys(themes).flatMap((themeName) => variants.map(
+    ([variantName]) => `${themeName}/background-${variantName}.png`,
+  ))
 }
 
 function main() {
-  const themes = JSON.parse(readFileSync(THEMES_PATH, 'utf8'))
-  for (const themeName of Object.keys(themes)) {
-    for (const [variantName, width, height] of OUTPUT_VARIANTS) {
-      writeVariant(themeName, variantName, width, height)
-    }
-  }
+  const themes = readThemes()
+  generateThemeOutputs({ outputRoot: OUTPUT_ROOT, themes })
   console.log(`Generated ${Object.keys(themes).length} theme presets with ${OUTPUT_VARIANTS.length} variants each.`)
 }
 
-main()
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main()
+}
