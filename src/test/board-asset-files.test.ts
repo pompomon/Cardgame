@@ -1,9 +1,8 @@
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-
-import { generateThemeOutputs } from '../../scripts/generate-board-backgrounds.mjs'
 import {
   ALL_BOARD_ATLAS_ASSETS,
   ALL_BOARD_BACKGROUND_ASSETS,
@@ -16,6 +15,7 @@ import {
 } from '../renderers/phaser/asset-manifest'
 
 const PUBLIC_ROOT = resolve(__dirname, '..', '..', 'public')
+const GENERATOR_PATH = resolve(__dirname, '..', '..', 'scripts', 'generate-board-backgrounds.mjs')
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const MINIMUM_BACKGROUND_SIZE: Record<
   BoardBackgroundVariant,
@@ -114,11 +114,28 @@ describe('board asset files', () => {
       const expectedSizes = new Map<string, { width: number; height: number }>(smallVariants.map(
         ([variantName, width, height]) => [variantName, { width, height }],
       ))
-      const expectedFiles = generateThemeOutputs({ outputRoot: firstRoot, variants: smallVariants })
-      generateThemeOutputs({ outputRoot: secondRoot, variants: smallVariants })
 
-      expect(expectedFiles).toHaveLength(12)
-      expect(expectedFiles).toEqual([
+      const makeVariantList = (variants: readonly (readonly [string, number, number])[]) =>
+        variants.map(([name, width, height]) => `${name}:${width}:${height}`).join(';')
+
+      const runGenerator = (outputRoot: string): void => {
+        const result = spawnSync(process.execPath, [
+          GENERATOR_PATH,
+          '--output',
+          outputRoot,
+          '--variants',
+          makeVariantList(smallVariants),
+        ], {
+          cwd: resolve(__dirname, '..', '..'),
+          stdio: 'pipe',
+        })
+        expect(result.status).toBe(0)
+      }
+
+      runGenerator(firstRoot)
+      runGenerator(secondRoot)
+
+      const expectedFiles = [
         'classic/background-hd.png',
         'classic/background-balanced.png',
         'classic/background-low.png',
@@ -131,7 +148,9 @@ describe('board asset files', () => {
         'verdant/background-balanced.png',
         'verdant/background-low.png',
         'verdant/background-fallback.png',
-      ])
+      ]
+
+      expect(expectedFiles).toHaveLength(12)
 
       for (const relativePath of expectedFiles) {
         const firstPath = join(firstRoot, relativePath)

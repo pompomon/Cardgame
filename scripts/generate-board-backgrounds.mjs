@@ -284,10 +284,34 @@ export function generateThemeOutputs({ outputRoot = OUTPUT_ROOT, themes = readTh
   ))
 }
 
-function main() {
+function parseVariants(input) {
+  if (!input) {
+    return OUTPUT_VARIANTS
+  }
+  return input.split(';').map((entry) => {
+    const [variantName, width, height] = entry.split(':')
+    return [variantName, Number(width), Number(height)]
+  })
+}
+
+function main(argv = process.argv.slice(2)) {
   const themes = readThemes()
-  generateThemeOutputs({ outputRoot: OUTPUT_ROOT, themes })
-  console.log(`Generated ${Object.keys(themes).length} theme presets with ${OUTPUT_VARIANTS.length} variants each.`)
+  let outputRoot = OUTPUT_ROOT
+  let variants = OUTPUT_VARIANTS
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index]
+    if (current === '--output') {
+      outputRoot = argv[index + 1]
+      index += 1
+      continue
+    }
+    if (current === '--variants') {
+      variants = parseVariants(argv[index + 1])
+      index += 1
+    }
+  }
+  generateThemeOutputs({ outputRoot, themes, variants })
+  console.log(`Generated ${Object.keys(themes).length} theme presets with ${variants.length} variants each.`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
