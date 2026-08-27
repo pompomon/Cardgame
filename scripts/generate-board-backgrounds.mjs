@@ -314,6 +314,6 @@ function main(argv = process.argv.slice(2)) {
   console.log(`Generated ${Object.keys(themes).length} theme presets with ${variants.length} variants each.`)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   main()
 }
