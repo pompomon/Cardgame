@@ -13,6 +13,21 @@ const OUTPUT_VARIANTS = [
   ['low', 960, 540],
   ['fallback', 640, 360],
 ]
+const COLOR_KEYS = [
+  'woodLight',
+  'woodBase',
+  'woodDark',
+  'feltLight',
+  'feltBase',
+  'feltDark',
+  'highlight',
+  'shadow',
+  'dust',
+  'accent',
+]
+const THEME_KEYS = new Set(['label', ...COLOR_KEYS, 'grain', 'planks', 'tileSize', 'vignette'])
+const SAFE_NAME = /^[a-z0-9][a-z0-9-]*$/
+const MAX_VARIANT_DIMENSION = 4096
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
@@ -249,8 +264,62 @@ function drawFeltCenter(buffer, theme, seed) {
   }
 }
 
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function assertNumber(value, name, minimum, maximum, integer = false) {
+  if (
+    typeof value !== 'number'
+    || !Number.isFinite(value)
+    || value < minimum
+    || value > maximum
+    || (integer && !Number.isInteger(value))
+  ) {
+    throw new Error(`${name} must be ${integer ? 'an integer' : 'a number'} from ${minimum} to ${maximum}`)
+  }
+}
+
+export function validateThemes(value) {
+  if (!isRecord(value) || Object.keys(value).length === 0) {
+    throw new Error('Board background themes must be a non-empty object')
+  }
+  for (const [themeName, theme] of Object.entries(value)) {
+    if (!SAFE_NAME.test(themeName) || !isRecord(theme)) {
+      throw new Error(`Invalid board background theme: ${themeName}`)
+    }
+    for (const key of THEME_KEYS) {
+      if (!(key in theme)) {
+        throw new Error(`Theme ${themeName} is missing ${key}`)
+      }
+    }
+    for (const key of Object.keys(theme)) {
+      if (!THEME_KEYS.has(key)) {
+        throw new Error(`Theme ${themeName} has unknown setting ${key}`)
+      }
+    }
+    if (typeof theme.label !== 'string' || theme.label.trim() === '') {
+      throw new Error(`Theme ${themeName} must have a label`)
+    }
+    for (const key of COLOR_KEYS) {
+      const color = theme[key]
+      if (!Array.isArray(color) || color.length !== 3) {
+        throw new Error(`Theme ${themeName}.${key} must be an RGB tuple`)
+      }
+      color.forEach((channel, index) => {
+        assertNumber(channel, `${themeName}.${key}[${index}]`, 0, 255, true)
+      })
+    }
+    assertNumber(theme.grain, `${themeName}.grain`, 0, 1)
+    assertNumber(theme.planks, `${themeName}.planks`, 1, 100, true)
+    assertNumber(theme.tileSize, `${themeName}.tileSize`, 1, 4096, true)
+    assertNumber(theme.vignette, `${themeName}.vignette`, 0.01, 1)
+  }
+  return value
+}
+
 export function readThemes() {
-  return JSON.parse(readFileSync(THEMES_PATH, 'utf8'))
+  return validateThemes(JSON.parse(readFileSync(THEMES_PATH, 'utf8')))
 }
 
 export function renderBackground(themeName, width, height, themes = readThemes()) {
@@ -284,13 +353,32 @@ export function generateThemeOutputs({ outputRoot = OUTPUT_ROOT, themes = readTh
   ))
 }
 
-function parseVariants(input) {
-  if (!input) {
+export function parseVariants(input) {
+  if (input === undefined) {
     return OUTPUT_VARIANTS
   }
+  if (typeof input !== 'string' || input.length === 0) {
+    throw new Error('Variants must not be empty')
+  }
   return input.split(';').map((entry) => {
-    const [variantName, width, height] = entry.split(':')
-    return [variantName, Number(width), Number(height)]
+    const parts = entry.split(':')
+    if (parts.length !== 3) {
+      throw new Error(`Invalid board background variant: ${entry}`)
+    }
+    const [variantName, widthText, heightText] = parts
+    if (
+      !SAFE_NAME.test(variantName)
+      || !/^[1-9]\d*$/.test(widthText)
+      || !/^[1-9]\d*$/.test(heightText)
+    ) {
+      throw new Error(`Invalid board background variant: ${entry}`)
+    }
+    const width = Number(widthText)
+    const height = Number(heightText)
+    if (width > MAX_VARIANT_DIMENSION || height > MAX_VARIANT_DIMENSION) {
+      throw new Error(`Board background variant dimensions must not exceed ${MAX_VARIANT_DIMENSION}`)
+    }
+    return [variantName, width, height]
   })
 }
 
@@ -301,19 +389,29 @@ function main(argv = process.argv.slice(2)) {
   for (let index = 0; index < argv.length; index += 1) {
     const current = argv[index]
     if (current === '--output') {
-      outputRoot = argv[index + 1]
+      const value = argv[index + 1]
+      if (!value || value.startsWith('--')) {
+        throw new Error('--output requires a value')
+      }
+      outputRoot = value
       index += 1
       continue
     }
     if (current === '--variants') {
-      variants = parseVariants(argv[index + 1])
+      const value = argv[index + 1]
+      if (!value || value.startsWith('--')) {
+        throw new Error('--variants requires a value')
+      }
+      variants = parseVariants(value)
       index += 1
+      continue
     }
+    throw new Error(`Unknown option: ${current}`)
   }
   generateThemeOutputs({ outputRoot, themes, variants })
   console.log(`Generated ${Object.keys(themes).length} theme presets with ${variants.length} variants each.`)
 }
 
-if (fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   main()
 }

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   ALL_BOARD_ATLAS_ASSETS,
@@ -169,5 +170,73 @@ describe('board asset files', () => {
       rmSync(firstRoot, { recursive: true, force: true })
       rmSync(secondRoot, { recursive: true, force: true })
     }
+  })
+
+  it('rejects invalid generator options and variants', () => {
+    const invalidArguments = [
+      ['--unknown'],
+      ['--output'],
+      ['--output', '--variants'],
+      ['--variants'],
+      ['--variants', ''],
+      ['--variants', 'hd::54'],
+      ['--variants', 'hd:-1:54'],
+      ['--variants', 'hd:96.5:54'],
+      ['--variants', 'hd:4097:54'],
+      ['--variants', '../hd:96:54'],
+    ]
+
+    for (const args of invalidArguments) {
+      const result = spawnSync(process.execPath, [GENERATOR_PATH, ...args], {
+        cwd: resolve(__dirname, '..', '..'),
+        encoding: 'utf8',
+      })
+      expect(result.status, args.join(' ')).not.toBe(0)
+    }
+  })
+
+  it('validates imported board background presets', () => {
+    const moduleUrl = pathToFileURL(GENERATOR_PATH).href
+    const source = `
+      const { readThemes, validateThemes } = await import(${JSON.stringify(moduleUrl)})
+      const themes = readThemes()
+      const invalidThemes = [
+        { ...themes, '../escape': themes.classic },
+        { ...themes, classic: { ...themes.classic, unexpected: true } },
+        { ...themes, classic: { ...themes.classic, woodDark: [0, 1] } },
+        { ...themes, classic: { ...themes.classic, woodDark: [0, 1, 256] } },
+        { ...themes, classic: { ...themes.classic, grain: Infinity } },
+        { ...themes, classic: { ...themes.classic, planks: 1.5 } },
+        { ...themes, classic: { ...themes.classic, tileSize: 0 } },
+        { ...themes, classic: { ...themes.classic, vignette: 2 } },
+      ]
+      for (const invalidTheme of invalidThemes) {
+        let rejected = false
+        try {
+          validateThemes(invalidTheme)
+        } catch {
+          rejected = true
+        }
+        if (!rejected) process.exit(1)
+      }
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', source], {
+      cwd: resolve(__dirname, '..', '..'),
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+  })
+
+  it('can be imported when the process has no entry script', () => {
+    const moduleUrl = pathToFileURL(GENERATOR_PATH).href
+    const result = spawnSync(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      `await import(${JSON.stringify(moduleUrl)})`,
+    ], {
+      cwd: resolve(__dirname, '..', '..'),
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
   })
 })
