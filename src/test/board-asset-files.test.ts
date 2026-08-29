@@ -1,5 +1,8 @@
-import { readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   ALL_BOARD_ATLAS_ASSETS,
@@ -13,6 +16,7 @@ import {
 } from '../renderers/phaser/asset-manifest'
 
 const PUBLIC_ROOT = resolve(__dirname, '..', '..', 'public')
+const GENERATOR_PATH = resolve(__dirname, '..', '..', 'scripts', 'generate-board-backgrounds.mjs')
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const MINIMUM_BACKGROUND_SIZE: Record<
   BoardBackgroundVariant,
@@ -95,5 +99,144 @@ describe('board asset files', () => {
       expect(atlas.meta?.size?.w ?? atlas.meta?.size?.width).toBe(textureSize.width)
       expect(atlas.meta?.size?.h ?? atlas.meta?.size?.height).toBe(textureSize.height)
     }
+  })
+
+  it('renders deterministic outputs for every board background preset', () => {
+    const firstRoot = mkdtempSync(join(tmpdir(), 'board-bg-'))
+    const secondRoot = mkdtempSync(join(tmpdir(), 'board-bg-'))
+
+    try {
+      const smallVariants = [
+        ['hd', 96, 54],
+        ['balanced', 64, 36],
+        ['low', 48, 27],
+        ['fallback', 32, 18],
+      ] as const
+      const expectedSizes = new Map<string, { width: number; height: number }>(smallVariants.map(
+        ([variantName, width, height]) => [variantName, { width, height }],
+      ))
+
+      const makeVariantList = (variants: readonly (readonly [string, number, number])[]) =>
+        variants.map(([name, width, height]) => `${name}:${width}:${height}`).join(';')
+
+      const runGenerator = (outputRoot: string): void => {
+        const result = spawnSync(process.execPath, [
+          GENERATOR_PATH,
+          '--output',
+          outputRoot,
+          '--variants',
+          makeVariantList(smallVariants),
+        ], {
+          cwd: resolve(__dirname, '..', '..'),
+          stdio: 'pipe',
+        })
+        expect(result.status).toBe(0)
+      }
+
+      runGenerator(firstRoot)
+      runGenerator(secondRoot)
+
+      const expectedFiles = [
+        'classic/background-hd.png',
+        'classic/background-balanced.png',
+        'classic/background-low.png',
+        'classic/background-fallback.png',
+        'moonlit/background-hd.png',
+        'moonlit/background-balanced.png',
+        'moonlit/background-low.png',
+        'moonlit/background-fallback.png',
+        'verdant/background-hd.png',
+        'verdant/background-balanced.png',
+        'verdant/background-low.png',
+        'verdant/background-fallback.png',
+      ]
+
+      expect(expectedFiles).toHaveLength(12)
+
+      for (const relativePath of expectedFiles) {
+        const firstPath = join(firstRoot, relativePath)
+        const secondPath = join(secondRoot, relativePath)
+        const firstBytes = readFileSync(firstPath)
+        const secondBytes = readFileSync(secondPath)
+        expect(firstBytes).toEqual(secondBytes)
+
+        const info = readPngSize(firstPath)
+        const variantName = relativePath.split('/').slice(-1)[0].replace(/^background-/, '').replace(/\.png$/, '')
+        expect(info.width).toBe(expectedSizes.get(variantName)?.width)
+        expect(info.height).toBe(expectedSizes.get(variantName)?.height)
+        expect(info.width / info.height).toBeCloseTo(16 / 9, 5)
+      }
+    } finally {
+      rmSync(firstRoot, { recursive: true, force: true })
+      rmSync(secondRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects invalid generator options and variants', () => {
+    const invalidArguments = [
+      ['--unknown'],
+      ['--output'],
+      ['--output', '--variants'],
+      ['--variants'],
+      ['--variants', ''],
+      ['--variants', 'hd::54'],
+      ['--variants', 'hd:-1:54'],
+      ['--variants', 'hd:96.5:54'],
+      ['--variants', 'hd:4097:54'],
+      ['--variants', '../hd:96:54'],
+    ]
+
+    for (const args of invalidArguments) {
+      const result = spawnSync(process.execPath, [GENERATOR_PATH, ...args], {
+        cwd: resolve(__dirname, '..', '..'),
+        encoding: 'utf8',
+      })
+      expect(result.status, args.join(' ')).not.toBe(0)
+    }
+  })
+
+  it('validates imported board background presets', () => {
+    const moduleUrl = pathToFileURL(GENERATOR_PATH).href
+    const source = `
+      const { readThemes, validateThemes } = await import(${JSON.stringify(moduleUrl)})
+      const themes = readThemes()
+      const invalidThemes = [
+        { ...themes, '../escape': themes.classic },
+        { ...themes, classic: { ...themes.classic, unexpected: true } },
+        { ...themes, classic: { ...themes.classic, woodDark: [0, 1] } },
+        { ...themes, classic: { ...themes.classic, woodDark: [0, 1, 256] } },
+        { ...themes, classic: { ...themes.classic, grain: Infinity } },
+        { ...themes, classic: { ...themes.classic, planks: 1.5 } },
+        { ...themes, classic: { ...themes.classic, tileSize: 0 } },
+        { ...themes, classic: { ...themes.classic, vignette: 2 } },
+      ]
+      for (const invalidTheme of invalidThemes) {
+        let rejected = false
+        try {
+          validateThemes(invalidTheme)
+        } catch {
+          rejected = true
+        }
+        if (!rejected) process.exit(1)
+      }
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', source], {
+      cwd: resolve(__dirname, '..', '..'),
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+  })
+
+  it('can be imported when the process has no entry script', () => {
+    const moduleUrl = pathToFileURL(GENERATOR_PATH).href
+    const result = spawnSync(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      `await import(${JSON.stringify(moduleUrl)})`,
+    ], {
+      cwd: resolve(__dirname, '..', '..'),
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
   })
 })

@@ -1,0 +1,53 @@
+{
+  "classic": {
+    "label": "Classic",
+    "woodLight": [143, 103, 62],
+    "woodBase": [107, 67, 40],
+    "woodDark": [58, 34, 20],
+    "feltLight": [22, 84, 53],
+    "feltBase": [15, 64, 42],
+    "feltDark": [10, 39, 27],
+    "highlight": [206, 165, 109],
+    "shadow": [28, 16, 10],
+    "dust": [224, 214, 180],
+    "grain": 0.18,
+    "planks": 8,
+    "tileSize": 128,
+    "vignette": 0.5,
+    "accent": [196, 149, 88]
+  },
+  "moonlit": {
+    "label": "Moonlit",
+    "woodLight": [88, 98, 120],
+    "woodBase": [52, 58, 75],
+    "woodDark": [25, 29, 39],
+    "feltLight": [35, 49, 70],
+    "feltBase": [22, 31, 48],
+    "feltDark": [12, 17, 26],
+    "highlight": [185, 205, 245],
+    "shadow": [7, 12, 19],
+    "dust": [204, 220, 255],
+    "grain": 0.2,
+    "planks": 10,
+    "tileSize": 144,
+    "vignette": 0.58,
+    "accent": [145, 179, 255]
+  },
+  "verdant": {
+    "label": "Verdant",
+    "woodLight": [119, 90, 59],
+    "woodBase": [86, 61, 42],
+    "woodDark": [41, 27, 19],
+    "feltLight": [27, 86, 58],
+    "feltBase": [17, 63, 43],
+    "feltDark": [11, 41, 29],
+    "highlight": [175, 212, 152],
+    "shadow": [16, 18, 14],
+    "dust": [215, 230, 182],
+    "grain": 0.22,
+    "planks": 9,
+    "tileSize": 136,
+    "vignette": 0.52,
+    "accent": [116, 178, 122]
+  }
+}

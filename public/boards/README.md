@@ -36,3 +36,7 @@ These paths are not content-hashed. The service worker handles `/boards/*` and
 `/sprites/*` network-first, matching `/cards/*`, and keeps the latest successful
 response for offline fallback. Replace-in-place releases must bump
 `CACHE_VERSION` in `public/sw.js`.
+
+The background PNGs are intentionally generated from the preset definitions in
+`tools/board-backgrounds/themes.json` by the manual script
+`npm run generate:board-backgrounds`.

@@ -21,6 +21,10 @@ declare module 'node:os' {
   export function tmpdir(): string
 }
 
+declare module 'node:url' {
+  export function pathToFileURL(path: string): { href: string }
+}
+
 declare module 'node:child_process' {
   export function spawnSync(
     command: string,
