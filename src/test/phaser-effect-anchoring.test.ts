@@ -112,4 +112,35 @@ describe('Phaser effect anchoring', () => {
     )
     expect(result.y).toBe(175)
   })
+
+  it('keeps Player 2 effect anchors on the far row under fixed Player 1 presentation', () => {
+    const aiTurnView = {
+      game: { actor: 1, players: [{ battlefield: [] }, { battlefield: [] }] },
+    } as unknown as AppViewModel
+    const capturedPlayerTwoCard: BattlefieldCardPlacement = {
+      x: 400,
+      y: 490,
+      width: 90,
+      height: 120,
+      playerIndex: 1,
+      cardIndex: 0,
+      cardCount: 1,
+    }
+
+    const result = computeEffectAnchorFromLayout(
+      aiTurnView,
+      descriptor({
+        actor: 1,
+        targetActor: 1,
+        targetInstanceId: 'p1-2',
+        targetPlacement: capturedPlayerTwoCard,
+      }),
+      layout,
+      new Map(),
+      new Map(),
+      0,
+    )
+
+    expect(result).toEqual({ x: 400, y: 186, width: 90, height: 120 })
+  })
 })

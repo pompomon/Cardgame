@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => {
   const cardgameScene = {
     renderView: vi.fn(),
     retryFailedBoardAssets: vi.fn(),
-    presentedActor: vi.fn((actor: number) => actor),
+    presentedActor: vi.fn((actor: number, _controllers?: AppViewModel['controllers']) => actor),
     isTargetPickerOpen: vi.fn(() => false),
     isMenuOverlayOpen: vi.fn(() => false),
   }
@@ -133,6 +133,7 @@ function view(game: AppViewModel['game']): AppViewModel {
   return {
     mode: 'hvai',
     game,
+    controllers: ['human', 'ai'],
     p2pStarted: false,
   } as unknown as AppViewModel
 }
@@ -188,5 +189,32 @@ describe('Phaser renderer lifecycle', () => {
     renderer.unmount()
     expect(mocks.hostDispose).toHaveBeenCalledTimes(2)
     expect(fakeWindow.listenerCount('online')).toBe(0)
+  })
+
+  it('keeps the real actor in the a11y view while fixed presentation disables input', () => {
+    const fakeWindow = new FakeWindow()
+    vi.stubGlobal('window', fakeWindow)
+    mocks.cardgameScene.presentedActor.mockReturnValueOnce(0)
+    const renderer = new PhaserRenderer()
+    renderer.mount(containerHarness(), {} as never)
+    const currentView = view({
+      actor: 1,
+      canInput: true,
+    } as AppViewModel['game'])
+
+    renderer.render(currentView)
+
+    expect(mocks.cardgameScene.presentedActor).toHaveBeenCalledWith(1, ['human', 'ai'])
+    expect(mocks.a11yUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: expect.objectContaining({
+          actor: 1,
+          canInput: false,
+        }),
+      }),
+      false,
+      expect.anything(),
+    )
+    expect(currentView.game?.canInput).toBe(true)
   })
 })

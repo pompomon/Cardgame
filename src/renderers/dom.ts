@@ -13,7 +13,7 @@ import {
 import { isAiLevel } from '../app/ai-levels'
 import { isAnimationSpeed, MAX_QUEUED_EFFECTS } from '../app/animation-settings'
 import { isBoardTheme } from '../app/board-theme'
-import { BoardPresentationCoordinator } from '../app/board-presentation'
+import { BoardPresentationCoordinator, resolveBoardPlayerSlots } from '../app/board-presentation'
 import { isCardVisualStyle } from '../app/card-visual-styles'
 import { promptInstall } from '../app/install-support'
 import { isRenderQualityPreference } from '../app/render-quality'
@@ -334,11 +334,11 @@ export function renderGame(
     return ''
   }
 
-  const [p1, p2] = game.players
-  const activeIndex = presentedActor
-  const nonActiveIndex = activeIndex === 0 ? 1 : 0
-  const activeState = activeIndex === 0 ? p1 : p2
-  const nonActiveState = nonActiveIndex === 0 ? p1 : p2
+  const slots = resolveBoardPlayerSlots(presentedActor, game.actor)
+  const nearState = game.players[slots.nearIndex]
+  const farState = game.players[slots.farIndex]
+  const nearActivity = slots.nearIsActive ? 'active' : 'non-active'
+  const farActivity = slots.farIsActive ? 'active' : 'non-active'
   const safeStatus = escapeHtml(view.status)
   const safeWinnerText = escapeHtml(game.winnerText)
   const playTargetIds = playLandTargetIds(game, pendingTargetSelection)
@@ -413,21 +413,21 @@ export function renderGame(
       <div class="battlefield-layout dom-game__layout">
         <div class="board dom-board">
           <section class="dom-board__opponent">
-            ${renderPlayerSummary(nonActiveState, nonActiveIndex, view.controllers[nonActiveIndex], 'non-active')}
-            ${renderBattlefield(nonActiveState, nonActiveIndex, 'non-active', view, battlefieldTargetIds, battlefieldTargetAction, previewContext)}
+            ${renderPlayerSummary(farState, slots.farIndex, view.controllers[slots.farIndex], farActivity)}
+            ${renderBattlefield(farState, slots.farIndex, farActivity, view, battlefieldTargetIds, battlefieldTargetAction, previewContext)}
           </section>
           <section class="dom-board__middle">
-            ${renderBattlefield(activeState, activeIndex, 'active', view, battlefieldTargetIds, battlefieldTargetAction, previewContext)}
+            ${renderBattlefield(nearState, slots.nearIndex, nearActivity, view, battlefieldTargetIds, battlefieldTargetAction, previewContext)}
           </section>
-          <section class="dom-board__hand" aria-label="Active hand">
-            ${renderPlayerSummary(activeState, activeIndex, view.controllers[activeIndex], 'active')}
-            <div class="card-tile-row dom-hand-row">${activeState.handCards.length > 0 ? activeState.handCards.map((card) => renderHandCard(card, game, view.cardVisualStyle, true, previewAllowed)).join('') : '<span class="dom-empty">No cards</span>'}</div>
+          <section class="dom-board__hand" aria-label="Player ${slots.nearIndex + 1} hand">
+            ${renderPlayerSummary(nearState, slots.nearIndex, view.controllers[slots.nearIndex], nearActivity)}
+            <div class="card-tile-row dom-hand-row">${nearState.handCards.length > 0 ? nearState.handCards.map((card) => renderHandCard(card, game, view.cardVisualStyle, true, previewAllowed)).join('') : '<span class="dom-empty">No cards</span>'}</div>
           </section>
         </div>
         ${renderLogDrawer(game)}
       </div>
       ${tutorialHint}
-      ${renderMainActionTray(game, activeState, view)}
+      ${renderMainActionTray(game, nearState, view)}
       ${renderResponseControls(game, view)}
       ${renderSwampDiscardControls(game, view)}
       ${renderPlainsReuseControls(game, view)}
@@ -509,10 +509,15 @@ export class DomRenderer implements AppRenderer {
     const showP2P = isP2PMode && !view.replay.active && !inGame
     const effectsBusy = this.prepareDomEffects(view)
     const presentedActor = view.game
-      ? this.boardPresentation.resolve(view.game.actor, effectsBusy, view.animationSpeed !== 'off')
+      ? this.boardPresentation.resolve(
+          view.game.actor,
+          view.controllers,
+          effectsBusy,
+          view.animationSpeed !== 'off',
+        )
       : 0
     const presentedView = view.game && presentedActor !== view.game.actor
-      ? { ...view, game: { ...view.game, actor: presentedActor, canInput: false } }
+      ? { ...view, game: { ...view.game, canInput: false } }
       : view
 
     this.container.innerHTML = `
@@ -572,13 +577,13 @@ export class DomRenderer implements AppRenderer {
       this.lastDomAnimatedEventCount = 0
       this.domCardAnchorHistory.clear()
       this.resetDomEffectQueue()
-      this.boardPresentation.reset(game.actor)
+      this.boardPresentation.reset(game.actor, view.controllers)
     }
     const events = game.events
     if (this.lastDomAnimatedEventCount > events.length) {
       this.lastDomAnimatedEventCount = events.length
       this.resetDomEffectQueue()
-      this.boardPresentation.reset(game.actor)
+      this.boardPresentation.reset(game.actor, view.controllers)
       return false
     }
     if (view.animationSpeed === 'off') {
@@ -626,7 +631,7 @@ export class DomRenderer implements AppRenderer {
       event,
       view.animationSpeed,
       view.cardVisualStyle,
-      this.boardPresentation.currentActor(game.actor),
+      game.actor,
       () => {
         if (generation !== this.domEffectGeneration) {
           return

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from 'vitest'
+import { describe, expect, it, beforeAll, vi } from 'vitest'
 
 // `renderLobby` reaches into `renderInstallControls` → `getInstallUiState`,
 // which probes `navigator` / `window`. Vitest runs in Node by default and
@@ -233,9 +233,89 @@ describe('DOM lobby layout', () => {
 
     const html = renderGame(gameView, false, null, 0)
 
-    expect(html).toContain('aria-label="Active hand"')
+    expect(html).toContain('aria-label="Player 1 hand"')
     expect(html).toContain('Player 1')
+    expect(html).toContain('Player 2 (human) — Active')
     expect(html.indexOf('Player 2')).toBeLessThan(html.indexOf('Player 1'))
+  })
+
+  it('keeps Player 1 near-side and marks Player 2 active during an AI turn', () => {
+    const gameView = makeGameView()
+    gameView.mode = 'local-hvai'
+    gameView.controllers = ['human', 'ai']
+    gameView.game!.actor = 1
+    gameView.game!.actorControl = 'ai'
+    gameView.game!.canInput = true
+    gameView.game!.legal.canEndTurn = true
+    gameView.game!.players[0].handCards = [{ id: 'p0-card', name: 'Forest' }]
+    gameView.game!.legal.playLandByCard = {
+      'p0-card': [{ action: { type: 'play_land', actor: 0, cardId: 'p0-card' }, label: 'Play Forest' }],
+    }
+    const renderer = new DomRenderer()
+    const container = makeContainer()
+    renderer.mount(container, makeController(gameView))
+
+    renderer.render(gameView)
+
+    expect(container.innerHTML).toContain('aria-label="Player 1 hand"')
+    expect(container.innerHTML).toContain('Player 2 (ai) — Active')
+    expect(container.innerHTML).not.toContain('Player 1 (human) — Active')
+    expect(container.innerHTML).not.toContain('data-action="end_turn"')
+    expect(container.innerHTML).toContain('draggable="false" data-draggable-card="p0-card"')
+  })
+
+  it('continues switching the near-side hand for human versus human games', () => {
+    const gameView = makeGameView()
+    gameView.game!.actor = 1
+    gameView.game!.actorControl = 'human'
+    gameView.game!.canInput = true
+    gameView.game!.legal.canEndTurn = true
+    gameView.game!.players[1].handCards = [{ id: 'p1-card', name: 'Island' }]
+    gameView.game!.legal.playLandByCard = {
+      'p1-card': [{ action: { type: 'play_land', actor: 1, cardId: 'p1-card' }, label: 'Play Island' }],
+    }
+    const renderer = new DomRenderer()
+    const container = makeContainer()
+    renderer.mount(container, makeController(gameView))
+
+    renderer.render(gameView)
+
+    expect(container.innerHTML).toContain('aria-label="Player 2 hand"')
+    expect(container.innerHTML).toContain('Player 2 (human) — Active')
+    expect(container.innerHTML).toContain('data-action="end_turn"')
+    expect(container.innerHTML).toContain('data-draggable-card="p1-card"')
+  })
+
+  it('anchors AI fallback effects to the row marked active on the fixed board', () => {
+    const gameView = makeGameView()
+    gameView.mode = 'local-hvai'
+    gameView.controllers = ['human', 'ai']
+    gameView.game!.actor = 1
+    gameView.game!.actorControl = 'ai'
+    gameView.game!.events = [{ kind: 'counter_resolved', actor: 1, cardName: 'Forest' }]
+    const querySelector = vi.fn().mockReturnValue(null)
+    vi.stubGlobal('document', {
+      querySelector,
+      querySelectorAll: vi.fn().mockReturnValue([]),
+    })
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    }))
+    const renderer = new DomRenderer()
+    const container = makeContainer()
+    renderer.mount(container, makeController(gameView))
+
+    try {
+      renderer.render(gameView)
+
+      expect(container.innerHTML).toContain('Player 2 (ai) — Active')
+      expect(querySelector).toHaveBeenCalledWith('.battlefield-active')
+      expect(querySelector).not.toHaveBeenCalledWith('.battlefield-non-active')
+    } finally {
+      renderer.unmount()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps the tutorial hint panel visible between scripted steps', () => {

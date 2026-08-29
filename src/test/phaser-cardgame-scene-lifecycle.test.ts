@@ -225,6 +225,7 @@ describe('CardgameScene lifecycle cleanup', () => {
 
   it('cancels hidden-page visuals and refreshes accessibility on hide and restore', () => {
     const currentView = {
+      controllers: ['human', 'ai'],
       game: {
         actor: 1,
         events: [{ kind: 'game_started' }, { kind: 'turn_start' }],
@@ -256,7 +257,7 @@ describe('CardgameScene lifecycle cleanup', () => {
     expect(cancel).toHaveBeenNthCalledWith(2, 'visibility')
     expect(resetEffects).toHaveBeenCalledOnce()
     expect(resetEffects).toHaveBeenCalledWith(2)
-    expect(resetPresentation).toHaveBeenCalledWith(1)
+    expect(resetPresentation).toHaveBeenCalledWith(1, ['human', 'ai'])
     expect(renderView).toHaveBeenCalledTimes(2)
     expect(renderView).toHaveBeenLastCalledWith(currentView)
     expect(refreshA11yNavForCurrentView).toHaveBeenCalledTimes(2)

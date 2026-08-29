@@ -2,6 +2,7 @@
 // a small deck/graveyard "physical stack" visual. Extracted from
 // gameplay-presenter.ts.
 import type Phaser from 'phaser'
+import { resolveBoardPlayerSlots } from '../../app/board-presentation'
 import type { AppViewModel } from '../../app/types'
 import { DEPTH_BOARD } from './depth'
 import type { SceneLayout } from './layout'
@@ -142,33 +143,32 @@ export function renderPlayerInfoBlocks(ctx: PlayerInfoContext, view: AppViewMode
   }
   const layout = ctx.getLayout()
 
-  const activeIndex = presentedActor
-  const nonActiveIndex = activeIndex === 0 ? 1 : 0
-  const activePlayer = game.players[activeIndex]
-  const nonActivePlayer = game.players[nonActiveIndex]
+  const slots = resolveBoardPlayerSlots(presentedActor, game.actor)
+  const nearPlayer = game.players[slots.nearIndex]
+  const farPlayer = game.players[slots.farIndex]
 
-  const nonActiveLines = [
-    `Player ${nonActiveIndex + 1} (${view.controllers[nonActiveIndex]})`,
-    `Hand: ${nonActivePlayer.handCount}`,
+  const farLines = [
+    `Player ${slots.farIndex + 1} (${view.controllers[slots.farIndex]})${slots.farIsActive ? ' — Active' : ''}`,
+    `Hand: ${farPlayer.handCount}`,
   ]
   const infoLineHeight = Math.ceil(parseFloat(layout.bodyFontSize) * INFO_PANEL_LINE_HEIGHT_MULTIPLIER)
   const maxNonActiveLines = Math.max(0, Math.floor((layout.nonActiveInfoHeight - INFO_PANEL_VERTICAL_PADDING) / Math.max(1, infoLineHeight)))
-  const visibleNonActiveLines = nonActiveLines.slice(0, maxNonActiveLines)
+  const visibleFarLines = farLines.slice(0, maxNonActiveLines)
   renderInfoPanel(
     ctx,
-    false,
+    slots.farIsActive,
     layout.boardColumnLeft,
     layout.nonActiveInfoY,
     layout.boardColumnWidth,
     layout.nonActiveInfoHeight,
-    visibleNonActiveLines,
-    nonActivePlayer.deckCount,
-    nonActivePlayer.graveyardCount,
+    visibleFarLines,
+    farPlayer.deckCount,
+    farPlayer.graveyardCount,
   )
 
-  const activeLines = [
-    `Player ${activeIndex + 1} (${view.controllers[activeIndex]}) — Active`,
-    `Hand: ${activePlayer.handCount}`,
+  const nearLines = [
+    `Player ${slots.nearIndex + 1} (${view.controllers[slots.nearIndex]})${slots.nearIsActive ? ' — Active' : ''}`,
+    `Hand: ${nearPlayer.handCount}`,
   ]
   // On tight viewports the layout limits how many lines of active-info text
   // fit above the controls band (End Turn / response buttons). Render only
@@ -177,20 +177,21 @@ export function renderPlayerInfoBlocks(ctx: PlayerInfoContext, view: AppViewMode
   // During response/plains-target phases we show a dedicated prompt above the
   // controls, so hide the active-info summary lines to avoid text overlap on
   // short split layouts.
-  const allowedActiveLines = game.phase === 'respond' || game.phase === 'plains_target' || game.phase === 'swamp_target'
+  const allowedActiveLines = slots.nearIsActive
+    && (game.phase === 'respond' || game.phase === 'plains_target' || game.phase === 'swamp_target')
     ? 0
-    : Math.max(0, Math.min(activeLines.length, layout.activeInfoTextLines))
-  const visibleActiveLines = allowedActiveLines === 0 ? [] : activeLines.slice(0, allowedActiveLines)
+    : Math.max(0, Math.min(nearLines.length, layout.activeInfoTextLines))
+  const visibleNearLines = allowedActiveLines === 0 ? [] : nearLines.slice(0, allowedActiveLines)
   renderInfoPanel(
     ctx,
-    true,
+    slots.nearIsActive,
     layout.boardColumnLeft,
     layout.activeInfoY,
     layout.boardColumnWidth,
     layout.activeInfoHeight,
-    visibleActiveLines,
-    activePlayer.deckCount,
-    activePlayer.graveyardCount,
+    visibleNearLines,
+    nearPlayer.deckCount,
+    nearPlayer.graveyardCount,
     layout.orientation === 'horizontal'
       ? Math.max(40, layout.handColumnLeft - layout.boardColumnLeft)
       : layout.boardColumnWidth,
