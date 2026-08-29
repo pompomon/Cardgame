@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from 'vitest'
+import { describe, expect, it, beforeAll, vi } from 'vitest'
 
 // `renderLobby` reaches into `renderInstallControls` → `getInstallUiState`,
 // which probes `navigator` / `window`. Vitest runs in Node by default and
@@ -284,6 +284,38 @@ describe('DOM lobby layout', () => {
     expect(container.innerHTML).toContain('Player 2 (human) — Active')
     expect(container.innerHTML).toContain('data-action="end_turn"')
     expect(container.innerHTML).toContain('data-draggable-card="p1-card"')
+  })
+
+  it('anchors AI fallback effects to the row marked active on the fixed board', () => {
+    const gameView = makeGameView()
+    gameView.mode = 'local-hvai'
+    gameView.controllers = ['human', 'ai']
+    gameView.game!.actor = 1
+    gameView.game!.actorControl = 'ai'
+    gameView.game!.events = [{ kind: 'counter_resolved', actor: 1, cardName: 'Forest' }]
+    const querySelector = vi.fn().mockReturnValue(null)
+    vi.stubGlobal('document', {
+      querySelector,
+      querySelectorAll: vi.fn().mockReturnValue([]),
+    })
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    }))
+    const renderer = new DomRenderer()
+    const container = makeContainer()
+    renderer.mount(container, makeController(gameView))
+
+    try {
+      renderer.render(gameView)
+
+      expect(container.innerHTML).toContain('Player 2 (ai) — Active')
+      expect(querySelector).toHaveBeenCalledWith('.battlefield-active')
+      expect(querySelector).not.toHaveBeenCalledWith('.battlefield-non-active')
+    } finally {
+      renderer.unmount()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps the tutorial hint panel visible between scripted steps', () => {

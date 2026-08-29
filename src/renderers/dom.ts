@@ -631,7 +631,7 @@ export class DomRenderer implements AppRenderer {
       event,
       view.animationSpeed,
       view.cardVisualStyle,
-      this.boardPresentation.currentActor(game.actor, view.controllers),
+      game.actor,
       () => {
         if (generation !== this.domEffectGeneration) {
           return
