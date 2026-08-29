@@ -38,6 +38,11 @@ describe('physical-tabletop felt backdrops', () => {
       expect(styleCss).toContain('--felt-base:')
       expect(styleCss).toContain('--felt-active-glow:')
     })
+
+    it('derives status fills from their border colours at 5% opacity', () => {
+      expect(styleCss).toContain('--status-active-fill: color-mix(in srgb, var(--battlefield-active-stroke) 5%, transparent)')
+      expect(styleCss).toContain('--status-non-active-fill: color-mix(in srgb, var(--battlefield-nonactive-stroke) 5%, transparent)')
+    })
   })
 
   describe('felt play-area gradients', () => {
@@ -54,15 +59,22 @@ describe('physical-tabletop felt backdrops', () => {
     })
 
     it('active and non-active share the same felt base gradient (visual consistency)', () => {
-      // Both battlefield states share one felt gradient declaration; only
-      // border colour + active-only glow differ.
       const activeBg = ruleBody('.battlefield-active')
       const nonActiveBg = ruleBody('.battlefield-non-active')
       expect(activeBg).toContain('var(--felt-base)')
       expect(nonActiveBg).toContain('var(--felt-base)')
     })
 
-    it('only the active battlefield gets the lighting glow, not a full-panel colour tint', () => {
+    it('layers the matching status fill over each battlefield while preserving borders', () => {
+      const activeBg = ruleBody('.battlefield-active')
+      const nonActiveBg = ruleBody('.battlefield-non-active')
+      expect(activeBg).toContain('var(--status-active-fill)')
+      expect(activeBg).toContain('border: 2px solid var(--battlefield-active-stroke)')
+      expect(nonActiveBg).toContain('var(--status-non-active-fill)')
+      expect(nonActiveBg).toContain('border-color: var(--battlefield-nonactive-stroke)')
+    })
+
+    it('only the active battlefield gets the lighting glow', () => {
       const activeBg = ruleBody('.battlefield-active')
       const nonActiveBg = ruleBody('.battlefield-non-active')
       expect(activeBg).toContain('--felt-active-glow')
@@ -77,6 +89,17 @@ describe('physical-tabletop felt backdrops', () => {
     })
   })
 
+  describe('player panel status fills', () => {
+    it('layers matching 5%-opaque fills over the shared panel surface', () => {
+      const activePanel = ruleBody('.player-active')
+      const nonActivePanel = ruleBody('.player-non-active')
+      expect(activePanel).toContain('var(--status-active-fill)')
+      expect(activePanel).toContain('var(--surface-panel)')
+      expect(nonActivePanel).toContain('var(--status-non-active-fill)')
+      expect(nonActivePanel).toContain('var(--surface-panel)')
+    })
+  })
+
   describe('cross-renderer palette sync', () => {
     it('CSS active stroke matches Phaser COLOR_BATTLEFIELD_ACTIVE_STROKE', () => {
       // Hex #72b048 in CSS ↔ 0x72b048 in Phaser
@@ -88,6 +111,12 @@ describe('physical-tabletop felt backdrops', () => {
       // Hex #b46878 in CSS ↔ 0xb46878 in Phaser
       expect(styleCss).toContain('--battlefield-nonactive-stroke: #b46878')
       expect(phaserTheme).toContain('COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xb46878')
+    })
+
+    it('Phaser status fills reuse their border colours at 5% opacity', () => {
+      expect(phaserTheme).toContain('COLOR_STATUS_ACTIVE_FILL = COLOR_BATTLEFIELD_ACTIVE_STROKE')
+      expect(phaserTheme).toContain('COLOR_STATUS_NON_ACTIVE_FILL = COLOR_BATTLEFIELD_NON_ACTIVE_STROKE')
+      expect(phaserTheme).toContain('STATUS_FILL_ALPHA = 0.05')
     })
   })
 })

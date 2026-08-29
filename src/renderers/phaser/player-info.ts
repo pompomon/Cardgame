@@ -15,6 +15,9 @@ import {
   COLOR_CARD_BACK_STROKE,
   COLOR_FELT_ACTIVE_GLOW,
   COLOR_PLAYER_PANEL_FILL,
+  COLOR_STATUS_ACTIVE_FILL,
+  COLOR_STATUS_NON_ACTIVE_FILL,
+  STATUS_FILL_ALPHA,
   UI_THEME,
 } from './theme'
 import { INFO_PANEL_LINE_HEIGHT_MULTIPLIER, INFO_PANEL_VERTICAL_PADDING } from './scene-config'
@@ -102,11 +105,14 @@ function renderInfoPanel(
     shadow: true,
     shadowAlpha: 0.18,
     shadowOffset: 3,
+    tint: {
+      color: isActive ? COLOR_STATUS_ACTIVE_FILL : COLOR_STATUS_NON_ACTIVE_FILL,
+      alpha: STATUS_FILL_ALPHA,
+    },
   })
   bg.setDepth(DEPTH_BOARD)
   rootContainer?.add(bg)
-  // Restrained active-player lighting: a soft, low-alpha outer glow rather
-  // than a saturated full-panel colour fill.
+  // Restrained active-player lighting supplements the shared low-alpha tint.
   if (isActive) {
     const glow = scene.add.graphics()
     glow.lineStyle(6, COLOR_FELT_ACTIVE_GLOW, 0.16)
