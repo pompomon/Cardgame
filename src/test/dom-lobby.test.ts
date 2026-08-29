@@ -233,9 +233,57 @@ describe('DOM lobby layout', () => {
 
     const html = renderGame(gameView, false, null, 0)
 
-    expect(html).toContain('aria-label="Active hand"')
+    expect(html).toContain('aria-label="Player 1 hand"')
     expect(html).toContain('Player 1')
+    expect(html).toContain('Player 2 (human) — Active')
     expect(html.indexOf('Player 2')).toBeLessThan(html.indexOf('Player 1'))
+  })
+
+  it('keeps Player 1 near-side and marks Player 2 active during an AI turn', () => {
+    const gameView = makeGameView()
+    gameView.mode = 'local-hvai'
+    gameView.controllers = ['human', 'ai']
+    gameView.game!.actor = 1
+    gameView.game!.actorControl = 'ai'
+    gameView.game!.canInput = true
+    gameView.game!.legal.canEndTurn = true
+    gameView.game!.players[0].handCards = [{ id: 'p0-card', name: 'Forest' }]
+    gameView.game!.legal.playLandByCard = {
+      'p0-card': [{ action: { type: 'play_land', actor: 0, cardId: 'p0-card' }, label: 'Play Forest' }],
+    }
+    const renderer = new DomRenderer()
+    const container = makeContainer()
+    renderer.mount(container, makeController(gameView))
+
+    renderer.render(gameView)
+
+    expect(container.innerHTML).toContain('aria-label="Player 1 hand"')
+    expect(container.innerHTML).toContain('Player 2 (ai) — Active')
+    expect(container.innerHTML).not.toContain('Player 1 (human) — Active')
+    expect(container.innerHTML).not.toContain('data-action="end_turn"')
+    expect(container.innerHTML).toContain('draggable="false" data-draggable-card="p0-card"')
+  })
+
+  it('continues switching the near-side hand for human versus human games', () => {
+    const gameView = makeGameView()
+    gameView.game!.actor = 1
+    gameView.game!.actorControl = 'human'
+    gameView.game!.canInput = true
+    gameView.game!.legal.canEndTurn = true
+    gameView.game!.players[1].handCards = [{ id: 'p1-card', name: 'Island' }]
+    gameView.game!.legal.playLandByCard = {
+      'p1-card': [{ action: { type: 'play_land', actor: 1, cardId: 'p1-card' }, label: 'Play Island' }],
+    }
+    const renderer = new DomRenderer()
+    const container = makeContainer()
+    renderer.mount(container, makeController(gameView))
+
+    renderer.render(gameView)
+
+    expect(container.innerHTML).toContain('aria-label="Player 2 hand"')
+    expect(container.innerHTML).toContain('Player 2 (human) — Active')
+    expect(container.innerHTML).toContain('data-action="end_turn"')
+    expect(container.innerHTML).toContain('data-draggable-card="p1-card"')
   })
 
   it('keeps the tutorial hint panel visible between scripted steps', () => {

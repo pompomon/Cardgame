@@ -237,13 +237,17 @@ the bottom of the visible strip".
   recursion. Capturing `options` at queue start means mid-queue
   `animationSpeed`/`durationMs` changes don't take effect until the queue
   drains.
-- **Keep board orientation stable until the queue drains.** Both renderers use
-  `BoardPresentationCoordinator` to retain the displayed active actor while
-  effects are queued or playing. State and effect descriptors continue to
-  advance, but the active/non-active rows, hand, anchors, and accessibility
-  view use the presented actor. The final queue completion applies the latest
-  pending actor and triggers one render; changes with no visual effect switch
-  immediately.
+- **Pin AI games to the starting player's perspective.** When either controller
+  is AI, both renderers keep Player 1 (the engine's starting player) on the near
+  side for the entire game. The real actor still controls active styling,
+  labels, legality, effect ownership, and accessibility; input is disabled when
+  the presented hand does not belong to that actor.
+- **Keep non-AI board orientation stable until the queue drains.** Human-vs-
+  human and P2P games use `BoardPresentationCoordinator` to retain the
+  displayed actor while effects are queued or playing. State and effect
+  descriptors continue to advance, but the rows, hand, and anchors use the
+  presented actor. The final queue completion applies the latest pending actor
+  and triggers one render; changes with no visual effect switch immediately.
 - **Reset presentation and queue state together.** New games, replay rewinds,
   lobby transitions, unmount, and scene shutdown must clear any pending actor
   so an old completion callback cannot switch the next board. Turning
