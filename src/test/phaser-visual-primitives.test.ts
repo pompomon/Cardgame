@@ -122,6 +122,10 @@ describe('Phaser rounded cover artwork', () => {
         [0x112233, 1],
         [COLOR_STATUS_ACTIVE_FILL, 0.05],
       ])
+      expect(harness.graphics[0].fillRoundedRect.mock.calls).toEqual([
+        [-60, -40, 120, 80, 10],
+        [-60, -40, 120, 80, 10],
+      ])
       expect(harness.graphics[0].lineStyle).toHaveBeenCalledWith(
         2,
         COLOR_BATTLEFIELD_ACTIVE_STROKE,
@@ -164,6 +168,7 @@ describe('Phaser rounded cover artwork', () => {
       })
 
       expect(harness.graphics[3].fillStyle).toHaveBeenCalledWith(fill, 0.05)
+      expect(harness.graphics[3].fillRoundedRect).toHaveBeenCalledWith(-100, -60, 200, 120, 12)
       expect(harness.graphics[4].lineStyle).toHaveBeenCalledWith(strokeWidth, stroke, 0.92)
       if (hasGlow) {
         expect(harness.graphics[5].fillStyle).toHaveBeenCalledWith(COLOR_FELT_ACTIVE_GLOW, 0.16)
