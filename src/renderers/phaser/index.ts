@@ -133,10 +133,10 @@ export class PhaserRenderer implements AppRenderer {
 
   private refreshA11yNav(view: AppViewModel, lobbyActive: boolean): void {
     const presentedActor = view.game && !lobbyActive
-      ? this.cardgameScene?.presentedActor(view.game.actor) ?? view.game.actor
+      ? this.cardgameScene?.presentedActor(view.game.actor, view.controllers) ?? view.game.actor
       : null
     const presentedView = presentedActor !== null && view.game && presentedActor !== view.game.actor
-      ? { ...view, game: { ...view.game, actor: presentedActor, canInput: false } }
+      ? { ...view, game: { ...view.game, canInput: false } }
       : view
     this.a11yNav?.update(presentedView, lobbyActive, {
       controller: this.controller,

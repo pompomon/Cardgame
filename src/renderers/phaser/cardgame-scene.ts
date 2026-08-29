@@ -92,7 +92,10 @@ export class CardgameScene extends Phaser.Scene {
       this.effectController.reset(eventCount)
       this.lastEffectFeedbackEventCount = eventCount
       this.effectFeedback = null
-      this.boardPresentation.reset(currentView?.game?.actor)
+      this.boardPresentation.reset(
+        currentView?.game?.actor ?? null,
+        currentView?.controllers,
+      )
     }
     this.renderView(currentView)
     this.rendererRef.refreshA11yNavForCurrentView()
@@ -486,7 +489,7 @@ export class CardgameScene extends Phaser.Scene {
         this.lastEffectFeedbackEventCount = 0
         this.effectFeedback = null
         this.cardViews?.reset()
-        this.boardPresentation.reset(game.actor)
+        this.boardPresentation.reset(game.actor, view.controllers)
       }
       this.lastRenderedSeed = currentSeed
     } else {
@@ -530,18 +533,25 @@ export class CardgameScene extends Phaser.Scene {
       return
     }
 
-    this.battlefieldTargets.syncPendingPlayLandTargetSelection(view.game)
-    this.battlefieldTargets.updateBattlefieldTargetEntries(view.game)
     const effectsBusy = this.effectController.isBusyOrWillEnqueue(view)
     const presentedActor = this.boardPresentation.resolve(
       view.game.actor,
+      view.controllers,
       effectsBusy,
       view.animationSpeed !== 'off',
     )
-    const cards = this.gameplayPresenter.renderGame(view, presentedActor)
+    const presentedGame = presentedActor === view.game.actor
+      ? view.game
+      : { ...view.game, canInput: false }
+    const presentedView = presentedGame === view.game
+      ? view
+      : { ...view, game: presentedGame }
+    this.battlefieldTargets.syncPendingPlayLandTargetSelection(presentedGame)
+    this.battlefieldTargets.updateBattlefieldTargetEntries(presentedGame)
+    const cards = this.gameplayPresenter.renderGame(presentedView, presentedActor)
     this.syncEffectFeedback(view, effectsBusy)
     this.dropZoneView?.sync({
-      game: view.game,
+      game: presentedGame,
       layout: this.currentLayout,
       cards,
       dragCardId: this.dragController?.activeCardId ?? null,
@@ -562,8 +572,8 @@ export class CardgameScene extends Phaser.Scene {
       : null
   }
 
-  presentedActor(fallback: number): number {
-    return this.boardPresentation.currentActor(fallback)
+  presentedActor(fallback: number, controllers: AppViewModel['controllers']): number {
+    return this.boardPresentation.currentActor(fallback, controllers)
   }
 
   private computeMenuSignature(view: AppViewModel): string {
