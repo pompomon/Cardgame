@@ -2,13 +2,61 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('phaser', () => ({ default: {} }))
 
-import { buildRoundedCoverImage } from '../renderers/phaser/visual-primitives'
+import {
+  buildBattlefieldBackdrop,
+  buildPolishedPanel,
+  buildRoundedCoverImage,
+} from '../renderers/phaser/visual-primitives'
 import {
   computeCoverCrop,
   computeRoundedCoverTextureSize,
   paintRoundedCover,
   roundedCoverTextureKey,
 } from '../renderers/phaser/rounded-cover'
+import {
+  COLOR_BATTLEFIELD_ACTIVE_STROKE,
+  COLOR_BATTLEFIELD_NON_ACTIVE_STROKE,
+  COLOR_FELT_ACTIVE_GLOW,
+  COLOR_STATUS_ACTIVE_FILL,
+  COLOR_STATUS_NON_ACTIVE_FILL,
+  STATUS_FILL_ALPHA,
+} from '../renderers/phaser/theme'
+
+class RecordingGraphics {
+  readonly fillStyle = vi.fn((_color: number, _alpha?: number) => this)
+  readonly fillRoundedRect = vi.fn((..._args: unknown[]) => this)
+  readonly lineStyle = vi.fn((_width: number, _color: number, _alpha?: number) => this)
+  readonly strokeRoundedRect = vi.fn((..._args: unknown[]) => this)
+}
+
+class RecordingContainer {
+  readonly children: unknown[] = []
+  readonly add = vi.fn((child: unknown) => {
+    this.children.push(child)
+    return this
+  })
+  readonly setSize = vi.fn((_width: number, _height: number) => this)
+}
+
+function createGraphicsHarness(): {
+  scene: unknown
+  graphics: RecordingGraphics[]
+} {
+  const graphics: RecordingGraphics[] = []
+  return {
+    scene: {
+      add: {
+        container: () => new RecordingContainer(),
+        graphics: () => {
+          const object = new RecordingGraphics()
+          graphics.push(object)
+          return object
+        },
+      },
+    },
+    graphics,
+  }
+}
 
 describe('Phaser rounded cover artwork', () => {
   it('falls back to the cover image when source artwork is unavailable', () => {
@@ -48,6 +96,80 @@ describe('Phaser rounded cover artwork', () => {
       width: 737,
       height: 1024,
       radius: 82,
+    })
+  })
+
+  describe('Phaser status-area fills', () => {
+    it('draws an optional polished-panel tint beneath the intact border', () => {
+      const harness = createGraphicsHarness()
+
+      buildPolishedPanel(harness.scene as never, 0, 0, {
+        fill: 0x112233,
+        stroke: COLOR_BATTLEFIELD_ACTIVE_STROKE,
+        width: 120,
+        height: 80,
+        strokeWidth: 2,
+        shadow: false,
+        topSheen: false,
+        tint: {
+          color: COLOR_STATUS_ACTIVE_FILL,
+          alpha: STATUS_FILL_ALPHA,
+        },
+      })
+
+      expect(harness.graphics).toHaveLength(1)
+      expect(harness.graphics[0].fillStyle.mock.calls).toEqual([
+        [0x112233, 1],
+        [COLOR_STATUS_ACTIVE_FILL, 0.05],
+      ])
+      expect(harness.graphics[0].lineStyle).toHaveBeenCalledWith(
+        2,
+        COLOR_BATTLEFIELD_ACTIVE_STROKE,
+        0.95,
+      )
+    })
+
+    it('leaves polished panels unchanged when no tint is requested', () => {
+      const harness = createGraphicsHarness()
+
+      buildPolishedPanel(harness.scene as never, 0, 0, {
+        fill: 0x112233,
+        stroke: 0x445566,
+        width: 120,
+        height: 80,
+        shadow: false,
+        topSheen: false,
+      })
+
+      expect(harness.graphics[0].fillStyle.mock.calls).toEqual([[0x112233, 1]])
+    })
+
+    it.each([
+      ['active', COLOR_BATTLEFIELD_ACTIVE_STROKE, COLOR_STATUS_ACTIVE_FILL, 3, true],
+      ['non-active', COLOR_BATTLEFIELD_NON_ACTIVE_STROKE, COLOR_STATUS_NON_ACTIVE_FILL, 2, false],
+    ] as const)('fills the %s battlefield at 5% opacity and preserves its border', (
+      kind,
+      stroke,
+      fill,
+      strokeWidth,
+      hasGlow,
+    ) => {
+      const harness = createGraphicsHarness()
+
+      buildBattlefieldBackdrop(harness.scene as never, 100, 80, {
+        width: 200,
+        height: 120,
+        kind,
+        stroke,
+      })
+
+      expect(harness.graphics[3].fillStyle).toHaveBeenCalledWith(fill, 0.05)
+      expect(harness.graphics[4].lineStyle).toHaveBeenCalledWith(strokeWidth, stroke, 0.92)
+      if (hasGlow) {
+        expect(harness.graphics[5].fillStyle).toHaveBeenCalledWith(COLOR_FELT_ACTIVE_GLOW, 0.16)
+      } else {
+        expect(harness.graphics).toHaveLength(5)
+      }
     })
   })
 

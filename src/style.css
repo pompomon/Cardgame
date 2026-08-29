@@ -28,12 +28,14 @@
   --button-border: #5d7cff;
 
   /* Status — parchment backdrops. The --battlefield-active-bg token stays as
-     a plain colour so color-mix() in .dom-drop-zone--over continues to work. Gradient
-     layers are composed directly in the .battlefield-* rules below. */
+     a plain colour so color-mix() in .dom-drop-zone--over continues to work.
+     Status-area fills reuse their border colours at 5% opacity. */
   --parchment-base: #c4a060;
   --battlefield-active-bg: #7a5c2e;
   --battlefield-active-stroke: #72b048;
   --battlefield-nonactive-stroke: #b46878;
+  --status-active-fill: color-mix(in srgb, var(--battlefield-active-stroke) 5%, transparent);
+  --status-non-active-fill: color-mix(in srgb, var(--battlefield-nonactive-stroke) 5%, transparent);
 
   /* Physical Tabletop — continuous wood table + felt play-area insets.
      Both battlefields share the same felt tone; only the restrained border
@@ -303,13 +305,12 @@ textarea {
 }
 
 /* Physical Tabletop felt play-area insets. Both battlefields share the same
-   felt gradient (--felt-base → --felt-shadow) — status is communicated by a
-   restrained border colour (--battlefield-*-stroke) plus, for the active
-   side only, a soft directional lighting glow, not by a full-panel colour
-   tint. The --battlefield-active-bg token remains a plain colour so
-   color-mix() in .dom-drop-zone--over still works. */
+   felt gradient (--felt-base → --felt-shadow). A 5%-opaque fill matching each
+   status border subtly reinforces the state, while the border remains intact
+   and the active side alone receives a soft directional lighting glow. */
 .battlefield-active {
   background:
+    linear-gradient(var(--status-active-fill), var(--status-active-fill)),
     radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.12) 0%, transparent 62%),
     linear-gradient(160deg, var(--felt-base) 0%, var(--felt-shadow) 100%);
   border: 2px solid var(--battlefield-active-stroke);
@@ -318,6 +319,7 @@ textarea {
 
 .battlefield-non-active {
   background:
+    linear-gradient(var(--status-non-active-fill), var(--status-non-active-fill)),
     radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.12) 0%, transparent 62%),
     linear-gradient(160deg, var(--felt-base) 0%, var(--felt-shadow) 100%);
   border-color: var(--battlefield-nonactive-stroke);
@@ -325,11 +327,17 @@ textarea {
 }
 
 .player-active {
+  background:
+    linear-gradient(var(--status-active-fill), var(--status-active-fill)),
+    var(--surface-panel);
   border-color: var(--battlefield-active-stroke);
   box-shadow: 0 0 14px 1px var(--felt-active-glow);
 }
 
 .player-non-active {
+  background:
+    linear-gradient(var(--status-non-active-fill), var(--status-non-active-fill)),
+    var(--surface-panel);
   border-color: var(--battlefield-nonactive-stroke);
 }
 

@@ -63,15 +63,15 @@ consequences:
   Delim('*')` error that only reproduces in `npm run build`, not `tsc` or
   `vitest`. Spell out `COLOR_TABLE_...`/`COLOR_FELT_...` instead of using a
   glob-style `*` shorthand when referencing paired token names in comments.
-- **Status signal convention: restrained borders + active-player lighting,
-  not full-panel color fills.** The battlefield insets
+- **Status signal convention: 5%-opaque status fills, preserved borders, and
+  active-player lighting.** The battlefield insets
   (`.battlefield-active`/`.battlefield-non-active`) and player info panels
-  share the same felt/neutral base fill regardless of whose turn it is;
-  only the border color/width and an active-only soft glow
-  (`--felt-active-glow`) signal turn state. Don't reintroduce a saturated
-  full-rect color wash to indicate the active player — mirror this
-  convention in `src/renderers/phaser/visual-primitives.ts` and
-  `player-info.ts` as well.
+  retain the same felt/neutral base regardless of whose turn it is. Layer the
+  matching border color over that base at exactly 5% opacity (95%
+  transparent), keep the border visible, and reserve the soft glow
+  (`--felt-active-glow`) for the active player. Don't replace the base with a
+  saturated full-rect color wash; mirror this convention in
+  `src/renderers/phaser/visual-primitives.ts` and `player-info.ts`.
 
 ## Re-render orchestration
 

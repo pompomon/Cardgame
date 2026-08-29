@@ -4,7 +4,14 @@ import { computeRoundedCoverTextureSize, paintRoundedCover, roundedCoverTextureK
 // src/style.css (--felt-base, --felt-shadow, --felt-active-glow) and with
 // the COLOR_FELT_*/COLOR_TABLE_WOOD_* constants in
 // src/renderers/phaser/theme.ts.
-import { COLOR_FELT_ACTIVE_GLOW, COLOR_FELT_BASE, COLOR_FELT_SHADOW } from './theme'
+import {
+  COLOR_FELT_ACTIVE_GLOW,
+  COLOR_FELT_BASE,
+  COLOR_FELT_SHADOW,
+  COLOR_STATUS_ACTIVE_FILL,
+  COLOR_STATUS_NON_ACTIVE_FILL,
+  STATUS_FILL_ALPHA,
+} from './theme'
 
 export interface PolishedPanelConfig {
   fill: number
@@ -19,6 +26,10 @@ export interface PolishedPanelConfig {
   shadowAlpha?: number
   shadowOffset?: number
   topSheen?: boolean
+  tint?: {
+    color: number
+    alpha: number
+  }
 }
 
 export function buildPolishedPanel(
@@ -40,6 +51,7 @@ export function buildPolishedPanel(
     shadowAlpha = 0.22,
     shadowOffset = 4,
     topSheen = true,
+    tint,
   } = config
   const container = scene.add.container(x, y)
   if (shadow) {
@@ -57,6 +69,10 @@ export function buildPolishedPanel(
   const surface = scene.add.graphics()
   surface.fillStyle(fill, alpha)
   surface.fillRoundedRect(-width / 2, -height / 2, width, height, radius)
+  if (tint) {
+    surface.fillStyle(tint.color, tint.alpha)
+    surface.fillRoundedRect(-width / 2, -height / 2, width, height, radius)
+  }
   surface.lineStyle(strokeWidth, stroke, strokeAlpha)
   surface.strokeRoundedRect(-width / 2, -height / 2, width, height, radius)
   container.add(surface)
@@ -208,13 +224,14 @@ export interface BattlefieldBackdropConfig {
  *   1. Drop shadow
  *   2. Felt base gradient (linear, dark → base)
  *   3. Soft upper-left sheen highlight
- *   4. Restrained decorative stroke
- *   5. Active-only soft directional lighting glow along the top edge
+ *   4. Status-colour fill at 5% opacity
+ *   5. Restrained decorative stroke
+ *   6. Active-only soft directional lighting glow along the top edge
  *
  * Entirely procedural — no external texture assets required. Both active
- * and non-active insets share the same felt tone; only the border colour
- * and (for the active side) the lighting glow communicate whose turn it is
- * — no full-panel colour tint.
+ * and non-active insets share the same felt tone. A 5%-opaque fill matching
+ * each border subtly reinforces state, and the active side also receives a
+ * lighting glow.
  */
 export function buildBattlefieldBackdrop(
   scene: Phaser.Scene,
@@ -249,13 +266,19 @@ export function buildBattlefieldBackdrop(
   sheen.fillRoundedRect(-hw + 2, -hh + 2, width * 0.6, Math.min(height * 0.4, height - 4), radius - 2)
   container.add(sheen)
 
-  // Layer 4: Restrained decorative stroke — the primary status signal.
+  // Layer 4: Status fill matching the border colour at 5% opacity.
+  const statusTint = scene.add.graphics()
+  statusTint.fillStyle(isActive ? COLOR_STATUS_ACTIVE_FILL : COLOR_STATUS_NON_ACTIVE_FILL, STATUS_FILL_ALPHA)
+  statusTint.fillRoundedRect(-hw, -hh, width, height, radius)
+  container.add(statusTint)
+
+  // Layer 5: Restrained decorative stroke — the primary status signal.
   const strokeLine = scene.add.graphics()
   strokeLine.lineStyle(isActive ? 3 : 2, stroke, 0.92)
   strokeLine.strokeRoundedRect(-hw, -hh, width, height, radius)
   container.add(strokeLine)
 
-  // Layer 5: Active-only soft directional lighting glow along the top edge.
+  // Layer 6: Active-only soft directional lighting glow along the top edge.
   if (isActive) {
     const glow = scene.add.graphics()
     const glowHeight = Math.max(6, height * 0.22)
