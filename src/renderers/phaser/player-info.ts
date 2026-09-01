@@ -112,8 +112,7 @@ function renderInfoPanel(
   })
   bg.setDepth(DEPTH_BOARD)
   rootContainer?.add(bg)
-  // Restrained active-player lighting supplements the shared 5%-opaque
-  // (95%-transparent) tint.
+  // Restrained active-player lighting supplements the shared low-alpha tint.
   if (isActive) {
     const glow = scene.add.graphics()
     glow.lineStyle(6, COLOR_FELT_ACTIVE_GLOW, 0.16)

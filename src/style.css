@@ -29,18 +29,17 @@
 
   /* Status — parchment backdrops. The --battlefield-active-bg token stays as
      a plain colour so color-mix() in .dom-drop-zone--over continues to work.
-     Status-area fills reuse their border colours at 5% opacity (95% transparency). */
+     Status-area fills reuse their border colours at 5% opacity. */
   --parchment-base: #c4a060;
   --battlefield-active-bg: #7a5c2e;
   --battlefield-active-stroke: #72b048;
   --battlefield-nonactive-stroke: #b46878;
-  --status-active-fill: color-mix(in srgb, var(--battlefield-active-stroke) 5%, transparent 95%);
-  --status-non-active-fill: color-mix(in srgb, var(--battlefield-nonactive-stroke) 5%, transparent 95%);
+  --status-active-fill: color-mix(in srgb, var(--battlefield-active-stroke) 5%, transparent);
+  --status-non-active-fill: color-mix(in srgb, var(--battlefield-nonactive-stroke) 5%, transparent);
 
   /* Physical Tabletop — continuous wood table + felt play-area insets.
-     Both battlefields share the same felt tone; a restrained 5%-opaque
-     (95%-transparent) status tint (--status-*-fill), border colour
-     (--battlefield-*-stroke,
+     Both battlefields share the same felt tone; a restrained 5%-opacity
+     status tint (--status-*-fill), border colour (--battlefield-*-stroke,
      already defined above), and active-player lighting glow distinguish
      whose turn it is. Keep these mirrored with the Phaser table/felt colour
      constants (COLOR_TABLE_..., COLOR_FELT_..., and COLOR_STATUS_...) in
@@ -307,10 +306,9 @@ textarea {
 }
 
 /* Physical Tabletop felt play-area insets. Both battlefields share the same
-   felt gradient (--felt-base → --felt-shadow). A 5%-opaque (95%-transparent)
-   fill matching each status border subtly reinforces the state, while the
-   border remains intact and the active side alone receives a soft directional
-   lighting glow. */
+   felt gradient (--felt-base → --felt-shadow). A 5%-opaque fill matching each
+   status border subtly reinforces the state, while the border remains intact
+   and the active side alone receives a soft directional lighting glow. */
 .battlefield-active {
   background:
     linear-gradient(var(--status-active-fill), var(--status-active-fill)),

@@ -39,9 +39,9 @@ describe('physical-tabletop felt backdrops', () => {
       expect(styleCss).toContain('--felt-active-glow:')
     })
 
-    it('derives 5%-opaque (95%-transparent) status fills from their border colours', () => {
-      expect(styleCss).toContain('--status-active-fill: color-mix(in srgb, var(--battlefield-active-stroke) 5%, transparent 95%)')
-      expect(styleCss).toContain('--status-non-active-fill: color-mix(in srgb, var(--battlefield-nonactive-stroke) 5%, transparent 95%)')
+    it('derives status fills from their border colours at 5% opacity', () => {
+      expect(styleCss).toContain('--status-active-fill: color-mix(in srgb, var(--battlefield-active-stroke) 5%, transparent)')
+      expect(styleCss).toContain('--status-non-active-fill: color-mix(in srgb, var(--battlefield-nonactive-stroke) 5%, transparent)')
     })
   })
 
@@ -90,7 +90,7 @@ describe('physical-tabletop felt backdrops', () => {
   })
 
   describe('player panel status fills', () => {
-    it('layers matching 5%-opaque (95%-transparent) fills over the shared panel surface', () => {
+    it('layers matching 5%-opaque fills over the shared panel surface', () => {
       const activePanel = ruleBody('.player-active')
       const nonActivePanel = ruleBody('.player-non-active')
       expect(activePanel).toContain('var(--status-active-fill)')
@@ -113,7 +113,7 @@ describe('physical-tabletop felt backdrops', () => {
       expect(phaserTheme).toContain('COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xb46878')
     })
 
-    it('Phaser status fills reuse their border colours at 5% opacity (95% transparency)', () => {
+    it('Phaser status fills reuse their border colours at 5% opacity', () => {
       expect(phaserTheme).toContain('COLOR_STATUS_ACTIVE_FILL = COLOR_BATTLEFIELD_ACTIVE_STROKE')
       expect(phaserTheme).toContain('COLOR_STATUS_NON_ACTIVE_FILL = COLOR_BATTLEFIELD_NON_ACTIVE_STROKE')
       expect(phaserTheme).toContain('STATUS_FILL_ALPHA = 0.05')

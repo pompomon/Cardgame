@@ -100,10 +100,6 @@ describe('Phaser rounded cover artwork', () => {
   })
 
   describe('Phaser status-area fills', () => {
-    it('uses a shared 5%-opaque (95%-transparent) tint alpha', () => {
-      expect(STATUS_FILL_ALPHA).toBe(0.05)
-    })
-
     it('draws an optional polished-panel tint beneath the intact border', () => {
       const harness = createGraphicsHarness()
 
@@ -124,7 +120,7 @@ describe('Phaser rounded cover artwork', () => {
       expect(harness.graphics).toHaveLength(1)
       expect(harness.graphics[0].fillStyle.mock.calls).toEqual([
         [0x112233, 1],
-        [COLOR_STATUS_ACTIVE_FILL, STATUS_FILL_ALPHA],
+        [COLOR_STATUS_ACTIVE_FILL, 0.05],
       ])
       expect(harness.graphics[0].fillRoundedRect.mock.calls).toEqual([
         [-60, -40, 120, 80, 10],
@@ -155,7 +151,7 @@ describe('Phaser rounded cover artwork', () => {
     it.each([
       ['active', COLOR_BATTLEFIELD_ACTIVE_STROKE, COLOR_STATUS_ACTIVE_FILL, 3, true],
       ['non-active', COLOR_BATTLEFIELD_NON_ACTIVE_STROKE, COLOR_STATUS_NON_ACTIVE_FILL, 2, false],
-    ] as const)('fills the %s battlefield at 5% opacity (95% transparency) and preserves its border', (
+    ] as const)('fills the %s battlefield at 5% opacity and preserves its border', (
       kind,
       stroke,
       fill,
@@ -171,7 +167,7 @@ describe('Phaser rounded cover artwork', () => {
         stroke,
       })
 
-      expect(harness.graphics[3].fillStyle).toHaveBeenCalledWith(fill, STATUS_FILL_ALPHA)
+      expect(harness.graphics[3].fillStyle).toHaveBeenCalledWith(fill, 0.05)
       expect(harness.graphics[3].fillRoundedRect).toHaveBeenCalledWith(-100, -60, 200, 120, 12)
       expect(harness.graphics[4].lineStyle).toHaveBeenCalledWith(strokeWidth, stroke, 0.92)
       if (hasGlow) {
