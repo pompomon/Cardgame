@@ -14,7 +14,7 @@ export const COLOR_BATTLEFIELD_ACTIVE_STROKE = 0x72b048    // sage green  = --ba
 export const COLOR_BATTLEFIELD_NON_ACTIVE_STROKE = 0xb46878 // muted rose  = --battlefield-nonactive-stroke
 export const COLOR_STATUS_ACTIVE_FILL = COLOR_BATTLEFIELD_ACTIVE_STROKE
 export const COLOR_STATUS_NON_ACTIVE_FILL = COLOR_BATTLEFIELD_NON_ACTIVE_STROKE
-export const STATUS_FILL_ALPHA = 0.05
+export const STATUS_FILL_ALPHA = 0.05 // 5% opaque / 95% transparent
 export const COLOR_PLAYER_ACTIVE_FILL = 0x1e4f7a
 export const COLOR_PLAYER_NON_ACTIVE_FILL = 0x4a1f5e
 export const COLOR_BORDER_SUBTLE = 0x3a4a8a
@@ -36,8 +36,9 @@ export const COLOR_LEDGER_SURFACE_STRONG = 0xe2cd92 // = --ledger-surface-strong
 export const COLOR_LEDGER_BORDER = 0x8a6d3a         // = --ledger-border
 export const COLOR_LEDGER_TEXT = '#3b2b12'          // = --ledger-text
 export const COLOR_STACK_EDGE = 0x5d7cff            // = --stack-edge
-// Neutral player-info panel base: a 5%-opaque status tint, restrained border,
-// and active-only lighting distinguish state without a saturated fill.
+// Neutral player-info panel base: a 5%-opaque (95%-transparent) status tint,
+// restrained border, and active-only lighting distinguish state without a
+// saturated fill.
 export const COLOR_PLAYER_PANEL_FILL = 0x1f2a5e
 
 export const UI_THEME = {

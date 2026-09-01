@@ -224,14 +224,14 @@ export interface BattlefieldBackdropConfig {
  *   1. Drop shadow
  *   2. Felt base gradient (linear, dark → base)
  *   3. Soft upper-left sheen highlight
- *   4. Status-colour fill at 5% opacity
+ *   4. Status-colour fill at 5% opacity (95% transparency)
  *   5. Restrained decorative stroke
  *   6. Active-only soft directional lighting glow along the top edge
  *
  * Entirely procedural — no external texture assets required. Both active
- * and non-active insets share the same felt tone. A 5%-opaque fill matching
- * each border subtly reinforces state, and the active side also receives a
- * lighting glow.
+ * and non-active insets share the same felt tone. A 5%-opaque
+ * (95%-transparent) fill matching each border subtly reinforces state, and the
+ * active side also receives a lighting glow.
  */
 export function buildBattlefieldBackdrop(
   scene: Phaser.Scene,
@@ -266,7 +266,8 @@ export function buildBattlefieldBackdrop(
   sheen.fillRoundedRect(-hw + 2, -hh + 2, width * 0.6, Math.min(height * 0.4, height - 4), radius - 2)
   container.add(sheen)
 
-  // Layer 4: Status fill matching the border colour at 5% opacity.
+  // Layer 4: Status fill matching the border colour at 5% opacity
+  // (95% transparency).
   const statusTint = scene.add.graphics()
   statusTint.fillStyle(isActive ? COLOR_STATUS_ACTIVE_FILL : COLOR_STATUS_NON_ACTIVE_FILL, STATUS_FILL_ALPHA)
   statusTint.fillRoundedRect(-hw, -hh, width, height, radius)
