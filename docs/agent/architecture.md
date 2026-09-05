@@ -14,6 +14,12 @@ src/
 │   ├── ai-policies/       Per-level policy implementations
 │   └── types.ts           Engine-level types and guards
 │
+├── cli/                   Terminal interface (Human vs AI / AI vs AI)
+│   ├── main.ts            CLI option-to-session orchestration
+│   ├── options.ts         Argument parsing, defaults, and validation
+│   ├── session.ts         Injected-I/O terminal game loop
+│   └── io.ts              Terminal adapter contract
+│
 ├── app/                   Orchestration layer; no DOM/Phaser-specific code
 │   ├── controller.ts      App controller: mode/state transitions,
 │   │                      persistence side effects, subscriptions
@@ -89,12 +95,17 @@ src/
 └── style.css              DOM styling
 ```
 
+The Node-specific adapter is `scripts/cardgame-cli.mjs`; Vite bundles it and
+the imported pure modules into `dist-cli/cardgame-cli.mjs` using
+`vite.cli.config.ts`. The generated bundle is not committed.
+
 ## Layering rule
 
 Preferred dependency direction:
 
 ```
 renderers/{dom,phaser}/  ──→  app/  ──→  game/
+cli/                     ──→  app/  ──→  game/
 ```
 
 - `game/` is independent of `app/` and `renderers/`. (Previously `AiLevel`
@@ -106,6 +117,9 @@ renderers/{dom,phaser}/  ──→  app/  ──→  game/
 - Renderers should consume controller state through `AppViewModel`/controller
   APIs, but may import shared app/game helpers and types directly
   (options/constants/guards) when needed.
+- `cli/` is another outer interface. It may consume pure presentation and
+  validation helpers from `app/` plus the engine/AI APIs from `game/`, but it
+  must not import browser renderers, persistence, P2P, Phaser, or DOM APIs.
 
 A renderer should never reach into controller internals; if it needs
 information, project it into the view-model.
@@ -116,6 +130,7 @@ information, project it into the view-model.
 | --- | --- | --- |
 | Rules, legality, action application | `src/game/` | Pure, deterministic, no UI |
 | AI policy heuristics | `src/game/ai-policies/` | Pure, depends only on engine |
+| Terminal parsing, prompting, and output | `src/cli/` + thin `scripts/` adapter | Keeps Node I/O outside the shared engine |
 | Cross-renderer presentation logic (e.g. hide AI hand from human) | `src/app/view-model.ts` | One implementation; both renderers inherit |
 | New persisted setting (localStorage) | `src/app/<feature>.ts` + matching guard + controller wiring | Validation must live next to the persisted shape |
 | New AiLevel | `src/game/ai-levels.ts` (canonical tuple) + `src/app/ai-levels.ts` (label) + new policy in `src/game/ai-policies/` + registry entry in `src/game/ai.ts` (README has the full checklist) | Keeps registry-driven |

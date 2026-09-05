@@ -1,18 +1,20 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
+import {
+  labelGameAction,
+  projectHandCards,
+  revealedEnemyHandForSwamp,
+} from './game-presentation'
 import { getCurrentTutorialStep } from './tutorial'
 import type {
   AdventureUiState,
   AppState,
   AppViewModel,
-  ControllerKind,
   CounterOption,
   PlayLandOption,
   SwampDiscardOption,
-  UiCard,
 } from './types'
-import { HIDDEN_HAND_CARD_NAME } from './types'
 
 function projectAdventureUiState(state: AppState): AdventureUiState {
   const adventure = state.adventure
@@ -58,133 +60,6 @@ function winnerTextFor(game: GameState): string {
     return ''
   }
   return game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
-}
-
-function nestedTargetLabel(
-  game: GameState,
-  actor: number,
-  cardName: 'Forest' | 'Mountain' | 'Swamp',
-  effectTargetId: string | undefined,
-  controllers: readonly [ControllerKind, ControllerKind],
-  revealEnemyHandForSwamp: boolean,
-): string | null {
-  if (!effectTargetId) {
-    return null
-  }
-  const me = game.players[actor]
-  const enemyIndex = actor === 0 ? 1 : 0
-  const enemy = game.players[enemyIndex]
-  if (cardName === 'Forest') {
-    const target = me.graveyard.find((entry) => entry.id === effectTargetId)
-    return target ? `return ${target.name}` : null
-  }
-  if (cardName === 'Mountain') {
-    const target = enemy.battlefield.find((entry) => entry.instanceId === effectTargetId)
-    return target ? `destroy ${target.card.name}` : null
-  }
-  const target = enemy.hand.find((entry) => entry.id === effectTargetId)
-  if (!target) {
-    return null
-  }
-  // The opposing hand is normally hidden from the local human viewer in
-  // hvai modes (`shouldHideHandFromViewer`). However, when the human is
-  // actively choosing a Swamp discard target, they need to see the
-  // candidate cards: the discard is *their* decision, so picking blind
-  // would be unfair. `revealEnemyHandForSwamp` is scoped narrowly to that
-  // decision by `buildViewModel` and does not affect the redaction of
-  // `players[enemyIndex].handCards` anywhere else (battlefield panels,
-  // replay log, etc.). The AI continues to play Swamp without enemy-hand
-  // visibility (see `src/game/ai-visibility.ts`); the resulting asymmetry
-  // is intentional.
-  const hideName = shouldHideHandFromViewer(controllers, enemyIndex) && !revealEnemyHandForSwamp
-  const targetName = hideName ? 'hidden card' : target.name
-  return `discard ${targetName}`
-}
-
-function playLandLabelFor(game: GameState, actor: number, action: Extract<GameAction, { type: 'play_land' }>, controllers: readonly [ControllerKind, ControllerKind], revealEnemyHandForSwamp: boolean): string {
-  const me = game.players[actor]
-  const card = me.hand.find((entry) => entry.id === action.cardId)
-  if (!card) {
-    return 'Play card'
-  }
-
-  let label = `Play ${card.name}`
-  if (!action.effectTargetId) {
-    return label
-  }
-
-  if (card.name === 'Forest' || card.name === 'Mountain' || card.name === 'Swamp') {
-    const suffix = nestedTargetLabel(game, actor, card.name, action.effectTargetId, controllers, revealEnemyHandForSwamp)
-    if (suffix) {
-      label += ` (${suffix})`
-    }
-    return label
-  }
-
-  if (card.name === 'Plains') {
-    const target = me.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
-    if (target) {
-      label += ` (reuse ${target.card.name})`
-    }
-  }
-
-  return label
-}
-
-function plainsReuseLabelFor(
-  game: GameState,
-  actor: number,
-  action: Extract<GameAction, { type: 'resolve_plains_reuse' }>,
-  controllers: readonly [ControllerKind, ControllerKind],
-  revealEnemyHandForSwamp: boolean,
-): string {
-  const reusedName = game.pendingPlainsReuse?.reusedCardName
-  if (!reusedName) {
-    return 'Resolve Plains reuse'
-  }
-  if (reusedName === 'Forest' || reusedName === 'Mountain' || reusedName === 'Swamp') {
-    const suffix = nestedTargetLabel(game, actor, reusedName, action.effectTargetId, controllers, revealEnemyHandForSwamp)
-    return suffix ? `Reuse ${reusedName} (${suffix})` : `Reuse ${reusedName}`
-  }
-  return `Reuse ${reusedName}`
-}
-
-function counterLabelFor(
-  game: GameState,
-  actor: number,
-  action: Extract<GameAction, { type: 'counter_land' }>,
-): string {
-  const me = game.players[actor]
-  const discard = action.discardCardId
-    ? me.hand.find((card) => card.id === action.discardCardId)
-    : undefined
-  const suffix = discard ? ` + ${discard.name}` : ' + another land'
-  return `Counter with Island (discard Island${suffix})`
-}
-
-function shouldHideHandFromViewer(
-  controllers: readonly [ControllerKind, ControllerKind],
-  playerIndex: number,
-): boolean {
-  // Hide an AI player's hand whenever a local human is playing on the other
-  // side: in `local-hvai` / `adventure-hvai` the human shares the screen
-  // with the AI and could otherwise read the AI's cards. Keep both hands
-  // visible for `local-hvh` (both human) and `local-aivai` (no human to
-  // protect). For P2P, the local side is `human` and the opposing side is
-  // `remote`, so this predicate is false there too — and the remote opponent
-  // never sends raw hand data over the wire anyway.
-  return controllers[playerIndex] === 'ai' && controllers[1 - playerIndex] === 'human'
-}
-
-function projectHandCards(
-  hand: ReadonlyArray<{ id: string; name: string }>,
-  controllers: readonly [ControllerKind, ControllerKind],
-  playerIndex: number,
-): UiCard[] {
-  if (shouldHideHandFromViewer(controllers, playerIndex)) {
-    return hand.map((card) => ({ id: card.id, name: HIDDEN_HAND_CARD_NAME }))
-  }
-  return hand.map((card) => ({ id: card.id, name: card.name }))
 }
 
 export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewModel {
@@ -251,21 +126,13 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   // When true, the picker/labels surface the real enemy hand. The check
   // intentionally uses the raw `GameState` (not the redacted projection)
   // and is scoped to the actor's decision only.
-  const isHumanActor = actorControl === 'human' && !replayActive
-  let revealEnemyHandForSwamp = false
-  if (isHumanActor) {
-    if (game.phase === 'swamp_target') {
-      revealEnemyHandForSwamp = true
-    } else if (game.phase === 'plains_target'
-      && game.pendingPlainsReuse?.reusedCardName === 'Swamp'
-      && game.pendingPlainsReuse.actor === actor) {
-      revealEnemyHandForSwamp = true
-    }
-  }
-  const enemyIndex = actor === 0 ? 1 : 0
-  const revealedEnemyHandForSwamp: ReadonlyArray<UiCard> | null = revealEnemyHandForSwamp
-    ? Object.freeze(game.players[enemyIndex].hand.map((card) => Object.freeze({ id: card.id, name: card.name })))
-    : null
+  const revealedEnemyHandForSwampCards = revealedEnemyHandForSwamp(
+    game,
+    actor,
+    state.controllers,
+    replayActive,
+  )
+  const revealEnemyHandForSwamp = revealedEnemyHandForSwampCards !== null
 
   const playLandByCard: Record<string, PlayLandOption[]> = {}
   const counterOptions: CounterOption[] = []
@@ -280,30 +147,33 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       const options = playLandByCard[action.cardId] ?? []
       options.push({
         action,
-        label: playLandLabelFor(game, actor, action, state.controllers, revealEnemyHandForSwamp),
+        label: labelGameAction(game, action, state.controllers, revealEnemyHandForSwamp),
       })
       playLandByCard[action.cardId] = options
       continue
     }
 
     if (action.type === 'counter_land') {
-      counterOptions.push({ action, label: counterLabelFor(game, actor, action) })
+      counterOptions.push({
+        action,
+        label: labelGameAction(game, action, state.controllers, revealEnemyHandForSwamp),
+      })
       continue
     }
 
     if (action.type === 'resolve_swamp_discard') {
-      const target = action.effectTargetId
-        ? game.players[actor === 0 ? 1 : 0].hand.find((card) => card.id === action.effectTargetId)
-        : undefined
       swampDiscardOptions.push({
         action,
-        label: target ? `Discard ${target.name}` : 'Resolve Swamp discard',
+        label: labelGameAction(game, action, state.controllers, revealEnemyHandForSwamp),
       })
       continue
     }
 
     if (action.type === 'resolve_plains_reuse') {
-      plainsReuseOptions.push({ action, label: plainsReuseLabelFor(game, actor, action, state.controllers, revealEnemyHandForSwamp) })
+      plainsReuseOptions.push({
+        action,
+        label: labelGameAction(game, action, state.controllers, revealEnemyHandForSwamp),
+      })
     }
   }
 
@@ -376,7 +246,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       // the snapshot loader missed back-filling.
       events: (game.events ?? []).map(cloneLogEvent),
       isReplay: replayActive,
-      revealedEnemyHandForSwamp,
+      revealedEnemyHandForSwamp: revealedEnemyHandForSwampCards,
     },
     recording: {
       canSave: state.recording !== null,

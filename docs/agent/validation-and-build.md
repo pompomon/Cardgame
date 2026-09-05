@@ -27,14 +27,15 @@ order; do not skip steps.
    `pr-workflow.md`). If your change adds or removes tests, update the
    count in the PR description.
 
-4. **Build** — typecheck + production bundle:
+4. **Build** — typecheck + browser and terminal bundles:
 
    ```bash
-   npm run build   # tsc && vite build
+   npm run build   # tsc && vite build && npm run build:cli
    ```
 
-   The build also exercises `import.meta.env.BASE_URL` static replacement,
-   so it must pass before merge. There is a regression test
+   The browser build also exercises `import.meta.env.BASE_URL` static
+   replacement, and the CLI build emits the standalone Node 22 ESM bundle at
+   `dist-cli/cardgame-cli.mjs`, so both must pass before merge. There is a regression test
    (`src/test/card-art-base-path.test.ts`) that invokes `vite build` with a
    custom `VITE_BASE_PATH` to verify the base is baked into the bundle.
 
@@ -45,6 +46,8 @@ order; do not skip steps.
 
 - `npm run dev` — local Vite dev server.
 - `npm run preview` — preview the production bundle locally.
+- `npm run build:cli` — build only the standalone Node terminal bundle.
+- `npm run cli -- --mode ai-vs-ai` — build and run the terminal game.
 - `npm run generate:card-art` — regenerates `public/cards/hd-fallback/*.png`
   and `public/cards/monochrome/*.png` from
   `scripts/generate-card-art.mjs`. Deterministic and CI-safe (no API
