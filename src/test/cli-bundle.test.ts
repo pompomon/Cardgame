@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -29,6 +29,7 @@ describe('standalone CLI bundle', () => {
       },
     )
     expect(build.status, `${build.stdout}\n${build.stderr}`).toBe(0)
+    expect(readdirSync(outDir)).toEqual(['cardgame-cli.mjs'])
 
     const bundlePath = join(outDir, 'cardgame-cli.mjs')
     const bundle = readFileSync(bundlePath, 'utf8')

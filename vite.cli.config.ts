@@ -3,12 +3,14 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 const repositoryRoot = fileURLToPath(new URL('.', import.meta.url))
+const defaultOutDir = resolve(repositoryRoot, 'dist-cli')
+const outDir = process.env.CLI_OUT_DIR ?? defaultOutDir
 
 export default defineConfig({
   build: {
     target: 'node22',
-    outDir: process.env.CLI_OUT_DIR ?? resolve(repositoryRoot, 'dist-cli'),
-    emptyOutDir: true,
+    outDir,
+    emptyOutDir: outDir === defaultOutDir,
     copyPublicDir: false,
     minify: false,
     sourcemap: false,
