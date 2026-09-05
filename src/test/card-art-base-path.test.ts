@@ -22,7 +22,7 @@ function runViteBuild(base: string): string {
   outDir = dir
   const result = spawnSync(
     process.execPath,
-    [resolve(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dir, '--emptyOutDir'],
+    [resolve(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dir, '--emptyOutDir', '--manifest'],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, VITE_BASE_PATH: base, NODE_ENV: 'production' },
@@ -74,5 +74,20 @@ describe('card-art base path (production bundle)', () => {
       bundle.includes(TEST_BASE),
       `built bundle should reference the configured base '${TEST_BASE}'`,
     ).toBe(true)
+
+    const manifest = JSON.parse(readFileSync(join(dir, '.vite', 'manifest.json'), 'utf8')) as Record<
+      string, { file: string; isDynamicEntry?: boolean; imports?: string[] }
+    >
+    expect(manifest['src/renderers/three/index.ts'].isDynamicEntry).toBe(true)
+    expect(manifest['src/renderers/phaser/index.ts'].isDynamicEntry).toBe(true)
+    const initialFiles = new Set<string>()
+    const visit = (key: string): void => {
+      if (initialFiles.has(manifest[key].file)) return
+      initialFiles.add(manifest[key].file)
+      for (const dependency of manifest[key].imports ?? []) visit(dependency)
+    }
+    visit('index.html')
+    expect(initialFiles.has(manifest['src/renderers/three/index.ts'].file)).toBe(false)
+    expect(initialFiles.has(manifest['src/renderers/phaser/index.ts'].file)).toBe(false)
   }, 120_000)
 })

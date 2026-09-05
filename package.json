@@ -17,11 +17,13 @@
     "generate:board-backgrounds": "node scripts/generate-board-backgrounds.mjs"
   },
   "devDependencies": {
+    "@types/three": "^0.185.4",
     "typescript": "~6.0.2",
     "vite": "^8.0.10",
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "phaser": "^4.1.0"
+    "phaser": "^4.1.0",
+    "three": "^0.185.1"
   }
 }

@@ -5,6 +5,7 @@ import { ANIMATION_SPEED_OPTIONS, durationMsForSpeed } from '../app/animation-se
 import { BOARD_THEME_OPTIONS } from '../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../app/card-visual-styles'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../app/render-quality'
+import { RENDERER_OPTIONS, rendererSearch } from '../app/renderer-selection'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../app/card-visuals'
 import { visualEffectForEvent, type VisualEffectDescriptor } from '../app/visual-effects'
 import { getInstallUiState } from '../app/install-support'
@@ -94,9 +95,10 @@ export function escapeHtml(value: string): string {
 }
 
 export function rendererSwitchLink(kind: RendererKind): string {
-  return kind === 'dom'
-    ? '<a href="?renderer=phaser" class="renderer-link">Switch to Phaser renderer</a>'
-    : '<a href="?renderer=dom" class="renderer-link">Switch to DOM renderer</a>'
+  const search = typeof window === 'undefined' ? '' : window.location?.search ?? ''
+  return RENDERER_OPTIONS.filter((option) => option.value !== kind)
+    .map((option) => `<a href="${escapeHtml(rendererSearch(option.value, search))}" class="renderer-link">Switch to ${option.label} renderer</a>`)
+    .join(' · ')
 }
 
 export function renderInstallControls(): string {
@@ -159,10 +161,11 @@ export function renderLobby(view: AppViewModel): string {
   return `
     <section class="panel lobby dom-cardgame dom-cardgame__lobby">
       <div class="dom-cardgame__hero">
-        <p class="dom-cardgame__eyebrow">HD mobile DOM renderer</p>
+        <p class="dom-cardgame__eyebrow">${view.renderer === 'three' ? 'HD Three.js tabletop' : 'HD mobile DOM renderer'}</p>
         <h1>Basic Land Game</h1>
         <p class="subtitle">Land-only 2-player game with local AI and optional P2P mode.</p>
         <p>${rendererSwitchLink(view.renderer)}</p>
+        ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
       </div>
       <div class="dom-cardgame__lobby-grid">
         ${renderInstallControls()}

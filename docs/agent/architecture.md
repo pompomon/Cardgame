@@ -43,7 +43,19 @@ src/
 │   └── types.ts           App-level shared types
 │
 ├── renderers/
+│   ├── host.ts            Lazy graphics loading + state-preserving DOM fallback
 │   ├── dom.ts             DOM renderer
+│   ├── shared/            Framework-independent pointer state
+│   ├── three/             Optional WebGL2 / Three.js tabletop
+│   │   ├── index.ts       Composition, presentation and lifecycle
+│   │   ├── board.ts       Retained board, camera, picking and GPU ownership
+│   │   ├── assets.ts      Shared/ref-counted art textures and fallbacks
+│   │   ├── card-registry.ts Retained card identities and visual state
+│   │   ├── layout.ts      CSS-pixel coordinates and row pagination
+│   │   ├── quality.ts     Actual drawing-buffer and effect quality bounds
+│   │   ├── interaction.ts Pointer capture, drag/drop and cancellation
+│   │   ├── interface.ts   Native HTML lobby, actions, menus and targets
+│   │   └── effects.ts     Cancellable event queue + board presentation
 │   └── phaser/            Phaser 4 renderer
 │       ├── index.ts       Composition root: PhaserRenderer (mount/render/
 │       │                  unmount), wires scenes + DOM overlays together
@@ -104,7 +116,7 @@ the imported pure modules into `dist-cli/cardgame-cli.mjs` using
 Preferred dependency direction:
 
 ```
-renderers/{dom,phaser}/  ──→  app/  ──→  game/
+renderers/{dom,phaser,three}/  ──→  app/  ──→  game/
 cli/                     ──→  app/  ──→  game/
 ```
 
@@ -123,6 +135,29 @@ cli/                     ──→  app/  ──→  game/
 
 A renderer should never reach into controller internals; if it needs
 information, project it into the view-model.
+
+## Three.js integration
+
+`RendererHost` retains the controller while asynchronously loading graphics
+renderers. DOM remains in the initial bundle as the offline/unsupported-GPU
+fallback. The host projects the *running* renderer into the view model without
+overwriting the stored preference. Renderer switches in lobby links still
+navigate; runtime failure fallback never reloads or restarts a match.
+
+Three.js owns one canvas and a separate native HTML interface. Never replace
+the canvas host's HTML when refreshing controls. Meshes, drag sessions,
+textures, effects, and target selection remain renderer-owned; submit only
+app-projected legal actions through `ControllerApi`.
+
+`renderers/shared/drag-state.ts` is the common pure pointer state machine;
+Phaser's old import path re-exports it for compatibility. Renderer adapters
+own pointer capture and graphics-specific coordinates. Three.js uses canvas
+CSS bounds for picking, independently of its capped drawing-buffer DPR.
+
+Graphics render only on invalidation or during cosmetic animation. Cleanup
+must cancel pointer sessions, playback, pending loads, and frame callbacks
+before disposing GPU resources. Context loss selects the same-session DOM
+fallback. Board orientation and event semantics reuse the app layer.
 
 ## Where does this code go?
 

@@ -8,7 +8,8 @@ Keep this file short; the depth lives in `docs/agent/`.
 A simplified Magic-style 2-player card game shipped as an offline-capable SPA.
 
 - **Build / bundler:** Vite + TypeScript
-- **Renderers:** DOM (default) and Phaser 4 (`?renderer=phaser`)
+- **Renderers:** DOM (default), Phaser 4 (`?renderer=phaser`), and optional
+  Three.js / WebGL2 (`?renderer=three`)
 - **Tests:** vitest (`npm run test`)
 - **Lint:** `tsc --noEmit` (`npm run lint`)
 - **Engine:** pure TypeScript in `src/game/` (no DOM/Phaser imports)
