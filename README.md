@@ -62,6 +62,43 @@ The selected renderer is also stored in `localStorage` for later visits.
 4. Register the policy in `AI_POLICY_REGISTRY` in `src/game/ai.ts`.
 5. Add/update tests in `src/test/ai.test.ts` and controller/recording tests.
 
+## Terminal CLI
+
+The game can run without a browser or network connection in two modes:
+
+- `human-vs-ai` — the human is Player 1 and the AI is Player 2.
+- `ai-vs-ai` — both players use the same selected AI level.
+
+Node.js 22 is required. Install dependencies, then run:
+
+```bash
+npm run cli -- --mode human-vs-ai
+npm run cli -- --mode ai-vs-ai --ai-level hard --seed 42 --delay-ms 0
+```
+
+Supported options:
+
+- `--mode human-vs-ai|ai-vs-ai` (required for piped/non-interactive input)
+- `--ai-level basic|advanced|hard` (default: `basic`)
+- `--seed <non-negative integer>` for deterministic games
+- `--delay-ms <0-60000>` between AI decisions (default: `350`)
+- `--help`
+
+Omit `--mode` in an interactive terminal to choose from a prompt. During a
+Human vs AI game, enter a displayed action number or `q` to quit. The AI hand
+stays hidden except while the human is choosing a legal Swamp discard target.
+
+To create a copyable standalone Node ESM bundle:
+
+```bash
+npm run build:cli
+node dist-cli/cardgame-cli.mjs --mode ai-vs-ai --seed 42 --delay-ms 0
+```
+
+The generated `dist-cli/cardgame-cli.mjs` uses the same engine and AI policies
+as the SPA. It intentionally excludes networking, Human vs Human, adventure,
+tutorial, browser persistence, recording/replay, DOM, and Phaser.
+
 ## Game recording and replay
 
 - You can save a game recording at any point, including after the game has ended.
