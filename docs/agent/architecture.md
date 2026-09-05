@@ -131,7 +131,7 @@ information, project it into the view-model.
 | Rules, legality, action application | `src/game/` | Pure, deterministic, no UI |
 | AI policy heuristics | `src/game/ai-policies/` | Pure, depends only on engine |
 | Terminal parsing, prompting, and output | `src/cli/` + thin `scripts/` adapter | Keeps Node I/O outside the shared engine |
-| Cross-renderer presentation logic (e.g. hide AI hand from human) | `src/app/view-model.ts` | One implementation; both renderers inherit |
+| Shared presentation logic (e.g. hide AI hand from human, action labels) | `src/app/game-presentation.ts` + `src/app/view-model.ts` | One implementation shared by browser renderers and CLI |
 | New persisted setting (localStorage) | `src/app/<feature>.ts` + matching guard + controller wiring | Validation must live next to the persisted shape |
 | New AiLevel | `src/game/ai-levels.ts` (canonical tuple) + `src/app/ai-levels.ts` (label) + new policy in `src/game/ai-policies/` + registry entry in `src/game/ai.ts` (README has the full checklist) | Keeps registry-driven |
 | Layout math (Phaser) shared between scenes | `src/renderers/phaser/layout.ts` | Already the shared home; reuse its `clamp` |

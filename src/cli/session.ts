@@ -57,9 +57,12 @@ export function formatTerminalGameState(
   actor: number,
 ): readonly string[] {
   const players = projectPlayersForPresentation(state, controllers)
+  const phaseSummary = state.phase === 'gameOver'
+    ? `Turn ${state.turn} | Phase: ${state.phase}`
+    : `Turn ${state.turn} | Phase: ${state.phase} | Active: Player ${actor + 1} (${controllerLabel(controllers[actor])})`
   const lines = [
     '',
-    `Turn ${state.turn} | Phase: ${state.phase} | Active: Player ${actor + 1} (${controllerLabel(controllers[actor])})`,
+    phaseSummary,
   ]
   for (const player of players) {
     lines.push(
