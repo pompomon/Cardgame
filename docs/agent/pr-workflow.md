@@ -23,8 +23,10 @@ reported revision, not an earlier run's count. The template starts pending.
   reason)**, never as "0 alerts". Pending, blocked, and failed required checks
   are not completion or merge approval.
 - Keep the final line's lint/tests/build/CodeQL fields, replacing each pending
-  value with its actual outcome. Do not leave success placeholders for checks
-  that were omitted under the [docs-only policy](validation-and-build.md#skipping-rules).
+  value with its actual outcome. Required checks reported as pending, blocked,
+  failed, or not run are not satisfied. An omission explicitly allowed by the
+  [skipping rules](validation-and-build.md#skipping-rules) may be reported as not
+  run, but must not be represented as a passed required check.
 - Above that line, record the tested revision and any included uncommitted
   changes, Node/npm versions, actual command exit codes and output references,
   and the benchmark result when applicable. Separate baseline from post-change

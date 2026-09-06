@@ -175,9 +175,10 @@ A well-validated application change has all of:
 ### Reference incident and recovery walkthroughs
 
 [Run 34038894955](https://github.com/pompomon/Cardgame/actions/runs/34038894955/job/101501919606)
-failed in the dynamic Copilot job's **Processing Request (Linux)** step, not
-the Pages workflow. At 14:29:36 UTC on 2026-09-06, the runtime reported
-`CAPIError: 400 Error while downloading file. Upstream status code: 404.`
+attempt 1 at head commit `ca69e6a14ba790b5cb3d1290a051dfefeef4e02b`
+failed in the dynamic Copilot job's **Processing Request (Linux)** step, not the
+Pages workflow. At 14:29:36 UTC on 2026-09-06, the runtime reported `CAPIError:
+400 Error while downloading file. Upstream status code: 404.`
 CodeQL had explicitly reported 0 alerts at 14:29:33. An image-view operation
 preceded the error, but the missing URL and underlying cause were not disclosed.
 Attachment transport is a hypothesis, not proof of a bad screenshot; neither
