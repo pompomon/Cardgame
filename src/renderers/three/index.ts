@@ -36,7 +36,8 @@ export class ThreeRenderer implements AppRenderer {
     container.replaceChildren(stage, controls)
     this.stage = stage
     try {
-      this.board = new ThreeBoard(stage, this.onFailure, () => this.interaction?.cancel())
+      this.board = new ThreeBoard(stage, this.onFailure, () => this.interaction?.cancel(),
+        (action) => this.ui?.activatePrimaryAction(action))
       this.ui = new ThreeInterface(controls, controller, this.refresh, () => this.interaction?.cancel())
       this.interaction = new ThreeInteraction(
         this.board,
@@ -76,7 +77,7 @@ export class ThreeRenderer implements AppRenderer {
     if (this.stage) this.stage.hidden = !inGame
     this.board.setVisible(inGame && !document.hidden)
     this.ui.update(this.presentedView, actor)
-    if (inGame) this.board.render(this.presentedView, actor, this.ui.targetIds, this.ui.response)
+    if (inGame) this.board.render(this.presentedView, actor, this.ui.targetIds, this.ui.response, this.ui.primaryAction)
     this.interaction?.reconcile()
     this.effects?.pump()
   }
