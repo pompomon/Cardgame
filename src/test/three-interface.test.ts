@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ControllerApi } from '../app/controller'
+import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
+import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
+import { BASIC_LANDS } from '../game/types'
+import { noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/dom-utils'
 import { ThreeInterface } from '../renderers/three/interface'
 import {
   canThreeInput,
@@ -236,6 +240,7 @@ function setup(view = makeView()) {
 }
 
 beforeEach(() => {
+  resetRasterCardArtLoadFailuresForTests()
   vi.stubGlobal('navigator', { userAgent: 'node-test', standalone: false })
   vi.stubGlobal('window', { matchMedia: () => ({ matches: false }), navigator: { standalone: false } })
   vi.stubGlobal('Element', ElementStub)
@@ -244,7 +249,7 @@ beforeEach(() => {
   vi.stubGlobal('HTMLSelectElement', ElementStub)
 })
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { resetRasterCardArtLoadFailuresForTests(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Three native markup and decisions', () => {
   it('exposes every mode and all lobby settings, install and recording controls', () => {
@@ -494,6 +499,95 @@ describe('Three native interface behavior', () => {
     expect(h.content.innerHTML).toContain('Forest card preview')
     expect(h.content.innerHTML).not.toContain('wrong')
     h.ui.playCard('source')
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  describe.each(CARD_VISUAL_STYLES)('%s preview artwork', (style) => {
+    it.each(BASIC_LANDS)('renders the %s image and name inside the dialog', (name) => {
+      const view = makeView()
+      view.cardVisualStyle = style
+      view.game!.players[1].battlefield[0].name = name
+      const h = setup(view)
+      h.ui.activate(hit())
+      const dialog = h.content.querySelector('[data-modal="preview"]')!
+      expect(dialog.open).toBe(true)
+      expect(dialog.getAttribute('aria-label')).toBe(`${name} card preview`)
+      expect(dialog.querySelector('.dom-card__name')).not.toBeNull()
+      const image = dialog.querySelector('.dom-card__art-frame')!.querySelector('img')!
+      if (isRasterCardVisualStyle(style)) {
+        expect(image.getAttribute('src')).toBe(cardArtUrl(name, style))
+        // The tree stub does not parse '>' inside quoted arrow-function handlers.
+        const previewMarkup = h.content.innerHTML.match(/<dialog[\s\S]*?<\/dialog>/)?.[0]
+        expect(previewMarkup).toMatch(/onerror="[^"]*data:image\/svg\+xml/)
+      } else {
+        expect(image.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+      }
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
+  })
+
+  it.each(['hd', 'monochrome'] as const)('retains %s fallbacks through preview rerenders and reopening', (style) => {
+    const view = makeView()
+    view.cardVisualStyle = style
+    const h = setup(view)
+    h.ui.activate(hit())
+    const primary = cardArtUrl('Forest', style)
+    const fallback = cardArtFallbackUrl('Forest', style)
+    noteRasterCardArtLoadFailure(primary)
+    h.update({ ...view, status: 'Updated while previewing' })
+    let dialog = h.content.querySelector('[data-modal="preview"]')!
+    if (fallback) {
+      expect(dialog.querySelector('img')?.getAttribute('src')).toBe(fallback)
+      expect(dialog.querySelector('.card-tile--raster')).not.toBeNull()
+      noteRasterCardArtLoadFailure(fallback)
+      h.update({ ...view, status: 'Fallback unavailable' })
+    }
+    dialog = h.content.querySelector('[data-modal="preview"]')!
+    expect(dialog.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+    expect(dialog.querySelector('.card-tile--raster')).toBeNull()
+    h.click('[data-action="close"]')
+    h.ui.activate(hit())
+    expect(h.content.querySelector('dialog')?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it.each(['button', 'Escape'])('closes previews with %s, restoring focus without playing a card', (method) => {
+    const h = setup()
+    const selector = '[data-action="preview"][data-zone="hand"][data-card-id="source"]'
+    h.click(selector)
+    const close = h.content.querySelector('[data-action="close"]')!
+    expect(h.document.activeElement).toBe(close)
+    for (const shiftKey of [false, true]) {
+      const preventDefault = vi.fn()
+      h.document.emit('keydown', { key: 'Tab', shiftKey, preventDefault })
+      expect(preventDefault).toHaveBeenCalled()
+      expect(h.document.activeElement).toBe(close)
+    }
+    if (method === 'button') h.click('[data-action="close"]')
+    else h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.document.activeElement).toBe(h.content.querySelector(selector))
+    expect(h.ui.isBlocked()).toBe(false)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it('preserves a preview on status updates but dismisses it when its card leaves play', () => {
+    const view = makeView()
+    const h = setup(view)
+    h.ui.activate(hit())
+    h.update({ ...view, status: 'Updated status' })
+    expect(h.content.querySelector('[data-modal="preview"]')).not.toBeNull()
+    const next = makeView()
+    next.game!.players[1].battlefield.shift()
+    h.update(next)
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.ui.isBlocked()).toBe(false)
+    h.ui.activate(hit())
+    expect(h.content.querySelector('dialog')).toBeNull()
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.ui.dispose()
   })
