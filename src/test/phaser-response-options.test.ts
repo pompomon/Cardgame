@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CounterOption } from '../app/types'
 import { buildCounterHandOptions } from '../renderers/phaser/response-options'
+import { buildCounterHandOptions as sharedCounterHandOptions } from '../app/response-options'
 
 const counterOptions: CounterOption[] = [
   {
@@ -14,6 +15,28 @@ const counterOptions: CounterOption[] = [
 ]
 
 describe('Phaser response options', () => {
+  it('re-exports the shared response model without a Phaser dependency', () => {
+    expect(buildCounterHandOptions).toBe(sharedCounterHandOptions)
+  })
+
+  it('keeps same-name discards distinct and ignores missing or required discard ids', () => {
+    const options = buildCounterHandOptions({
+      actor: 0, pendingLandName: 'Forest',
+      players: [{ handCards: [
+        { id: 'island', name: 'Island' },
+        { id: 'forest-1', name: 'Forest' },
+        { id: 'forest-2', name: 'Forest' },
+      ] }],
+      legal: {
+        canPassResponse: true,
+        counterOptions: ['island', 'forest-1', 'forest-2', 'missing', undefined].map((discardCardId) => ({
+          action: { type: 'counter_land', actor: 0, discardCardId }, label: 'Discard Island + Forest',
+        })),
+      },
+    })
+    expect(options.choices.map((choice) => choice.cardId)).toEqual(['forest-1', 'forest-2'])
+  })
+
   it('maps the required Island and each additional discard to hand cards', () => {
     const options = buildCounterHandOptions({
       actor: 0,

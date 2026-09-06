@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CanvasTexture } from 'three'
+import { CanvasTexture, type Mesh, type MeshBasicMaterial } from 'three'
+import type { AppViewModel } from '../app/types'
+import { buildCounterHandOptions, type CounterHandOptions } from '../app/response-options'
 import type { ThreeAssets } from '../renderers/three/assets'
 import { boardCardKey, ThreeCardRegistry, type CardDescriptor } from '../renderers/three/card-registry'
 import { EffectGeometry, EffectVisual, effectRecipe } from '../renderers/three/effect-visual'
 import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { ThreeBoard } from '../renderers/three/board'
+import { boardLayout } from '../renderers/three/layout'
 
 function descriptor(cardId: string, instanceId?: string, x = 100): CardDescriptor {
   return {
@@ -20,6 +23,30 @@ function fixture(): { registry: ThreeCardRegistry; acquire: ReturnType<typeof vi
 }
 
 describe('retained Three.js card registry', () => {
+  it('updates distinct response rings in place and clears them without reallocating textures', () => {
+    const { registry, acquire, release } = fixture()
+    const card = { ...descriptor('island'), hit: { ...descriptor('island').hit, playable: false } }
+    registry.reconcile([{ ...card, response: 'required' }])
+    const retained = registry.get(card.hit.key)!
+    const ring = retained.group.children[1] as Mesh
+    const material = ring.material as MeshBasicMaterial
+    expect(ring.visible).toBe(true)
+    expect(material.color.getHexString()).toBe('80bfff')
+    const requiredScale = ring.scale.x
+    registry.reconcile([{ ...card, response: 'discard' }])
+    expect(material.color.getHexString()).toBe('e4a0ff')
+    expect(ring.scale.x).toBeGreaterThan(requiredScale)
+    expect(registry.get(card.hit.key)).toBe(retained)
+    registry.reconcile([card])
+    expect(ring.visible).toBe(false)
+    registry.reconcile([{ ...card, target: true }])
+    expect(ring.visible).toBe(true)
+    expect(material.color.getHexString()).toBe('ffdf7e')
+    expect(acquire).toHaveBeenCalledOnce()
+    registry.dispose()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
   it('reuses the same mesh and face texture across unchanged notifications', () => {
     const { registry, acquire, release } = fixture()
     const card = descriptor('a', 'a:1')
@@ -32,6 +59,99 @@ describe('retained Three.js card registry', () => {
     registry.dispose()
     registry.dispose()
     expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  describe('Three response board presentation', () => {
+    function setupBoard() {
+      const { registry, acquire } = fixture()
+      const handCards = [
+        { id: 'island', name: 'Island' },
+        { id: 'forest-1', name: 'Forest' },
+        { id: 'forest-2', name: 'Forest' },
+        { id: 'other-island', name: 'Island' },
+      ]
+      const view = {
+        cardVisualStyle: 'classic', replay: { active: false },
+        game: {
+          actor: 0, actorControl: 'human', canInput: true, phase: 'respond',
+          pendingLandName: 'Swamp', isReplay: false,
+          players: [{ handCards, battlefield: [] }, { handCards: [], battlefield: [] }],
+          legal: {
+            playLandByCard: { island: [{ action: { type: 'play_land', actor: 0, cardId: 'island' } }] },
+            counterOptions: handCards.slice(1).map((card) => ({
+              action: { type: 'counter_land', actor: 0, discardCardId: card.id }, label: `Discard Island + ${card.name}`,
+            })),
+            canPassResponse: true,
+          },
+        },
+      } as unknown as AppViewModel
+      const response = buildCounterHandOptions(view.game!)
+      const chrome = new Map(['far', 'near', 'hand'].map((row) => [row, {
+        label: { textContent: '', dataset: {} }, controls: { hidden: false }, count: { textContent: '' },
+        previous: { disabled: false, setAttribute: vi.fn() }, next: { disabled: false, setAttribute: vi.fn() },
+      }]))
+      const fields = {
+        view, actor: 0, response: response as CounterHandOptions | null, cards: registry, chrome,
+        pages: { far: 0, near: 0, hand: 0 }, layout: { ...boardLayout(1000, 750), capacity: 2 },
+        quality: { shadows: false }, targetIds: new Set(), drag: null, canDrop: false,
+        instruction: { hidden: true, textContent: '' }, dropMaterial: { opacity: 0 },
+        usable: () => true, onResize: vi.fn(), invalidate: vi.fn(),
+      }
+      const board = Object.assign(Object.create(ThreeBoard.prototype), fields) as typeof fields & {
+        present(): void
+        changePage(row: string, delta: number): void
+      }
+      return { board, registry, acquire, view, response }
+    }
+
+    it('keeps paginated discard choices reachable and never marks response cards playable', () => {
+      const { board, registry, acquire, response } = setupBoard()
+      board.present()
+      expect(board.canDrop).toBe(false)
+      expect(board.instruction.hidden).toBe(false)
+      expect(board.instruction.textContent).toBe(response.instruction)
+      const island = registry.get(boardCardKey('island', 0))!
+      const forest = registry.get(boardCardKey('forest-2', 0))!
+      expect(island.descriptor.response).toBe('required')
+      expect(island.descriptor.hit.playable).toBe(false)
+      expect(forest.descriptor.response).toBe('discard')
+      expect(forest.descriptor.visible).toBe(false)
+      expect(registry.hitTest({ x: forest.descriptor.x, y: forest.descriptor.y })?.cardId).not.toBe('forest-2')
+      board.changePage('hand', 1)
+      expect(board.onResize).toHaveBeenCalledOnce()
+      expect(island.descriptor.visible).toBe(false)
+      expect(forest.descriptor.visible).toBe(true)
+      expect(registry.hitTest(forest.descriptor)?.cardId).toBe('forest-2')
+      expect(board.instruction.textContent).toBe(response.instruction)
+      expect(registry.get(boardCardKey('other-island', 0))!.descriptor.response).toBe('discard')
+      expect(acquire).toHaveBeenCalledTimes(4)
+      registry.dispose()
+    })
+
+    it('clears feedback for menus, disabled input, actor changes and replay without replacing cards', () => {
+      const { board, registry, view, response, acquire } = setupBoard()
+      board.present()
+      const card = registry.get(boardCardKey('island', 0))!
+      board.response = null
+      board.present()
+      expect(card.descriptor.response).toBeNull()
+      expect(board.instruction.hidden).toBe(true)
+      board.response = response
+      for (const disabled of [
+        { ...view.game!, canInput: false },
+        { ...view.game!, actor: 1 },
+        { ...view.game!, isReplay: true },
+        { ...view.game!, phase: 'swamp_target' as const },
+      ]) {
+        board.view = { ...view, game: disabled }
+        board.present()
+        expect(card.descriptor.response).toBeNull()
+        expect(board.instruction.hidden).toBe(true)
+      }
+      expect(registry.get(boardCardKey('island', 0))).toBe(card)
+      expect(acquire).toHaveBeenCalledTimes(4)
+      registry.dispose()
+    })
   })
 
   it('distinguishes same-name cards and different instances of the same card', () => {

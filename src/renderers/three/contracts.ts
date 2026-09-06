@@ -1,4 +1,5 @@
 import type { AppViewModel } from '../../app/types'
+import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
 
 export interface BoardHit {
@@ -13,7 +14,7 @@ export interface BoardHit {
 
 export interface ThreeBoardApi {
   readonly canvas: HTMLCanvasElement
-  render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>): void
+  render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>, response: CounterHandOptions | null): void
   hitTest(clientX: number, clientY: number): BoardHit | null
   containsDrop(clientX: number, clientY: number): boolean
   beginDrag(hit: BoardHit): void

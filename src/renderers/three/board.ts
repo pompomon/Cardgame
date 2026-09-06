@@ -5,6 +5,7 @@ import {
 import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../../app/types'
+import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
 import { ThreeAssets, type TextureLease } from './assets'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'
@@ -68,6 +69,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private view: AppViewModel | null = null
   private actor = 0
   private targetIds: ReadonlySet<string> = new Set()
+  private response: CounterHandOptions | null = null
   private visible = true
   private disposed = false
   private failed = false
@@ -132,7 +134,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
   }
 
-  render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>): void {
+  render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>, response: CounterHandOptions | null): void {
     if (this.disposed || this.failed) return
     const previous = this.view
     const boundary = previous && (previous.seed !== view.seed || previous.mode !== view.mode
@@ -150,6 +152,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.view = view
     this.actor = presentedActor === 1 ? 1 : 0
     this.targetIds = new Set(targetIds)
+    this.response = response
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
     this.present()
@@ -167,8 +170,12 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     const descriptors: CardDescriptor[] = []
     const style = this.view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
-    const input = game.canInput && game.actor === this.actor
-    this.canDrop = input && Object.values(game.legal.playLandByCard).some((options) => options.length > 0)
+    const input = game.canInput && game.actor === this.actor && game.actorControl === 'human'
+      && !game.isReplay && !this.view?.replay.active
+    const response = input && game.phase === 'respond' ? this.response : null
+    const responseIds = new Set(response?.choices.map((choice) => choice.cardId))
+    this.canDrop = input && game.phase === 'main'
+      && Object.values(game.legal.playLandByCard).some((options) => options.length > 0)
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
@@ -193,7 +200,7 @@ export class ThreeBoard implements ThreeBoardApi {
         const hit: BoardHit = {
           key: boardCardKey(cardId, owner, instanceId),
           cardId, instanceId, name: card.name, owner, zone: row === 'hand' ? 'hand' : 'battlefield',
-          playable: row === 'hand' && input && card.name !== HIDDEN_HAND_CARD_NAME
+          playable: row === 'hand' && input && game.phase === 'main' && card.name !== HIDDEN_HAND_CARD_NAME
             && (game.legal.playLandByCard[cardId]?.length ?? 0) > 0,
         }
         descriptors.push({
@@ -202,6 +209,9 @@ export class ThreeBoard implements ThreeBoardApi {
           y: this.layout.rows[row].y,
           width: this.layout.cardWidth, height: this.layout.cardHeight,
           target: this.targetIds.has(instanceId ?? cardId) || this.targetIds.has(cardId),
+          response: row === 'hand' && card.name !== HIDDEN_HAND_CARD_NAME
+            ? response?.requiredIslandId === cardId ? 'required' : responseIds.has(cardId) ? 'discard' : null
+            : null,
           shadows: this.quality.shadows,
         })
       }
@@ -213,8 +223,10 @@ export class ThreeBoard implements ThreeBoardApi {
     this.cards?.reconcile(descriptors)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
-    this.instruction.hidden = !this.canDrop
-    this.instruction.textContent = 'Drag a highlighted card into your battlefield'
+    this.instruction.hidden = !this.canDrop && !response
+    this.instruction.textContent = response
+      ? response.choices.length ? response.instruction : 'No legal counter cards available. Use Pass Response.'
+      : 'Drag a highlighted card into your battlefield'
   }
 
   hitTest(clientX: number, clientY: number): BoardHit | null {
