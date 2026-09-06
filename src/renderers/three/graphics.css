@@ -109,6 +109,7 @@
   font-variant-numeric: tabular-nums;
 }
 .three-board-instruction {
+  display: grid;
   grid-column: 1 / -1;
   margin: 0;
   padding: 3px 8px;
@@ -121,6 +122,8 @@
   overflow-wrap: anywhere;
   pointer-events: none;
 }
+.three-board-instruction > span { grid-area: 1 / 1; }
+.three-board-instruction-size { visibility: hidden; }
 @media (max-width: 480px) {
   .three-board-stage { border-radius: 10px; }
   .three-board-label { font-size: 13px; }

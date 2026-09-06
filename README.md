@@ -35,6 +35,11 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Drag a playable hand card onto your battlefield. Touch and pen movement must
   cross a threshold; tapping opens a preview. Multiple legal targets are selected
   before committing the action.
+- Both battlefield headers show Hand, Deck, and Graveyard counts, even with
+  **Cards & keyboard controls** collapsed. **End Turn** or **Pass Response**
+  appears in the near-player battlefield header when appropriate; neither is
+  available during replay or after game over. Short screens scroll rather than
+  clipping the battlefield controls.
 - When responding with Island, click or tap an eligible card in your hand to
   counter immediately, discarding that card plus the first Island automatically.
   Pink rings mark eligible discards; the blue-ringed Island is included, not a

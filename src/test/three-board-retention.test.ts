@@ -95,7 +95,8 @@ describe('retained Three.js card registry', () => {
         view, actor: 0, response: response as CounterHandOptions | null, cards: registry, chrome,
         pages: { far: 0, near: 0, hand: 0 }, layout: { ...boardLayout(1000, 750), capacity: 2 },
         quality: { shadows: false }, targetIds: new Set(), drag: null, canDrop: false,
-        instruction: { hidden: true, textContent: '' }, dropMaterial: { opacity: 0 },
+        instruction: { hidden: true }, instructionText: { textContent: '' }, instructionSizes: [],
+        dropMaterial: { opacity: 0 },
         primaryButton: { ownerDocument: { activeElement: null }, hidden: true, disabled: true, textContent: '', dataset: {} },
         primaryAction: null,
         usable: () => true, onResize: vi.fn(), invalidate: vi.fn(), applySize: vi.fn(),
@@ -112,7 +113,7 @@ describe('retained Three.js card registry', () => {
       board.present()
       expect(board.canDrop).toBe(false)
       expect(board.instruction.hidden).toBe(false)
-      expect(board.instruction.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
+      expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
       const island = registry.get(boardCardKey('island', 0))!
       const forest = registry.get(boardCardKey('forest-2', 0))!
       expect(island.descriptor.response).toBe('required')
@@ -125,7 +126,7 @@ describe('retained Three.js card registry', () => {
       expect(island.descriptor.visible).toBe(false)
       expect(forest.descriptor.visible).toBe(true)
       expect(registry.hitTest(forest.descriptor)?.cardId).toBe('forest-2')
-      expect(board.instruction.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
+      expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
       expect(registry.get(boardCardKey('other-island', 0))!.descriptor.response).toBe('discard')
       expect(acquire).toHaveBeenCalledTimes(4)
       registry.dispose()

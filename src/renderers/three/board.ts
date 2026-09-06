@@ -37,6 +37,8 @@ interface DragVisual {
 }
 
 const ROWS: readonly BoardRow[] = ['far', 'near', 'hand']
+const PLAY_INSTRUCTION = 'Drag a highlighted card into your battlefield'
+const CANCEL_INSTRUCTION = 'Move into your battlefield · release elsewhere to cancel'
 
 export class ThreeBoard implements ThreeBoardApi {
   readonly canvas: HTMLCanvasElement
@@ -56,6 +58,8 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly effects = new Set<EffectVisual>()
   private readonly chrome = new Map<BoardRow, RowChrome>()
   private readonly instruction = document.createElement('p')
+  private readonly instructionText = document.createElement('span')
+  private readonly instructionSizes: HTMLSpanElement[] = []
   private readonly primaryButton = document.createElement('button')
   private primaryAction: ThreePrimaryAction | null = null
   private pressedAction: ThreePrimaryAction | null = null
@@ -133,6 +137,17 @@ export class ThreeBoard implements ThreeBoardApi {
       this.instruction.setAttribute('role', 'status')
       this.instruction.setAttribute('aria-live', 'polite')
       this.instruction.hidden = true
+      this.instruction.append(this.instructionText)
+      // Reserve every drag prompt's wrapped height before a gesture starts;
+      // otherwise changing feedback triggers ResizeObserver and cancels the drag.
+      for (const text of [PLAY_INSTRUCTION, CANCEL_INSTRUCTION]) {
+        const size = document.createElement('span')
+        size.className = 'three-board-instruction-size'
+        size.setAttribute('aria-hidden', 'true')
+        size.textContent = text
+        this.instruction.append(size)
+        this.instructionSizes.push(size)
+      }
       this.primaryButton.setAttribute('aria-describedby', this.instruction.id)
       this.chrome.get('near')!.header.append(this.primaryButton, this.instruction)
       host.append(this.stage)
@@ -221,10 +236,11 @@ export class ThreeBoard implements ThreeBoardApi {
       this.chrome.get('near')!.label.focus({ preventScroll: true })
     }
     this.instruction.hidden = !this.canDrop && !response
-    this.instruction.textContent = response
+    for (const size of this.instructionSizes) size.hidden = !this.canDrop
+    this.instructionText.textContent = response
       ? primary?.prompt || `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
         ? response.instruction : 'No legal counter cards available.'}`
-      : 'Drag a highlighted card into your battlefield'
+      : PLAY_INSTRUCTION
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
@@ -285,10 +301,14 @@ export class ThreeBoard implements ThreeBoardApi {
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
   }
 
-  private readonly capturePrimary = (): void => { this.pressedAction = this.primaryAction }
+  private readonly capturePrimary = (event: PointerEvent): void => {
+    if (event.button === 0 && event.isPrimary) this.pressedAction = this.primaryAction
+  }
   private readonly clearPrimaryPress = (): void => { this.pressedAction = null }
   private readonly capturePrimaryKey = (event: KeyboardEvent): void => {
-    if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) this.capturePrimary()
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    if (event.repeat) event.preventDefault()
+    else this.pressedAction = this.primaryAction
   }
   private readonly activatePrimary = (): void => {
     const action = this.pressedAction ?? this.primaryAction
@@ -334,7 +354,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const allowed = inside && this.canDrop && pointInRect(this.point, this.layout.drop)
     this.dropMaterial.color.set(allowed ? '#94ffc9' : '#f6d78d')
     this.dropMaterial.opacity = allowed ? 0.2 : 0.08
-    this.instruction.textContent = allowed ? 'Release to play' : 'Move into your battlefield · release elsewhere to cancel'
+    this.instructionText.textContent = allowed ? 'Release to play' : CANCEL_INSTRUCTION
     this.invalidate()
   }
 
@@ -353,7 +373,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     this.dropMaterial.color.set('#70e7b1')
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
-    this.instruction.textContent = 'Drag a highlighted card into your battlefield'
+    this.instructionText.textContent = PLAY_INSTRUCTION
     this.updatePageButtons()
     this.invalidate()
   }
