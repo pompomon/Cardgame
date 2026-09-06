@@ -22,6 +22,7 @@ import {
   renderThreeInterface,
   threeDecisionKey,
   threePreviewName,
+  threeResponse,
   threeSessionKey,
   threeTargets,
   type InterfaceUi,
@@ -112,6 +113,10 @@ export class ThreeInterface {
     return new Set(target?.battlefield ? target.options.flatMap((option) => option.effectTargetId ? [option.effectTargetId] : []) : [])
   }
 
+  get response() {
+    return !this.disposed && this.view ? threeResponse(this.view, this.ui()) : null
+  }
+
   isBlocked(): boolean {
     return !this.disposed && (this.menuOpen || this.preview !== null || this.pendingCardId !== null
       || !this.phaseDismissed && !!this.view && threeTargets(this.view, this.ui()) !== null)
@@ -170,6 +175,10 @@ export class ThreeInterface {
   activate(hit: BoardHit): void {
     const view = this.latestForAction()
     if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.preview) return
+    if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) {
+      this.respondWithCard(hit.cardId, hit.owner)
+      return
+    }
     if (hit.zone === 'battlefield' && hit.instanceId && threePreviewName(view.game, hit) !== null) {
       const targets = threeTargets(view, this.ui())
       if (targets?.battlefield && targets.options.some((option) => option.effectTargetId === hit.instanceId)) {
@@ -177,6 +186,20 @@ export class ThreeInterface {
         return
       }
     }
+    this.previewCard(hit)
+  }
+
+  private respondWithCard(cardId: string, owner: number): void {
+    const view = this.latestForAction()
+    if (!view?.game || owner !== view.game.actor || this.isBlocked()) return
+    const choice = threeResponse(view, this.ui())?.choices.find((entry) => entry.cardId === cardId)
+    if (choice) this.submit(choice.action)
+  }
+
+  private previewCard(hit: BoardHit): void {
+    const view = this.latestForAction()
+    if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.preview) return
+    if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) return
     if (!canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })) return
     if (threePreviewName(view.game, hit) === null) return
     this.preview = { ...hit }
@@ -381,12 +404,17 @@ export class ThreeInterface {
       case 'close': this.close(); break
       case 'resume-target': this.phaseDismissed = false; this.changed(); break
       case 'play': if (element.dataset.cardId) this.playCard(element.dataset.cardId); break
+      case 'respond-card': {
+        const owner = element.dataset.owner === '0' ? 0 : element.dataset.owner === '1' ? 1 : null
+        if (owner !== null && element.dataset.cardId) this.respondWithCard(element.dataset.cardId, owner)
+        break
+      }
       case 'target': this.chooseTarget(element.dataset.targetId); break
       case 'preview': {
         const owner = element.dataset.owner === '0' ? 0 : element.dataset.owner === '1' ? 1 : null
         const zone = element.dataset.zone
         if (owner === null || (zone !== 'hand' && zone !== 'battlefield') || !element.dataset.cardId) break
-        this.activate({ key: '', cardId: element.dataset.cardId, instanceId: element.dataset.instanceId, name: '', owner, zone, playable: false })
+        this.previewCard({ key: '', cardId: element.dataset.cardId, instanceId: element.dataset.instanceId, name: '', owner, zone, playable: false })
         break
       }
       case 'end_turn':
@@ -395,12 +423,6 @@ export class ThreeInterface {
       case 'pass_response':
         if (!this.isBlocked() && view.game?.phase === 'respond' && view.game.legal.canPassResponse) this.submit({ type: 'pass_response', actor: view.game.actor })
         break
-      case 'counter_land': {
-        if (this.isBlocked() || view.game?.phase !== 'respond') break
-        const option = view.game.legal.counterOptions.find(({ action }) => action.discardCardId === element.dataset.discardCardId)
-        if (option) this.submit(option.action)
-        break
-      }
       case 'resume-adventure': this.reset(); this.controller.resumeAdventure(); break
       case 'pause-adventure': this.reset(); this.controller.pauseAdventure(); break
       case 'abandon-adventure': this.reset(); this.controller.abandonAdventure(); break

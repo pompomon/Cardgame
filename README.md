@@ -34,8 +34,15 @@ The selected renderer is also stored in `localStorage` for later visits.
   so return to the lobby (or pause Adventure) before switching.
 - Drag a playable hand card onto your battlefield. Touch and pen movement must
   cross a threshold; tapping opens a preview. Multiple legal targets are selected
-  before committing the action. Counter and Pass remain explicit response actions.
+  before committing the action.
+- When responding with Island, click or tap an eligible card in your hand to
+  counter immediately, discarding that card plus the first Island automatically.
+  Pink rings mark eligible discards; the blue-ringed Island is included, not a
+  separate choice. Another Island can be the additional discard. Hand pagination
+  keeps every choice reachable. Use **Pass Response** to decline.
 - Native play and target buttons provide the same actions without dragging.
+  During a response, each eligible native hand-card control names the full
+  discard cost and supports keyboard activation instead of opening a preview.
   Menus and previews support keyboard navigation and cancellation.
 - Card rows have navigation for overflow rather than indefinitely shrinking
   cards. Portrait and landscape layouts keep the camera fixed during dragging.

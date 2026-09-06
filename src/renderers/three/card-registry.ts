@@ -12,6 +12,7 @@ export interface CardDescriptor extends BoardRect {
   readonly style: CardVisualStyle
   readonly visible: boolean
   readonly target: boolean
+  readonly response?: 'required' | 'discard' | null
   readonly shadows: boolean
 }
 
@@ -87,10 +88,12 @@ export class RetainedCard {
     this.shadow.scale.set(width + 8, height + 8, 1)
     this.shadow.position.set(4, -6, -6)
     this.shadow.visible = descriptor.shadows
-    this.ring.scale.set(width * 1.1, height * 1.1, 1)
+    const ringScale = descriptor.response === 'required' ? 0.9 : 1.1
+    this.ring.scale.set(width * ringScale, height * ringScale, 1)
     this.ring.position.z = -2
-    this.ring.visible = descriptor.target || descriptor.hit.playable
-    this.ringMaterial.color.set(descriptor.target ? '#ffdf7e' : '#7bf5bd')
+    this.ring.visible = descriptor.target || descriptor.hit.playable || !!descriptor.response
+    this.ringMaterial.color.set(descriptor.response === 'required' ? '#80bfff'
+      : descriptor.response === 'discard' ? '#e4a0ff' : descriptor.target ? '#ffdf7e' : '#7bf5bd')
     this.setOpacity(1)
   }
 
@@ -180,7 +183,7 @@ export class ThreeCardRegistry {
 
   createProxy(source: RetainedCard): RetainedCard {
     const proxy = new RetainedCard(this.geometry, this.assets, {
-      ...source.descriptor, visible: true, target: false,
+      ...source.descriptor, visible: true, target: false, response: null,
       hit: { ...source.descriptor.hit, playable: false },
     })
     proxy.group.position.z = 60

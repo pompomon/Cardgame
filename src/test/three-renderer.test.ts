@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ControllerApi } from '../app/controller'
 import type { AppViewModel } from '../app/types'
+import type { CounterHandOptions } from '../app/response-options'
+import { threeResponse } from '../renderers/three/interface-model'
 
 const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), playEffect: vi.fn(), canvas: {} },
-  ui: { update: vi.fn(), isBlocked: vi.fn(), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set() },
+  ui: { update: vi.fn(), isBlocked: vi.fn(), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(), response: null as CounterHandOptions | null },
   input: { cancel: vi.fn(), reconcile: vi.fn(), dispose: vi.fn() },
 }))
 vi.mock('../renderers/three/board', () => ({
@@ -52,6 +54,8 @@ function harness() {
 
 afterEach(() => {
   vi.clearAllMocks()
+  mocks.ui.update.mockReset()
+  mocks.ui.response = null
   vi.unstubAllGlobals()
 })
 
@@ -74,9 +78,51 @@ describe('Three.js composition', () => {
     renderer.render(snapshot)
     expect(mocks.board.render).toHaveBeenCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ actor: 1, canInput: false }) }),
-      0, mocks.ui.targetIds,
+      0, mocks.ui.targetIds, null,
     )
     expect(snapshot.game!.canInput).toBe(true)
+    renderer.unmount()
+  })
+
+  it('passes response feedback only after the human responder is presented', () => {
+    mocks.ui.update.mockImplementation((snapshot: AppViewModel, presentedActor: number) => {
+      mocks.ui.response = threeResponse(snapshot, {
+        presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
+        preview: null, hostAnswerDraft: '', joinOfferDraft: '',
+      })
+    })
+    const { renderer } = harness()
+    const snapshot = {
+      ...view(), mode: 'local-hvh', controllers: ['human', 'human'], animationSpeed: 'normal',
+      cardVisualStyle: 'classic',
+      game: {
+        actor: 0, actorControl: 'human', canInput: true, phase: 'main', events: [], pendingLandName: null,
+        players: [{ handCards: [] }, { handCards: [{ id: 'island', name: 'Island' }, { id: 'forest', name: 'Forest' }] }],
+        legal: { counterOptions: [], canPassResponse: false },
+      },
+    } as unknown as AppViewModel
+    renderer.render(snapshot)
+    const next: AppViewModel = {
+      ...snapshot,
+      game: {
+        ...snapshot.game!, actor: 1, phase: 'respond', pendingLandName: 'Swamp',
+        events: [{ kind: 'play_land', actor: 0, cardName: 'Swamp' }],
+        legal: {
+          ...snapshot.game!.legal, canPassResponse: true,
+          counterOptions: [{ action: { type: 'counter_land', actor: 1, discardCardId: 'forest' }, label: 'Discard Island + Forest' }],
+        },
+      },
+    }
+    renderer.render(next)
+    expect(mocks.board.render).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: expect.objectContaining({ canInput: false }) }),
+      0, mocks.ui.targetIds, null,
+    )
+    renderer.render({ ...next, animationSpeed: 'off' })
+    expect(mocks.board.render).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: expect.objectContaining({ canInput: true }) }),
+      1, mocks.ui.targetIds, expect.objectContaining({ requiredIslandId: 'island', choices: [expect.objectContaining({ cardId: 'forest' })] }),
+    )
     renderer.unmount()
   })
 

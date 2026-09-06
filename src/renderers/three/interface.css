@@ -119,6 +119,14 @@
   font-weight: bold;
 }
 
+.three-interface .three-native-card[data-response="required"] {
+  border-color: #80bfff;
+}
+
+.three-interface .three-native-card[data-response="discard"] {
+  border-color: #e4a0ff;
+}
+
 .three-interface .three-hidden-card {
   padding: 10px;
   border: 1px dashed #698698;

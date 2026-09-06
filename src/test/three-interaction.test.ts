@@ -224,9 +224,74 @@ function createHarness() {
   }
 }
 
+function responseHarness() {
+  const h = createHarness()
+  const game = h.controls.view!.game!
+  game.phase = 'respond'
+  game.pendingLandName = 'Swamp'
+  game.players[0].handCards.unshift({ id: 'required-island', name: 'Island' })
+  game.players[0].handCount = 2
+  game.legal.playLandByCard = {}
+  game.legal.counterOptions = [{
+    action: { type: 'counter_land', actor: 0, discardCardId: handHit.cardId },
+    label: 'Counter with Island (discard Island + Forest)',
+  }]
+  game.legal.canPassResponse = true
+  return h
+}
+
 type Harness = ReturnType<typeof createHarness>
 
 describe('ThreeInteraction', () => {
+  it.each(['mouse', 'touch', 'pen'])('activates a %s response tap exactly once without dragging', (pointerType) => {
+    const h = responseHarness()
+    h.start({ pointerType })
+    h.release({ pointerType })
+    h.release({ pointerType })
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit)
+    expect(h.board.beginDrag).not.toHaveBeenCalled()
+    expect(h.board.containsDrop).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
+    h.interaction.dispose()
+  })
+
+  it.each(['mouse', 'touch', 'pen'])('does not counter after a %s swipe returning to the response card', (pointerType) => {
+    const h = responseHarness()
+    h.start({ pointerType })
+    h.move({ pointerType, clientX: 180 + sharedDrag.TOUCH_DRAG_THRESHOLD_PX })
+    h.release({ pointerType })
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.board.beginDrag).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    h.interaction.dispose()
+  })
+
+  it.each([
+    ['counter removed', (view: AppViewModel) => { view.game!.legal.counterOptions = [] }],
+    ['pending land', (view: AppViewModel) => { view.game!.pendingLandName = 'Forest' }],
+    ['required Island replaced', (view: AppViewModel) => { view.game!.players[0].handCards[0].id = 'new-island' }],
+    ['hand order', (view: AppViewModel) => { view.game!.players[0].handCards.reverse() }],
+  ] as const)('invalidates a same-phase response gesture on %s', (_name, change) => {
+    const h = responseHarness()
+    h.start({ pointerType: 'touch' })
+    change(h.controls.view!)
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
+    h.interaction.dispose()
+  })
+
+  it('preserves response taps across unrelated status/settings notifications', () => {
+    const h = responseHarness()
+    h.start()
+    h.controls.view = { ...h.controls.view!, status: 'Saved', animationSpeed: 'off' }
+    h.interaction.reconcile()
+    h.release()
+    expect(h.activate).toHaveBeenCalledOnce()
+    h.interaction.dispose()
+  })
+
   it('keeps the Phaser drag-state exports identical to the shared implementation', () => {
     expect(phaserDrag).toEqual(sharedDrag)
     expect(phaserDrag.DragStateMachine).toBe(sharedDrag.DragStateMachine)
@@ -603,6 +668,17 @@ describe('ThreeInteraction', () => {
     expect(h.activate).not.toHaveBeenCalled()
     expect(h.board.endDrag).toHaveBeenCalledExactlyOnceWith(false)
     expect(h.canvas.captures.size).toBe(0)
+  })
+
+  it.each(interruptions)('cancels a response tap after %s', (_name, interrupt) => {
+    const h = responseHarness()
+    h.start()
+    interrupt(h)
+    h.release()
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
+    h.interaction.dispose()
   })
 
   it('does not cancel for unrelated keys, visible documents, or movement between elements', () => {

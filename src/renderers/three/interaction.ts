@@ -9,6 +9,7 @@ import {
   type DragPointerType,
 } from '../shared/drag-state'
 import type { BoardHit, ThreeBoardApi } from './contracts'
+import { threeDecisionKey } from './interface-model'
 
 interface Gesture {
   readonly pointerId: number
@@ -33,6 +34,7 @@ function contextKey(view: AppViewModel): string {
     view.mode, view.seed, view.adventure.activeGameSeed,
     game?.turn, game?.phase, game?.actor, game?.actorControl, game?.canInput, game?.isReplay,
     view.replay.active, view.replay.step, view.replay.totalSteps, view.replay.isPlaying,
+    game?.phase === 'respond' ? threeDecisionKey(view) : '',
   ].join(':')
 }
 

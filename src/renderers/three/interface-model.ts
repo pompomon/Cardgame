@@ -9,6 +9,7 @@ import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
+import { buildCounterHandOptions, type CounterHandOptions } from '../../app/response-options'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel, type GameUiState, type Mode } from '../../app/types'
 import { canPreviewCard } from '../card-preview'
 import { escapeHtml, renderCardTile, renderInstallControls, renderLobby, renderP2P } from '../dom-utils'
@@ -58,9 +59,23 @@ export function threeSessionKey(view: AppViewModel): string {
 export function threeDecisionKey(view: AppViewModel): string {
   const game = view.game
   return JSON.stringify([threeSessionKey(view), view.replay.step, game && [
-    game.turn, game.phase, game.actor, game.canInput, game.pendingLandName,
+    game.turn, game.phase, game.actor, game.actorControl, game.canInput, game.pendingLandName,
     game.pendingPlainsReuseName, game.legal, game.players, game.revealedEnemyHandForSwamp,
   ]])
+}
+
+export function threeResponse(view: AppViewModel, ui: InterfaceUi): CounterHandOptions | null {
+  const game = view.game
+  if (!game || game.phase !== 'respond' || game.actorControl !== 'human'
+    || view.controllers[game.actor] !== 'human' || !canThreeInput(view, ui.presentedActor)
+    || ui.menuOpen || ui.preview || ui.pendingCardId) return null
+  const response = buildCounterHandOptions(game)
+  return {
+    ...response,
+    choices: response.requiredIslandId === null ? [] : response.choices.filter((choice) =>
+      choice.cardName !== HIDDEN_HAND_CARD_NAME && choice.action.actor === game.actor),
+    instruction: `${response.instruction} The first Island (blue ring) is included automatically; pink rings mark your choices.`,
+  }
 }
 
 export function threeTargets(view: AppViewModel, ui: InterfaceUi): TargetModel | null {
@@ -178,12 +193,13 @@ function renderTargets(view: AppViewModel, ui: InterfaceUi, target: TargetModel)
     : modal('target', target.title, options)
 }
 
-function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean): string {
+function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean, response: CounterHandOptions | null): string {
   const game = view.game!
   const previewAllowed = canPreviewCard({ phase: game.phase, pendingPlayLandTargetSelection: !!ui.pendingCardId, menuOpen: blocked })
+  const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
   const owners = ui.presentedActor === 1 ? [1, 0] : [0, 1]
   return `<details data-detail-key="cards" open><summary>Cards &amp; keyboard controls</summary>
-    <p>Play or preview cards using these buttons, or interact with the 3D board above.</p>
+    <p>Play, respond, or preview using the hand-card controls, or interact with the 3D board above.</p>
     ${owners.map((owner) => {
       const player = game.players[owner]
       return `<section aria-label="Player ${owner + 1} cards"><h3>Player ${owner + 1} (${escapeHtml(view.controllers[owner])})${game.actor === owner ? ' · Active' : ''}</h3>
@@ -192,9 +208,18 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
           if (card.name === HIDDEN_HAND_CARD_NAME) return '<span class="three-hidden-card">Hidden card</span>'
           const playable = !blocked && canThreeInput(view, ui.presentedActor) && owner === game.actor
             && game.phase === 'main' && (game.legal.playLandByCard[card.id]?.length ?? 0) > 0
+          const responding = response !== null && owner === game.actor
+          const choice = owner === game.actor ? responseChoices.get(card.id) : undefined
+          if (responding && response) {
+            const required = response.requiredIslandId === card.id
+            return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(card.name)}</span>
+              ${required ? '<span>Island included automatically</span>' : choice
+                ? button('respond-card', choice.a11yLabel, false, ` data-card-id="${escapeHtml(card.id)}" data-owner="${owner}"`)
+                : '<span>Not available for this counter</span>'}</div>`
+          }
           return `<div class="three-native-card"><span>${escapeHtml(card.name)}</span>
             ${button('play', `Play ${card.name}`, !playable, ` data-card-id="${escapeHtml(card.id)}"`)}
-            ${button('preview', `Preview ${card.name}`, !previewAllowed, ` data-zone="hand" data-owner="${owner}" data-card-id="${escapeHtml(card.id)}"`)}</div>`
+            ${button('preview', `Preview ${card.name}`, !previewAllowed || responding, ` data-zone="hand" data-owner="${owner}" data-card-id="${escapeHtml(card.id)}"`)}</div>`
         }).join('') || '<p>No cards.</p>'}</div>
         <h4>Battlefield</h4><div class="three-native-cards" data-scroll-key="battlefield-${owner}">${player.battlefield.map((card) =>
           button('preview', `Preview ${card.name}`, !previewAllowed, ` data-zone="battlefield" data-owner="${owner}" data-card-id="${escapeHtml(card.cardId)}" data-instance-id="${escapeHtml(card.instanceId)}"`),
@@ -216,6 +241,7 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): strin
   }
   const game = view.game!
   const targets = threeTargets(view, ui)
+  const response = threeResponse(view, ui)
   const blocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
   const canInput = canThreeInput(view, ui.presentedActor) && !blocked
   const previewName = ui.preview ? threePreviewName(game, ui.preview) : null
@@ -229,12 +255,11 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): strin
     ${view.mode === 'adventure-hvai' ? `<p>Adventure round ${view.adventure.currentRound}/7 · Chances ${view.adventure.remainingChances} · Win streak ${view.adventure.winStreak} · High score ${view.adventure.highScore}</p>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
     ${game.phase === 'main' && canThreeInput(view, ui.presentedActor) ? `<div class="three-actions" aria-label="Turn actions">${button('end_turn', 'End Turn', !canInput || !game.legal.canEndTurn)}</div>` : ''}
-    ${game.phase === 'respond' && canThreeInput(view, ui.presentedActor) ? `<section aria-label="Response actions"><h3>Respond to ${escapeHtml(game.pendingLandName ?? 'land')}</h3><div class="three-actions">
-      ${game.legal.counterOptions.map((option) => button('counter_land', option.label, !canInput,
-        option.action.discardCardId === undefined ? '' : ` data-discard-card-id="${escapeHtml(option.action.discardCardId)}"`)).join('')}
-      ${game.legal.canPassResponse ? button('pass_response', 'Pass Response', !canInput) : ''}</div></section>` : ''}
+    ${response ? `<section aria-label="Response actions"><h3>Respond to ${escapeHtml(game.pendingLandName ?? 'land')}</h3>
+      <p role="status" aria-live="polite">${escapeHtml(response.choices.length ? response.instruction : 'No legal counter cards available.')}</p>
+      ${response.canPass ? button('pass_response', 'Pass Response') : ''}</section>` : ''}
     ${targets && !ui.menuOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
-    ${renderReplay(view)}${renderNativeCards(view, ui, blocked)}
+    ${renderReplay(view)}${renderNativeCards(view, ui, blocked, response)}
     <details data-detail-key="log"><summary>Replay Log (${Math.min(THREE_LOG_LIMIT, game.log.length)} latest)</summary>
       ${omitted ? `<p>${omitted} older entries omitted. Export the recording for the full history.</p>` : ''}
       <ol>${game.log.slice(-THREE_LOG_LIMIT).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ol></details>

@@ -76,7 +76,7 @@ export class ThreeRenderer implements AppRenderer {
     if (this.stage) this.stage.hidden = !inGame
     this.board.setVisible(inGame && !document.hidden)
     this.ui.update(this.presentedView, actor)
-    if (inGame) this.board.render(this.presentedView, actor, this.ui.targetIds)
+    if (inGame) this.board.render(this.presentedView, actor, this.ui.targetIds, this.ui.response)
     this.interaction?.reconcile()
     this.effects?.pump()
   }

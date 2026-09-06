@@ -7,6 +7,7 @@ import {
   isThreeMode,
   renderThreeInterface,
   threeDecisionKey,
+  threeResponse,
   threeTargets,
   type InterfaceUi,
 } from '../renderers/three/interface-model'
@@ -49,6 +50,33 @@ function makeView(): AppViewModel {
       },
     },
   }
+}
+
+function responseView(actor = 0): AppViewModel {
+  const view = makeView()
+  const game = view.game!
+  game.actor = actor
+  game.phase = 'respond'
+  game.pendingLandName = 'Swamp'
+  game.players[actor].handCards = [
+    { id: 'required-island', name: 'Island' },
+    { id: 'discard-forest-1', name: 'Forest' },
+    { id: 'discard-forest-2', name: 'Forest' },
+    { id: 'discard-island', name: 'Island' },
+  ]
+  game.players[actor].handCount = 4
+  game.legal.playLandByCard = {}
+  game.legal.canEndTurn = false
+  game.legal.canPassResponse = true
+  game.legal.counterOptions = game.players[actor].handCards.slice(1).map((card) => ({
+    action: { type: 'counter_land', actor, discardCardId: card.id },
+    label: `Counter with Island (discard Island + ${card.name})`,
+  }))
+  return view
+}
+
+function responseHit(cardId = 'discard-forest-1', owner = 0): BoardHit {
+  return { key: cardId, cardId, owner, zone: 'hand', name: cardId.includes('island') ? 'Island' : 'Forest', playable: false }
 }
 
 const defaultUi: InterfaceUi = {
@@ -563,18 +591,16 @@ describe('Three native interface behavior', () => {
     h.ui.dispose()
   })
 
-  it('uses explicit legal response counter/pass actions without duplicate submissions', () => {
-    const view = makeView()
-    view.game!.phase = 'respond'
-    view.game!.legal.canPassResponse = true
-    view.game!.legal.counterOptions = [{ action: { type: 'counter_land', actor: 0, discardCardId: 'source' }, label: 'Counter with Island' }]
+  it('uses hand response actions without duplicate board/native/pass submissions', () => {
+    const view = responseView()
     const h = setup(view)
     h.controller.submitAction.mockImplementation(() => h.latest({
       ...view,
       game: { ...view.game!, canInput: false },
     }))
-    h.click('[data-action="counter_land"]')
+    h.click('[data-action="respond-card"]')
     h.click('[data-action="pass_response"]')
+    h.ui.activate(responseHit())
     expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.counterOptions[0].action)
     h.ui.dispose()
   })
@@ -592,6 +618,184 @@ describe('Three native interface behavior', () => {
     resolve('ignored')
     await pending
     expect(h.controller.importRecordingJson).toHaveBeenCalledTimes(1)
+  })
+
+  describe('Three Island hand responses', () => {
+    it('presents a non-modal response, distinct cards, and no separate counter menu', () => {
+      const h = setup(responseView())
+      expect(h.ui.isBlocked()).toBe(false)
+      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(h.content.querySelector('[data-action="counter_land"]')).toBeNull()
+      expect(h.content.querySelectorAll('[data-action="respond-card"]')).toHaveLength(3)
+      expect(h.content.innerHTML).toContain('Island included automatically')
+      expect(h.content.innerHTML).toContain('aria-live="polite"')
+      expect(h.ui.response?.requiredIslandId).toBe('required-island')
+      expect(h.ui.targetIds.size).toBe(0)
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
+
+    it.each([0, 1])('selects the exact same-name card from player %s hand', (owner) => {
+      const view = responseView(owner)
+      const h = setup(view)
+      h.ui.activate(responseHit('discard-forest-2', owner))
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.counterOptions[1].action)
+      expect(h.content.querySelector('dialog')).toBeNull()
+      h.ui.dispose()
+    })
+
+    it('accepts another Island through its native hand control and keeps unrelated focus stable', () => {
+      const view = responseView()
+      const h = setup(view)
+      const selector = '[data-action="respond-card"][data-card-id="discard-island"]'
+      h.content.querySelector(selector)!.focus()
+      h.update({ ...view, status: 'Saved', animationSpeed: 'off' })
+      expect(h.document.activeElement).toBe(h.content.querySelector(selector))
+      h.click(selector)
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.counterOptions[2].action)
+      h.ui.dispose()
+    })
+
+    it('does not counter or preview required, missing, hidden or ineligible responder cards', () => {
+      const view = responseView()
+      view.game!.players[0].handCards.push({ id: 'hidden', name: HIDDEN_HAND_CARD_NAME }, { id: 'ineligible', name: 'Mountain' })
+      view.game!.legal.counterOptions.push({
+        action: { type: 'counter_land', actor: 0, discardCardId: 'hidden' }, label: 'Hidden',
+      })
+      const h = setup(view)
+      for (const id of ['required-island', 'missing', 'hidden', 'ineligible']) h.ui.activate(responseHit(id))
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(h.ui.response?.choices.some((choice) => choice.cardId === 'hidden')).toBe(false)
+      h.ui.dispose()
+    })
+
+    it('never turns an explicit preview into a counter or target action', () => {
+      const view = responseView()
+      const h = setup(view)
+      const button = h.content.querySelector('[data-action="respond-card"]')!
+      button.dataset.action = 'preview'
+      button.dataset.zone = 'hand'
+      h.host.emit('click', { target: button })
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      expect(h.content.querySelector('dialog')).toBeNull()
+      h.ui.activate(responseHit('discard-forest-1', 1))
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
+
+    it('passes explicitly and permits retry when a response is rejected', () => {
+      const view = responseView()
+      const h = setup(view)
+      h.controller.submitAction.mockImplementation(() => h.latest({ ...view, status: 'Send failed. Try again.' }))
+      h.ui.activate(responseHit())
+      h.click('[data-action="respond-card"]')
+      expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+      h.click('[data-action="pass_response"]')
+      expect(h.controller.submitAction).toHaveBeenLastCalledWith({ type: 'pass_response', actor: 0 })
+      h.ui.dispose()
+    })
+
+    it('clears and restores highlights around menus and previews without blocking the response itself', () => {
+      const h = setup(responseView())
+      h.click('[data-action="menu"]')
+      expect(h.ui.response).toBeNull()
+      h.ui.activate(responseHit())
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.click('[data-action="close"]')
+      expect(h.ui.response?.choices).toHaveLength(3)
+      h.click('[data-action="preview"][data-zone="battlefield"]')
+      expect(h.ui.response).toBeNull()
+      h.ui.activate(responseHit())
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.click('[data-action="close"]')
+      expect(h.ui.isBlocked()).toBe(false)
+      expect(h.ui.response?.choices).toHaveLength(3)
+      h.ui.dispose()
+    })
+
+    it.each([
+      ['replay', (view: AppViewModel) => { view.replay.active = true }],
+      ['game replay', (view: AppViewModel) => { view.game!.isReplay = true }],
+      ['no input', (view: AppViewModel) => { view.game!.canInput = false }],
+      ['AI', (view: AppViewModel) => { view.game!.actorControl = 'ai'; view.controllers[0] = 'ai' }],
+      ['remote', (view: AppViewModel) => { view.game!.actorControl = 'remote'; view.controllers[0] = 'remote' }],
+      ['P2P lobby', (view: AppViewModel) => { view.mode = 'p2p-host' }],
+    ] as const)('does not offer or submit responses for %s', (_label, prepare) => {
+      const view = responseView()
+      prepare(view)
+      const h = setup(view)
+      expect(h.ui.response).toBeNull()
+      expect(h.content.querySelector('[data-action="respond-card"]')).toBeNull()
+      h.ui.activate(responseHit())
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
+
+    it.each(['p2p-host', 'p2p-join'] as const)('accepts a local human response after the %s handshake', (mode) => {
+      const view = responseView(1)
+      view.mode = mode
+      view.p2pStarted = true
+      view.controllers = ['remote', 'human']
+      const h = setup(view)
+      h.ui.activate(responseHit('discard-island', 1))
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.counterOptions[2].action)
+      h.ui.dispose()
+    })
+
+    it('waits for the presented actor and offers only Pass when no choices remain', () => {
+      const view = responseView()
+      const h = setup(view)
+      h.update(view, 1)
+      expect(h.ui.response).toBeNull()
+      h.ui.activate(responseHit())
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      view.game!.legal.counterOptions = []
+      h.update(view)
+      expect(h.ui.response?.choices).toEqual([])
+      expect(h.content.innerHTML).toContain('No legal counter cards available.')
+      expect(h.content.querySelector('[data-action="pass_response"]')).not.toBeNull()
+      view.game!.legal.canPassResponse = false
+      h.update(view)
+      expect(h.content.querySelector('[data-action="pass_response"]')).toBeNull()
+      h.ui.dispose()
+    })
+
+    it('rejects board and native choices when controller legality advances before the frame', () => {
+      const view = responseView()
+      const h = setup(view)
+      const next = responseView()
+      next.game!.legal.counterOptions = []
+      h.latest(next)
+      h.click('[data-action="respond-card"]')
+      h.ui.activate(responseHit())
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      expect(h.ui.response?.choices).toEqual([])
+      h.ui.dispose()
+    })
+
+    it('requires an Island and ignores options for a different actor', () => {
+      const view = responseView()
+      view.game!.legal.counterOptions[0].action.actor = 1
+      expect(threeResponse(view, defaultUi)?.choices).toHaveLength(2)
+      view.game!.players[0].handCards = [{ id: 'discard-forest-1', name: 'Forest' }]
+      expect(threeResponse(view, defaultUi)?.choices).toEqual([])
+    })
+
+    it.each(['replay', 'read-only', 'actor-transition'])('preserves hand previews during a %s response', (mode) => {
+      const view = responseView()
+      if (mode === 'replay') view.replay.active = true
+      if (mode === 'read-only') view.game!.canInput = false
+      const h = setup(view)
+      if (mode === 'actor-transition') h.update(view, 1)
+      h.ui.activate(responseHit())
+      expect(h.content.innerHTML).toContain('Forest card preview')
+      h.click('[data-action="close"]')
+      h.click('[data-action="preview"][data-zone="hand"][data-card-id="required-island"]')
+      expect(h.content.innerHTML).toContain('Island card preview')
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
   })
 
   it('ignores stale recording read failures after a session reset', async () => {
