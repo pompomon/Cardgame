@@ -11,7 +11,7 @@ import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel, type GameUiState, type Mode } from '../../app/types'
 import { canPreviewCard } from '../card-preview'
-import { escapeHtml, renderCardTile, renderInstallControls, renderLobby, renderP2P, rendererSwitchLink } from '../dom-utils'
+import { escapeHtml, renderCardTile, renderInstallControls, renderLobby, renderP2P } from '../dom-utils'
 import type { BoardHit } from './contracts'
 
 export const THREE_LOG_LIMIT = 14
@@ -132,7 +132,7 @@ export function renderThreeSettings(view: AppViewModel): string {
   return `<section aria-label="Settings"><h3>Settings</h3><div class="three-settings">${fields.map(([id, label, value, options]) =>
     `<label for="${id}">${label}<select id="${id}">${options.map((option) =>
       `<option value="${option.value}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>`,
-  ).join('')}</div><p>Animation default follows the system reduced-motion preference.</p>${rendererSwitchLink(view.renderer)}</section>`
+  ).join('')}</div><p>Animation default follows the system reduced-motion preference.</p></section>`
 }
 
 function renderReplay(view: AppViewModel): string {
@@ -211,7 +211,7 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): strin
       .replace('id="answer-text"', 'id="answer-text" aria-label="Remote answer"')
       .replace('id="join-offer-text"', 'id="join-offer-text" aria-label="Host offer"')
       .replace('id="join-answer-text"', 'id="join-answer-text" aria-label="Local answer"') : ''
-    return `${renderLobby(view)}<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>${signaling}${p2p
+    return `${renderLobby(view)}${signaling}${p2p
       ? `<p>${view.p2pConnected ? 'Peer connected. Waiting for both peers to confirm game readiness.' : 'Waiting for peer connection.'}</p>${button('back-to-lobby', 'Back to Lobby')}` : ''}`
   }
   const game = view.game!

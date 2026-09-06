@@ -222,7 +222,6 @@ export function renderLobby(view: AppViewModel): string {
 
 export function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOfferDraft: string): string {
   const host = view.mode === 'p2p-host'
-  const safeStatus = escapeHtml(view.status)
   const safeOffer = escapeHtml(view.offer)
   const safeAnswer = escapeHtml(view.answer)
   const safeHostAnswerDraft = escapeHtml(hostAnswerDraft)
@@ -243,7 +242,6 @@ export function renderP2P(view: AppViewModel, hostAnswerDraft: string, joinOffer
              <button id="create-answer">Create Answer</button>
              <textarea id="join-answer-text" placeholder="Answer" readonly>${safeAnswer}</textarea>`}
       </div>
-      <p class="status">${safeStatus}</p>
     </section>
   `
 }

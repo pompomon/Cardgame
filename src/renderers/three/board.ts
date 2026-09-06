@@ -284,8 +284,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     if (this.effects.size >= 4) this.effects.values().next().value!.cancel()
     const source = this.cards?.anchorFor(effect.sourceInstanceId) ?? this.actorAnchor(effect.actor)
-    const target = this.cards?.anchorFor(effect.targetInstanceId, effect.targetCardId)
-      ?? this.actorAnchor(effect.targetActor ?? effect.actor, effect.kind === 'swamp_discard' || effect.kind === 'forest_return')
+    const target = this.effectTargetAnchor(effect)
     const removed = effect.kind === 'mountain_destroy' && effect.targetInstanceId
       ? this.cards?.pinRemoved(effect.targetInstanceId) ?? null : null
     const visual = new EffectVisual(this.effectGeometry, effect, source, target, duration, this.quality.effectParticles, removed, () => {
@@ -304,8 +303,15 @@ export class ThreeBoard implements ThreeBoardApi {
     return { x: 0, y: this.layout.rows[row].y, width: this.layout.cardWidth, height: this.layout.cardHeight, owner: actor, zone: hand ? 'hand' : 'battlefield' }
   }
 
+  private effectTargetAnchor(effect: VisualEffectDescriptor): CardAnchor {
+    const targetActor = effect.targetActor ?? effect.actor
+    if (effect.kind === 'swamp_discard') return this.actorAnchor(targetActor, true)
+    return this.cards?.anchorFor(effect.targetInstanceId, effect.targetCardId)
+      ?? this.actorAnchor(targetActor, effect.kind === 'forest_return')
+  }
+
   setVisible(visible: boolean): void {
-    if (this.disposed) return
+    if (this.disposed || this.visible === visible) return
     this.visible = visible
     this.stage.hidden = !visible
     this.visibilityChanged()

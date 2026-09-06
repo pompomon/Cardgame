@@ -239,6 +239,8 @@ describe('Three native markup and decisions', () => {
     expect(html).toContain('id="start-p2p-game" disabled')
     expect(html).toContain('&lt;answer&gt;')
     expect(html).not.toContain('class="three-hud"')
+    expect(html.match(/role="status"/g)).toHaveLength(1)
+    expect(html.match(/Ready/g)).toHaveLength(1)
     view.p2pConnected = true
     expect(renderThreeInterface(view, defaultUi)).toContain('id="start-p2p-game">')
     view.p2pStarted = true
@@ -250,6 +252,7 @@ describe('Three native markup and decisions', () => {
     const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
     for (const action of ['rematch', 'back-to-lobby', 'save-recording-download', 'save-recording-local', 'load-recording-file', 'load-recording-local', 'replay-start']) expect(html).toContain(`data-action="${action}"`)
     for (const id of ['ai-level-select', 'card-visual-style-select', 'animation-speed-select', 'board-theme-select', 'render-quality-select']) expect(html).toContain(`id="${id}"`)
+    expect(html).not.toContain('Switch to')
     view.replay.active = true
     const replay = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
     for (const action of ['replay-playpause', 'replay-prev', 'replay-next', 'replay-end', 'replay-exit']) expect(replay).toContain(`data-action="${action}"`)
@@ -571,6 +574,21 @@ describe('Three native interface behavior', () => {
     resolve('ignored')
     await pending
     expect(h.controller.importRecordingJson).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores stale recording read failures after a session reset', async () => {
+    const h = setup()
+    const input = h.host.children[1]
+    let reject: (reason: Error) => void = () => {}
+    input.files = [{ text: () => new Promise<string>((_, fail) => { reject = fail }) }]
+    const pending = input.emit('change')
+    h.ui.reset()
+    input.value = 'new-selection'
+    reject(new Error('stale failure'))
+    await pending
+    expect(h.controller.reportStatus).not.toHaveBeenCalled()
+    expect(input.value).toBe('new-selection')
+    h.ui.dispose()
   })
 
   it('reports file failures and revokes download URLs on disposal', async () => {

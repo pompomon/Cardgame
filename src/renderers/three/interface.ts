@@ -436,16 +436,17 @@ export class ThreeInterface {
   private readonly handleFile = async (): Promise<void> => {
     const file = this.fileInput.files?.[0]
     if (!file) return
-    const generation = ++this.fileGeneration
+    let generation = ++this.fileGeneration
     try {
       const text = await file.text()
       if (this.disposed || generation !== this.fileGeneration) return
       this.reset()
+      generation = this.fileGeneration
       this.controller.importRecordingJson(text)
     } catch {
-      if (!this.disposed) this.controller.reportStatus('Failed to read or import recording file.')
+      if (!this.disposed && generation === this.fileGeneration) this.controller.reportStatus('Failed to read or import recording file.')
     } finally {
-      if (!this.disposed) this.fileInput.value = ''
+      if (!this.disposed && generation === this.fileGeneration) this.fileInput.value = ''
     }
   }
 

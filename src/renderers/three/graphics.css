@@ -3,8 +3,7 @@
   isolation: isolate;
   width: 100%;
   min-width: 0;
-  height: 750px;
-  height: clamp(690px, 82svh, 960px);
+  height: 100%;
   overflow: hidden;
   border: 1px solid #718888;
   border-radius: 18px;

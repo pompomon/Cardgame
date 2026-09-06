@@ -4,6 +4,7 @@ import type { ThreeAssets } from '../renderers/three/assets'
 import { boardCardKey, ThreeCardRegistry, type CardDescriptor } from '../renderers/three/card-registry'
 import { EffectGeometry, EffectVisual, effectRecipe } from '../renderers/three/effect-visual'
 import type { VisualEffectDescriptor } from '../app/visual-effects'
+import { ThreeBoard } from '../renderers/three/board'
 
 function descriptor(cardId: string, instanceId?: string, x = 100): CardDescriptor {
   return {
@@ -95,6 +96,34 @@ describe('retained Three.js card registry', () => {
 })
 
 describe('bounded cosmetic Three.js effects', () => {
+  it('targets the opponent hand for Swamp without using a stale card anchor', () => {
+    const historical = { x: 300, y: 30, width: 100, height: 140, owner: 0, zone: 'hand' as const }
+    const opponentHand = { ...historical, x: 0, y: 400, owner: 1 }
+    const anchorFor = vi.fn(() => historical)
+    const actorAnchor = vi.fn(() => opponentHand)
+    const board = Object.assign(Object.create(ThreeBoard.prototype), {
+      actorAnchor,
+      cards: { anchorFor },
+    }) as unknown as {
+      effectTargetAnchor(effect: VisualEffectDescriptor): typeof opponentHand
+    }
+    const target = board.effectTargetAnchor({
+      kind: 'swamp_discard', actor: 0, targetActor: 1, targetCardId: 'discarded',
+      land: 'Swamp', visualStyle: 'classic',
+      palette: { primary: '#000', secondary: '#111', glow: '#222' },
+    })
+    expect(target).toBe(opponentHand)
+    expect(actorAnchor).toHaveBeenCalledWith(1, true)
+    expect(anchorFor).not.toHaveBeenCalled()
+
+    expect(board.effectTargetAnchor({
+      kind: 'forest_return', actor: 0, targetCardId: 'returned',
+      land: 'Forest', visualStyle: 'classic',
+      palette: { primary: '#000', secondary: '#111', glow: '#222' },
+    })).toBe(historical)
+    expect(anchorFor).toHaveBeenCalledWith(undefined, 'returned')
+  })
+
   it('animates the exact removed Mountain target and completes cancellation only once', () => {
     const { registry } = fixture()
     registry.reconcile([descriptor('destroyed', 'removed', 123)])
@@ -119,6 +148,37 @@ describe('bounded cosmetic Three.js effects', () => {
     expect(removed.card.group.visible).toBe(false)
     registry.dispose()
     geometry.dispose()
+  })
+
+  describe('Three.js board visibility', () => {
+    it('does not repeat visibility work when the value is unchanged', () => {
+      const visibilityChanged = vi.fn()
+      const resize = vi.fn()
+      const stage = { hidden: false }
+      const board = Object.assign(Object.create(ThreeBoard.prototype), {
+        disposed: false,
+        visible: true,
+        stage,
+        visibilityChanged,
+        resize,
+      }) as unknown as ThreeBoard
+
+      board.setVisible(true)
+      expect(visibilityChanged).not.toHaveBeenCalled()
+      expect(resize).not.toHaveBeenCalled()
+
+      board.setVisible(false)
+      expect(stage.hidden).toBe(true)
+      expect(visibilityChanged).toHaveBeenCalledOnce()
+      expect(resize).not.toHaveBeenCalled()
+
+      board.setVisible(true)
+      expect(stage.hidden).toBe(false)
+      expect(visibilityChanged).toHaveBeenCalledTimes(2)
+      expect(resize).toHaveBeenCalledOnce()
+      board.setVisible(true)
+      expect(resize).toHaveBeenCalledOnce()
+    })
   })
 
   it('finishes long caller durations within the bounded lifetime and rejects unknown kinds', () => {
