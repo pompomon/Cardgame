@@ -175,7 +175,7 @@ export class ThreeInterface {
   activate(hit: BoardHit): void {
     const view = this.latestForAction()
     if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.preview) return
-    if (view.game.phase === 'respond' && hit.zone === 'hand' && hit.owner === view.game.actor) {
+    if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) {
       this.respondWithCard(hit.cardId, hit.owner)
       return
     }
@@ -199,7 +199,7 @@ export class ThreeInterface {
   private previewCard(hit: BoardHit): void {
     const view = this.latestForAction()
     if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.preview) return
-    if (view.game.phase === 'respond' && hit.zone === 'hand' && hit.owner === view.game.actor) return
+    if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) return
     if (!canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })) return
     if (threePreviewName(view.game, hit) === null) return
     this.preview = { ...hit }

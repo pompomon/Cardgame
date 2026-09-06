@@ -208,7 +208,7 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
           if (card.name === HIDDEN_HAND_CARD_NAME) return '<span class="three-hidden-card">Hidden card</span>'
           const playable = !blocked && canThreeInput(view, ui.presentedActor) && owner === game.actor
             && game.phase === 'main' && (game.legal.playLandByCard[card.id]?.length ?? 0) > 0
-          const responding = game.phase === 'respond' && owner === game.actor
+          const responding = response !== null && owner === game.actor
           const choice = owner === game.actor ? responseChoices.get(card.id) : undefined
           if (responding && response) {
             const required = response.requiredIslandId === card.id

@@ -781,6 +781,21 @@ describe('Three native interface behavior', () => {
       view.game!.players[0].handCards = [{ id: 'discard-forest-1', name: 'Forest' }]
       expect(threeResponse(view, defaultUi)?.choices).toEqual([])
     })
+
+    it.each(['replay', 'read-only', 'actor-transition'])('preserves hand previews during a %s response', (mode) => {
+      const view = responseView()
+      if (mode === 'replay') view.replay.active = true
+      if (mode === 'read-only') view.game!.canInput = false
+      const h = setup(view)
+      if (mode === 'actor-transition') h.update(view, 1)
+      h.ui.activate(responseHit())
+      expect(h.content.innerHTML).toContain('Forest card preview')
+      h.click('[data-action="close"]')
+      h.click('[data-action="preview"][data-zone="hand"][data-card-id="required-island"]')
+      expect(h.content.innerHTML).toContain('Island card preview')
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
   })
 
   it('ignores stale recording read failures after a session reset', async () => {
