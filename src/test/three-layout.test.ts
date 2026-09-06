@@ -23,6 +23,37 @@ describe('Three.js fixed tabletop layout', () => {
     expect(seen).toEqual(Array.from({ length: 103 }, (_, index) => index))
   })
 
+  it.each([[320, 360], [390, 524], [844, 300], [1440, 670]])('reserves measured chrome at %sx%s without shrinking cards', (width, height) => {
+    const headers = { far: 52, near: width < 480 ? 190 : 104, hand: 28 }
+    const controls = { far: 44, near: 44, hand: 44 }
+    const layout = boardLayout(width, height, headers, controls)
+    expect(layout.height).toBeGreaterThanOrEqual(height)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(104)
+    for (const row of ['far', 'near', 'hand'] as const) {
+      const pos = layout.rows[row]
+      const top = layout.height / 2 - pos.y - layout.cardHeight / 2
+      expect(top).toBeGreaterThanOrEqual(pos.labelTop + headers[row] + 8)
+      expect(top + layout.cardHeight + 8).toBeLessThanOrEqual(pos.controlsTop + 0.001)
+      expect(pos.controlsTop + controls[row]).toBeLessThan(layout.height)
+    }
+    const near = layout.rows.near
+    const dropTop = layout.height / 2 - layout.drop.y - layout.drop.height / 2
+    expect(dropTop).toBeGreaterThanOrEqual(near.labelTop + headers.near)
+    expect(dropTop + layout.drop.height).toBeLessThan(near.controlsTop)
+    expect(layout.rows.far.controlsTop + 44).toBeLessThan(near.labelTop)
+    expect(near.controlsTop + 44).toBeLessThan(layout.rows.hand.labelTop)
+  })
+
+  it('accommodates wrapped and zoomed controls without losing pagination or drop geometry', () => {
+    const headers = { far: 180, near: 420, hand: 100 }
+    const controls = { far: 90, near: 90, hand: 90 }
+    const layout = boardLayout(320, 300, headers, controls)
+    expect(layout.cardHeight).toBe(104)
+    expect(layout.rows.hand.controlsTop + 90).toBeLessThan(layout.height)
+    expect(pointInRect({ x: 0, y: layout.rows.near.y }, layout.drop)).toBe(true)
+    expect(pointInRect({ x: 0, y: layout.rows.hand.y }, layout.drop)).toBe(false)
+  })
+
   it('clamps pages when cards leave a row and handles empty/invalid input', () => {
     expect(pageWindow(5, 100, 3)).toMatchObject({ page: 1, start: 3, end: 5, pages: 2 })
     expect(pageWindow(0, 4, 3)).toMatchObject({ page: 0, pages: 1, end: 0 })

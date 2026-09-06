@@ -34,6 +34,14 @@ export interface TargetModel {
   readonly options: ReadonlyArray<{ effectTargetId?: string; label: string; cardName: string }>
 }
 
+export interface ThreePrimaryAction {
+  readonly type: 'end_turn' | 'pass_response'
+  readonly label: string
+  readonly disabled: boolean
+  readonly prompt: string
+  readonly decision: string
+}
+
 export function isThreeMode(value: unknown): value is Mode {
   return value === 'tutorial' || value === 'local-hvh' || value === 'local-hvai'
     || value === 'local-aivai' || value === 'adventure-hvai'
@@ -76,6 +84,25 @@ export function threeResponse(view: AppViewModel, ui: InterfaceUi): CounterHandO
       choice.cardName !== HIDDEN_HAND_CARD_NAME && choice.action.actor === game.actor),
     instruction: `${response.instruction} The first Island (blue ring) is included automatically; pink rings mark your choices.`,
   }
+}
+
+export function threePrimaryAction(view: AppViewModel, ui: InterfaceUi): ThreePrimaryAction | null {
+  const game = view.game
+  if (!game || !canThreeInput(view, ui.presentedActor) || game.actorControl !== 'human'
+    || view.controllers[game.actor] !== 'human') return null
+  const decision = threeDecisionKey(view)
+  if (game.phase === 'main') {
+    return {
+      type: 'end_turn', label: 'End Turn', decision, prompt: '',
+      disabled: !game.legal.canEndTurn || ui.menuOpen || !!ui.preview || !!ui.pendingCardId,
+    }
+  }
+  const response = threeResponse(view, ui)
+  return response ? {
+    type: 'pass_response', label: 'Pass Response', decision, disabled: !response.canPass,
+    prompt: `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
+      ? response.instruction : 'No legal counter cards available.'}`,
+  } : null
 }
 
 export function threeTargets(view: AppViewModel, ui: InterfaceUi): TargetModel | null {
@@ -243,7 +270,6 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): strin
   const targets = threeTargets(view, ui)
   const response = threeResponse(view, ui)
   const blocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
-  const canInput = canThreeInput(view, ui.presentedActor) && !blocked
   const previewName = ui.preview ? threePreviewName(game, ui.preview) : null
   const omitted = Math.max(0, game.log.length - THREE_LOG_LIMIT)
   return `<section class="three-hud" aria-label="Game controls">
@@ -254,10 +280,6 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): strin
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? 'Keep playing to continue the tutorial.')}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>Adventure round ${view.adventure.currentRound}/7 · Chances ${view.adventure.remainingChances} · Win streak ${view.adventure.winStreak} · High score ${view.adventure.highScore}</p>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
-    ${game.phase === 'main' && canThreeInput(view, ui.presentedActor) ? `<div class="three-actions" aria-label="Turn actions">${button('end_turn', 'End Turn', !canInput || !game.legal.canEndTurn)}</div>` : ''}
-    ${response ? `<section aria-label="Response actions"><h3>Respond to ${escapeHtml(game.pendingLandName ?? 'land')}</h3>
-      <p role="status" aria-live="polite">${escapeHtml(response.choices.length ? response.instruction : 'No legal counter cards available.')}</p>
-      ${response.canPass ? button('pass_response', 'Pass Response') : ''}</section>` : ''}
     ${targets && !ui.menuOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${renderReplay(view)}${renderNativeCards(view, ui, blocked, response)}
     <details data-detail-key="log"><summary>Replay Log (${Math.min(THREE_LOG_LIMIT, game.log.length)} latest)</summary>

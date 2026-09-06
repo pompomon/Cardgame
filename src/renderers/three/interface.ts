@@ -22,10 +22,12 @@ import {
   renderThreeInterface,
   threeDecisionKey,
   threePreviewName,
+  threePrimaryAction,
   threeResponse,
   threeSessionKey,
   threeTargets,
   type InterfaceUi,
+  type ThreePrimaryAction,
 } from './interface-model'
 import './interface.css'
 
@@ -115,6 +117,18 @@ export class ThreeInterface {
 
   get response() {
     return !this.disposed && this.view ? threeResponse(this.view, this.ui()) : null
+  }
+
+  get primaryAction(): ThreePrimaryAction | null {
+    return !this.disposed && this.view ? threePrimaryAction(this.view, this.ui()) : null
+  }
+
+  activatePrimaryAction(action: ThreePrimaryAction): void {
+    const view = this.latestForAction()
+    if (!view?.game || this.isBlocked() || action.decision !== this.decision) return
+    const current = threePrimaryAction(view, this.ui())
+    if (!current || current.disabled || current.type !== action.type) return
+    this.submit({ type: current.type, actor: view.game.actor })
   }
 
   isBlocked(): boolean {
@@ -254,7 +268,7 @@ export class ThreeInterface {
     if (!saved) return false
     const element = saved.element.isConnected ? saved.element
       : Array.from(this.content.querySelectorAll<HTMLElement>(FOCUSABLE)).find((item) => focusKey(item) === saved.key)
-    if (!element || element.hasAttribute('disabled')) return false
+    if (!element || element.hasAttribute('disabled') || element.closest('[hidden]')) return false
     element.focus({ preventScroll: true })
     if (saved.start !== null && saved.end !== null && (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT')) {
       (element as HTMLInputElement).setSelectionRange(saved.start, saved.end)
@@ -417,12 +431,6 @@ export class ThreeInterface {
         this.previewCard({ key: '', cardId: element.dataset.cardId, instanceId: element.dataset.instanceId, name: '', owner, zone, playable: false })
         break
       }
-      case 'end_turn':
-        if (!this.isBlocked() && view.game?.phase === 'main' && view.game.legal.canEndTurn) this.submit({ type: 'end_turn', actor: view.game.actor })
-        break
-      case 'pass_response':
-        if (!this.isBlocked() && view.game?.phase === 'respond' && view.game.legal.canPassResponse) this.submit({ type: 'pass_response', actor: view.game.actor })
-        break
       case 'resume-adventure': this.reset(); this.controller.resumeAdventure(); break
       case 'pause-adventure': this.reset(); this.controller.pauseAdventure(); break
       case 'abandon-adventure': this.reset(); this.controller.abandonAdventure(); break

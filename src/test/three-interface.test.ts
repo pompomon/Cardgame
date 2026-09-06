@@ -11,6 +11,7 @@ import {
   isThreeMode,
   renderThreeInterface,
   threeDecisionKey,
+  threePrimaryAction,
   threeResponse,
   threeTargets,
   type InterfaceUi,
@@ -371,6 +372,118 @@ describe('Three native markup and decisions', () => {
   })
 })
 
+describe('Three battlefield primary action', () => {
+  it('projects one phase-specific action and removes duplicate lower-panel buttons', () => {
+    for (const [view, type, label] of [
+      [makeView(), 'end_turn', 'End Turn'],
+      [responseView(), 'pass_response', 'Pass Response'],
+    ] as const) {
+      const action = threePrimaryAction(view, defaultUi)
+      expect(action).toMatchObject({ type, label, disabled: false, decision: threeDecisionKey(view) })
+      const html = renderThreeInterface(view, defaultUi)
+      expect(html).not.toContain('data-action="end_turn"')
+      expect(html).not.toContain('data-action="pass_response"')
+      expect(html).toContain(`Hand ${view.game!.players[0].handCount}`)
+    }
+  })
+
+  it.each(['main', 'respond'] as const)('respects legality and blocking during %s', (phase) => {
+    const view = phase === 'main' ? makeView() : responseView()
+    const h = setup(view)
+    const original = h.ui.primaryAction!
+    h.click('[data-action="menu"]')
+    h.ui.activatePrimaryAction(original)
+    h.click('[data-action="close"]')
+    h.ui.activate(hit())
+    h.ui.activatePrimaryAction(original)
+    h.click('[data-action="close"]')
+    if (phase === 'main') {
+      h.ui.playCard('source')
+      expect(h.ui.primaryAction?.disabled).toBe(true)
+      h.ui.activatePrimaryAction(original)
+    }
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    const next = { ...view, game: { ...view.game!, legal: {
+      ...view.game!.legal, canEndTurn: false, canPassResponse: false,
+    } } }
+    h.update(next)
+    expect(h.ui.primaryAction?.disabled).toBe(true)
+    h.ui.activatePrimaryAction(h.ui.primaryAction!)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it.each([
+    ['AI', (view: AppViewModel) => { view.controllers[0] = 'ai'; view.game!.actorControl = 'ai' }],
+    ['remote', (view: AppViewModel) => { view.controllers[0] = 'remote'; view.game!.actorControl = 'remote' }],
+    ['no input', (view: AppViewModel) => { view.game!.canInput = false }],
+    ['replay', (view: AppViewModel) => { view.replay.active = true }],
+    ['game replay', (view: AppViewModel) => { view.game!.isReplay = true }],
+    ['game over', (view: AppViewModel) => { view.game!.phase = 'gameOver' }],
+    ['Plains target', (view: AppViewModel) => { view.game!.phase = 'plains_target' }],
+    ['Swamp target', (view: AppViewModel) => { view.game!.phase = 'swamp_target' }],
+    ['P2P lobby', (view: AppViewModel) => { view.mode = 'p2p-host' }],
+  ] as const)('does not offer or submit a primary action for %s', (_name, prepare) => {
+    const view = makeView()
+    const h = setup(view)
+    const old = h.ui.primaryAction!
+    prepare(view)
+    h.update(view)
+    expect(h.ui.primaryAction).toBeNull()
+    h.ui.activatePrimaryAction(old)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it('rejects stale presses before and after a new decision is presented', () => {
+    const h = setup()
+    const old = h.ui.primaryAction!
+    const next = makeView()
+    next.game!.turn += 1
+    h.latest(next)
+    h.ui.activatePrimaryAction(old)
+    h.ui.activatePrimaryAction(old)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.update(next, 1)
+    expect(h.ui.primaryAction).toBeNull()
+    h.ui.activatePrimaryAction(old)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+    expect(h.ui.primaryAction).toBeNull()
+    h.ui.activatePrimaryAction(old)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+  })
+
+  it.each([0, 1])('passes for the presented responder %s, even without counter cards', (actor) => {
+    const view = responseView(actor)
+    view.game!.legal.counterOptions = []
+    const h = setup(view)
+    const action = h.ui.primaryAction!
+    expect(action.prompt).toContain('Respond to Swamp. No legal counter cards available.')
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.controller.submitAction.mockImplementation(() => h.latest({ ...view, game: { ...view.game!, canInput: false } }))
+    h.ui.activatePrimaryAction(action)
+    h.ui.activatePrimaryAction(action)
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'pass_response', actor })
+    h.ui.dispose()
+  })
+
+  it('keeps a battlefield button focused across status changes and respects modal focus', () => {
+    const view = makeView()
+    const h = setup(view)
+    const boardButton = h.document.createElement('button')
+    h.document.body.append(boardButton)
+    boardButton.focus()
+    h.update({ ...view, status: 'Saved' })
+    expect(h.document.activeElement).toBe(boardButton)
+    h.click('[data-action="menu"]')
+    boardButton.focus()
+    h.document.emit('focusin', { target: boardButton })
+    expect(h.document.activeElement?.closest('dialog')).not.toBeNull()
+    h.ui.dispose()
+  })
+})
+
 describe('Three native interface behavior', () => {
   it('submits a sole legal action exactly once across duplicate native/board calls', () => {
     const view = makeView()
@@ -391,8 +504,8 @@ describe('Three native interface behavior', () => {
     const view = makeView()
     const h = setup(view)
     h.controller.submitAction.mockImplementation(() => h.latest({ ...view, status: 'Send failed. Try again.' }))
-    h.click('[data-action="end_turn"]')
-    h.click('[data-action="end_turn"]')
+    h.ui.activatePrimaryAction(h.ui.primaryAction!)
+    h.ui.activatePrimaryAction(h.ui.primaryAction!)
     expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
     h.ui.dispose()
   })
@@ -688,12 +801,13 @@ describe('Three native interface behavior', () => {
   it('uses hand response actions without duplicate board/native/pass submissions', () => {
     const view = responseView()
     const h = setup(view)
+    const pass = h.ui.primaryAction!
     h.controller.submitAction.mockImplementation(() => h.latest({
       ...view,
       game: { ...view.game!, canInput: false },
     }))
     h.click('[data-action="respond-card"]')
-    h.click('[data-action="pass_response"]')
+    h.ui.activatePrimaryAction(pass)
     h.ui.activate(responseHit())
     expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.counterOptions[0].action)
     h.ui.dispose()
@@ -785,7 +899,7 @@ describe('Three native interface behavior', () => {
       h.ui.activate(responseHit())
       h.click('[data-action="respond-card"]')
       expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
-      h.click('[data-action="pass_response"]')
+      h.ui.activatePrimaryAction(h.ui.primaryAction!)
       expect(h.controller.submitAction).toHaveBeenLastCalledWith({ type: 'pass_response', actor: 0 })
       h.ui.dispose()
     })
@@ -847,11 +961,11 @@ describe('Three native interface behavior', () => {
       view.game!.legal.counterOptions = []
       h.update(view)
       expect(h.ui.response?.choices).toEqual([])
-      expect(h.content.innerHTML).toContain('No legal counter cards available.')
-      expect(h.content.querySelector('[data-action="pass_response"]')).not.toBeNull()
+      expect(h.ui.primaryAction?.prompt).toContain('No legal counter cards available.')
+      expect(h.ui.primaryAction).toMatchObject({ type: 'pass_response', disabled: false })
       view.game!.legal.canPassResponse = false
       h.update(view)
-      expect(h.content.querySelector('[data-action="pass_response"]')).toBeNull()
+      expect(h.ui.primaryAction?.disabled).toBe(true)
       h.ui.dispose()
     })
 

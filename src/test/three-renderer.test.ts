@@ -2,15 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ControllerApi } from '../app/controller'
 import type { AppViewModel } from '../app/types'
 import type { CounterHandOptions } from '../app/response-options'
-import { threeResponse } from '../renderers/three/interface-model'
+import { threePrimaryAction, threeResponse, type ThreePrimaryAction } from '../renderers/three/interface-model'
 
 const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), playEffect: vi.fn(), canvas: {} },
-  ui: { update: vi.fn(), isBlocked: vi.fn(), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(), response: null as CounterHandOptions | null },
+  ui: { update: vi.fn(), isBlocked: vi.fn(), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
+    response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn() },
+  boardConstruct: vi.fn(),
   input: { cancel: vi.fn(), reconcile: vi.fn(), dispose: vi.fn() },
 }))
 vi.mock('../renderers/three/board', () => ({
-  ThreeBoard: class { constructor() { return mocks.board } },
+  ThreeBoard: class { constructor(...args: unknown[]) { mocks.boardConstruct(...args); return mocks.board } },
 }))
 vi.mock('../renderers/three/interface', () => ({
   ThreeInterface: class { constructor() { return mocks.ui } },
@@ -56,6 +58,7 @@ afterEach(() => {
   vi.clearAllMocks()
   mocks.ui.update.mockReset()
   mocks.ui.response = null
+  mocks.ui.primaryAction = null
   vi.unstubAllGlobals()
 })
 
@@ -78,7 +81,7 @@ describe('Three.js composition', () => {
     renderer.render(snapshot)
     expect(mocks.board.render).toHaveBeenCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ actor: 1, canInput: false }) }),
-      0, mocks.ui.targetIds, null,
+      0, mocks.ui.targetIds, null, null,
     )
     expect(snapshot.game!.canInput).toBe(true)
     renderer.unmount()
@@ -87,6 +90,10 @@ describe('Three.js composition', () => {
   it('passes response feedback only after the human responder is presented', () => {
     mocks.ui.update.mockImplementation((snapshot: AppViewModel, presentedActor: number) => {
       mocks.ui.response = threeResponse(snapshot, {
+        presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
+        preview: null, hostAnswerDraft: '', joinOfferDraft: '',
+      })
+      mocks.ui.primaryAction = threePrimaryAction(snapshot, {
         presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
         preview: null, hostAnswerDraft: '', joinOfferDraft: '',
       })
@@ -116,14 +123,26 @@ describe('Three.js composition', () => {
     renderer.render(next)
     expect(mocks.board.render).toHaveBeenLastCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ canInput: false }) }),
-      0, mocks.ui.targetIds, null,
+      0, mocks.ui.targetIds, null, null,
     )
     renderer.render({ ...next, animationSpeed: 'off' })
     expect(mocks.board.render).toHaveBeenLastCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ canInput: true }) }),
       1, mocks.ui.targetIds, expect.objectContaining({ requiredIslandId: 'island', choices: [expect.objectContaining({ cardId: 'forest' })] }),
+      expect.objectContaining({ type: 'pass_response', disabled: false }),
     )
     renderer.unmount()
+  })
+
+  it('routes battlefield intent through the interface and ignores callbacks after unmount', () => {
+    const { renderer } = harness()
+    const activate = mocks.boardConstruct.mock.calls.at(-1)![3] as (action: ThreePrimaryAction) => void
+    const action: ThreePrimaryAction = { type: 'end_turn', label: 'End Turn', prompt: '', decision: 'decision', disabled: false }
+    activate(action)
+    expect(mocks.ui.activatePrimaryAction).toHaveBeenCalledExactlyOnceWith(action)
+    renderer.unmount()
+    activate(action)
+    expect(mocks.ui.activatePrimaryAction).toHaveBeenCalledTimes(1)
   })
 
   it('resets ephemeral interactions for replacements but not status updates', () => {

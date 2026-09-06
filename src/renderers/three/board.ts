@@ -11,12 +11,15 @@ import { ThreeAssets, type TextureLease } from './assets'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'
 import type { BoardHit, ThreeBoardApi } from './contracts'
 import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
+import type { ThreePrimaryAction } from './interface-model'
 import { boardLayout, cardSlotX, clientToBoard, pageWindow, pointInRect, type BoardRow, type ThreeLayout } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
 
 interface RowChrome {
+  readonly header: HTMLDivElement
   readonly label: HTMLParagraphElement
+  readonly stats: HTMLParagraphElement
   readonly controls: HTMLDivElement
   readonly previous: HTMLButtonElement
   readonly next: HTMLButtonElement
@@ -53,10 +56,14 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly effects = new Set<EffectVisual>()
   private readonly chrome = new Map<BoardRow, RowChrome>()
   private readonly instruction = document.createElement('p')
+  private readonly primaryButton = document.createElement('button')
+  private primaryAction: ThreePrimaryAction | null = null
+  private pressedAction: ThreePrimaryAction | null = null
   private readonly pages: Record<BoardRow, number> = { far: 0, near: 0, hand: 0 }
   private readonly point = { x: 0, y: 0 }
   private readonly onFailure: (message: string) => void
   private readonly onResize: () => void
+  private readonly onPrimaryAction: (action: ThreePrimaryAction) => void
   private renderer: WebGLRenderer | null = null
   private assets: ThreeAssets | null = null
   private cards: ThreeCardRegistry | null = null
@@ -77,11 +84,18 @@ export class ThreeBoard implements ThreeBoardApi {
   private lastFrame: number | null = null
   private drag: DragVisual | null = null
   private canDrop = false
+  private sized = false
 
-  constructor(host: HTMLElement, onFailure: (message: string) => void, onResize: () => void) {
+  constructor(
+    host: HTMLElement,
+    onFailure: (message: string) => void,
+    onResize: () => void,
+    onPrimaryAction: (action: ThreePrimaryAction) => void,
+  ) {
     this.host = host
     this.onFailure = onFailure
     this.onResize = onResize
+    this.onPrimaryAction = onPrimaryAction
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'three-board-canvas'
     this.canvas.setAttribute('aria-label', 'Cardgame tabletop. Use the adjacent card controls for keyboard play.')
@@ -106,9 +120,21 @@ export class ThreeBoard implements ThreeBoardApi {
       this.camera.position.set(0, 0, 1200)
       this.camera.lookAt(0, 0, 0)
       for (const row of ROWS) this.createChrome(row)
+      this.primaryButton.type = 'button'
+      this.primaryButton.className = 'three-board-primary'
+      this.primaryButton.hidden = true
+      this.primaryButton.addEventListener('click', this.activatePrimary)
+      this.primaryButton.addEventListener('pointerdown', this.capturePrimary)
+      this.primaryButton.addEventListener('keydown', this.capturePrimaryKey)
+      this.primaryButton.addEventListener('pointercancel', this.clearPrimaryPress)
+      this.primaryButton.addEventListener('blur', this.clearPrimaryPress)
       this.instruction.className = 'three-board-instruction'
+      this.instruction.id = 'three-battlefield-prompt'
+      this.instruction.setAttribute('role', 'status')
+      this.instruction.setAttribute('aria-live', 'polite')
       this.instruction.hidden = true
-      this.stage.append(this.instruction)
+      this.primaryButton.setAttribute('aria-describedby', this.instruction.id)
+      this.chrome.get('near')!.header.append(this.primaryButton, this.instruction)
       host.append(this.stage)
       this.canvas.addEventListener('webglcontextlost', this.contextLost)
       window.addEventListener('resize', this.resize)
@@ -123,6 +149,10 @@ export class ThreeBoard implements ThreeBoardApi {
       if (typeof ResizeObserver !== 'undefined') {
         this.observer = new ResizeObserver(this.resize)
         this.observer.observe(this.stage)
+        for (const chrome of this.chrome.values()) {
+          this.observer.observe(chrome.header)
+          this.observer.observe(chrome.controls)
+        }
       }
       this.applySize()
       this.setBackground(DEFAULT_BOARD_THEME)
@@ -134,7 +164,10 @@ export class ThreeBoard implements ThreeBoardApi {
     }
   }
 
-  render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>, response: CounterHandOptions | null): void {
+  render(
+    view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>,
+    response: CounterHandOptions | null, primaryAction: ThreePrimaryAction | null,
+  ): void {
     if (this.disposed || this.failed) return
     const previous = this.view
     const boundary = previous && (previous.seed !== view.seed || previous.mode !== view.mode
@@ -153,6 +186,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.actor = presentedActor === 1 ? 1 : 0
     this.targetIds = new Set(targetIds)
     this.response = response
+    this.primaryAction = primaryAction
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
     this.present()
@@ -165,6 +199,7 @@ export class ThreeBoard implements ThreeBoardApi {
       this.canDrop = false
       this.cards?.reconcile([])
       this.instruction.hidden = true
+      this.primaryButton.hidden = true
       for (const chrome of this.chrome.values()) chrome.controls.hidden = true
       return
     }
@@ -176,6 +211,37 @@ export class ThreeBoard implements ThreeBoardApi {
     const responseIds = new Set(response?.choices.map((choice) => choice.cardId))
     this.canDrop = input && game.phase === 'main'
       && Object.values(game.legal.playLandByCard).some((options) => options.length > 0)
+    const primary = input ? this.primaryAction : null
+    const primaryFocused = this.primaryButton.ownerDocument.activeElement === this.primaryButton
+    this.primaryButton.hidden = primary === null
+    this.primaryButton.disabled = !primary || primary.disabled
+    this.primaryButton.textContent = primary?.label ?? ''
+    this.primaryButton.dataset.action = primary?.type ?? ''
+    if (primaryFocused && (this.primaryButton.hidden || this.primaryButton.disabled)) {
+      this.chrome.get('near')!.label.focus({ preventScroll: true })
+    }
+    this.instruction.hidden = !this.canDrop && !response
+    this.instruction.textContent = response
+      ? primary?.prompt || `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
+        ? response.instruction : 'No legal counter cards available.'}`
+      : 'Drag a highlighted card into your battlefield'
+    for (const row of ROWS) {
+      const owner = row === 'far' ? 1 - this.actor : this.actor
+      const player = game.players[owner]
+      const chrome = this.chrome.get(row)!
+      const label = row === 'hand' ? `Player ${owner + 1} · hand` : `Player ${owner + 1} · battlefield`
+      chrome.label.textContent = `${label}${game.actor === owner ? ' · ACTIVE' : ''}`
+      chrome.header.dataset.active = String(game.actor === owner)
+      if (row !== 'hand') {
+        const counts = `Hand ${player.handCount} · Deck ${player.deckCount} · Graveyard ${player.graveyardCount}`
+        chrome.stats.textContent = counts
+        chrome.stats.setAttribute('aria-label', `Player ${owner + 1}: ${counts}`)
+      }
+      chrome.controls.hidden = false
+      chrome.previous.setAttribute('aria-label', `Previous ${label} page`)
+      chrome.next.setAttribute('aria-label', `Next ${label} page`)
+    }
+    this.applySize()
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
@@ -183,15 +249,9 @@ export class ThreeBoard implements ThreeBoardApi {
       const page = pageWindow(entries.length, this.pages[row], this.layout.capacity)
       this.pages[row] = page.page
       const chrome = this.chrome.get(row)!
-      const label = row === 'hand' ? `Player ${owner + 1} · hand` : `Player ${owner + 1} · battlefield`
-      chrome.label.textContent = `${label}${game.actor === owner ? ' · ACTIVE' : ''}`
-      chrome.label.dataset.active = String(game.actor === owner)
-      chrome.controls.hidden = false
       chrome.previous.disabled = page.page === 0 || this.drag !== null
       chrome.next.disabled = page.page === page.pages - 1 || this.drag !== null
       chrome.count.textContent = page.count === 0 ? '0 cards' : `${page.start + 1}–${page.end} of ${page.count}`
-      chrome.previous.setAttribute('aria-label', `Previous ${label} page`)
-      chrome.next.setAttribute('aria-label', `Next ${label} page`)
       for (let index = 0; index < entries.length; index++) {
         const card = entries[index]
         const instanceId = 'instanceId' in card ? card.instanceId : undefined
@@ -223,10 +283,19 @@ export class ThreeBoard implements ThreeBoardApi {
     this.cards?.reconcile(descriptors)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
-    this.instruction.hidden = !this.canDrop && !response
-    this.instruction.textContent = response
-      ? response.choices.length ? response.instruction : 'No legal counter cards available. Use Pass Response.'
-      : 'Drag a highlighted card into your battlefield'
+  }
+
+  private readonly capturePrimary = (): void => { this.pressedAction = this.primaryAction }
+  private readonly clearPrimaryPress = (): void => { this.pressedAction = null }
+  private readonly capturePrimaryKey = (event: KeyboardEvent): void => {
+    if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) this.capturePrimary()
+  }
+  private readonly activatePrimary = (): void => {
+    const action = this.pressedAction ?? this.primaryAction
+    this.clearPrimaryPress()
+    if (!action || !this.usable() || this.primaryButton.hidden || this.primaryButton.disabled) return
+    this.onResize()
+    this.onPrimaryAction(action)
   }
 
   hitTest(clientX: number, clientY: number): BoardHit | null {
@@ -357,23 +426,31 @@ export class ThreeBoard implements ThreeBoardApi {
     if (!this.usable()) return
     this.endDrag(false)
     this.onResize()
-    this.applySize()
     this.present()
     this.invalidate()
   }
 
   private applySize(): void {
-    const rect = this.stage.getBoundingClientRect()
-    const width = Math.max(1, rect.width || this.host.clientWidth || window.innerWidth || 1000)
-    const height = Math.max(1, rect.height || 750)
-    this.layout = boardLayout(width, height)
+    const width = Math.max(1, this.stage.clientWidth || this.host.clientWidth || window.innerWidth || 1000)
+    const headers = { far: 0, near: 0, hand: 0 }
+    const controls = { far: 0, near: 0, hand: 0 }
+    for (const row of ROWS) {
+      headers[row] = this.chrome.get(row)!.header.offsetHeight
+      controls[row] = this.chrome.get(row)!.controls.offsetHeight
+    }
+    const minimum = boardLayout(width, 0, headers, controls).height
+    this.host.style.setProperty('--three-board-min-height', `${minimum + 4}px`)
+    const height = Math.max(minimum, this.stage.clientHeight)
+    const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
+    this.layout = boardLayout(width, height, headers, controls)
     this.camera.left = -width / 2
     this.camera.right = width / 2
     this.camera.top = height / 2
     this.camera.bottom = -height / 2
     this.camera.updateProjectionMatrix()
     this.updateQuality()
-    this.renderer?.setSize(width, height, false)
+    if (resized) this.renderer?.setSize(width, height, false)
+    this.sized = true
     this.table.scale.set(width - 4, height - 4, 24)
     this.background.scale.set(width - 12, height - 12, 1)
     this.drop.scale.set(this.layout.drop.width, this.layout.drop.height, 1)
@@ -381,10 +458,9 @@ export class ThreeBoard implements ThreeBoardApi {
     this.drop.position.y = this.layout.drop.y
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
-      chrome.label.style.top = `${this.layout.rows[row].labelTop}px`
+      chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
       chrome.controls.style.top = `${this.layout.rows[row].controlsTop}px`
     }
-    this.instruction.style.top = `${height / 3 + 33}px`
   }
 
   private updateQuality(): void {
@@ -416,8 +492,17 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   private createChrome(row: BoardRow): void {
+    const header = document.createElement('div')
+    header.className = 'three-board-label'
+    header.dataset.row = row
+    const summary = document.createElement('div')
     const label = document.createElement('p')
-    label.className = 'three-board-label'
+    label.tabIndex = -1
+    const stats = document.createElement('p')
+    stats.className = 'three-board-stats'
+    stats.hidden = row === 'hand'
+    summary.append(label, stats)
+    header.append(summary)
     const controls = document.createElement('div')
     controls.className = 'three-board-pagination'
     const previous = document.createElement('button')
@@ -432,9 +517,9 @@ export class ThreeBoard implements ThreeBoardApi {
     previous.addEventListener('click', back)
     next.addEventListener('click', forward)
     controls.append(previous, count, next)
-    this.stage.append(label, controls)
+    this.stage.append(header, controls)
     this.chrome.set(row, {
-      label, controls, previous, next, count,
+      header, label, stats, controls, previous, next, count,
       dispose: (): void => {
         previous.removeEventListener('click', back)
         next.removeEventListener('click', forward)
@@ -516,6 +601,14 @@ export class ThreeBoard implements ThreeBoardApi {
     this.observer?.disconnect()
     this.observer = null
     this.canvas.removeEventListener('webglcontextlost', this.contextLost)
+    this.primaryButton.removeEventListener('click', this.activatePrimary)
+    this.primaryButton.removeEventListener('pointerdown', this.capturePrimary)
+    this.primaryButton.removeEventListener('keydown', this.capturePrimaryKey)
+    this.primaryButton.removeEventListener('pointercancel', this.clearPrimaryPress)
+    this.primaryButton.removeEventListener('blur', this.clearPrimaryPress)
+    this.primaryAction = null
+    this.pressedAction = null
+    this.host.style.removeProperty('--three-board-min-height')
     window.removeEventListener('resize', this.resize)
     window.removeEventListener('orientationchange', this.resize)
     window.visualViewport?.removeEventListener('resize', this.resize)

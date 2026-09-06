@@ -35,19 +35,33 @@ export interface PageWindow {
   readonly count: number
 }
 
-export function boardLayout(width: number, height: number): ThreeLayout {
+export function boardLayout(
+  width: number,
+  height: number,
+  headers: Readonly<Record<BoardRow, number>> = { far: 48, near: 96, hand: 28 },
+  controls: Readonly<Record<BoardRow, number>> = { far: 44, near: 44, hand: 44 },
+): ThreeLayout {
   const w = Number.isFinite(width) && width > 0 ? width : 1
-  const h = Number.isFinite(height) && height > 0 ? height : 1
-  const rowHeight = h / 3
-  const cardHeight = Math.max(1, Math.min(204, rowHeight - 112))
+  const rows = ['far', 'near', 'hand'] as const
+  const safeHeight = (value: number, minimum: number): number =>
+    Number.isFinite(value) ? Math.max(minimum, value) : minimum
+  const overhead = rows.reduce((sum, row) => sum + safeHeight(headers[row], 28) + safeHeight(controls[row], 44) + 30, 0)
+  // Grow the table on short screens instead of squeezing cards under its HTML controls.
+  const h = Math.max(safeHeight(height, 1), overhead + 3 * 104)
+  const cardSpace = (h - overhead) / 3
+  const cardHeight = Math.min(204, cardSpace)
   const cardWidth = Math.max(1, Math.min(cardHeight * 0.73, w - 32))
   const gap = 12
   const capacity = Math.max(1, Math.min(16, Math.floor((w - 24 + gap) / (cardWidth + gap))))
-  const row = (index: number): RowLayout => ({
-    y: h / 2 - (index + 0.5) * rowHeight,
-    labelTop: index * rowHeight + 5,
-    controlsTop: (index + 1) * rowHeight - 46,
-  })
+  let top = 0
+  const row = (name: BoardRow): RowLayout => {
+    const labelTop = top + 6
+    const cardsTop = labelTop + safeHeight(headers[name], 28) + 8
+    const controlsTop = cardsTop + cardSpace + 8
+    top = controlsTop + safeHeight(controls[name], 44) + 8
+    return { y: h / 2 - cardsTop - cardSpace / 2, labelTop, controlsTop }
+  }
+  const positions = { far: row('far'), near: row('near'), hand: row('hand') }
   return {
     width: w,
     height: h,
@@ -55,8 +69,8 @@ export function boardLayout(width: number, height: number): ThreeLayout {
     cardHeight,
     capacity,
     gap,
-    rows: { far: row(0), near: row(1), hand: row(2) },
-    drop: { x: 0, y: 0, width: Math.max(1, w - 24), height: Math.max(1, rowHeight - 54) },
+    rows: positions,
+    drop: { x: 0, y: positions.near.y, width: Math.max(1, w - 24), height: cardSpace },
   }
 }
 

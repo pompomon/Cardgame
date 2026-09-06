@@ -12,7 +12,7 @@
   min-width: 0;
   height: 62vh;
   height: 62svh;
-  min-height: 360px;
+  min-height: var(--three-board-min-height, 660px);
   max-height: 800px;
   overflow: hidden;
   border-radius: 18px;
@@ -29,5 +29,5 @@
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
-  .three-stage { height: 88vh; min-height: 300px; }
+  .three-stage { height: 88vh; }
 }

@@ -4,6 +4,7 @@
   width: 100%;
   min-width: 0;
   height: 100%;
+  box-sizing: border-box;
   overflow: hidden;
   border: 1px solid #718888;
   border-radius: 18px;
@@ -12,7 +13,8 @@
   box-shadow: 0 12px 32px #0005;
   font: 14px/1.3 system-ui, sans-serif;
 }
-.three-board-stage[hidden] { display: none; }
+.three-board-stage[hidden],
+.three-board-stage [hidden] { display: none; }
 .three-board-canvas {
   position: absolute;
   inset: 0;
@@ -21,7 +23,7 @@
   height: 100%;
   touch-action: none;
 }
-.three-board-label, .three-board-pagination, .three-board-instruction {
+.three-board-label, .three-board-pagination {
   position: absolute;
   z-index: 1;
   box-sizing: border-box;
@@ -31,6 +33,10 @@
   right: 12px;
   margin: 0;
   padding: 3px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
   border: 1px solid #8393a566;
   border-radius: 7px;
   background: #091322db;
@@ -39,6 +45,33 @@
   font-weight: 650;
   pointer-events: none;
 }
+.three-board-label p { margin: 0; }
+.three-board-label > div { min-width: 0; overflow-wrap: anywhere; }
+.three-board-stats {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.three-board-label p:focus-visible {
+  outline: 3px solid #ffe198;
+  outline-offset: 1px;
+}
+.three-board-primary {
+  min-width: 150px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 2px solid #b1ffdd;
+  border-radius: 9px;
+  background: #164d3d;
+  color: #fff;
+  font: 700 1rem/1.2 system-ui, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+.three-board-primary:hover:not(:disabled) { background: #216c55; }
+.three-board-primary:disabled { opacity: 0.5; cursor: default; }
+.three-board-primary:focus-visible { outline: 3px solid #ffe198; outline-offset: 2px; }
 .three-board-label[data-active="true"] {
   border-color: #79e8bb;
   color: #dbffef;
@@ -51,7 +84,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 44px;
+  min-height: 44px;
 }
 .three-board-pagination button {
   min-width: 82px;
@@ -76,20 +109,23 @@
   font-variant-numeric: tabular-nums;
 }
 .three-board-instruction {
-  left: 24px;
-  right: 24px;
+  grid-column: 1 / -1;
   margin: 0;
   padding: 3px 8px;
   border-radius: 6px;
   background: #081824ed;
   color: #e0ffee;
   text-align: center;
-  font-size: 12px;
+  font-size: 0.875rem;
+  font-weight: 400;
+  overflow-wrap: anywhere;
   pointer-events: none;
 }
 @media (max-width: 480px) {
   .three-board-stage { border-radius: 10px; }
   .three-board-label { font-size: 13px; }
+  .three-board-label { grid-template-columns: minmax(0, 1fr); }
+  .three-board-primary { width: 100%; }
   .three-board-pagination { gap: 4px; }
   .three-board-pagination button { padding-inline: 7px; }
 }
