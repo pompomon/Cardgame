@@ -94,6 +94,31 @@ These patterns come up repeatedly:
   storage, starting a casual non-adventure mode must not silently delete
   the saved progress.
 
+## Reentrant UI submissions
+
+`AppController.subscribe()` and `notify()` invoke listeners synchronously.
+`submitAction()` returns no acceptance result and can notify a rejection without
+advancing gameplay. Renderer code must not equate calling it with success.
+
+- Trace engine legality → projected options → renderer interaction →
+  controller submission → notification before changing a stateful control.
+  Reuse shared action-resolution helpers and existing decision/session checks;
+  never duplicate game rules in a renderer.
+- Establish duplicate-submission protection before invoking the controller.
+  A notification may update or dispose the interface before the call returns.
+  Post-submit cleanup must not dismiss a new decision's picker, restore an old
+  selection into a new session, or render a disposed interface.
+- Reconcile against the latest controller snapshot, not a status-message string
+  or an assumed asynchronous render. On unchanged-decision rejection, preserve
+  or restore still-legal pending selections and permit retry. If legality has
+  changed, discard invalid choices without allowing stale callbacks to submit.
+- Keep success, rejection, and explicit cancellation distinct. Successful
+  submission must not fire twice, but rejection must not permanently lock the
+  decision. Cancellation must not submit an action.
+
+Use the [stateful UI regression matrix](testing.md#stateful-ui-regression-matrix)
+for changes to target pickers, response controls, and shared submission paths.
+
 ## View-model hygiene
 
 - **Project immutable snapshots.** `buildViewModel` must not return

@@ -13,17 +13,35 @@ Deployed to GitHub Pages under a non-root base path.
 
 ## Validation sequence (always)
 
+Use Node 22 and `npm ci` for a clean, lockfile-based baseline. Keep intentional
+dependency updates separate from environment recovery.
+
 1. `npm run lint` (= `tsc --noEmit`)
 2. `npm run test` (= `vitest run`)
-3. `npm run build` (= `tsc && vite build`)
-4. `codeql_checker` — address every alert
+3. `npm run build` (= `tsc && vite build && npm run build:cli`)
+4. `codeql_checker` — after secret scanning and committing; address every alert
 
-Docs-only changes still run lint as a policy check (cheap, and catches
-accidental `src/` edits sneaking into a "docs-only" change) but may declare
-the `codeql_checker` invocation as trivial. Note that `tsc --noEmit` only
-typechecks files under `src/` per `tsconfig.json`; it does not validate
-Markdown references.
+For deployment reproduction or AI hot-loop changes, run `npm run test:bench`
+after tests and before build. Record actual exit codes, observed test counts,
+and tested revisions; keep baseline and post-change results separate.
+Finish the production build before previewing its configured non-root base path.
+
+Docs-only changes still run lint, secret scanning, and `codeql_checker` (declare
+trivial); tests/build/browser checks may be not run with a reason. Report skipped
+analysis as skipped, not "0 alerts". `tsc --noEmit` only typechecks `src/`,
+so check Markdown links and command descriptions separately.
 See [`docs/agent/validation-and-build.md`](../docs/agent/validation-and-build.md).
+
+## Failure recovery
+
+Classify the first meaningful error before editing: application, dependency/
+environment, browser, artifact transport, or agent service. Use Actions run/job
+logs, not the overall red status alone. Permit at most one safe, supported retry;
+otherwise record the blocker and request maintainer help. Do not weaken tests,
+change game logic, improvise browser automation, or expand network permissions
+for an unexplained tool failure. On resume, inspect saved commits and outstanding
+work before repeating actions; recreate missing temporary evidence.
+See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-recovery).
 
 ## Non-negotiable rules
 
@@ -77,24 +95,35 @@ See [`docs/agent/validation-and-build.md`](../docs/agent/validation-and-build.md
 
 ## Tests
 
-- Pair `vi.useFakeTimers()` with `afterEach(vi.useRealTimers)` — they leak
-  across files in the same worker.
+- Use `withFakeTimers(...)` or `installFakeTimerHooks()` from
+  `src/test/helpers/timers.ts`; do not open-code timer setup/teardown.
 - AI-policy assertions must use actions that pass `isLegalActionForState`
   (include `effectTargetId` when the opponent hand is non-empty).
 - Use the build-invocation pattern from `card-art-base-path.test.ts` when
   correctness depends on bundler behavior.
+- Stateful UI tests cover synchronous notifications, rejected retries, stale
+  input, duplicate activation, cancellation/disposal, and target cardinality;
+  see the [regression matrix](../docs/agent/testing.md#stateful-ui-regression-matrix).
 
 ## PR conventions
 
-End every PR description with a validation block:
+Start the PR template's checks pending. End every PR description with actual
+validation outcomes; use this form only when all four checks passed:
 
 ```
 Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
 ```
 
-Use checklists; add a new "PR review feedback (round N)" sub-checklist for
-each round. When addressing a reviewer comment, reply with the commit hash
-and a short summary. See
+Otherwise report failed, blocked, or not-run outcomes with reasons. Keep code
+validation, visual verification, and agent-run status separate. Checkpoint code
+and textual results before image inspection/upload. Track browser interaction,
+capture, inspection, and reviewer-accessible attachment separately; a temporary
+path is not an attachment. Blocked visual verification stays pending maintainer
+review, not silently waived.
+
+Use checklists; add a new "PR review feedback (round N)" sub-checklist for each
+round. When addressing a reviewer comment, reply with the commit hash, a short
+summary, and actual validation outcomes. See
 [`docs/agent/pr-workflow.md`](../docs/agent/pr-workflow.md).
 
 ## Code review skill

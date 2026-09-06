@@ -49,6 +49,28 @@ npm run test    # vitest run
   intent (e.g. disrupts a near-win opponent), not that it equals a
   specific card.
 
+## Stateful UI regression matrix
+
+For target pickers, response controls, and submission changes, exercise the
+[reentrant submission contract](state-and-persistence.md#reentrant-ui-submissions)
+with deterministic fixtures and existing Vitest helpers:
+
+| Scenario | Required assertion |
+| --- | --- |
+| Accepted action with synchronous notification | The next decision remains usable; cleanup cannot dismiss its picker. |
+| Unchanged-decision rejection or status-only update | Still-legal selection survives and retry works. |
+| Decision/session/legality advances before input is handled | Stale buttons, hits, and callbacks cannot submit, even when ids are reused. |
+| Duplicate native/board activation or pointer release | At most one accepted submission; rejection does not permanently lock input. |
+| Escape/cancel, reset, or disposal during notification | No accidental action, stale state restoration, or rendering after disposal. |
+| Empty, single, multiple, or duplicate-name target choices | Correct existing selection behavior and exact legal target identity are preserved. |
+
+Reuse the controller and `three-interface.test.ts` harness patterns, but include
+notifications that synchronously update the interface, not only mocks that return
+an unchanged view. Cover affected DOM, Phaser, and Three.js consumers when shared
+behavior changes. Check keyboard/focus and pointer paths where relevant. Do not
+introduce a new DOM/GPU test stack to replace existing focused tests; mocked
+coverage remains separate from real-browser verification.
+
 ## Browser-API tests
 
 - Mock `window.matchMedia`, `beforeinstallprompt`, `appinstalled`,
