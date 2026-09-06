@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ControllerApi } from '../app/controller'
+import { AppController, type ControllerApi } from '../app/controller'
+import { createGameRecord } from '../app/game-recording'
 import type { AppViewModel } from '../app/types'
 import type { CounterHandOptions } from '../app/response-options'
-import { threePrimaryAction, threeResponse, type ThreePrimaryAction } from '../renderers/three/interface-model'
+import { createInitialGame } from '../game/engine'
+import { threePrimaryAction, threeResponse, threeTargets, type ThreePrimaryAction } from '../renderers/three/interface-model'
 
 const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), playEffect: vi.fn(), canvas: {} },
@@ -131,6 +133,51 @@ describe('Three.js composition', () => {
       1, mocks.ui.targetIds, expect.objectContaining({ requiredIslandId: 'island', choices: [expect.objectContaining({ cardId: 'forest' })] }),
       expect.objectContaining({ type: 'pass_response', disabled: false }),
     )
+    renderer.unmount()
+  })
+
+  it.each(['normal', 'off'] as const)('presents the Plains-triggered Forest choice after the caster handoff with animations %s', (speed) => {
+    const { renderer } = harness()
+    const game = createInitialGame(42)
+    game.players[0].hand = [{ id: 'plains', name: 'Plains', type: 'land' }]
+    game.players[0].battlefield = [{ instanceId: 'forest', card: { id: 'forest-card', name: 'Forest', type: 'land' } }]
+    game.players[0].graveyard = [{ id: 'grave', name: 'Mountain', type: 'land' }]
+    game.players[1].hand = [
+      { id: 'island', name: 'Island', type: 'land' },
+      { id: 'discard', name: 'Forest', type: 'land' },
+    ]
+    const controller = new AppController('three')
+    controller.importRecordingJson(JSON.stringify(createGameRecord(42, 'local-hvh', ['human', 'human'], 'basic', game)))
+    controller.exitReplay()
+    controller.setAnimationSpeed(speed)
+    const unsubscribe = controller.subscribe((view) => renderer.render(view))
+    const targets = () => {
+      const [snapshot, presentedActor] = mocks.ui.update.mock.calls.at(-1)! as [AppViewModel, number]
+      return threeTargets(snapshot, {
+        presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
+        preview: null, hostAnswerDraft: '', joinOfferDraft: '',
+      })
+    }
+    controller.submitAction({ type: 'play_land', actor: 0, cardId: 'plains', effectTargetId: 'forest' })
+    expect(controller.getViewModel().game!.phase).toBe('respond')
+    expect(targets()).toBeNull()
+    controller.submitAction({ type: 'pass_response', actor: 1 })
+    if (speed === 'normal') {
+      expect(targets()).toBeNull()
+      expect(mocks.ui.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ game: expect.objectContaining({ phase: 'plains_target', actor: 0, canInput: false }) }), 1,
+      )
+      const done = mocks.board.playEffect.mock.calls.at(-1)![2] as () => void
+      done()
+    }
+    expect(targets()).toMatchObject({
+      context: { kind: 'plains_reuse' }, battlefield: false,
+      options: [{ effectTargetId: 'grave', cardName: 'Mountain' }],
+    })
+    expect(mocks.ui.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: expect.objectContaining({ phase: 'plains_target', actor: 0, canInput: true }) }), 0,
+    )
+    unsubscribe()
     renderer.unmount()
   })
 

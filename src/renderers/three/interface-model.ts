@@ -122,7 +122,9 @@ export function threeTargets(view: AppViewModel, ui: InterfaceUi): TargetModel |
     options = resolution.options
   } else if (game.phase === 'plains_target') {
     context = { kind: 'plains_reuse' }
-    title = `Choose Plains reuse target for ${game.pendingPlainsReuseName ?? 'land'}`
+    title = game.pendingPlainsReuseName === 'Forest'
+      ? 'Plains reuses Forest: return a graveyard card to your hand'
+      : `Choose Plains reuse target for ${game.pendingPlainsReuseName ?? 'land'}`
     battlefield = game.pendingPlainsReuseName === 'Mountain' || game.pendingPlainsReuseName === 'Plains'
     options = game.legal.plainsReuseOptions.map(({ action, label }) => ({ effectTargetId: action.effectTargetId, label }))
   } else if (game.phase === 'swamp_target') {
