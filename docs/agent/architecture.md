@@ -136,6 +136,15 @@ cli/                     ──→  app/  ──→  game/
 A renderer should never reach into controller internals; if it needs
 information, project it into the view-model.
 
+For stateful UI changes, trace the full round trip: engine legal actions →
+`AppViewModel` options → renderer input → `ControllerApi.submitAction()` →
+controller notification. Reuse `src/app/action-resolution.ts` and existing
+renderer decision/session guards. Three.js battlefield primary actions go through
+`ThreeInterface.activatePrimaryAction`, not a direct board-to-controller shortcut.
+Notifications can be synchronous and submissions rejected; follow the
+[reentrant submission contract](state-and-persistence.md#reentrant-ui-submissions)
+and test every renderer affected by shared behavior changes.
+
 ## Three.js integration
 
 `RendererHost` retains the controller while asynchronously loading graphics

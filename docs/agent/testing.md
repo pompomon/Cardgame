@@ -49,6 +49,28 @@ npm run test    # vitest run
   intent (e.g. disrupts a near-win opponent), not that it equals a
   specific card.
 
+## Stateful UI regression matrix
+
+For target pickers, response controls, and submission changes, exercise the
+[reentrant submission contract](state-and-persistence.md#reentrant-ui-submissions)
+with deterministic fixtures and existing Vitest helpers:
+
+| Scenario | Required assertion |
+| --- | --- |
+| Accepted action with synchronous notification | The next decision remains usable; cleanup cannot dismiss its picker. |
+| Unchanged-decision rejection or status-only update | Still-legal selection survives and retry works. |
+| Decision/session/legality advances before input is handled | Stale buttons, hits, and callbacks cannot submit, even when ids are reused. |
+| Duplicate native/board activation or pointer release | At most one accepted submission; rejection does not permanently lock input. |
+| Escape/cancel, reset, or disposal during notification | No accidental action, stale state restoration, or rendering after disposal. |
+| Empty, single, multiple, or duplicate-name target choices | Correct existing selection behavior and exact legal target identity are preserved. |
+
+Reuse the controller and `three-interface.test.ts` harness patterns, but include
+notifications that synchronously update the interface, not only mocks that return
+an unchanged view. Cover affected DOM, Phaser, and Three.js consumers when shared
+behavior changes. Check keyboard/focus and pointer paths where relevant. Do not
+introduce a new DOM/GPU test stack to replace existing focused tests; mocked
+coverage remains separate from real-browser verification.
+
 ## Browser-API tests
 
 - Mock `window.matchMedia`, `beforeinstallprompt`, `appinstalled`,
@@ -108,3 +130,34 @@ production preview in actual WebGL2 browsers: mouse, touch/pen, orientation
 changes, target pickers, card pagination, reduced motion, offline loads, and
 context loss. Record which browsers/devices were actually exercised; do not
 claim Android/iOS coverage from desktop emulation.
+
+## Browser verification and evidence
+
+1. Complete the [production build](validation-and-build.md#validation-evidence-and-production-preview)
+   before smoke-testing its output. Verify preview-server readiness, the
+   configured base path, and renderer selection. Keep the built output unchanged
+   throughout the check; record browser/version, viewport, build revision, and
+   any console or asset-loading errors.
+2. Use the supported browser tools for navigation, interaction, and screenshots.
+   On failure, inspect the actual tool error. If it explicitly reports a missing
+   browser, use its supported browser-install operation; if it reports an
+   unavailable server or incorrect URL, correct that evidenced condition.
+   Retry the failed operation at most once when safe. Do not substitute ad hoc
+   ChromeDriver/Python scripts, add browser dependencies, or bypass network
+   restrictions merely to obtain a screenshot.
+3. Record interaction results and checkpoint code/check results before image
+   handling. Record **interaction completed**, **screenshot captured**,
+   **screenshot inspected**, and **evidence attached** separately. A capture
+   result proves neither visual correctness nor successful attachment.
+4. Before inspection/upload, confirm the returned screenshot path exists and
+   contains a non-empty, decodable image using supported image/file tools.
+   Keep it until inspection and upload finish; do not reuse a path from an
+   earlier session without checking it. Inspect the actual captured state, not
+   just the image's existence. Perform inspection separately from collection
+   of final automated-check results.
+5. Follow the [PR evidence procedure](pr-workflow.md#screenshots) for a
+   reviewer-accessible reference. If browser, image, or upload tooling remains
+   unavailable, stop that operation, preserve textual observations and
+   automated results, and mark the affected stages **blocked**. Request
+   maintainer visual verification; do not claim coverage from mocks or silently
+   waive screenshots. Do not retry an operation whose side effects are uncertain.

@@ -30,10 +30,31 @@ Contributor guide: [`AGENTS.md`](../AGENTS.md) and [`docs/agent/`](../docs/agent
 
 <!--
 End the description with the one-line validation block below (documented
-in `docs/agent/pr-workflow.md`). Replace `N` with the actual passing test
-count from `npm run test`. Attach a UI screenshot only when the change is
-user-visible. Keep the validation line as the final content of the PR
-description — do not add sections or prose after it.
+in `docs/agent/pr-workflow.md`). Replace pending only with observed outcomes:
+passed (✔), failed, blocked, or not run (reason). For a tool-directed skip,
+use "not run (skipped: reason)", not "0 alerts". Add the actual passing test
+count when tests run; never copy an earlier revision's count.
+Record baseline and post-change checks separately, with exit codes/output
+references. Code validation, visual evidence, and agent-run status are independent.
+For no UI changes, mark visual stages not run with that reason; otherwise
+blocked visual verification stays pending maintainer review.
+Keep the validation line as the final content — no sections or prose after it.
 -->
 
-Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
+- Tested revision / included uncommitted changes: pending
+- Node/npm versions: pending
+- Command exit codes, observed test count, and output references: pending
+- AI benchmark (deployment reproduction / AI hot-loop changes): pending
+- Agent-run status / run link / blocker: pending
+- Browser/device/viewport and exercised scenarios: pending
+- Unverified browser/device coverage: not recorded
+- Evidence reference / expiry if applicable: pending
+
+| Visual evidence stage | Outcome / evidence or reason |
+| --- | --- |
+| Browser interaction completed | pending |
+| Screenshot captured | pending |
+| Screenshot inspected | pending |
+| Evidence attached and reviewer-accessible | pending |
+
+Validation: lint pending / tests pending / build pending / CodeQL pending
