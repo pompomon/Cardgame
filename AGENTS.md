@@ -19,16 +19,27 @@ A simplified Magic-style 2-player card game shipped as an offline-capable SPA.
 
 ## Before you change code
 
+Use Node 22 and the committed lockfile for a clean baseline:
+
 ```bash
-npm install
+npm ci
 npm run lint     # tsc --noEmit
 npm run test     # vitest run
-npm run build    # tsc && vite build
+npm run build    # tsc && vite build && npm run build:cli
 ```
 
-Then run `codeql_checker` and address every alert. The exact sequence and
-"what good looks like" are documented in
+Then run `codeql_checker` and address every alert. Record baseline and
+post-change results separately, with the tested revision and actual exit codes.
+Deployment reproduction also requires `npm run test:bench` before build.
+Dependency updates, docs-only exceptions, and the exact sequence are covered in
 [`docs/agent/validation-and-build.md`](docs/agent/validation-and-build.md).
+
+**Triage failures before editing:** identify the failing workflow/job/step and
+first meaningful error; distinguish code failures from browser, artifact, and
+agent-service failures. Use the [bounded recovery procedure](docs/agent/validation-and-build.md#failure-triage-and-recovery),
+not speculative code fixes or permission changes. Checkpoint verified work
+before image handling; blocked visual verification stays pending maintainer
+review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
 
 ## Hard rules (non-negotiables)
 
