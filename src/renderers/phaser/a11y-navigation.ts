@@ -11,6 +11,7 @@ import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
+import { RENDERER_OPTIONS, rendererSearch } from '../../app/renderer-selection'
 import type { ControllerApi } from '../../app/controller'
 import type { AppViewModel, Mode } from '../../app/types'
 import type { CardgameScene } from './cardgame-scene'
@@ -88,11 +89,15 @@ export function createA11yNav(container: HTMLElement): A11yNav {
         onClick: installEntry.onClick,
         disabled: installEntry.disabled,
       })
-      entries.push({
-        key: 'switch-renderer',
-        label: 'Switch to DOM renderer',
-        onClick: () => { window.location.search = '?renderer=dom' },
-      })
+      for (const option of RENDERER_OPTIONS) {
+        if (option.value !== 'phaser') {
+          entries.push({
+            key: `switch-renderer:${option.value}`,
+            label: `Switch to ${option.label} renderer`,
+            onClick: () => { window.location.search = rendererSearch(option.value, window.location.search) },
+          })
+        }
+      }
     } else if (submenu === 'settings') {
       entries.push({
         key: 'settings-back',

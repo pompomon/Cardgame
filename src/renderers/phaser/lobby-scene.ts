@@ -8,6 +8,7 @@ import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import type { AppViewModel } from '../../app/types'
 import { preloadCardArt } from './card-art-loader'
 import { buildButton } from './button'
+import { rendererSearch } from '../../app/renderer-selection'
 import {
   buildLobbyRecordingRows,
   buildLobbyRootRows,
@@ -192,7 +193,9 @@ export class LobbyScene extends Phaser.Scene {
             rows.push({ label: row.label, disabled: row.disabled, onClick: installEntry.onClick })
             break
           case 'switch-renderer':
-            rows.push({ label: row.label, onClick: () => { window.location.search = '?renderer=dom' } })
+            rows.push({ label: row.label, onClick: () => { window.location.search = rendererSearch(row.renderer, window.location.search) } })
+            break
+          default:
             break
         }
       }

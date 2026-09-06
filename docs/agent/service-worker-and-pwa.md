@@ -16,6 +16,14 @@ Current intentional split (verified at `public/sw.js:99-141`):
 - **`/assets/*` and fixed static files** — cache-first. Vite content-hashes
   these, so stale caches are safe between releases.
 
+Three.js and Phaser are dynamically imported only when selected. Their hashed
+chunks follow the same `/assets/` strategy, but are not in `CORE`: a renderer
+that has never been downloaded cannot be assumed available offline. The
+bootstrap catches missing chunks and mounts the eagerly available DOM renderer
+against the existing controller. Test both a warmed Three.js offline reload
+and a first-time offline selection; do not precache every HD asset or graphics
+engine just to make the latter work.
+
 Rules:
 
 - **Bump `CACHE_VERSION` when same-path card, board, or sprite assets change.**

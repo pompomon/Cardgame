@@ -1,0 +1,95 @@
+.three-board-stage {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #718888;
+  border-radius: 18px;
+  background: #101d28;
+  color: #f5f8ff;
+  box-shadow: 0 12px 32px #0005;
+  font: 14px/1.3 system-ui, sans-serif;
+}
+.three-board-stage[hidden] { display: none; }
+.three-board-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.three-board-label, .three-board-pagination, .three-board-instruction {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+}
+.three-board-label {
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  padding: 3px 10px;
+  border: 1px solid #8393a566;
+  border-radius: 7px;
+  background: #091322db;
+  color: #dbe3f1;
+  text-align: center;
+  font-weight: 650;
+  pointer-events: none;
+}
+.three-board-label[data-active="true"] {
+  border-color: #79e8bb;
+  color: #dbffef;
+  box-shadow: 0 0 16px #73e8b42b;
+}
+.three-board-pagination {
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+}
+.three-board-pagination button {
+  min-width: 82px;
+  min-height: 44px;
+  padding: 7px 11px;
+  border: 1px solid #9baec0;
+  border-radius: 9px;
+  background: #132538ee;
+  color: #fff;
+  font: 600 14px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.three-board-pagination button:disabled { opacity: 0.4; cursor: default; }
+.three-board-pagination button:focus-visible { outline: 3px solid #ffe198; outline-offset: 1px; }
+.three-board-pagination span {
+  min-width: 82px;
+  padding: 4px;
+  border-radius: 4px;
+  background: #07121dcc;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.three-board-instruction {
+  left: 24px;
+  right: 24px;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #081824ed;
+  color: #e0ffee;
+  text-align: center;
+  font-size: 12px;
+  pointer-events: none;
+}
+@media (max-width: 480px) {
+  .three-board-stage { border-radius: 10px; }
+  .three-board-label { font-size: 13px; }
+  .three-board-pagination { gap: 4px; }
+  .three-board-pagination button { padding-inline: 7px; }
+}

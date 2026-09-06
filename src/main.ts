@@ -3,22 +3,11 @@ import { AppController } from './app/controller'
 import { initInstallSupport, subscribeInstallSupport } from './app/install-support'
 import { persistRendererKind, pickRendererKind, readStoredRendererKind } from './app/renderer-selection'
 import { joinBasePath } from './app/url-path'
-import type { AppViewModel } from './app/types'
-import type { RendererKind } from './app/types'
-import { DomRenderer } from './renderers/dom'
-import { PhaserRenderer } from './renderers/phaser'
-import type { AppRenderer } from './renderers/types'
+import { RendererHost } from './renderers/host'
 
 const app = document.querySelector<HTMLDivElement>('#app')
 if (!app) {
   throw new Error('App root not found.')
-}
-
-function createRenderer(kind: RendererKind): AppRenderer {
-  if (kind === 'phaser') {
-    return new PhaserRenderer()
-  }
-  return new DomRenderer()
 }
 
 function restoreGithubPagesDeepLink(): void {
@@ -43,20 +32,18 @@ const rendererKind = pickRendererKind(window.location.search, readStoredRenderer
 persistRendererKind(rendererKind)
 
 const controller = new AppController(rendererKind)
-const renderer = createRenderer(rendererKind)
-renderer.mount(app, controller)
+const renderer = new RendererHost(app, controller)
+const unsubscribe = controller.subscribe((view) => renderer.render(view))
+const unsubscribeInstall = subscribeInstallSupport(() => renderer.refresh())
+void renderer.start(rendererKind)
 
-let currentView: AppViewModel | null = null
-controller.subscribe((view) => {
-  currentView = view
-  renderer.render(view)
-})
-
-subscribeInstallSupport(() => {
-  if (currentView) {
-    renderer.render(currentView)
-  }
-})
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    unsubscribe()
+    unsubscribeInstall()
+    renderer.dispose()
+  })
+}
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {

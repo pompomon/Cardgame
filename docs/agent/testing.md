@@ -90,3 +90,21 @@ pixel icons when card-art textures aren't preloaded, which keeps tests
 green without bundling real PNGs at test time. When changing
 preload/fallback paths, keep that property — tests should not need
 network access.
+
+## Three.js tests
+
+`three-*.test.ts` exercises pure layout/quality policies, pointer capture,
+retained resources, native UI actions, event playback, and renderer lifecycle.
+`renderer-host.test.ts` covers asynchronous loading and same-controller DOM
+fallback. Graphics tests use injected or mocked browser/GPU surfaces, not
+network assets.
+
+The production card-art base-path test also checks Vite's generated manifest:
+both graphics renderers must remain dynamic entries outside the initial
+DOM dependency graph. A source-only assertion cannot establish this.
+
+GPU mocks cannot prove visual correctness or device performance. Check a
+production preview in actual WebGL2 browsers: mouse, touch/pen, orientation
+changes, target pickers, card pagination, reduced motion, offline loads, and
+context loss. Record which browsers/devices were actually exercised; do not
+claim Android/iOS coverage from desktop emulation.

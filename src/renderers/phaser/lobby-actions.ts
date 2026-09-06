@@ -10,7 +10,8 @@ import { ANIMATION_SPEED_OPTIONS, DEFAULT_ANIMATION_SPEED } from '../../app/anim
 import { BOARD_THEME_OPTIONS, DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS, DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE, RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
-import type { AdventureUiState, AnimationSpeed, BoardTheme, CardVisualStyle, Mode, RenderQualityPreference } from '../../app/types'
+import { RENDERER_OPTIONS } from '../../app/renderer-selection'
+import type { AdventureUiState, AnimationSpeed, BoardTheme, CardVisualStyle, Mode, RendererKind, RenderQualityPreference } from '../../app/types'
 import type { AiLevel } from '../../game/ai-levels'
 
 // Mode entries shown on the lobby root menu. Shared with the a11y nav so the
@@ -44,7 +45,7 @@ export type LobbyRootRow =
   | { kind: 'resume-adventure'; label: string }
   | { kind: 'reset-adventure'; label: string }
   | { kind: 'install'; label: string; disabled: boolean }
-  | { kind: 'switch-renderer'; label: string }
+  | { kind: 'switch-renderer'; label: string; renderer: RendererKind }
 
 export interface LobbyRootRowsParams {
   adventure: AdventureUiState | undefined
@@ -66,7 +67,11 @@ export function buildLobbyRootRows(params: LobbyRootRowsParams): LobbyRootRow[] 
     rows.push({ kind: 'reset-adventure', label: 'Reset Adventure Run' })
   }
   rows.push({ kind: 'install', label: params.installLabel, disabled: params.installDisabled })
-  rows.push({ kind: 'switch-renderer', label: 'Switch to DOM renderer' })
+  for (const option of RENDERER_OPTIONS) {
+    if (option.value !== 'phaser') {
+      rows.push({ kind: 'switch-renderer', label: `Switch to ${option.label} renderer`, renderer: option.value })
+    }
+  }
   return rows
 }
 

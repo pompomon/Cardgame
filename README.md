@@ -10,17 +10,44 @@ changes; they capture recurring review findings.
 
 ## Rendering options
 
-The app now supports two rendering backends:
+The app supports three rendering backends:
 
 - **DOM renderer** (default): existing HTML/CSS UI.
 - **Phaser renderer**: graphic board with drag-and-drop card play.
+- **Three.js renderer** (optional): fixed-camera dimensional tabletop with HD
+  artwork, mouse/touch/pen dragging, and native HTML menus and accessible actions.
 
 Choose renderer by query string:
 
 - `?renderer=dom`
 - `?renderer=phaser`
+- `?renderer=three`
 
 The selected renderer is also stored in `localStorage` for later visits.
+
+### Three.js controls and compatibility
+
+- Requires WebGL2. Unsupported devices, initialization failures, or context loss
+  fall back to DOM without restarting the controller or the current match.
+  The saved renderer preference remains unchanged; DOM stays the default.
+- Renderer choices are available in the lobby. They navigate to a new page,
+  so return to the lobby (or pause Adventure) before switching.
+- Drag a playable hand card onto your battlefield. Touch and pen movement must
+  cross a threshold; tapping opens a preview. Multiple legal targets are selected
+  before committing the action. Counter and Pass remain explicit response actions.
+- Native play and target buttons provide the same actions without dragging.
+  Menus and previews support keyboard navigation and cancellation.
+- Card rows have navigation for overflow rather than indefinitely shrinking
+  cards. Portrait and landscape layouts keep the camera fixed during dragging.
+- Card Style, Board Theme, Render Quality, and Animations use the existing
+  preferences. Choosing Three.js does not force HD over a saved artwork style.
+  Reduced motion and hidden pages suppress cosmetic effects.
+- Three.js and Phaser load on demand. An unvisited renderer chunk may not be
+  available offline; selecting it then falls back to the already-loaded DOM
+  renderer. Open Three.js online once to cache its bundle and selected artwork.
+  No external CDN, font service, or runtime art-generation API is required.
+- Real-device performance varies. Lower Render Quality if interaction is slow;
+  mobile Safari/Android hardware testing is recommended before wider rollout.
 
 ### Phaser drag-and-drop controls
 

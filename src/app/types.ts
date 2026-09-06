@@ -8,7 +8,7 @@ import type { RenderQualityPreference } from './render-quality'
 
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join' | 'tutorial'
 export type ControllerKind = 'human' | 'ai' | 'remote'
-export type RendererKind = 'dom' | 'phaser'
+export type RendererKind = 'dom' | 'phaser' | 'three'
 // Canonical `AiLevel` definition lives in `src/game/ai-levels.ts` so the
 // engine and AI policies do not have to reach across into `src/app/`
 // (closes the legacy `game/ → app/` seam documented in
