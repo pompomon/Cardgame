@@ -198,11 +198,15 @@ export class ThreeInterface {
     const view = this.latestForAction()
     if (!view?.game || !canThreeInput(view, this.presentedActor)
       || this.submittedDecision === this.decision || action.actor !== view.game.actor) return
-    this.submittedDecision = this.decision
+    const submittedDecision = this.decision
+    this.submittedDecision = submittedDecision
     this.pendingCardId = null
     this.phaseDismissed = true
     this.preview = null
     this.controller.submitAction(action)
+    if (threeDecisionKey(this.controller.getViewModel()) === submittedDecision) {
+      this.submittedDecision = null
+    }
     if (!this.disposed) this.changed()
   }
 

@@ -343,10 +343,24 @@ describe('Three native interface behavior', () => {
     const view = makeView()
     view.game!.legal.playLandByCard.source = [view.game!.legal.playLandByCard.source[0]]
     const h = setup(view)
+    h.controller.submitAction.mockImplementation(() => h.latest({
+      ...view,
+      game: { ...view.game!, canInput: false },
+    }))
     h.ui.playCard('source')
     h.ui.playCard('source')
     h.click('[data-action="play"]')
     expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.playLandByCard.source[0].action)
+    h.ui.dispose()
+  })
+
+  it('allows retry when a synchronous submission rejection leaves the decision unchanged', () => {
+    const view = makeView()
+    const h = setup(view)
+    h.controller.submitAction.mockImplementation(() => h.latest({ ...view, status: 'Send failed. Try again.' }))
+    h.click('[data-action="end_turn"]')
+    h.click('[data-action="end_turn"]')
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
     h.ui.dispose()
   })
 
@@ -555,6 +569,10 @@ describe('Three native interface behavior', () => {
     view.game!.legal.canPassResponse = true
     view.game!.legal.counterOptions = [{ action: { type: 'counter_land', actor: 0, discardCardId: 'source' }, label: 'Counter with Island' }]
     const h = setup(view)
+    h.controller.submitAction.mockImplementation(() => h.latest({
+      ...view,
+      game: { ...view.game!, canInput: false },
+    }))
     h.click('[data-action="counter_land"]')
     h.click('[data-action="pass_response"]')
     expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.counterOptions[0].action)
