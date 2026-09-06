@@ -237,12 +237,15 @@ export class ThreeInterface {
       || this.submittedDecision === this.decision || action.actor !== view.game.actor) return
     const submittedDecision = this.decision
     this.submittedDecision = submittedDecision
-    this.pendingCardId = null
-    this.phaseDismissed = true
-    this.preview = null
+    // Keep the picker intact on rejection. Synchronous notifications may
+    // already present the next decision, whose picker must not be dismissed.
     this.controller.submitAction(action)
     if (threeDecisionKey(this.controller.getViewModel()) === submittedDecision) {
       this.submittedDecision = null
+    } else if (this.decision === submittedDecision) {
+      this.pendingCardId = null
+      this.phaseDismissed = true
+      this.preview = null
     }
     if (!this.disposed) this.changed()
   }

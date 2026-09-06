@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ControllerApi } from '../app/controller'
+import { AppController, type ControllerApi } from '../app/controller'
+import { createGameRecord } from '../app/game-recording'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
 import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
-import { BASIC_LANDS } from '../game/types'
+import { createInitialGame } from '../game/engine'
+import { BASIC_LANDS, type BasicLand } from '../game/types'
 import { noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/dom-utils'
 import { ThreeInterface } from '../renderers/three/interface'
 import {
@@ -238,6 +240,44 @@ function setup(view = makeView()) {
   }
   const update = (next: AppViewModel, actor = next.game?.actor ?? 0): void => { current = next; ui.update(next, actor) }
   return { ui, host, content, document, controller, onChange, onBlock, click, update, latest: (next: AppViewModel) => { current = next } }
+}
+
+function setupPlainsForest({
+  graveyard = ['Mountain', 'Swamp', 'Swamp'],
+  multipleSources = false,
+  counter = false,
+  actor = 0,
+}: {
+  graveyard?: BasicLand[]
+  multipleSources?: boolean
+  counter?: boolean
+  actor?: number
+} = {}) {
+  const game = createInitialGame(42)
+  game.currentPlayer = actor
+  game.players[actor].hand = [{ id: 'plains-play', name: 'Plains', type: 'land' }]
+  game.players[actor].battlefield = [
+    { instanceId: 'self-forest', card: { id: 'forest-card', name: 'Forest', type: 'land' } },
+    ...(multipleSources ? [{ instanceId: 'self-island', card: { id: 'island-card', name: 'Island' as const, type: 'land' as const } }] : []),
+  ]
+  game.players[actor].graveyard = graveyard.map((name, index) => ({ id: `grave-${index}`, name, type: 'land' }))
+  game.players[1 - actor].hand = counter
+    ? [{ id: 'counter-island', name: 'Island', type: 'land' }, { id: 'counter-discard', name: 'Forest', type: 'land' }]
+    : []
+  const controller = new AppController('three')
+  controller.importRecordingJson(JSON.stringify(createGameRecord(42, 'local-hvh', ['human', 'human'], 'basic', game)))
+  controller.exitReplay()
+  const h = setup(controller.getViewModel())
+  h.controller.getViewModel.mockImplementation(() => controller.getViewModel())
+  h.controller.submitAction.mockImplementation((action) => controller.submitAction(action))
+  h.onChange.mockImplementation(() => h.update(controller.getViewModel()))
+  const unsubscribe = controller.subscribe((view) => h.update(view))
+  return {
+    ...h,
+    realController: controller,
+    forestHit: hit({ key: 'self-forest', cardId: 'forest-card', instanceId: 'self-forest', owner: actor }),
+    dispose: () => { unsubscribe(); h.ui.dispose() },
+  }
 }
 
 beforeEach(() => {
@@ -484,6 +524,184 @@ describe('Three battlefield primary action', () => {
   })
 })
 
+describe('Plains-triggered Forest picker', () => {
+  it.each(['board', 'native'] as const)('opens the graveyard dialog after selecting Forest via %s', (input) => {
+    const h = setupPlainsForest({ multipleSources: true })
+    if (input === 'board') h.ui.playCard('plains-play')
+    else h.click('[data-action="play"]')
+    expect([...h.ui.targetIds]).toEqual(['self-forest', 'self-island'])
+    if (input === 'board') h.ui.activate(h.forestHit)
+    else h.click('[data-target-id="self-forest"]')
+
+    const game = h.realController.getViewModel().game!
+    expect(game.phase).toBe('plains_target')
+    expect(game.pendingPlainsReuseName).toBe('Forest')
+    expect(game.players[0].handCards).toEqual([])
+    expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
+    expect(h.content.querySelector('dialog')?.getAttribute('aria-label'))
+      .toBe('Plains reuses Forest: return a graveyard card to your hand')
+    expect(h.content.innerHTML).toContain('Swamp X2')
+    expect(h.ui.targetIds.size).toBe(0)
+    expect(h.ui.isBlocked()).toBe(true)
+    expect(h.content.querySelector('.three-target-panel')).toBeNull()
+    expect(h.document.activeElement?.closest('dialog')).not.toBeNull()
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({
+      type: 'play_land', actor: 0, cardId: 'plains-play', effectTargetId: 'self-forest',
+    })
+    h.dispose()
+  })
+
+  it.each([0, 1])('opens for caster %s with a sole Forest source and resolves a grouped choice once', (actor) => {
+    const h = setupPlainsForest({ actor })
+    h.ui.playCard('plains-play')
+    const dialog = h.content.querySelector('[data-modal="target"]')!
+    const targets = dialog.querySelectorAll('[data-action="target"]')
+    expect(targets.map((button) => button.dataset.targetId)).toEqual(['grave-0', 'grave-1'])
+    const staleButton = targets[1]
+    h.click('[data-target-id="grave-1"]')
+    h.host.emit('click', { target: staleButton })
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+    expect(h.controller.submitAction).toHaveBeenLastCalledWith({
+      type: 'resolve_plains_reuse', actor, effectTargetId: 'grave-1',
+    })
+    const game = h.realController.getViewModel().game!
+    expect(game.phase).toBe('main')
+    expect(game.players[actor].handCards).toEqual([{ id: 'grave-1', name: 'Swamp' }])
+    expect(game.players[actor].graveyardCards.map((card) => card.id)).toEqual(['grave-0', 'grave-2'])
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.ui.isBlocked()).toBe(false)
+    h.dispose()
+  })
+
+  it('requires explicit confirmation of a sole graveyard card', () => {
+    const h = setupPlainsForest({ graveyard: ['Island'] })
+    h.ui.playCard('plains-play')
+    expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
+    expect(h.content.querySelectorAll('[data-action="target"]')).toHaveLength(1)
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(1)
+    expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([])
+    h.click('[data-target-id="grave-0"]')
+    expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([{ id: 'grave-0', name: 'Island' }])
+    h.dispose()
+  })
+
+  it('does not block on an empty graveyard', () => {
+    const h = setupPlainsForest({ graveyard: [] })
+    h.ui.playCard('plains-play')
+    expect(h.realController.getViewModel().game!.phase).toBe('main')
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.ui.isBlocked()).toBe(false)
+    h.dispose()
+  })
+
+  it('opens only after the opponent passes, not while awaiting a response', () => {
+    const h = setupPlainsForest({ counter: true })
+    h.ui.playCard('plains-play')
+    expect(h.realController.getViewModel().game!.phase).toBe('respond')
+    expect(h.content.querySelector('dialog')).toBeNull()
+    h.ui.activatePrimaryAction(h.ui.primaryAction!)
+    expect(h.realController.getViewModel().game!.phase).toBe('plains_target')
+    expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
+    h.click('[data-target-id="grave-0"]')
+    expect(h.controller.submitAction).toHaveBeenLastCalledWith({
+      type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'grave-0',
+    })
+    h.dispose()
+  })
+
+  it('does not open when Plains is countered', () => {
+    const h = setupPlainsForest({ counter: true })
+    h.ui.playCard('plains-play')
+    h.click('[data-action="respond-card"]')
+    const game = h.realController.getViewModel().game!
+    expect(game.phase).toBe('main')
+    expect(game.pendingPlainsReuseName).toBeNull()
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(game.players[0].graveyardCards.at(-1)?.id).toBe('plains-play')
+    h.dispose()
+  })
+
+  it.each(['close', 'Escape'])('keeps a dismissed choice available after %s and status/settings updates', (dismiss) => {
+    const h = setupPlainsForest()
+    h.ui.playCard('plains-play')
+    if (dismiss === 'close') h.click('[data-action="close"]')
+    else h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
+    h.realController.reportStatus('Updated status')
+    h.realController.setAnimationSpeed('off')
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.realController.getViewModel().game!.phase).toBe('plains_target')
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(1)
+    h.click('[data-action="resume-target"]')
+    const selected = h.content.querySelector('[data-target-id="grave-1"]')!
+    selected.focus()
+    h.realController.reportStatus('Another status')
+    expect(h.content.querySelector('dialog')?.open).toBe(true)
+    expect(h.document.activeElement?.dataset.targetId).toBe('grave-1')
+    h.click('[data-target-id="grave-1"]')
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.document.activeElement?.dataset.action).toBe('menu')
+    h.dispose()
+  })
+
+  it('keeps the picker open and focused when submission is rejected without advancing the decision', () => {
+    const h = setupPlainsForest()
+    h.ui.playCard('plains-play')
+    h.controller.submitAction.mockImplementationOnce(() => h.realController.reportStatus('Send failed. Try again.'))
+    h.click('[data-target-id="grave-1"]')
+    expect(h.realController.getViewModel().game!.phase).toBe('plains_target')
+    expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
+    expect(h.document.activeElement?.dataset.targetId).toBe('grave-1')
+    expect(h.ui.isBlocked()).toBe(true)
+    h.click('[data-target-id="grave-1"]')
+    expect(h.realController.getViewModel().game!.phase).toBe('main')
+    h.dispose()
+  })
+
+  it('retains the initial Plains selection after rejection, then opens the Forest picker on retry', () => {
+    const h = setupPlainsForest({ multipleSources: true })
+    h.ui.playCard('plains-play')
+    h.controller.submitAction.mockImplementationOnce(() => h.realController.reportStatus('Send failed. Try again.'))
+    h.click('[data-target-id="self-forest"]')
+    expect(h.realController.getViewModel().game!.phase).toBe('main')
+    expect([...h.ui.targetIds]).toEqual(['self-forest', 'self-island'])
+    expect(h.document.activeElement?.dataset.targetId).toBe('self-forest')
+    h.click('[data-target-id="self-forest"]')
+    expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
+    expect(h.realController.getViewModel().game!.phase).toBe('plains_target')
+    h.dispose()
+  })
+
+  it('ignores stale battlefield hits and blocks unrelated plays during the popup', () => {
+    const h = setupPlainsForest({ multipleSources: true })
+    const oldPrimary = h.ui.primaryAction!
+    h.ui.playCard('plains-play')
+    h.ui.activate(h.forestHit)
+    h.ui.activate(h.forestHit)
+    h.ui.playCard('plains-play')
+    h.ui.activatePrimaryAction(oldPrimary)
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(1)
+    expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
+    expect(h.content.querySelector('[data-modal="preview"]')).toBeNull()
+    h.dispose()
+  })
+
+  it.each(['replay', 'AI', 'unavailable', 'presentation'] as const)('does not expose choices during %s', (reason) => {
+    const h = setupPlainsForest()
+    h.ui.playCard('plains-play')
+    const view = h.realController.getViewModel()
+    if (reason === 'replay') view.replay.active = true
+    if (reason === 'AI') {
+      view.controllers[0] = 'ai'
+      view.game!.actorControl = 'ai'
+    }
+    if (reason === 'AI' || reason === 'unavailable') view.game!.canInput = false
+    const ui = { ...defaultUi, presentedActor: reason === 'presentation' ? 1 : 0 }
+    expect(threeTargets(view, ui)).toBeNull()
+    expect(renderThreeInterface(view, ui)).not.toContain('data-modal="target"')
+    h.dispose()
+  })
+})
+
 describe('Three native interface behavior', () => {
   it('submits a sole legal action exactly once across duplicate native/board calls', () => {
     const view = makeView()
@@ -512,6 +730,9 @@ describe('Three native interface behavior', () => {
 
   it('blocks drags, exposes Mountain rings, selects the exact legal target and submits once', () => {
     const h = setup()
+    h.controller.submitAction.mockImplementation(() => h.latest({
+      ...makeView(), game: { ...makeView().game!, canInput: false },
+    }))
     h.ui.playCard('source')
     expect(h.onBlock).toHaveBeenCalledTimes(1)
     expect(h.ui.isBlocked()).toBe(true)
