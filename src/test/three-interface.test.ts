@@ -407,11 +407,11 @@ describe('Three native markup and decisions', () => {
     expect(empty).toContain('No log entries yet.')
   })
 
-  it('places menu/status/winner/required prompts in the HUD and keeps secondary controls collapsed', () => {
+  it('places menu/status/winner in the HUD and keeps secondary controls collapsed', () => {
     const view = responseView()
     view.game!.winnerText = 'Winner announcement'
     const hud = renderThreeHud(view, defaultUi)
-    for (const text of ['☰ Menu', 'Turn 1', 'Player 1', 'Ready', 'Winner announcement', 'Respond to Swamp']) expect(hud).toContain(text)
+    for (const text of ['☰ Menu', 'Turn 1', 'Player 1', 'Ready', 'Winner announcement']) expect(hud).toContain(text)
     expect(hud).not.toContain('Cards &amp; keyboard controls')
     const controls = renderThreeInterface(view, defaultUi, false)
     expect(controls).toContain('<details data-detail-key="cards">')
@@ -420,11 +420,28 @@ describe('Three native markup and decisions', () => {
     expect(controls).not.toContain('data-action="pass_response"')
   })
 
+  it.each([true, false])('leaves response instructions to the battlefield (can counter: %s)', (canCounter) => {
+    const view = responseView()
+    view.game!.pendingLandName = 'Mountain'
+    if (!canCounter) view.game!.legal.counterOptions = []
+    for (const status of ['Local Human vs AI game started.', 'Storage unavailable.']) {
+      view.status = status
+      for (const html of [renderThreeHud(view, defaultUi), renderThreeInterface(view, defaultUi)]) {
+        expect(html).not.toContain('Respond to Mountain')
+        expect(html).not.toContain('class="three-required-prompt"')
+        expect(html).toContain(`<p role="status" aria-live="polite">${status}</p>`)
+        for (const text of ['☰ Menu', 'Turn 1 · respond', 'Player 1']) expect(html).toContain(text)
+      }
+    }
+  })
+
   it('groups Forest targets but keeps battlefield copies individually selectable', () => {
     const view = makeView()
     const battlefield = threeTargets(view, { ...defaultUi, pendingCardId: 'source' })!
     expect(battlefield.battlefield).toBe(true)
     expect(battlefield.options).toHaveLength(2)
+    expect(renderThreeHud(view, { ...defaultUi, pendingCardId: 'source' }))
+      .toContain('<p class="three-required-prompt">Choose Mountain target</p>')
     view.game!.players[0].handCards[0].name = 'Forest'
     view.game!.players[0].graveyardCards = [{ id: 'target-1', name: 'Island' }, { id: 'target-2', name: 'Island' }]
     const targets = threeTargets(view, { ...defaultUi, pendingCardId: 'source' })!
@@ -443,6 +460,7 @@ describe('Three native markup and decisions', () => {
     const html = renderThreeInterface(view, defaultUi)
     expect(html).toContain('Private Swamp name')
     expect(html).toContain('data-modal="target"')
+    expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Swamp discard target</p>')
     expect(html).toContain('Hidden card')
     expect(html).not.toContain('Preview Private Swamp name')
   })
@@ -455,6 +473,7 @@ describe('Three native markup and decisions', () => {
     const target = threeTargets(view, defaultUi)!
     expect(target.battlefield).toBe(true)
     expect(target.options).toHaveLength(1)
+    expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Plains reuse target for Mountain</p>')
     expect(renderThreeInterface(view, defaultUi)).toContain('data-action="target" data-target-id="target-1"')
     expect(renderThreeInterface(view, { ...defaultUi, phaseDismissed: true })).toContain('data-action="resume-target"')
   })
