@@ -148,6 +148,7 @@ export class ThreeInterface {
   private renderHover(): void {
     const view = this.view
     if (!view?.game || this.document.hidden || this.isBlocked()
+      || threeResponse(view, this.ui())
       || !canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })
       || !isThreeInGame(view)) this.hover = null
     const markup = view ? renderThreeHover(view, this.hover) : ''
@@ -329,7 +330,7 @@ export class ThreeInterface {
     return true
   }
 
-  private render(): void {
+  private render(preserveState = true): void {
     if (this.disposed || !this.view) return
     const blocked = this.isBlocked()
     if (blocked && !this.blocked) this.onBlock()
@@ -339,11 +340,13 @@ export class ThreeInterface {
     const hudMarkup = this.hudHost ? renderThreeHud(this.view, this.ui()) : ''
     if (markup === this.markup && hudMarkup === this.hudMarkup) return
     const focus = this.captureFocus()
-    this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
-      if (element.dataset.scrollKey === 'log' && !element.closest<HTMLDetailsElement>('details')?.open) return
-      this.scrollPositions.set(element.dataset.scrollKey ?? element.dataset.modal ?? element.id, [element.scrollLeft, element.scrollTop])
-    })
-    this.content.querySelectorAll<HTMLDetailsElement>('[data-detail-key]').forEach((element) => this.detailStates.set(element.dataset.detailKey!, element.open))
+    if (preserveState) {
+      this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
+        if (element.dataset.scrollKey === 'log' && !element.closest<HTMLDetailsElement>('details')?.open) return
+        this.scrollPositions.set(element.dataset.scrollKey ?? element.dataset.modal ?? element.id, [element.scrollLeft, element.scrollTop])
+      })
+      this.content.querySelectorAll<HTMLDetailsElement>('[data-detail-key]').forEach((element) => this.detailStates.set(element.dataset.detailKey!, element.open))
+    }
     const oldModal = this.modalKind
     const oldInlineTarget = this.inlineTargetOpen
     const hostScroll = [this.host.scrollLeft, this.host.scrollTop]
@@ -625,7 +628,12 @@ export class ThreeInterface {
     if (this.disposed) return
     this.fileGeneration += 1
     this.fileInput.value = ''
-    if (!preserveMenu) this.menuOpen = false
+    if (!preserveMenu) {
+      this.menuOpen = false
+      this.scrollPositions.clear()
+      this.detailStates.clear()
+      this.followLatest = true
+    }
     this.pendingCardId = null
     this.phaseDismissed = true
     this.preview = null
@@ -634,7 +642,7 @@ export class ThreeInterface {
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
     this.submittedDecision = null
-    this.render()
+    this.render(preserveMenu)
   }
 
   dispose(): void {

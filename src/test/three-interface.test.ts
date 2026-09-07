@@ -700,9 +700,41 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     expect(h.content.querySelector('[data-detail-key="log"]')!.open).toBe(false)
     h.ui.dispose()
   })
+
+  it('clears log expansion and reading position on a full session reset', () => {
+    const h = setup()
+    h.click('[data-action="menu"]')
+    const cards = h.content.querySelector('[data-detail-key="cards"]')!
+    cards.open = true
+    h.host.emit('toggle', { target: cards })
+    const detail = h.content.querySelector('[data-detail-key="log"]')!
+    detail.open = true
+    h.host.emit('toggle', { target: detail })
+    let log = h.content.querySelector('[data-scroll-key="log"]')!
+    log.scrollTop = 140
+    h.host.emit('scroll', { target: log })
+
+    h.ui.reset()
+    h.click('[data-action="menu"]')
+    expect(h.content.querySelector('[data-detail-key="cards"]')!.open).toBe(false)
+    const resetDetail = h.content.querySelector('[data-detail-key="log"]')!
+    expect(resetDetail.open).toBe(false)
+    resetDetail.open = true
+    h.host.emit('toggle', { target: resetDetail })
+    log = h.content.querySelector('[data-scroll-key="log"]')!
+    expect(log.scrollTop).toBe(log.scrollHeight)
+    h.ui.dispose()
+  })
 })
 
 describe('Three non-modal hover previews', () => {
+  it('suppresses hover while choosing a response', () => {
+    const h = setup(responseView())
+    h.ui.setHover(hit())
+    expect(h.host.children[2].innerHTML).toBe('')
+    h.ui.dispose()
+  })
+
   it('updates only its own decorative overlay without focus, input blocking or notifications', () => {
     const h = setup(makeView(), true)
     h.board.focus()
