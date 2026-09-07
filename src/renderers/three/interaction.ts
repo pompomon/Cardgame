@@ -72,10 +72,13 @@ export class ThreeInteraction {
   private readonly isBlocked: () => boolean
   private readonly playCard: (cardId: string) => void
   private readonly activate: (hit: BoardHit) => void
+  private readonly onHover: (hit: BoardHit | null) => void
   private readonly document: Document
   private readonly window: Window | null
   private readonly state = new DragStateMachine()
   private gesture: Gesture | null = null
+  private hover: BoardHit | null = null
+  private hoverDecision = ''
   private disposed = false
 
   constructor(
@@ -84,16 +87,19 @@ export class ThreeInteraction {
     isBlocked: () => boolean,
     playCard: (cardId: string) => void,
     activate: (hit: BoardHit) => void,
+    onHover: (hit: BoardHit | null) => void = () => {},
   ) {
     this.board = board
     this.getView = getView
     this.isBlocked = isBlocked
     this.playCard = playCard
     this.activate = activate
+    this.onHover = onHover
     this.document = board.canvas.ownerDocument
     this.window = this.document.defaultView
     board.canvas.addEventListener('pointerdown', this.onPointerDown)
     board.canvas.addEventListener('pointermove', this.onPointerMove)
+    board.canvas.addEventListener('pointerleave', this.onPointerLeave)
     board.canvas.addEventListener('pointerup', this.onPointerUp)
     board.canvas.addEventListener('pointercancel', this.onPointerLoss)
     board.canvas.addEventListener('lostpointercapture', this.onPointerLoss)
@@ -109,9 +115,13 @@ export class ThreeInteraction {
     if (this.gesture && !this.isCurrent(this.gesture)) {
       this.cancel()
     }
+    const view = this.getView()
+    if (this.hover && (!view || this.document.hidden || this.isBlocked()
+      || threeDecisionKey(view) !== this.hoverDecision || !isVisibleSource(view, this.hover))) this.clearHover()
   }
 
   cancel(): void {
+    this.clearHover()
     this.finish(false)
   }
 
@@ -123,6 +133,7 @@ export class ThreeInteraction {
     const canvas = this.board.canvas
     canvas.removeEventListener('pointerdown', this.onPointerDown)
     canvas.removeEventListener('pointermove', this.onPointerMove)
+    canvas.removeEventListener('pointerleave', this.onPointerLeave)
     canvas.removeEventListener('pointerup', this.onPointerUp)
     canvas.removeEventListener('pointercancel', this.onPointerLoss)
     canvas.removeEventListener('lostpointercapture', this.onPointerLoss)
@@ -153,6 +164,7 @@ export class ThreeInteraction {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    this.clearHover()
     if (this.disposed || this.gesture || event.button !== 0
       || event.isPrimary === false || this.document.hidden || !this.inWindow(event)) {
       return
@@ -214,7 +226,11 @@ export class ThreeInteraction {
 
   private readonly onPointerMove = (event: PointerEvent): void => {
     const gesture = this.gesture
-    if (!gesture || event.pointerId !== gesture.pointerId) {
+    if (!gesture) {
+      this.updateHover(event)
+      return
+    }
+    if (event.pointerId !== gesture.pointerId) {
       return
     }
     if ((event.buttons & 1) === 0 || !this.inWindow(event) || !this.isCurrent(gesture)) {
@@ -222,6 +238,36 @@ export class ThreeInteraction {
       return
     }
     this.trackMovement(gesture, event)
+  }
+
+  private updateHover(event: PointerEvent): void {
+    const view = this.getView()
+    if (this.disposed || this.document.hidden || !view?.game || event.pointerType !== 'mouse'
+      || event.buttons !== 0 || event.isPrimary === false || !this.inWindow(event) || this.isBlocked()) {
+      this.clearHover()
+      return
+    }
+    const hit = this.board.hitTest(event.clientX, event.clientY)
+    if (!hit || !isVisibleSource(view, hit)) {
+      this.clearHover()
+      return
+    }
+    const decision = threeDecisionKey(view)
+    if (this.hover && sameSource(hit, this.hover) && this.hoverDecision === decision) return
+    this.hover = { ...hit }
+    this.hoverDecision = decision
+    this.onHover(this.hover)
+  }
+
+  private clearHover(): void {
+    if (!this.hover) return
+    this.hover = null
+    this.hoverDecision = ''
+    this.onHover(null)
+  }
+
+  private readonly onPointerLeave = (): void => {
+    this.clearHover()
   }
 
   private readonly onPointerUp = (event: PointerEvent): void => {
@@ -274,6 +320,7 @@ export class ThreeInteraction {
 
   private readonly onPointerOut = (event: PointerEvent): void => {
     if (event.relatedTarget === null) {
+      this.clearHover()
       this.onPointerLoss(event)
     }
   }

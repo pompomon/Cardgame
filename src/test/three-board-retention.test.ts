@@ -8,6 +8,7 @@ import { EffectGeometry, EffectVisual, effectRecipe } from '../renderers/three/e
 import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { ThreeBoard } from '../renderers/three/board'
 import { boardLayout } from '../renderers/three/layout'
+import { MAX_EFFECT_MS } from '../app/animation-settings'
 
 function descriptor(cardId: string, instanceId?: string, x = 100): CardDescriptor {
   return {
@@ -89,6 +90,8 @@ describe('retained Three.js card registry', () => {
       const chrome = new Map(['far', 'near', 'hand'].map((row) => [row, {
         header: { dataset: {} }, label: { textContent: '', focus: vi.fn() },
         stats: { textContent: '', setAttribute: vi.fn() }, controls: { hidden: false }, count: { textContent: '' },
+        stacks: [{ textContent: '', dataset: {} }, { textContent: '', dataset: {} }],
+        targets: { textContent: '', hidden: true },
         previous: { disabled: false, setAttribute: vi.fn() }, next: { disabled: false, setAttribute: vi.fn() },
       }]))
       const fields = {
@@ -99,7 +102,7 @@ describe('retained Three.js card registry', () => {
         dropMaterial: { opacity: 0 },
         primaryButton: { ownerDocument: { activeElement: null }, hidden: true, disabled: true, textContent: '', dataset: {} },
         primaryAction: null,
-        usable: () => true, onResize: vi.fn(), invalidate: vi.fn(), applySize: vi.fn(),
+        usable: () => true, onResize: vi.fn(), invalidate: vi.fn(), applySize: vi.fn(), syncTargetLabels: vi.fn(),
       }
       const board = Object.assign(Object.create(ThreeBoard.prototype), fields) as typeof fields & {
         present(): void
@@ -181,9 +184,11 @@ describe('retained Three.js card registry', () => {
     expect(registry.hitTest({ x: 100, y: 30 })?.instanceId).toBe('i')
     registry.reconcile([{ ...first, visible: false, x: 0 }])
     expect(registry.hitTest({ x: 100, y: 30 })).toBeNull()
-    expect(registry.anchorFor('i')?.x).toBe(100)
+    expect(registry.anchorFor('i')).toBeNull()
+    registry.reconcile([first])
     registry.reconcile([])
     const pin = registry.pinRemoved('i')
+    expect(registry.anchorFor('i')?.x).toBe(100)
     expect(pin?.card.group.visible).toBe(true)
     expect(registry.hitTest({ x: 100, y: 30 })).toBeNull()
     pin?.release()
@@ -314,8 +319,10 @@ describe('bounded cosmetic Three.js effects', () => {
       palette: { primary: '#ffffff', secondary: '#cccccc', glow: '#eeeeee' },
     }
     const visual = new EffectVisual(geometry, effect, anchor, anchor, 100000, 200, null, done)
-    expect(visual.group.children).toHaveLength(10)
-    visual.advance(1500)
+    expect(visual.group.children).toHaveLength(11)
+    visual.advance(MAX_EFFECT_MS - 1)
+    expect(done).not.toHaveBeenCalled()
+    visual.advance(1)
     expect(done).toHaveBeenCalledTimes(1)
     expect(effectRecipe('unknown' as VisualEffectDescriptor['kind'])).toBeNull()
     geometry.dispose()

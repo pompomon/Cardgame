@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'interface.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
+const rendererCss = readFileSync(join(__dirname, '..', 'renderers', 'three', 'renderer.css'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
 const card = '.three-interface .card-tile'
 const preview = '.three-interface .three-dialog[data-modal="preview"]'
 const art = `${card} .dom-card__art-frame`
@@ -16,6 +18,22 @@ function ruleBody(selector: string): string {
 }
 
 describe('Three.js native card and preview layout', () => {
+  it('lets compact boards use their measured minimum instead of the stacked-board fallback', () => {
+    expect(rendererCss).toContain('.three-stage[data-layout="compact"] { min-height: var(--three-board-min-height, 0px); }')
+    expect(rendererCss).toContain('height: calc(100svh - 112px);')
+  })
+
+  it('keeps hover previews decorative, input-transparent and height-bounded', () => {
+    const hover = '.three-interface .three-hover-preview'
+    expect(ruleBody(hover)).toContain('pointer-events: none;')
+    expect(ruleBody(`${hover} *`)).toContain('pointer-events: none;')
+    expect(ruleBody(hover)).toContain('position: fixed;')
+    expect(ruleBody(hover)).toContain('70dvh - 6rem')
+    expect(ruleBody(`${hover} > .card-tile`)).toContain('width: 100%;')
+    expect(ruleBody('.three-interface .three-log-scroll')).toContain('overflow: auto;')
+    expect(ruleBody('.three-interface .three-log-scroll')).toContain('max-height: min(320px, 45svh);')
+  })
+
   it('gives previews and target cards a self-contained stacked layout', () => {
     const rule = ruleBody(card)
     expect(rule).toContain('display: grid;')

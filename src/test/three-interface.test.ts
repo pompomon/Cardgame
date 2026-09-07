@@ -12,6 +12,7 @@ import {
   canThreeInput,
   isThreeMode,
   renderThreeInterface,
+  renderThreeHud,
   threeDecisionKey,
   threePrimaryAction,
   threeResponse,
@@ -114,6 +115,8 @@ class ElementStub {
   selectionEnd: number | null = null
   scrollTop = 0
   scrollLeft = 0
+  scrollHeight = 1000
+  clientHeight = 200
   open = false
   hidden = false
   type = ''
@@ -206,17 +209,21 @@ class DocumentStub {
   readonly body = new ElementStub('body', this)
   readonly listeners = new Map<string, (event: never) => unknown>()
   activeElement: ElementStub | null = this.body
+  hidden = false
   createElement(tag: string): ElementStub { return new ElementStub(tag, this) }
   addEventListener(name: string, fn: (event: never) => unknown): void { this.listeners.set(name, fn) }
   removeEventListener(name: string): void { this.listeners.delete(name) }
   emit(name: string, event: unknown): unknown { return this.listeners.get(name)?.(event as never) }
 }
 
-function setup(view = makeView()) {
+function setup(view = makeView(), separateHud = false) {
   let current = view
   const document = new DocumentStub()
   const host = document.createElement('section')
-  document.body.append(host)
+  const hud = separateHud ? document.createElement('section') : null
+  const board = document.createElement('canvas')
+  if (hud) document.body.append(hud)
+  document.body.append(board, host)
   const controller = {
     subscribe: vi.fn(() => () => {}), getViewModel: vi.fn(() => current),
     setAiLevel: vi.fn(), setCardVisualStyle: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
@@ -228,18 +235,18 @@ function setup(view = makeView()) {
   } satisfies ControllerApi
   const onChange = vi.fn()
   const onBlock = vi.fn()
-  const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock)
+  const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock, hud as unknown as HTMLElement | null)
   ui.update(view, view.game?.actor ?? 0)
   const content = host.children[0]
   const click = (selector: string): ElementStub => {
-    const element = content.querySelector(selector)
+    const element = content.querySelector(selector) ?? hud?.querySelector(selector)
     if (!element) throw new Error(`Missing button ${selector}`)
     element.focus()
-    host.emit('click', { target: element })
+    ;(hud?.contains(element) ? hud : host).emit('click', { target: element })
     return element
   }
   const update = (next: AppViewModel, actor = next.game?.actor ?? 0): void => { current = next; ui.update(next, actor) }
-  return { ui, host, content, document, controller, onChange, onBlock, click, update, latest: (next: AppViewModel) => { current = next } }
+  return { ui, host, content, hud, board, document, controller, onChange, onBlock, click, update, latest: (next: AppViewModel) => { current = next } }
 }
 
 function setupPlainsForest({
@@ -285,6 +292,7 @@ beforeEach(() => {
   vi.stubGlobal('navigator', { userAgent: 'node-test', standalone: false })
   vi.stubGlobal('window', { matchMedia: () => ({ matches: false }), navigator: { standalone: false } })
   vi.stubGlobal('Element', ElementStub)
+  vi.stubGlobal('HTMLElement', ElementStub)
   vi.stubGlobal('Node', ElementStub)
   vi.stubGlobal('HTMLTextAreaElement', ElementStub)
   vi.stubGlobal('HTMLSelectElement', ElementStub)
@@ -293,14 +301,25 @@ beforeEach(() => {
 afterEach(() => { resetRasterCardArtLoadFailuresForTests(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Three native markup and decisions', () => {
-  it('exposes every mode and all lobby settings, install and recording controls', () => {
+  it('uses native lobby root, Settings and Recording subviews without duplicating controls', () => {
     const view = { ...makeView(), game: null }
     const html = renderThreeInterface(view, defaultUi)
     for (const mode of ['tutorial', 'local-hvh', 'local-hvai', 'local-aivai', 'adventure-hvai', 'p2p-host', 'p2p-join']) {
       expect(html).toContain(`data-mode="${mode}"`)
       expect(isThreeMode(mode)).toBe(true)
     }
-    for (const name of ['ai-level-select', 'card-visual-style-select', 'animation-speed-select', 'board-theme-select', 'render-quality-select', 'Install', 'load-recording-file', 'load-recording-local']) expect(html).toContain(name)
+    expect(html).toContain('Install')
+    expect(html).toContain('data-action="lobby-settings"')
+    expect(html).toContain('data-action="lobby-recording"')
+    expect(html).not.toContain('dom-cardgame__lobby')
+    expect(html).not.toContain('ai-level-select')
+    expect(html).not.toContain('load-recording-file')
+    const settings = renderThreeInterface(view, { ...defaultUi, lobbyPage: 'settings' })
+    for (const name of ['ai-level-select', 'card-visual-style-select', 'animation-speed-select', 'board-theme-select', 'render-quality-select']) expect(settings).toContain(name)
+    expect(settings).not.toContain('data-mode=')
+    const recording = renderThreeInterface(view, { ...defaultUi, lobbyPage: 'recording' })
+    for (const name of ['load-recording-file', 'load-recording-local', 'data-action="lobby-root"']) expect(recording).toContain(name)
+    expect(recording).not.toContain('ai-level-select')
     expect(isThreeMode('remote')).toBe(false)
     expect(isThreeMode(null)).toBe(false)
   })
@@ -351,16 +370,54 @@ describe('Three native markup and decisions', () => {
     expect(renderThreeInterface({ ...view, game: null }, defaultUi)).toContain('Resume Adventure')
   })
 
-  it('bounds logs to the latest fourteen and escapes all text', () => {
+  it('bounds legacy menu logs to the latest 200 and escapes all text', () => {
     const view = makeView()
     view.status = '<script>alert("status")</script>'
-    view.game!.log = Array.from({ length: 20 }, (_, index) => `<entry-${index}>`)
-    const html = renderThreeInterface(view, defaultUi)
+    view.game!.log = Array.from({ length: 206 }, (_, index) => `<entry-${index}>`)
+    const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
     expect(html).toContain('6 older entries omitted')
     expect(html).not.toContain('&lt;entry-5&gt;')
     expect(html).toContain('&lt;entry-6&gt;')
-    expect(html).toContain('&lt;entry-19&gt;')
+    expect(html).toContain('&lt;entry-205&gt;')
     expect(html).not.toContain('<script>')
+    expect(renderThreeInterface(view, defaultUi)).not.toContain('Replay Log')
+  })
+
+  it('prioritizes capped structured log tiles, actor badges, art and single accessible equivalents', () => {
+    const view = makeView()
+    view.game!.events = [
+      ...Array.from({ length: 202 }, (_, index) => ({ kind: 'turn_start' as const, actor: 0, turn: index })),
+      { kind: 'play_land', actor: 1, cardName: 'Island' },
+    ]
+    view.game!.log = ['Legacy line must not duplicate events']
+    const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+    expect(html).toContain('3 older entries omitted')
+    expect(html).not.toContain('Turn 2 • main phase')
+    expect(html).toContain('Turn 3 • main phase')
+    expect(html).not.toContain('Legacy line must not duplicate events')
+    expect(html.match(/class="three-log-entry"/g)).toHaveLength(200)
+    expect(html.match(/class="three-log-visual" aria-hidden="true"/g)).toHaveLength(200)
+    expect(html.match(/class="three-sr-only"/g)).toHaveLength(200)
+    expect(html).toContain('class="three-log-actor" data-active="false">P2')
+    expect(html).toContain('class="three-log-art"')
+    expect(html.match(/P2 plays Island/g)).toHaveLength(1)
+    expect(html).not.toContain('role="log"')
+    expect(html.match(/aria-live="polite"/g)).toHaveLength(1)
+    const empty = renderThreeInterface(makeView(), { ...defaultUi, menuOpen: true })
+    expect(empty).toContain('No log entries yet.')
+  })
+
+  it('places menu/status/winner/required prompts in the HUD and keeps secondary controls collapsed', () => {
+    const view = responseView()
+    view.game!.winnerText = 'Winner announcement'
+    const hud = renderThreeHud(view, defaultUi)
+    for (const text of ['☰ Menu', 'Turn 1', 'Player 1', 'Ready', 'Winner announcement', 'Respond to Swamp']) expect(hud).toContain(text)
+    expect(hud).not.toContain('Cards &amp; keyboard controls')
+    const controls = renderThreeInterface(view, defaultUi, false)
+    expect(controls).toContain('<details data-detail-key="cards">')
+    expect(controls).not.toContain('class="three-hud"')
+    expect(controls).not.toContain('data-action="end_turn"')
+    expect(controls).not.toContain('data-action="pass_response"')
   })
 
   it('groups Forest targets but keeps battlefield copies individually selectable', () => {
@@ -520,6 +577,186 @@ describe('Three battlefield primary action', () => {
     boardButton.focus()
     h.document.emit('focusin', { target: boardButton })
     expect(h.document.activeElement?.closest('dialog')).not.toBeNull()
+    h.ui.dispose()
+  })
+})
+
+describe('Three HUD, lobby navigation and replay log state', () => {
+  it('keeps the canvas and native controls stable when only the separate HUD changes', () => {
+    const view = makeView()
+    const h = setup(view, true)
+    expect(h.document.body.children).toEqual([h.hud, h.board, h.host])
+    const native = h.content.querySelector('[data-detail-key="cards"]')!
+    const builds = h.content.builds
+    h.board.focus()
+    h.update({ ...view, status: 'Saved successfully' })
+    expect(h.content.builds).toBe(builds)
+    expect(h.content.querySelector('[data-detail-key="cards"]')).toBe(native)
+    expect(h.document.activeElement).toBe(h.board)
+    expect(h.hud!.innerHTML).toContain('Saved successfully')
+    expect(h.content.innerHTML).not.toContain('Saved successfully')
+    h.click('[data-action="menu"]')
+    expect(h.content.querySelector('dialog')?.open).toBe(true)
+    h.update({ ...view, status: 'Menu status changed' })
+    expect(h.document.activeElement?.closest('dialog')).not.toBeNull()
+    h.click('[data-action="close"]')
+    expect(h.document.activeElement).toBe(h.hud!.querySelector('[data-action="menu"]'))
+    h.ui.dispose()
+    expect(h.hud!.innerHTML).toBe('')
+    expect(h.hud!.listeners.size).toBe(0)
+    expect(h.board.isConnected).toBe(true)
+  })
+
+  it('retains separate subviews after notifications, restores navigation focus and guards recording readiness', () => {
+    const view = { ...makeView(), game: null, recording: {
+      canSave: false, canLoadLocal: false, hasLocalSave: false, metadata: null,
+    } }
+    const h = setup(view)
+    h.click('[data-action="lobby-settings"]')
+    expect(h.document.activeElement?.hasAttribute('data-lobby-heading')).toBe(true)
+    h.update({ ...view, status: 'Settings saved', aiLevel: 'hard' })
+    expect(h.content.querySelector('[data-lobby-page="settings"]')).not.toBeNull()
+    h.click('[data-action="lobby-root"]')
+    expect(h.document.activeElement?.dataset.action).toBe('lobby-settings')
+    h.click('[data-action="lobby-recording"]')
+    const unavailable = h.content.querySelector('[data-action="load-recording-local"]')!
+    expect(unavailable.hasAttribute('disabled')).toBe(true)
+    h.host.emit('click', { target: unavailable })
+    expect(h.controller.loadRecordingFromLocalStorage).not.toHaveBeenCalled()
+    h.update({ ...view, recording: { ...view.recording, hasLocalSave: true, canLoadLocal: true } })
+    expect(h.content.querySelector('[data-lobby-page="recording"]')).not.toBeNull()
+    h.click('[data-action="load-recording-local"]')
+    expect(h.controller.loadRecordingFromLocalStorage).toHaveBeenCalledOnce()
+    h.ui.dispose()
+  })
+
+  it.each(['p2p-host', 'p2p-join'] as const)('preserves %s signaling drafts, selection and readiness through subviews', (mode) => {
+    const view = { ...makeView(), game: null, mode }
+    const h = setup(view)
+    const selector = mode === 'p2p-host' ? '#answer-text' : '#join-offer-text'
+    const input = h.content.querySelector(selector)!
+    input.value = 'pasted <signal>'
+    input.setSelectionRange(2, 7)
+    input.focus()
+    h.host.emit('input', { target: input })
+    h.update({ ...view, p2pConnected: true, status: 'Connected' })
+    let restored = h.content.querySelector(selector)!
+    expect(restored.value).toBe('pasted <signal>')
+    expect(restored.selectionStart).toBe(2)
+    expect(restored.selectionEnd).toBe(7)
+    expect(h.document.activeElement).toBe(restored)
+    h.click('[data-action="lobby-settings"]')
+    restored = h.content.querySelector(selector)!
+    expect(restored.value).toBe('pasted <signal>')
+    h.click(mode === 'p2p-host' ? '#accept-answer' : '#create-answer')
+    expect(mode === 'p2p-host' ? h.controller.acceptAnswer : h.controller.createAnswer).toHaveBeenCalledExactlyOnceWith('pasted <signal>')
+    h.ui.dispose()
+  })
+
+  it('preserves independent log expansion and reading position across menu close, status and replay steps', () => {
+    const view = makeView()
+    view.replay.active = true
+    const h = setup(view)
+    const cards = h.content.querySelector('[data-detail-key="cards"]')!
+    expect(cards.open).toBe(false)
+    h.click('[data-action="menu"]')
+    const menu = h.content.querySelector('dialog')!
+    menu.scrollTop = 90
+    let detail = h.content.querySelector('[data-detail-key="log"]')!
+    detail.open = true
+    h.host.emit('toggle', { target: detail })
+    expect(menu.scrollTop).toBe(90)
+    let log = h.content.querySelector('[data-scroll-key="log"]')!
+    expect(log.scrollTop).toBe(log.scrollHeight)
+    log.scrollTop = 140
+    h.host.emit('scroll', { target: log })
+    h.click('[data-action="close"]')
+    h.update({ ...view, status: 'Replay status', replay: { ...view.replay, step: 4 } })
+    h.click('[data-action="menu"]')
+    detail = h.content.querySelector('[data-detail-key="log"]')!
+    log = h.content.querySelector('[data-scroll-key="log"]')!
+    expect(detail.open).toBe(true)
+    expect(log.scrollTop).toBe(140)
+    expect(h.content.querySelector('[data-detail-key="cards"]')!.open).toBe(false)
+    h.ui.reset(true)
+    h.update({ ...view, replay: { ...view.replay, step: 2 } })
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('menu')
+    expect(h.content.querySelector('[data-scroll-key="log"]')!.scrollTop).toBe(140)
+    h.content.querySelector('dialog')!.scrollTop = 70
+    h.click('[data-action="log-latest"]')
+    expect(h.content.querySelector('dialog')!.scrollTop).toBe(70)
+    log = h.content.querySelector('[data-scroll-key="log"]')!
+    expect(log.scrollTop).toBe(log.scrollHeight)
+    h.click('[data-action="close"]')
+    h.update({ ...view, status: 'Another event', replay: { ...view.replay, step: 3 } })
+    h.click('[data-action="menu"]')
+    log = h.content.querySelector('[data-scroll-key="log"]')!
+    expect(log.scrollTop).toBe(log.scrollHeight)
+    detail = h.content.querySelector('[data-detail-key="log"]')!
+    detail.open = false
+    h.host.emit('toggle', { target: detail })
+    h.click('[data-action="close"]')
+    h.click('[data-action="menu"]')
+    expect(h.content.querySelector('[data-detail-key="log"]')!.open).toBe(false)
+    h.ui.dispose()
+  })
+})
+
+describe('Three non-modal hover previews', () => {
+  it('updates only its own decorative overlay without focus, input blocking or notifications', () => {
+    const h = setup(makeView(), true)
+    h.board.focus()
+    const builds = h.content.builds
+    const hudBuilds = h.hud!.builds
+    h.ui.setHover(hit())
+    const overlay = h.host.children[2]
+    expect(overlay.innerHTML).toContain('class="three-hover-preview" aria-hidden="true"')
+    expect(overlay.querySelector('dialog')).toBeNull()
+    expect(overlay.querySelector('button')).toBeNull()
+    expect(h.document.activeElement).toBe(h.board)
+    expect(h.ui.isBlocked()).toBe(false)
+    expect(h.ui.primaryAction?.disabled).toBe(false)
+    expect(h.content.builds).toBe(builds)
+    expect(h.hud!.builds).toBe(hudBuilds)
+    expect(h.onChange).not.toHaveBeenCalled()
+    h.ui.activate(hit())
+    expect(overlay.innerHTML).toBe('')
+    expect(h.content.querySelector('[data-modal="preview"]')?.open).toBe(true)
+    h.ui.dispose()
+  })
+
+  it.each(['decision', 'menu', 'target', 'visibility', 'reset', 'dispose'] as const)('clears hover on %s', (reason) => {
+    const view = makeView()
+    const h = setup(view)
+    const overlay = h.host.children[2]
+    h.ui.setHover(hit())
+    expect(overlay.innerHTML).not.toBe('')
+    if (reason === 'decision') h.update({ ...view, game: { ...view.game!, turn: 2 } })
+    else if (reason === 'menu') h.click('[data-action="menu"]')
+    else if (reason === 'target') h.ui.playCard('source')
+    else if (reason === 'visibility') { h.document.hidden = true; h.document.emit('visibilitychange', {}) }
+    else if (reason === 'reset') h.ui.reset()
+    else h.ui.dispose()
+    expect(reason === 'dispose' ? overlay.isConnected : overlay.innerHTML.length > 0).toBe(false)
+    h.ui.setHover(hit())
+    if (reason === 'menu' || reason === 'target' || reason === 'visibility') expect(overlay.innerHTML).toBe('')
+    h.ui.dispose()
+  })
+
+  it('does not reveal hidden cards or reuse a vanished hover target', () => {
+    const view = makeView()
+    view.game!.players[1].handCards = [{ id: 'secret', name: HIDDEN_HAND_CARD_NAME }]
+    const h = setup(view)
+    h.ui.setHover(hit({ zone: 'hand', cardId: 'secret', name: 'Secret Forest' }))
+    expect(h.host.children[2].innerHTML).toBe('')
+    h.ui.setHover(hit())
+    expect(h.host.children[2].innerHTML).toContain('Forest')
+    h.update({ ...view, status: 'Saved' })
+    expect(h.host.children[2].innerHTML).toContain('Forest')
+    h.update({ ...view, game: { ...view.game!, players: [
+      view.game!.players[0], { ...view.game!.players[1], battlefield: [] },
+    ] } })
+    expect(h.host.children[2].innerHTML).toBe('')
     h.ui.dispose()
   })
 })
@@ -996,6 +1233,7 @@ describe('Three native interface behavior', () => {
 
   it('dispatches validated modes and all five guarded settings', () => {
     const h = setup({ ...makeView(), game: null })
+    h.click('[data-action="lobby-settings"]')
     const expected = [
       ['ai-level-select', 'hard', h.controller.setAiLevel],
       ['card-visual-style-select', 'hd', h.controller.setCardVisualStyle],
@@ -1012,6 +1250,7 @@ describe('Three native interface behavior', () => {
       h.host.emit('change', { target: select })
       expect(spy).toHaveBeenCalledExactlyOnceWith(value)
     }
+    h.click('[data-action="lobby-root"]')
     h.click('[data-mode="adventure-hvai"]')
     expect(h.controller.startAdventure).toHaveBeenCalledTimes(1)
     h.click('[data-mode="tutorial"]')

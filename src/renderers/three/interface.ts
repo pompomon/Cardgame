@@ -19,6 +19,8 @@ import {
   canThreeInput,
   isThreeInGame,
   isThreeMode,
+  renderThreeHover,
+  renderThreeHud,
   renderThreeInterface,
   threeDecisionKey,
   threePreviewName,
@@ -27,6 +29,7 @@ import {
   threeSessionKey,
   threeTargets,
   type InterfaceUi,
+  type ThreeLobbyPage,
   type ThreePrimaryAction,
 } from './interface-model'
 import './interface.css'
@@ -53,12 +56,19 @@ export class ThreeInterface {
   private pendingCardId: string | null = null
   private phaseDismissed = false
   private preview: BoardHit | null = null
+  private hover: BoardHit | null = null
+  private lobbyPage: ThreeLobbyPage = 'root'
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
   private decision = ''
   private session = ''
   private submittedDecision: string | null = null
   private markup = ''
+  private hudMarkup = ''
+  private hoverMarkup = ''
+  private readonly scrollPositions = new Map<string, [number, number]>()
+  private readonly detailStates = new Map<string, boolean>()
+  private followLatest = true
   private blocked = false
   private modalKind: string | null = null
   private inlineTargetOpen = false
@@ -67,6 +77,8 @@ export class ThreeInterface {
   private fileGeneration = 0
   private readonly downloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly content: HTMLElement
+  private readonly hoverContent: HTMLElement
+  private readonly hudHost: HTMLElement | null
   private readonly fileInput: HTMLInputElement
   private readonly document: Document
   private readonly host: HTMLElement
@@ -79,25 +91,34 @@ export class ThreeInterface {
     controller: ControllerApi,
     onChange: () => void,
     onBlock: () => void,
+    hudHost: HTMLElement | null = null,
   ) {
     this.host = host
     this.controller = controller
     this.onChange = onChange
     this.onBlock = onBlock
+    this.hudHost = hudHost
     this.document = host.ownerDocument
     host.classList.add('three-interface')
     this.content = this.document.createElement('div')
+    this.hoverContent = this.document.createElement('div')
     this.fileInput = this.document.createElement('input')
     this.fileInput.type = 'file'
     this.fileInput.accept = 'application/json,.json'
     this.fileInput.hidden = true
-    host.append(this.content, this.fileInput)
-    host.addEventListener('click', this.handleClick)
-    host.addEventListener('change', this.handleChange)
-    host.addEventListener('input', this.handleInput)
-    host.addEventListener('cancel', this.handleCancel, true)
+    host.append(this.content, this.fileInput, this.hoverContent)
+    for (const root of this.roots) {
+      root.classList.add('three-interface')
+      root.addEventListener('click', this.handleClick)
+      root.addEventListener('change', this.handleChange)
+      root.addEventListener('input', this.handleInput)
+      root.addEventListener('cancel', this.handleCancel, true)
+      root.addEventListener('scroll', this.handleScroll, true)
+      root.addEventListener('toggle', this.handleToggle, true)
+    }
     this.document.addEventListener('keydown', this.handleKeydown)
     this.document.addEventListener('focusin', this.handleFocusIn)
+    this.document.addEventListener('visibilitychange', this.handleVisibility)
     this.fileInput.addEventListener('change', this.handleFile)
   }
 
@@ -106,6 +127,33 @@ export class ThreeInterface {
       presentedActor: this.presentedActor, menuOpen: this.menuOpen, pendingCardId: this.pendingCardId,
       phaseDismissed: this.phaseDismissed, preview: this.preview,
       hostAnswerDraft: this.hostAnswerDraft, joinOfferDraft: this.joinOfferDraft,
+      lobbyPage: this.lobbyPage,
+    }
+  }
+
+  private get roots(): HTMLElement[] {
+    return this.hudHost ? [this.hudHost, this.host] : [this.host]
+  }
+
+  private elements(selector: string): HTMLElement[] {
+    return this.roots.flatMap((root) => Array.from(root.querySelectorAll<HTMLElement>(selector)))
+  }
+
+  setHover(hit: BoardHit | null): void {
+    if (this.disposed) return
+    this.hover = hit ? { ...hit } : null
+    this.renderHover()
+  }
+
+  private renderHover(): void {
+    const view = this.view
+    if (!view?.game || this.document.hidden || this.isBlocked()
+      || !canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })
+      || !isThreeInGame(view)) this.hover = null
+    const markup = view ? renderThreeHover(view, this.hover) : ''
+    if (markup !== this.hoverMarkup) {
+      this.hoverContent.innerHTML = markup
+      this.hoverMarkup = markup
     }
   }
 
@@ -145,12 +193,14 @@ export class ThreeInterface {
       this.preview = null
       this.hostAnswerDraft = ''
       this.joinOfferDraft = ''
+      this.lobbyPage = 'root'
       this.fileGeneration += 1
     }
     if (this.decision !== decision || this.presentedActor !== presentedActor) {
       this.pendingCardId = null
       this.phaseDismissed = false
       this.preview = null
+      this.hover = null
       this.submittedDecision = null
     }
     this.view = view
@@ -270,7 +320,7 @@ export class ThreeInterface {
   private restoreFocus(saved: SavedFocus | null): boolean {
     if (!saved) return false
     const element = saved.element.isConnected ? saved.element
-      : Array.from(this.content.querySelectorAll<HTMLElement>(FOCUSABLE)).find((item) => focusKey(item) === saved.key)
+      : this.elements(FOCUSABLE).find((item) => focusKey(item) === saved.key)
     if (!element || element.hasAttribute('disabled') || element.closest('[hidden]')) return false
     element.focus({ preventScroll: true })
     if (saved.start !== null && saved.end !== null && (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT')) {
@@ -284,30 +334,34 @@ export class ThreeInterface {
     const blocked = this.isBlocked()
     if (blocked && !this.blocked) this.onBlock()
     this.blocked = blocked
-    const markup = renderThreeInterface(this.view, this.ui())
-    if (markup === this.markup) return
+    this.renderHover()
+    const markup = renderThreeInterface(this.view, this.ui(), !this.hudHost)
+    const hudMarkup = this.hudHost ? renderThreeHud(this.view, this.ui()) : ''
+    if (markup === this.markup && hudMarkup === this.hudMarkup) return
     const focus = this.captureFocus()
-    const scroll = new Map<string, [number, number]>()
-    const details = new Map<string, boolean>()
     this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
-      scroll.set(element.dataset.scrollKey ?? element.dataset.modal ?? element.id, [element.scrollLeft, element.scrollTop])
+      if (element.dataset.scrollKey === 'log' && !element.closest<HTMLDetailsElement>('details')?.open) return
+      this.scrollPositions.set(element.dataset.scrollKey ?? element.dataset.modal ?? element.id, [element.scrollLeft, element.scrollTop])
     })
-    this.content.querySelectorAll<HTMLDetailsElement>('[data-detail-key]').forEach((element) => details.set(element.dataset.detailKey!, element.open))
+    this.content.querySelectorAll<HTMLDetailsElement>('[data-detail-key]').forEach((element) => this.detailStates.set(element.dataset.detailKey!, element.open))
     const oldModal = this.modalKind
     const oldInlineTarget = this.inlineTargetOpen
     const hostScroll = [this.host.scrollLeft, this.host.scrollTop]
     const oldDialog = this.content.querySelector<HTMLDialogElement>('dialog')
-    if (oldDialog?.open && typeof oldDialog.close === 'function') oldDialog.close()
-    this.content.innerHTML = markup
+    if (markup !== this.markup) {
+      if (oldDialog?.open && typeof oldDialog.close === 'function') oldDialog.close()
+      this.content.innerHTML = markup
+    }
+    if (this.hudHost && hudMarkup !== this.hudMarkup) {
+      this.hudHost.innerHTML = hudMarkup
+      this.hudHost.hidden = !hudMarkup
+    }
     this.markup = markup
+    this.hudMarkup = hudMarkup
     this.host.scrollLeft = hostScroll[0]
     this.host.scrollTop = hostScroll[1]
-    this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
-      const position = scroll.get(element.dataset.scrollKey ?? element.dataset.modal ?? element.id)
-      if (position) [element.scrollLeft, element.scrollTop] = position
-    })
     this.content.querySelectorAll<HTMLDetailsElement>('[data-detail-key]').forEach((element) => {
-      const open = details.get(element.dataset.detailKey!)
+      const open = this.detailStates.get(element.dataset.detailKey!)
       if (open !== undefined) element.open = open
     })
     const dialog = this.content.querySelector<HTMLDialogElement>('dialog')
@@ -315,21 +369,61 @@ export class ThreeInterface {
     this.inlineTargetOpen = !!this.content.querySelector('.three-target-panel')
     if (dialog) {
       if (!oldModal && !oldInlineTarget) this.returnFocus = focus
-      if (typeof dialog.showModal === 'function') dialog.showModal()
-      else dialog.setAttribute('open', '')
+      if (!dialog.open) {
+        if (typeof dialog.showModal === 'function') dialog.showModal()
+        else dialog.setAttribute('open', '')
+      }
+      this.restoreScroll()
       if (oldModal === this.modalKind && focus && this.restoreFocus(focus) && dialog.contains(this.document.activeElement)) return
       ;(dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus({ preventScroll: true })
     } else if (this.inlineTargetOpen && !oldInlineTarget) {
       if (!oldModal) this.returnFocus = focus
       this.content.querySelector<HTMLElement>('[data-action="target"]')?.focus({ preventScroll: true })
     } else if (oldModal || oldInlineTarget && !this.inlineTargetOpen) {
-      if (!this.restoreFocus(this.returnFocus)) this.content.querySelector<HTMLElement>('[data-action="menu"], [data-mode]')?.focus({ preventScroll: true })
+      if (!this.restoreFocus(this.returnFocus)) this.elements('[data-action="menu"], [data-mode]')[0]?.focus({ preventScroll: true })
       this.returnFocus = null
-    } else if (focus && this.host.contains(focus.element)) {
+    } else if (focus && this.roots.some((root) => root.contains(focus.element))) {
       this.restoreFocus(focus)
     } else if (focus && !focus.element.isConnected) {
       this.restoreFocus(focus)
     }
+    this.restoreScroll()
+  }
+
+  private restoreScroll(): void {
+    this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
+      if (element.dataset.scrollKey === 'log') return
+      const position = this.scrollPositions.get(element.dataset.scrollKey ?? element.dataset.modal ?? element.id)
+      if (position) [element.scrollLeft, element.scrollTop] = position
+    })
+    this.restoreLogScroll()
+  }
+
+  private restoreLogScroll(): void {
+    const log = this.content.querySelector<HTMLElement>('[data-scroll-key="log"]')
+    if (!log?.closest<HTMLDetailsElement>('details')?.open) return
+    const position = this.scrollPositions.get('log')
+    if (position) [log.scrollLeft, log.scrollTop] = position
+    if (this.followLatest) log.scrollTop = log.scrollHeight
+  }
+
+  private readonly handleScroll = (event: Event): void => {
+    if (!(event.target instanceof HTMLElement) || event.target.dataset.scrollKey !== 'log'
+      || !this.host.contains(event.target) || !event.target.closest<HTMLDetailsElement>('details')?.open) return
+    const element = event.target
+    this.scrollPositions.set('log', [element.scrollLeft, element.scrollTop])
+    this.followLatest = element.scrollHeight - element.clientHeight - element.scrollTop <= 8
+  }
+
+  private readonly handleToggle = (event: Event): void => {
+    if (!(event.target instanceof HTMLElement) || !event.target.dataset.detailKey
+      || !this.host.contains(event.target)) return
+    this.detailStates.set(event.target.dataset.detailKey, (event.target as HTMLDetailsElement).open)
+    if (event.target.dataset.detailKey === 'log') this.restoreLogScroll()
+  }
+
+  private readonly handleVisibility = (): void => {
+    if (this.document.hidden) this.setHover(null)
   }
 
   private close(): void {
@@ -398,7 +492,7 @@ export class ThreeInterface {
   private readonly handleClick = (event: MouseEvent): void => {
     if (this.disposed || !(event.target instanceof Element)) return
     const element = event.target.closest<HTMLElement>('button')
-    if (!element || !this.host.contains(element) || element.hasAttribute('disabled')) return
+    if (!element || !this.roots.some((root) => root.contains(element)) || element.hasAttribute('disabled')) return
     const modal = this.content.querySelector('dialog')
     if (modal && !modal.contains(element)) return
     const mode = element.dataset.mode
@@ -412,6 +506,21 @@ export class ThreeInterface {
     const view = this.latestForAction()
     if (!view) return
     switch (action) {
+      case 'lobby-settings':
+      case 'lobby-recording':
+      case 'lobby-root': {
+        if (isThreeInGame(view)) break
+        const previous = this.lobbyPage
+        this.lobbyPage = action === 'lobby-settings' ? 'settings' : action === 'lobby-recording' ? 'recording' : 'root'
+        this.changed()
+        this.content.querySelector<HTMLElement>(this.lobbyPage === 'root'
+          ? `[data-action="lobby-${previous}"]` : '[data-lobby-heading]')?.focus({ preventScroll: true })
+        break
+      }
+      case 'log-latest':
+        this.followLatest = true
+        this.restoreLogScroll()
+        break
       case 'menu':
         this.pendingCardId = null
         this.preview = null
@@ -512,14 +621,16 @@ export class ThreeInterface {
     }
   }
 
-  reset(): void {
+  reset(preserveMenu = false): void {
     if (this.disposed) return
     this.fileGeneration += 1
     this.fileInput.value = ''
-    this.menuOpen = false
+    if (!preserveMenu) this.menuOpen = false
     this.pendingCardId = null
     this.phaseDismissed = true
     this.preview = null
+    this.hover = null
+    this.lobbyPage = 'root'
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
     this.submittedDecision = null
@@ -530,12 +641,18 @@ export class ThreeInterface {
     if (this.disposed) return
     this.disposed = true
     this.fileGeneration += 1
-    this.host.removeEventListener('click', this.handleClick)
-    this.host.removeEventListener('change', this.handleChange)
-    this.host.removeEventListener('input', this.handleInput)
-    this.host.removeEventListener('cancel', this.handleCancel, true)
+    for (const root of this.roots) {
+      root.removeEventListener('click', this.handleClick)
+      root.removeEventListener('change', this.handleChange)
+      root.removeEventListener('input', this.handleInput)
+      root.removeEventListener('cancel', this.handleCancel, true)
+      root.removeEventListener('scroll', this.handleScroll, true)
+      root.removeEventListener('toggle', this.handleToggle, true)
+      root.classList.remove('three-interface')
+    }
     this.document.removeEventListener('keydown', this.handleKeydown)
     this.document.removeEventListener('focusin', this.handleFocusIn)
+    this.document.removeEventListener('visibilitychange', this.handleVisibility)
     this.fileInput.removeEventListener('change', this.handleFile)
     for (const [url, timer] of this.downloadTimers) {
       clearTimeout(timer)
@@ -546,10 +663,14 @@ export class ThreeInterface {
     if (dialog?.open && typeof dialog.close === 'function') dialog.close()
     this.content.remove()
     this.fileInput.remove()
-    this.host.classList.remove('three-interface')
+    this.hoverContent.remove()
+    if (this.hudHost) this.hudHost.innerHTML = ''
     this.view = null
     this.preview = null
+    this.hover = null
     this.pendingCardId = null
     this.returnFocus = null
+    this.scrollPositions.clear()
+    this.detailStates.clear()
   }
 }

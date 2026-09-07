@@ -4,15 +4,19 @@ import {
 } from 'three'
 import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
+import { durationMsForSpeed, MAX_QUEUED_EFFECTS } from '../../app/animation-settings'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../../app/types'
 import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
-import { ThreeAssets, type TextureLease } from './assets'
+import { effectFeedbackForDescriptor } from '../phaser/interaction-feedback'
+import { ThreeAssets } from './assets'
+import { ThreeBackground } from './background'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'
 import type { BoardHit, ThreeBoardApi } from './contracts'
 import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
+import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
-import { boardLayout, cardSlotX, clientToBoard, pageWindow, pointInRect, type BoardRow, type ThreeLayout } from './layout'
+import { boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pointInRect, type BoardRow, type ThreeLayout } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
 
@@ -24,6 +28,8 @@ interface RowChrome {
   readonly previous: HTMLButtonElement
   readonly next: HTMLButtonElement
   readonly count: HTMLSpanElement
+  readonly targets: HTMLSpanElement
+  readonly stacks: readonly HTMLSpanElement[]
   readonly dispose: () => void
 }
 
@@ -49,14 +55,15 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly plane = new PlaneGeometry(1, 1)
   private readonly box = new BoxGeometry(1, 1, 1)
   private readonly tableMaterial = new MeshStandardMaterial({ color: '#574634', roughness: 0.8 })
-  private readonly backgroundMaterial = new MeshBasicMaterial()
   private readonly dropMaterial = new MeshBasicMaterial({ color: '#70e7b1', opacity: 0.05, transparent: true, depthWrite: false })
   private readonly table = new Mesh(this.box, this.tableMaterial)
-  private readonly background = new Mesh(this.plane, this.backgroundMaterial)
   private readonly drop = new Mesh(this.plane, this.dropMaterial)
   private readonly effectGeometry = new EffectGeometry()
   private readonly effects = new Set<EffectVisual>()
   private readonly chrome = new Map<BoardRow, RowChrome>()
+  private readonly surfaces = new Map<BoardRow, Mesh<PlaneGeometry, MeshBasicMaterial>>()
+  private readonly targetLabels = new Map<string, HTMLSpanElement>()
+  private readonly effectCaption = document.createElement('p')
   private readonly instruction = document.createElement('p')
   private readonly instructionText = document.createElement('span')
   private readonly instructionSizes: HTMLSpanElement[] = []
@@ -71,8 +78,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private renderer: WebGLRenderer | null = null
   private assets: ThreeAssets | null = null
   private cards: ThreeCardRegistry | null = null
-  private backgroundLease: TextureLease | null = null
-  private backgroundKey = ''
+  private background: ThreeBackground | null = null
   private observer: ResizeObserver | null = null
   private motionQuery: MediaQueryList | null = null
   private layout: ThreeLayout = boardLayout(1000, 750)
@@ -88,6 +94,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private lastFrame: number | null = null
   private drag: DragVisual | null = null
   private canDrop = false
+  private inputBlocked = false
   private sized = false
 
   constructor(
@@ -113,17 +120,30 @@ export class ThreeBoard implements ThreeBoardApi {
       this.renderer.setClearColor('#09121d')
       this.assets = new ThreeAssets(this.invalidate)
       this.cards = new ThreeCardRegistry(this.assets)
-      this.scene.add(this.table, this.background, this.drop, this.cards.layer)
+      this.background = new ThreeBackground(this.assets, this.invalidate)
+      this.scene.add(this.table, this.drop, this.cards.layer, this.background.group)
       this.scene.add(new HemisphereLight('#e9f5ff', '#493a29', 2))
       const light = new DirectionalLight('#fff5dc', 2.5)
       light.position.set(-200, 300, 800)
       this.scene.add(light)
       this.table.position.z = -14
-      this.background.position.z = -0.1
       this.drop.position.z = 0.1
       this.camera.position.set(0, 0, 1200)
       this.camera.lookAt(0, 0, 0)
-      for (const row of ROWS) this.createChrome(row)
+      for (const row of ROWS) {
+        this.createChrome(row)
+        const surface = new Mesh(this.plane, new MeshBasicMaterial({
+          color: '#132d29', transparent: true, opacity: 0.68, depthWrite: false,
+        }))
+        surface.position.z = 0
+        this.surfaces.set(row, surface)
+        this.scene.add(surface)
+      }
+      this.effectCaption.className = 'three-board-effect-caption'
+      this.effectCaption.hidden = true
+      this.effectCaption.setAttribute('role', 'status')
+      this.effectCaption.setAttribute('aria-live', 'polite')
+      this.stage.append(this.effectCaption)
       this.primaryButton.type = 'button'
       this.primaryButton.className = 'three-board-primary'
       this.primaryButton.hidden = true
@@ -182,14 +202,12 @@ export class ThreeBoard implements ThreeBoardApi {
   render(
     view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>,
     response: CounterHandOptions | null, primaryAction: ThreePrimaryAction | null,
+    blocked = false,
   ): void {
     if (this.disposed || this.failed) return
-    const previous = this.view
-    const boundary = previous && (previous.seed !== view.seed || previous.mode !== view.mode
-      || previous.replay.active !== view.replay.active
-      || (view.replay.active && view.replay.step < previous.replay.step)
-      || (previous.game && (!view.game || view.game.events.length < previous.game.events.length)))
-    if (this.actor !== presentedActor || boundary) {
+    const boundary = presentationBoundary(this.view, view)
+    const reoriented = this.actor !== presentedActor || boundary
+    if (reoriented) {
       this.endDrag(false)
       for (const row of ROWS) this.pages[row] = 0
     }
@@ -202,17 +220,20 @@ export class ThreeBoard implements ThreeBoardApi {
     this.targetIds = new Set(targetIds)
     this.response = response
     this.primaryAction = primaryAction
+    this.inputBlocked = blocked
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
-    this.present()
+    this.present(!reoriented)
     this.invalidate()
   }
 
-  private present(): void {
+  private present(animate = true): void {
     const game = this.view?.game
     if (!game) {
       this.canDrop = false
       this.cards?.reconcile([])
+      this.syncTargetLabels([])
+      this.effectCaption.hidden = true
       this.instruction.hidden = true
       this.primaryButton.hidden = true
       for (const chrome of this.chrome.values()) chrome.controls.hidden = true
@@ -220,7 +241,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     const descriptors: CardDescriptor[] = []
     const style = this.view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE
-    const input = game.canInput && game.actor === this.actor && game.actorControl === 'human'
+    const input = !this.inputBlocked && game.canInput && game.actor === this.actor && game.actorControl === 'human'
       && !game.isReplay && !this.view?.replay.active
     const response = input && game.phase === 'respond' ? this.response : null
     const responseIds = new Set(response?.choices.map((choice) => choice.cardId))
@@ -252,12 +273,17 @@ export class ThreeBoard implements ThreeBoardApi {
         const counts = `Hand ${player.handCount} · Deck ${player.deckCount} · Graveyard ${player.graveyardCount}`
         chrome.stats.textContent = counts
         chrome.stats.setAttribute('aria-label', `Player ${owner + 1}: ${counts}`)
+        for (const [index, stack] of chrome.stacks.entries()) {
+          const count = index === 0 ? player.deckCount : player.graveyardCount
+          stack.textContent = `${index === 0 ? 'Deck' : 'GY'} ${count}`
+          stack.dataset.empty = String(count === 0)
+        }
       }
       chrome.controls.hidden = false
       chrome.previous.setAttribute('aria-label', `Previous ${label} page`)
       chrome.next.setAttribute('aria-label', `Next ${label} page`)
     }
-    this.applySize()
+    const resized = this.applySize()
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
@@ -268,6 +294,16 @@ export class ThreeBoard implements ThreeBoardApi {
       chrome.previous.disabled = page.page === 0 || this.drag !== null
       chrome.next.disabled = page.page === page.pages - 1 || this.drag !== null
       chrome.count.textContent = page.count === 0 ? '0 cards' : `${page.start + 1}–${page.end} of ${page.count}`
+      const targetPages = new Set<number>()
+      entries.forEach((card, index) => {
+        const id = 'instanceId' in card ? card.instanceId : card.id
+        const cardId = 'cardId' in card ? card.cardId : card.id
+        if (this.targetIds.has(id) || this.targetIds.has(cardId)) {
+          targetPages.add(Math.floor(index / this.layout.capacity) + 1)
+        }
+      })
+      chrome.targets.hidden = targetPages.size === 0
+      chrome.targets.textContent = targetPages.size ? `Targets: page ${[...targetPages].join(', ')}` : ''
       for (let index = 0; index < entries.length; index++) {
         const card = entries[index]
         const instanceId = 'instanceId' in card ? card.instanceId : undefined
@@ -296,9 +332,46 @@ export class ThreeBoard implements ThreeBoardApi {
       const desired = descriptors.find((descriptor) => descriptor.hit.key === this.drag?.source.descriptor.hit.key)
       if (!desired?.hit.playable || !desired.visible) this.endDrag(false)
     }
-    this.cards?.reconcile(descriptors)
+    const duration = animate && !resized && this.quality.motion && !this.drag
+      ? Math.min(220, durationMsForSpeed(this.view?.animationSpeed ?? 'normal')) : 0
+    this.cards?.reconcile(descriptors, duration)
+    this.syncTargetLabels(descriptors)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
+  }
+
+  private syncTargetLabels(descriptors: readonly CardDescriptor[]): void {
+    const visible = new Set<string>()
+    for (const descriptor of descriptors) {
+      if (!descriptor.visible || !descriptor.target) continue
+      const key = descriptor.hit.key
+      visible.add(key)
+      let label = this.targetLabels.get(key)
+      if (!label) {
+        label = document.createElement('span')
+        label.className = 'three-board-target-label'
+        label.textContent = 'Target'
+        label.setAttribute('aria-hidden', 'true')
+        this.stage.append(label)
+        this.targetLabels.set(key, label)
+      }
+    }
+    for (const [key, label] of this.targetLabels) {
+      if (!visible.has(key)) {
+        label.remove()
+        this.targetLabels.delete(key)
+      }
+    }
+    this.positionTargetLabels()
+  }
+
+  private positionTargetLabels(): void {
+    for (const [key, label] of this.targetLabels) {
+      const anchor = this.cards?.get(key)?.anchor()
+      if (!anchor) continue
+      label.style.left = `${this.layout.width / 2 + anchor.x}px`
+      label.style.top = `${this.layout.height / 2 - anchor.y - anchor.height / 2 + 2}px`
+    }
   }
 
   private readonly capturePrimary = (event: PointerEvent): void => {
@@ -332,6 +405,8 @@ export class ThreeBoard implements ThreeBoardApi {
   beginDrag(hit: BoardHit): void {
     if (!this.usable()) return
     this.endDrag(false)
+    this.cards?.finishMotion()
+    this.positionTargetLabels()
     const source = this.cards?.get(hit.key)
     if (!source?.descriptor.hit.playable || !source.descriptor.visible) return
     const proxy = this.cards!.createProxy(source)
@@ -352,7 +427,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.drag.proxy.group.position.x = this.point.x
     this.drag.proxy.group.position.y = this.point.y + (touch ? 44 * this.layout.height / Math.max(1, rect.height) : 0)
     const allowed = inside && this.canDrop && pointInRect(this.point, this.layout.drop)
-    this.dropMaterial.color.set(allowed ? '#94ffc9' : '#f6d78d')
+    this.dropMaterial.color.set(allowed ? '#94ffc9' : '#e5667d')
     this.dropMaterial.opacity = allowed ? 0.2 : 0.08
     this.instructionText.textContent = allowed ? 'Release to play' : CANCEL_INSTRUCTION
     this.invalidate()
@@ -383,13 +458,17 @@ export class ThreeBoard implements ThreeBoardApi {
       done()
       return (): void => {}
     }
-    if (this.effects.size >= 4) this.effects.values().next().value!.cancel()
+    if (this.effects.size >= MAX_QUEUED_EFFECTS) this.effects.values().next().value!.cancel()
+    const feedback = effectFeedbackForDescriptor(effect)
+    this.effectCaption.textContent = feedback.label
+    this.effectCaption.hidden = false
     const source = this.cards?.anchorFor(effect.sourceInstanceId) ?? this.actorAnchor(effect.actor)
     const target = this.effectTargetAnchor(effect)
     const removed = effect.kind === 'mountain_destroy' && effect.targetInstanceId
       ? this.cards?.pinRemoved(effect.targetInstanceId) ?? null : null
     const visual = new EffectVisual(this.effectGeometry, effect, source, target, duration, this.quality.effectParticles, removed, () => {
       this.effects.delete(visual)
+      this.effectCaption.hidden = this.effects.size === 0
       done()
       this.invalidate()
     })
@@ -399,9 +478,13 @@ export class ThreeBoard implements ThreeBoardApi {
     return visual.cancel
   }
 
+  retainEffectTargets(instanceIds: readonly string[]): void {
+    this.cards?.retainRemovedTargets(instanceIds)
+  }
+
   private actorAnchor(actor: number, hand = false): CardAnchor {
     const row: BoardRow = actor === this.actor ? hand ? 'hand' : 'near' : 'far'
-    return { x: 0, y: this.layout.rows[row].y, width: this.layout.cardWidth, height: this.layout.cardHeight, owner: actor, zone: hand ? 'hand' : 'battlefield' }
+    return { x: cardSlotX(0, 1, this.layout), y: this.layout.rows[row].y, width: this.layout.cardWidth, height: this.layout.cardHeight, owner: actor, zone: hand ? 'hand' : 'battlefield' }
   }
 
   private effectTargetAnchor(effect: VisualEffectDescriptor): CardAnchor {
@@ -426,6 +509,8 @@ export class ThreeBoard implements ThreeBoardApi {
   private visibilityChanged = (): void => {
     if (this.disposed) return
     this.lastFrame = null
+    this.updateQuality()
+    this.setBackground(this.view?.boardTheme ?? DEFAULT_BOARD_THEME)
     if (!this.usable()) {
       if (this.frame !== null) cancelAnimationFrame(this.frame)
       this.frame = null
@@ -437,6 +522,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private motionChanged = (): void => {
     this.endDrag(false)
     this.updateQuality()
+    this.setBackground(this.view?.boardTheme ?? DEFAULT_BOARD_THEME)
     if (!this.quality.motion) for (const effect of this.effects) effect.cancel()
     this.onResize()
     this.invalidate()
@@ -446,23 +532,37 @@ export class ThreeBoard implements ThreeBoardApi {
     if (!this.usable()) return
     this.endDrag(false)
     this.onResize()
-    this.present()
+    this.present(false)
     this.invalidate()
   }
 
-  private applySize(): void {
+  private applySize(): boolean {
     const width = Math.max(1, this.stage.clientWidth || this.host.clientWidth || window.innerWidth || 1000)
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight ?? this.stage.clientHeight
+    const compact = compactBoardViewport(width, viewportHeight)
+    this.stage.dataset.layout = compact ? 'compact' : 'stacked'
+    const columns = boardColumns(width, compact)
     const headers = { far: 0, near: 0, hand: 0 }
     const controls = { far: 0, near: 0, hand: 0 }
     for (const row of ROWS) {
-      headers[row] = this.chrome.get(row)!.header.offsetHeight
-      controls[row] = this.chrome.get(row)!.controls.offsetHeight
+      const chrome = this.chrome.get(row)!
+      chrome.header.style.left = `${columns.labelLeft}px`
+      chrome.header.style.width = `${columns.labelWidth}px`
+      chrome.controls.style.left = `${columns.controlsLeft}px`
+      chrome.controls.style.width = `${columns.controlsWidth}px`
+      headers[row] = chrome.header.offsetHeight
+      controls[row] = chrome.controls.offsetHeight
     }
-    const minimum = boardLayout(width, 0, headers, controls).height
+    const minimum = boardLayout(width, 0, headers, controls, compact).height
     this.host.style.setProperty('--three-board-min-height', `${minimum + 4}px`)
     const height = Math.max(minimum, this.stage.clientHeight)
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
-    this.layout = boardLayout(width, height, headers, controls)
+    const nextLayout = boardLayout(width, height, headers, controls, compact)
+    const layoutChanged = JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
+    if (layoutChanged) {
+      for (const effect of this.effects) effect.cancel()
+    }
+    this.layout = nextLayout
     this.camera.left = -width / 2
     this.camera.right = width / 2
     this.camera.top = height / 2
@@ -472,43 +572,52 @@ export class ThreeBoard implements ThreeBoardApi {
     if (resized) this.renderer?.setSize(width, height, false)
     this.sized = true
     this.table.scale.set(width - 4, height - 4, 24)
-    this.background.scale.set(width - 12, height - 12, 1)
+    this.setBackground(this.view?.boardTheme ?? DEFAULT_BOARD_THEME)
     this.drop.scale.set(this.layout.drop.width, this.layout.drop.height, 1)
     this.drop.position.x = this.layout.drop.x
     this.drop.position.y = this.layout.drop.y
+    this.effectCaption.style.left = `${width / 2 + this.layout.drop.x}px`
+    this.effectCaption.style.top = `${height / 2 - this.layout.rows.near.y}px`
+    this.effectCaption.style.maxWidth = `${columns.cardsWidth - 12}px`
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
       chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
       chrome.controls.style.top = `${this.layout.rows[row].controlsTop}px`
+      const surface = this.surfaces.get(row)!
+      surface.position.set(cardSlotX(0, 1, this.layout), this.layout.rows[row].y, 0)
+      surface.scale.set(columns.cardsWidth, this.layout.rows[row].height + 4, 1)
+      const owner = row === 'far' ? 1 - this.actor : this.actor
+      surface.material.color.set(this.view?.game?.actor === owner ? '#214c3b' : '#152b3b')
+      surface.material.opacity = row === 'hand' ? 0.35 : 0.68
     }
+    return layoutChanged
   }
 
   private updateQuality(): void {
     const profile = threeQualityProfile({
       preference: this.view?.renderQualityPreference ?? 'auto',
-      width: this.layout.width,
-      height: this.layout.height,
+      width: window.visualViewport?.width ?? window.innerWidth ?? this.layout.width,
+      height: window.visualViewport?.height ?? window.innerHeight ?? this.layout.height,
       devicePixelRatio: window.devicePixelRatio,
       animationSpeed: this.view?.animationSpeed,
       reducedMotion: this.motionQuery?.matches ?? false,
+      hidden: !this.visible || document.hidden,
     })
     if (this.quality.pixelRatio !== profile.pixelRatio) this.renderer?.setPixelRatio(profile.pixelRatio)
     this.quality = profile
     if (!profile.motion) {
       this.endDrag(false)
+      this.cards?.finishMotion()
+      this.positionTargetLabels()
       for (const effect of this.effects) effect.cancel()
     }
   }
 
   private setBackground(theme: AppViewModel['boardTheme']): void {
-    const key = `${theme}:${this.quality.backgroundVariant}`
-    if (!this.assets || this.backgroundKey === key) return
-    const lease = this.assets.acquireBoard(theme, this.quality.backgroundVariant)
-    this.backgroundLease?.release()
-    this.backgroundLease = lease
-    this.backgroundKey = key
-    this.backgroundMaterial.map = lease.texture
-    this.backgroundMaterial.needsUpdate = true
+    const width = Math.max(1, this.layout.width - 12)
+    const height = Math.max(1, this.layout.height - 12)
+    this.background?.group.position.set(-width / 2, height / 2, 0)
+    this.background?.sync({ theme, profile: this.quality, width, height })
   }
 
   private createChrome(row: BoardRow): void {
@@ -522,12 +631,28 @@ export class ThreeBoard implements ThreeBoardApi {
     stats.className = 'three-board-stats'
     stats.hidden = row === 'hand'
     summary.append(label, stats)
+    const stacks: HTMLSpanElement[] = []
+    if (row !== 'hand') {
+      const holder = document.createElement('div')
+      holder.className = 'three-board-stacks'
+      holder.setAttribute('aria-hidden', 'true')
+      for (let index = 0; index < 2; index++) {
+        const stack = document.createElement('span')
+        stack.className = 'three-board-stack'
+        holder.append(stack)
+        stacks.push(stack)
+      }
+      summary.append(holder)
+    }
     header.append(summary)
     const controls = document.createElement('div')
     controls.className = 'three-board-pagination'
     const previous = document.createElement('button')
     const next = document.createElement('button')
     const count = document.createElement('span')
+    const targets = document.createElement('span')
+    targets.className = 'three-board-target-pages'
+    targets.hidden = true
     previous.type = next.type = 'button'
     previous.textContent = '‹ Previous'
     next.textContent = 'Next ›'
@@ -536,10 +661,10 @@ export class ThreeBoard implements ThreeBoardApi {
     const forward = (): void => this.changePage(row, 1)
     previous.addEventListener('click', back)
     next.addEventListener('click', forward)
-    controls.append(previous, count, next)
+    controls.append(previous, count, next, targets)
     this.stage.append(header, controls)
     this.chrome.set(row, {
-      header, label, stats, controls, previous, next, count,
+      header, label, stats, controls, previous, next, count, targets, stacks,
       dispose: (): void => {
         previous.removeEventListener('click', back)
         next.removeEventListener('click', forward)
@@ -552,7 +677,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.endDrag(false)
     this.onResize()
     this.pages[row] += delta
-    this.present()
+    this.present(false)
     this.invalidate()
   }
 
@@ -578,6 +703,10 @@ export class ThreeBoard implements ThreeBoardApi {
     if (!this.usable()) return
     const delta = this.lastFrame === null ? 16 : Math.max(0, Math.min(64, now - this.lastFrame))
     this.lastFrame = now
+    const moving = this.cards?.animating
+    this.cards?.advance(delta)
+    if (moving) this.positionTargetLabels()
+    this.background?.advance(delta)
     for (const effect of this.effects) effect.advance(delta)
     const drag = this.drag
     if (drag?.returning) {
@@ -595,7 +724,7 @@ export class ThreeBoard implements ThreeBoardApi {
       this.fail('Three.js rendering failed. Switching to the DOM renderer.')
       return
     }
-    if (this.effects.size || this.drag?.returning) this.invalidate()
+    if (this.effects.size || this.drag?.returning || this.cards?.animating || this.background?.animating) this.invalidate()
     else this.lastFrame = null
   }
 
@@ -640,14 +769,17 @@ export class ThreeBoard implements ThreeBoardApi {
     this.effects.clear()
     for (const chrome of this.chrome.values()) chrome.dispose()
     this.chrome.clear()
+    this.targetLabels.clear()
+    for (const surface of this.surfaces.values()) surface.material.dispose()
+    this.surfaces.clear()
     this.cards?.dispose()
+    this.background?.dispose()
+    this.background = null
     this.assets?.dispose()
-    this.backgroundLease = null
     this.effectGeometry.dispose()
     this.plane.dispose()
     this.box.dispose()
     this.tableMaterial.dispose()
-    this.backgroundMaterial.dispose()
     this.dropMaterial.dispose()
     this.scene.clear()
     this.renderer?.dispose()

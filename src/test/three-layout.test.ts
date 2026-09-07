@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boardLayout, cardSlotX, clientToBoard, pageWindow, pointInRect } from '../renderers/three/layout'
+import { boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pointInRect } from '../renderers/three/layout'
 
 describe('Three.js fixed tabletop layout', () => {
   it.each([[320, 690], [390, 844], [844, 690], [1440, 960]])('keeps page cards within %sx%s', (width, height) => {
@@ -59,6 +59,41 @@ describe('Three.js fixed tabletop layout', () => {
     expect(pageWindow(0, 4, 3)).toMatchObject({ page: 0, pages: 1, end: 0 })
     expect(pageWindow(NaN, Infinity, 0)).toMatchObject({ page: 0, pages: 1, count: 0 })
     expect(boardLayout(NaN, 0).width).toBe(1)
+  })
+
+  it.each([[844, 390], [1024, 600], [1440, 700]])('uses separate readable landscape lanes at %sx%s', (width, height) => {
+    expect(compactBoardViewport(width, height)).toBe(true)
+    const headers = { far: 90, near: 160, hand: 28 }
+    const controls = { far: 126, near: 126, hand: 126 }
+    const layout = boardLayout(width, height, headers, controls, true)
+    expect(layout.compact).toBe(true)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(104)
+    const first = layout.width / 2 + cardSlotX(0, layout.capacity, layout) - layout.cardWidth / 2
+    const last = layout.width / 2 + cardSlotX(layout.capacity - 1, layout.capacity, layout) + layout.cardWidth / 2
+    expect(first).toBeGreaterThan(layout.columns.labelLeft + layout.columns.labelWidth)
+    expect(last).toBeLessThan(layout.columns.controlsLeft)
+    for (const row of ['far', 'near', 'hand'] as const) {
+      const placement = layout.rows[row]
+      expect(placement.labelTop).toBeGreaterThanOrEqual(0)
+      expect(placement.labelTop + headers[row]).toBeLessThan(layout.height)
+      expect(placement.controlsTop + controls[row]).toBeLessThan(layout.height)
+    }
+    expect(layout.height).toBeLessThan(boardLayout(width, height, headers, controls).height)
+    expect(pointInRect({ x: cardSlotX(0, 1, layout), y: layout.rows.near.y }, layout.drop)).toBe(true)
+    expect(pointInRect({ x: cardSlotX(0, 1, layout), y: layout.rows.hand.y }, layout.drop)).toBe(false)
+  })
+
+  it('keeps enlarged landscape text scrollable and never classifies a tall board as the viewport', () => {
+    expect(compactBoardViewport(844, 390)).toBe(true)
+    expect(compactBoardViewport(844, 1100)).toBe(false)
+    expect(compactBoardViewport(390, 844)).toBe(false)
+    expect(compactBoardViewport(Infinity, 300)).toBe(false)
+    const headers = { far: 220, near: 440, hand: 100 }
+    const controls = { far: 180, near: 180, hand: 180 }
+    const layout = boardLayout(844, 300, headers, controls, true)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(104)
+    expect(layout.rows.far.y - layout.rows.near.y).toBeGreaterThan(300)
+    expect(layout.height).toBeGreaterThan(800)
   })
 
   it('converts using the displayed rectangle, independent of DPR or CSS scaling', () => {

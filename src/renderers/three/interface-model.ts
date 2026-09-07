@@ -12,10 +12,12 @@ import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
 import { buildCounterHandOptions, type CounterHandOptions } from '../../app/response-options'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel, type GameUiState, type Mode } from '../../app/types'
 import { canPreviewCard } from '../card-preview'
-import { escapeHtml, renderCardTile, renderInstallControls, renderLobby, renderP2P } from '../dom-utils'
+import { escapeHtml, renderCardTile, renderInstallControls, renderP2P, rendererSwitchLink } from '../dom-utils'
+import { hasSavedAdventureRun, isAdventureResumable, LOBBY_MODE_OPTIONS } from '../phaser/lobby-actions'
 import type { BoardHit } from './contracts'
+import { renderThreeLog } from './interface-log'
 
-export const THREE_LOG_LIMIT = 14
+export type ThreeLobbyPage = 'root' | 'settings' | 'recording'
 
 export interface InterfaceUi {
   readonly presentedActor: number
@@ -25,6 +27,7 @@ export interface InterfaceUi {
   readonly preview: BoardHit | null
   readonly hostAnswerDraft: string
   readonly joinOfferDraft: string
+  readonly lobbyPage?: ThreeLobbyPage
 }
 
 export interface TargetModel {
@@ -206,7 +209,32 @@ function renderMenu(view: AppViewModel): string {
     ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
     : button('back-to-lobby', view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby')
       + (view.mode === 'tutorial' || view.replay.active ? '' : button('rematch', 'Rematch'))}</div>
+    ${renderThreeLog(view.game!, view.cardVisualStyle)}
     ${renderThreeSettings(view)}${renderInstallControls()}${renderRecorder(view)}${renderReplay(view)}`)
+}
+
+function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
+  const page = ui.lobbyPage ?? 'root'
+  const adventure = view.adventure
+  const nextOpponent = adventure.opponentLineup[adventure.currentOpponentIndex]
+  const root = `<nav class="three-lobby-modes" aria-label="Game modes">
+    ${button('', 'Tutorial (Learn to Play)', false, ' data-mode="tutorial"')}
+    ${LOBBY_MODE_OPTIONS.map(({ mode, label }) => button('', label, false, ` data-mode="${mode}"`)).join('')}
+    ${isAdventureResumable(adventure) ? button('resume-adventure', 'Resume Adventure') : ''}</nav>
+    <nav class="three-actions" aria-label="Lobby options">${button('lobby-settings', 'Settings')}${button('lobby-recording', 'Recording')}</nav>
+    <section aria-label="Adventure"><h2>Adventure</h2>
+      <p>High Score: ${adventure.highScore} · Status: ${escapeHtml(adventure.status)}</p>
+      <p>Round: ${adventure.currentRound}/7 · Chances: ${adventure.remainingChances} · Win Streak: ${adventure.winStreak}</p>
+      <p>Total Rounds: ${adventure.totalRoundsPlayed} · Cards Played: ${adventure.totalCardsPlayed}</p>
+      <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
+      ${hasSavedAdventureRun(adventure) ? button('abandon-adventure', 'Reset Adventure Run') : ''}</section>
+    ${renderInstallControls()}<p>${rendererSwitchLink(view.renderer)}</p>`
+  return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
+    <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Basic Land Game${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
+      ${page === 'root' ? '<p>Land-only 2-player game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>
+    ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
+    ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
+  </section>`
 }
 
 function renderTargets(view: AppViewModel, ui: InterfaceUi, target: TargetModel): string {
@@ -227,7 +255,7 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
   const previewAllowed = canPreviewCard({ phase: game.phase, pendingPlayLandTargetSelection: !!ui.pendingCardId, menuOpen: blocked })
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
   const owners = ui.presentedActor === 1 ? [1, 0] : [0, 1]
-  return `<details data-detail-key="cards" open><summary>Cards &amp; keyboard controls</summary>
+  return `<details data-detail-key="cards"><summary>Cards &amp; keyboard controls</summary>
     <p>Play, respond, or preview using the hand-card controls, or interact with the 3D board above.</p>
     ${owners.map((owner) => {
       const player = game.players[owner]
@@ -256,24 +284,11 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
     }).join('')}</details>`
 }
 
-export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): string {
-  if (!isThreeInGame(view)) {
-    const p2p = view.mode === 'p2p-host' || view.mode === 'p2p-join'
-    const signaling = p2p ? renderP2P(view, ui.hostAnswerDraft, ui.joinOfferDraft)
-      .replace('id="start-p2p-game"', `id="start-p2p-game"${view.p2pConnected && !view.p2pStarted ? '' : ' disabled'}`)
-      .replace('id="offer-text"', 'id="offer-text" aria-label="Local offer"')
-      .replace('id="answer-text"', 'id="answer-text" aria-label="Remote answer"')
-      .replace('id="join-offer-text"', 'id="join-offer-text" aria-label="Host offer"')
-      .replace('id="join-answer-text"', 'id="join-answer-text" aria-label="Local answer"') : ''
-    return `${renderLobby(view)}${signaling}${p2p
-      ? `<p>${view.p2pConnected ? 'Peer connected. Waiting for both peers to confirm game readiness.' : 'Waiting for peer connection.'}</p>${button('back-to-lobby', 'Back to Lobby')}` : ''}`
-  }
+export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
+  if (!isThreeInGame(view)) return ''
   const game = view.game!
   const targets = threeTargets(view, ui)
-  const response = threeResponse(view, ui)
-  const blocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
-  const previewName = ui.preview ? threePreviewName(game, ui.preview) : null
-  const omitted = Math.max(0, game.log.length - THREE_LOG_LIMIT)
+  const response = threePrimaryAction(view, ui)
   return `<section class="three-hud" aria-label="Game controls">
     <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
       <h2>Turn ${game.turn} · ${escapeHtml(game.phase)}</h2><span>Player ${game.actor + 1}</span></header>
@@ -282,11 +297,36 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi): strin
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? 'Keep playing to continue the tutorial.')}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>Adventure round ${view.adventure.currentRound}/7 · Chances ${view.adventure.remainingChances} · Win streak ${view.adventure.winStreak} · High score ${view.adventure.highScore}</p>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
+    ${targets && !ui.menuOpen && !ui.preview ? `<p class="three-required-prompt">${escapeHtml(targets.title)}</p>` : ''}
+    ${response?.prompt ? `<p class="three-required-prompt">${escapeHtml(response.prompt)}</p>` : ''}
+    ${ui.menuOpen ? '' : renderReplay(view)}</section>`
+}
+
+export function renderThreeHover(view: AppViewModel, hit: BoardHit | null): string {
+  const name = view.game && hit ? threePreviewName(view.game, hit) : null
+  return name ? `<aside class="three-hover-preview" aria-hidden="true">${renderCardTile(name, view.cardVisualStyle)}</aside>` : ''
+}
+
+export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includeHud = true): string {
+  if (!isThreeInGame(view)) {
+    const p2p = view.mode === 'p2p-host' || view.mode === 'p2p-join'
+    const signaling = p2p ? renderP2P(view, ui.hostAnswerDraft, ui.joinOfferDraft)
+      .replace('id="start-p2p-game"', `id="start-p2p-game"${view.p2pConnected && !view.p2pStarted ? '' : ' disabled'}`)
+      .replace('id="offer-text"', 'id="offer-text" aria-label="Local offer"')
+      .replace('id="answer-text"', 'id="answer-text" aria-label="Remote answer"')
+      .replace('id="join-offer-text"', 'id="join-offer-text" aria-label="Host offer"')
+      .replace('id="join-answer-text"', 'id="join-answer-text" aria-label="Local answer"') : ''
+    return `${renderThreeLobby(view, ui)}${signaling}${p2p
+      ? `<p>${view.p2pConnected ? 'Peer connected. Waiting for both peers to confirm game readiness.' : 'Waiting for peer connection.'}</p>${button('back-to-lobby', 'Back to Lobby')}` : ''}`
+  }
+  const game = view.game!
+  const targets = threeTargets(view, ui)
+  const response = threeResponse(view, ui)
+  const blocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
+  const previewName = ui.preview ? threePreviewName(game, ui.preview) : null
+  return `${includeHud ? renderThreeHud(view, ui) : ''}<section class="three-secondary-controls" aria-label="Additional game controls">
     ${targets && !ui.menuOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
-    ${renderReplay(view)}${renderNativeCards(view, ui, blocked, response)}
-    <details data-detail-key="log"><summary>Replay Log (${Math.min(THREE_LOG_LIMIT, game.log.length)} latest)</summary>
-      ${omitted ? `<p>${omitted} older entries omitted. Export the recording for the full history.</p>` : ''}
-      <ol>${game.log.slice(-THREE_LOG_LIMIT).map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ol></details>
+    ${renderNativeCards(view, ui, blocked, response)}
     ${ui.menuOpen ? renderMenu(view) : ''}
     ${previewName ? modal('preview', `${previewName} card preview`, renderCardTile(previewName, view.cardVisualStyle)) : ''}
     </section>`

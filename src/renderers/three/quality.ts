@@ -18,6 +18,7 @@ export interface ThreeQualityProfile {
   readonly shadows: boolean
   readonly motion: boolean
   readonly effectParticles: number
+  readonly ambienceParticles: number
   readonly backgroundVariant: BoardBackgroundVariant
 }
 
@@ -45,6 +46,7 @@ export function threeQualityProfile(input: ThreeQualityInput): ThreeQualityProfi
     shadows: tier !== 'low' && !phone,
     motion,
     effectParticles: !motion ? 0 : tier === 'low' || phone ? 3 : 8,
+    ambienceParticles: !motion || tier === 'low' ? 0 : phone || tier === 'balanced' ? 3 : 8,
     // Do not churn multi-megabyte background downloads when crossing viewport thresholds.
     backgroundVariant: input.preference === 'high' ? 'hd' : input.preference === 'low' ? 'low' : 'balanced',
   })

@@ -14,6 +14,16 @@ export interface RowLayout {
   readonly y: number
   readonly labelTop: number
   readonly controlsTop: number
+  readonly height: number
+}
+
+export interface BoardColumns {
+  readonly labelLeft: number
+  readonly labelWidth: number
+  readonly controlsLeft: number
+  readonly controlsWidth: number
+  readonly cardsLeft: number
+  readonly cardsWidth: number
 }
 
 export interface ThreeLayout {
@@ -23,6 +33,8 @@ export interface ThreeLayout {
   readonly cardHeight: number
   readonly capacity: number
   readonly gap: number
+  readonly compact: boolean
+  readonly columns: BoardColumns
   readonly rows: Readonly<Record<BoardRow, RowLayout>>
   readonly drop: BoardRect
 }
@@ -35,16 +47,65 @@ export interface PageWindow {
   readonly count: number
 }
 
+export function compactBoardViewport(width: number, height: number): boolean {
+  return Number.isFinite(width) && Number.isFinite(height)
+    && width >= 760 && height > 0 && width > height && height <= 740
+}
+
+export function boardColumns(width: number, compact: boolean): BoardColumns {
+  const w = Number.isFinite(width) && width > 0 ? width : 1
+  const labelWidth = compact ? Math.min(240, w * 0.26) : Math.max(1, w - 24)
+  const controlsWidth = compact ? 108 : Math.max(1, w - 20)
+  const controlsLeft = compact ? w - controlsWidth - 12 : 10
+  const cardsLeft = compact ? labelWidth + 24 : 12
+  return {
+    labelLeft: 12, labelWidth, controlsLeft, controlsWidth, cardsLeft,
+    cardsWidth: Math.max(1, compact ? controlsLeft - cardsLeft - 12 : w - 24),
+  }
+}
+
 export function boardLayout(
   width: number,
   height: number,
   headers: Readonly<Record<BoardRow, number>> = { far: 48, near: 96, hand: 28 },
   controls: Readonly<Record<BoardRow, number>> = { far: 44, near: 44, hand: 44 },
+  compact = false,
 ): ThreeLayout {
   const w = Number.isFinite(width) && width > 0 ? width : 1
+  compact = compact && w >= 760
+  const columns = boardColumns(w, compact)
   const rows = ['far', 'near', 'hand'] as const
   const safeHeight = (value: number, minimum: number): number =>
     Number.isFinite(value) ? Math.max(minimum, value) : minimum
+  if (compact) {
+    const minimumRows = rows.map((row) => Math.max(104, safeHeight(headers[row], 28), safeHeight(controls[row], 44)))
+    const minimum = minimumRows.reduce((sum, size) => sum + size + 24, 0)
+    const h = Math.max(safeHeight(height, 1), minimum)
+    const extra = (h - minimum) / rows.length
+    const cardHeight = Math.min(180, ...minimumRows.map((size) => size + extra))
+    const cardWidth = Math.min(cardHeight * 0.73, columns.cardsWidth)
+    const gap = 12
+    let top = 0
+    const row = (name: BoardRow, index: number): RowLayout => {
+      const space = minimumRows[index] + extra
+      const center = top + 12 + space / 2
+      top += space + 24
+      return {
+        y: h / 2 - center, height: space,
+        labelTop: center - safeHeight(headers[name], 28) / 2,
+        controlsTop: center - safeHeight(controls[name], 44) / 2,
+      }
+    }
+    const positions = { far: row('far', 0), near: row('near', 1), hand: row('hand', 2) }
+    return {
+      width: w, height: h, cardWidth, cardHeight, gap, compact, columns, rows: positions,
+      capacity: Math.max(1, Math.min(16, Math.floor((columns.cardsWidth + gap) / (cardWidth + gap)))),
+      drop: {
+        x: columns.cardsLeft + columns.cardsWidth / 2 - w / 2, y: positions.near.y,
+        width: columns.cardsWidth, height: positions.near.height,
+      },
+    }
+  }
   const overhead = rows.reduce((sum, row) => sum + safeHeight(headers[row], 28) + safeHeight(controls[row], 44) + 30, 0)
   // Grow the table on short screens instead of squeezing cards under its HTML controls.
   const h = Math.max(safeHeight(height, 1), overhead + 3 * 104)
@@ -59,7 +120,7 @@ export function boardLayout(
     const cardsTop = labelTop + safeHeight(headers[name], 28) + 8
     const controlsTop = cardsTop + cardSpace + 8
     top = controlsTop + safeHeight(controls[name], 44) + 8
-    return { y: h / 2 - cardsTop - cardSpace / 2, labelTop, controlsTop }
+    return { y: h / 2 - cardsTop - cardSpace / 2, labelTop, controlsTop, height: cardSpace }
   }
   const positions = { far: row('far'), near: row('near'), hand: row('hand') }
   return {
@@ -69,6 +130,8 @@ export function boardLayout(
     cardHeight,
     capacity,
     gap,
+    compact,
+    columns,
     rows: positions,
     drop: { x: 0, y: positions.near.y, width: Math.max(1, w - 24), height: cardSpace },
   }
@@ -84,7 +147,8 @@ export function pageWindow(count: number, requested: number, capacity: number): 
 }
 
 export function cardSlotX(slot: number, visibleCount: number, layout: ThreeLayout): number {
-  return (slot - (visibleCount - 1) / 2) * (layout.cardWidth + layout.gap)
+  return layout.columns.cardsLeft + layout.columns.cardsWidth / 2 - layout.width / 2
+    + (slot - (visibleCount - 1) / 2) * (layout.cardWidth + layout.gap)
 }
 
 /** The camera uses CSS pixels, never the canvas's DPR-scaled backing store. */

@@ -221,6 +221,85 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.textContent).toBe('End Turn')
   })
 
+  it('keeps stack silhouettes accurate without duplicating their accessible count labels', () => {
+    const h = setup()
+    const stacks = h.near.all('three-board-stack')
+    expect(stacks.map((stack) => stack.textContent)).toEqual(['Deck 45', 'GY 0'])
+    expect(stacks[0].dataset.empty).toBe('false')
+    expect(stacks[1].dataset.empty).toBe('true')
+    expect(h.near.all('three-board-stacks')[0].getAttribute('aria-hidden')).toBe('true')
+    h.app.game!.players[0].graveyard.push({ id: 'discard', name: 'Forest', type: 'land' })
+    h.present()
+    expect(h.near.all('three-board-stack')).toEqual(stacks)
+    expect(stacks[1].textContent).toBe('GY 1')
+    expect(stacks[1].dataset.empty).toBe('false')
+  })
+
+  it('suppresses drop input behind overlays but keeps paginated battlefield targets discoverable', () => {
+    const h = setup()
+    h.app.game!.players[1].battlefield = Array.from({ length: 8 }, (_, index) => ({
+      instanceId: `target-${index}`, card: { id: `land-${index}`, name: 'Forest', type: 'land' },
+    }))
+    const view = buildViewModel(h.app, false)
+    const primary = threePrimaryAction(view, {
+      presentedActor: 0, menuOpen: false, preview: null, pendingCardId: '0-0',
+      phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
+    })
+    h.board.render(view, 0, new Set(['target-0', 'target-7']), null, primary, true)
+    expect(h.board.containsDrop(195, 380)).toBe(false)
+    expect(h.far.parent!.all('three-board-target-label')).toHaveLength(1)
+    expect(h.host.all('three-board-target-pages').some((entry) => entry.textContent.includes('Targets: page 1, 2'))).toBe(true)
+    h.board.render(view, 0, new Set(), null, primary, true)
+    expect(h.host.all('three-board-target-label')).toHaveLength(0)
+    expect(h.host.all('three-board-target-pages').every((entry) => entry.hidden)).toBe(true)
+  })
+
+  it.each([
+    ['play_land', 'Land played'], ['forest_return', 'Forest returned'],
+    ['swamp_discard', 'Swamp discard'], ['mountain_destroy', 'Mountain destroyed a land'],
+    ['plains_reuse', 'Plains reused a land'], ['counter_resolved', 'Counter resolved'],
+  ] as const)('announces %s separately from controller status and releases it once', (kind, label) => {
+    const h = setup()
+    h.app.status = 'Storage unavailable'
+    h.present()
+    const done = vi.fn()
+    const cancel = h.board.playEffect({
+      kind, actor: 0, targetActor: 1, land: 'Forest', visualStyle: 'classic',
+      palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+    }, 150, done)
+    const caption = h.host.all('three-board-effect-caption')[0]
+    expect(caption.textContent).toBe(label)
+    expect(caption.hidden).toBe(false)
+    expect(caption.getAttribute('aria-live')).toBe('polite')
+    expect(h.app.status).toBe('Storage unavailable')
+    cancel()
+    cancel()
+    expect(caption.hidden).toBe(true)
+    expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('stops cosmetic work while hidden and leaves animation-off rendering idle', () => {
+    const h = setup()
+    const done = vi.fn()
+    h.board.playEffect({
+      kind: 'play_land', actor: 0, land: 'Forest', visualStyle: 'classic',
+      palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+    }, 350, done)
+    h.document.hidden = true
+    h.document.dispatchEvent(new Event('visibilitychange'))
+    expect(done).toHaveBeenCalledOnce()
+    expect(cancelAnimationFrame).toHaveBeenCalled()
+    expect(h.host.all('three-board-effect-caption')[0].hidden).toBe(true)
+    h.app.animationSpeed = 'off'
+    h.present()
+    h.document.hidden = false
+    h.document.dispatchEvent(new Event('visibilitychange'))
+    const frame = vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0]
+    const scheduled = vi.mocked(requestAnimationFrame).mock.calls.length
+    frame(1000)
+    expect(vi.mocked(requestAnimationFrame).mock.calls).toHaveLength(scheduled)
+  })
+
   it('keeps counts including zero during game over and replay, without gameplay actions', () => {
     const h = setup()
     h.app.game!.players[1].deck = []

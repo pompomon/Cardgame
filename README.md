@@ -50,10 +50,15 @@ The selected renderer is also stored in `localStorage` for later visits.
   discard cost and supports keyboard activation instead of opening a preview.
   Menus and previews support keyboard navigation and cancellation.
 - Card rows have navigation for overflow rather than indefinitely shrinking
-  cards. Portrait and landscape layouts keep the camera fixed during dragging.
+  cards. Short landscape layouts place player information, cards, and pagination
+  in separate lanes; enlarged text and short screens still scroll safely.
+  The camera stays fixed during dragging. Target-page notices keep off-page
+  choices discoverable, and deck/graveyard stacks distinguish empty piles.
 - Card Style, Board Theme, Render Quality, and Animations use the existing
   preferences. Choosing Three.js does not force HD over a saved artwork style.
-  Reduced motion and hidden pages suppress cosmetic effects.
+  Backgrounds use aspect-correct cropping and keep the previous theme visible
+  while a replacement loads. Reduced motion, animation-off settings, and hidden
+  pages suppress card movement, themed ambience, and cosmetic effects.
 - Three.js and Phaser load on demand. An unvisited renderer chunk may not be
   available offline; selecting it then falls back to the already-loaded DOM
   renderer. Open Three.js online once to cache its bundle and selected artwork.

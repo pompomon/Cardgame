@@ -23,6 +23,7 @@ export function presentationBoundary(previous: AppViewModel | null, next: AppVie
 export class ThreeEffects {
   private readonly play: EffectPlayback
   private readonly onSettled: () => void
+  private readonly retainRemovedTargets: (instanceIds: readonly string[]) => void
   private readonly presentation = new BoardPresentationCoordinator()
   private view: AppViewModel | null = null
   private queue: LogEvent[] = []
@@ -31,10 +32,15 @@ export class ThreeEffects {
   private generation = 0
   private suppressed = false
   private cursor = 0
+  private playingTarget: string | undefined
 
-  constructor(play: EffectPlayback, onSettled: () => void) {
+  constructor(
+    play: EffectPlayback, onSettled: () => void,
+    retainRemovedTargets: (instanceIds: readonly string[]) => void = () => {},
+  ) {
     this.play = play
     this.onSettled = onSettled
+    this.retainRemovedTargets = retainRemovedTargets
   }
 
   update(view: AppViewModel, suppressed: boolean): number {
@@ -53,6 +59,7 @@ export class ThreeEffects {
       }
       this.queue = this.queue.slice(-MAX_QUEUED_EFFECTS)
       this.cursor = game.events.length
+      this.syncRetainedTargets()
     }
     return game
       ? this.presentation.resolve(game.actor, view.controllers, this.playing || this.queue.length > 0, !this.suppressed)
@@ -64,6 +71,7 @@ export class ThreeEffects {
     if (!view?.game || this.playing || this.suppressed) return
     const event = this.queue.shift()
     if (!event) {
+      this.syncRetainedTargets()
       if (this.presentation.effectsDrained()) this.onSettled()
       return
     }
@@ -74,23 +82,41 @@ export class ThreeEffects {
     }
     const generation = this.generation
     this.playing = true
+    this.playingTarget = effect.kind === 'mountain_destroy' ? effect.targetInstanceId : undefined
+    this.syncRetainedTargets()
     let completed = false
     const cancel = this.play(effect, durationMsForSpeed(view.animationSpeed), () => {
       if (completed || generation !== this.generation) return
       completed = true
       this.cancelPlaying = null
       this.playing = false
+      this.playingTarget = undefined
       this.pump()
     })
     if (!completed && generation === this.generation) this.cancelPlaying = cancel
+    else if (!completed) cancel()
   }
 
   private clear(): void {
     ++this.generation
-    this.cancelPlaying?.()
+    const cancel = this.cancelPlaying
     this.cancelPlaying = null
     this.playing = false
+    this.playingTarget = undefined
     this.queue = []
+    cancel?.()
+    this.syncRetainedTargets()
+  }
+
+  private syncRetainedTargets(): void {
+    const targets = new Set<string>()
+    if (this.playingTarget !== undefined) targets.add(this.playingTarget)
+    for (const event of this.queue) {
+      if (event.kind === 'ability_mountain_destroy' && event.targetInstanceId !== undefined) {
+        targets.add(event.targetInstanceId)
+      }
+    }
+    this.retainRemovedTargets([...targets])
   }
 
   dispose(): void {
