@@ -97,7 +97,7 @@ describe('retained Three.js card registry', () => {
       const fields = {
         view, actor: 0, response: response as CounterHandOptions | null, cards: registry, chrome,
         pages: { far: 0, near: 0, hand: 0 }, layout: { ...boardLayout(1000, 750), capacity: 2 },
-        quality: { shadows: false }, targetIds: new Set(), drag: null, canDrop: false,
+        quality: { shadows: false }, targetIds: new Set(), effectDescriptors: new Map(), drag: null, canDrop: false,
         instruction: { hidden: true }, instructionText: { textContent: '' }, instructionSizes: [],
         dropMaterial: { opacity: 0 },
         primaryButton: { ownerDocument: { activeElement: null }, hidden: true, disabled: true, textContent: '', dataset: {} },

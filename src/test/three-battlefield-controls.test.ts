@@ -300,6 +300,33 @@ describe('constructed Three battlefield controls', () => {
     expect(vi.mocked(requestAnimationFrame).mock.calls).toHaveLength(scheduled)
   })
 
+  it('reanchors effects on resize and pagination without completing or draining their queue', () => {
+    const h = setup()
+    h.app.game!.players[1].battlefield = Array.from({ length: 8 }, (_, index) => ({
+      instanceId: `far-${index}`, card: { id: `far-card-${index}`, name: 'Forest', type: 'land' },
+    }))
+    h.present()
+    const done = vi.fn()
+    const cancel = h.board.playEffect({
+      kind: 'play_land', actor: 1, sourceInstanceId: 'far-0', land: 'Forest', visualStyle: 'classic',
+      palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+    }, 350, done)
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 844
+    stage.clientHeight = 390
+    Object.assign(h.window, { innerWidth: 844, innerHeight: 390 })
+    ObserverStub.latest.callback()
+    expect(stage.dataset.layout).toBe('compact')
+    expect(done).not.toHaveBeenCalled()
+    const next = h.host.all('three-board-pagination')[0].children[2]
+    expect(next.disabled).toBe(false)
+    emit(next, 'click')
+    expect(done).not.toHaveBeenCalled()
+    expect(h.host.all('three-board-effect-caption')[0].hidden).toBe(false)
+    cancel()
+    expect(done).toHaveBeenCalledOnce()
+  })
+
   it('keeps counts including zero during game over and replay, without gameplay actions', () => {
     const h = setup()
     h.app.game!.players[1].deck = []

@@ -60,6 +60,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly drop = new Mesh(this.plane, this.dropMaterial)
   private readonly effectGeometry = new EffectGeometry()
   private readonly effects = new Set<EffectVisual>()
+  private readonly effectDescriptors = new Map<EffectVisual, VisualEffectDescriptor>()
   private readonly chrome = new Map<BoardRow, RowChrome>()
   private readonly surfaces = new Map<BoardRow, Mesh<PlaneGeometry, MeshBasicMaterial>>()
   private readonly targetLabels = new Map<string, HTMLSpanElement>()
@@ -223,11 +224,11 @@ export class ThreeBoard implements ThreeBoardApi {
     this.inputBlocked = blocked
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
-    this.present(!reoriented)
+    this.present(!reoriented, reoriented)
     this.invalidate()
   }
 
-  private present(animate = true): void {
+  private present(animate = true, invalidateHistory = false): void {
     const game = this.view?.game
     if (!game) {
       this.canDrop = false
@@ -335,6 +336,8 @@ export class ThreeBoard implements ThreeBoardApi {
     const duration = animate && !resized && this.quality.motion && !this.drag
       ? Math.min(220, durationMsForSpeed(this.view?.animationSpeed ?? 'normal')) : 0
     this.cards?.reconcile(descriptors, duration)
+    if (resized || invalidateHistory) this.cards?.invalidateHistoricalAnchors()
+    this.reanchorEffects()
     this.syncTargetLabels(descriptors)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
@@ -407,6 +410,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.endDrag(false)
     this.cards?.finishMotion()
     this.positionTargetLabels()
+    this.reanchorEffects()
     const source = this.cards?.get(hit.key)
     if (!source?.descriptor.hit.playable || !source.descriptor.visible) return
     const proxy = this.cards!.createProxy(source)
@@ -468,11 +472,13 @@ export class ThreeBoard implements ThreeBoardApi {
       ? this.cards?.pinRemoved(effect.targetInstanceId) ?? null : null
     const visual = new EffectVisual(this.effectGeometry, effect, source, target, duration, this.quality.effectParticles, removed, () => {
       this.effects.delete(visual)
+      this.effectDescriptors.delete(visual)
       this.effectCaption.hidden = this.effects.size === 0
       done()
       this.invalidate()
     })
     this.effects.add(visual)
+    this.effectDescriptors.set(visual, effect)
     this.scene.add(visual.group)
     this.invalidate()
     return visual.cancel
@@ -480,6 +486,15 @@ export class ThreeBoard implements ThreeBoardApi {
 
   retainEffectTargets(instanceIds: readonly string[]): void {
     this.cards?.retainRemovedTargets(instanceIds)
+  }
+
+  private reanchorEffects(): void {
+    for (const [visual, descriptor] of this.effectDescriptors) {
+      visual.reanchor(
+        this.cards?.anchorFor(descriptor.sourceInstanceId) ?? this.actorAnchor(descriptor.actor),
+        this.effectTargetAnchor(descriptor),
+      )
+    }
   }
 
   private actorAnchor(actor: number, hand = false): CardAnchor {
@@ -532,7 +547,7 @@ export class ThreeBoard implements ThreeBoardApi {
     if (!this.usable()) return
     this.endDrag(false)
     this.onResize()
-    this.present(false)
+    this.present(false, true)
     this.invalidate()
   }
 
@@ -559,9 +574,6 @@ export class ThreeBoard implements ThreeBoardApi {
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
     const nextLayout = boardLayout(width, height, headers, controls, compact)
     const layoutChanged = JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
-    if (layoutChanged) {
-      for (const effect of this.effects) effect.cancel()
-    }
     this.layout = nextLayout
     this.camera.left = -width / 2
     this.camera.right = width / 2
@@ -677,7 +689,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.endDrag(false)
     this.onResize()
     this.pages[row] += delta
-    this.present(false)
+    this.present(false, true)
     this.invalidate()
   }
 
@@ -705,7 +717,10 @@ export class ThreeBoard implements ThreeBoardApi {
     this.lastFrame = now
     const moving = this.cards?.animating
     this.cards?.advance(delta)
-    if (moving) this.positionTargetLabels()
+    if (moving) {
+      this.positionTargetLabels()
+      this.reanchorEffects()
+    }
     this.background?.advance(delta)
     for (const effect of this.effects) effect.advance(delta)
     const drag = this.drag
@@ -767,6 +782,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.endDrag(false)
     for (const effect of this.effects) effect.cancel()
     this.effects.clear()
+    this.effectDescriptors.clear()
     for (const chrome of this.chrome.values()) chrome.dispose()
     this.chrome.clear()
     this.targetLabels.clear()
