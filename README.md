@@ -32,6 +32,9 @@ The selected renderer is also stored in `localStorage` for later visits.
   The saved renderer preference remains unchanged; DOM stays the default.
 - Renderer choices are available in the lobby. They navigate to a new page,
   so return to the lobby (or pause Adventure) before switching.
+- The lobby groups options into **Settings** and **Recording** submenus.
+  During a match, the HUD above the table keeps Menu, turn/phase, status, and
+  decision prompts available without opening the native card controls.
 - Drag a playable hand card onto your battlefield. Touch and pen movement must
   cross a threshold; tapping opens a preview. Multiple legal targets are selected
   before committing the action.
@@ -49,11 +52,22 @@ The selected renderer is also stored in `localStorage` for later visits.
   During a response, each eligible native hand-card control names the full
   discard cost and supports keyboard activation instead of opening a preview.
   Menus and previews support keyboard navigation and cancellation.
+- Mouse hover shows a non-modal preview without taking focus; click, tap, or
+  native keyboard controls still open the explicit preview. Hover is suppressed
+  while dragging, choosing responses/targets, or using a menu.
+- The game menu contains a collapsible **Replay Log** with the latest 200
+  structured events, or legacy text for older recordings. Scrolling back stops
+  automatic following; **Follow latest** resumes it.
 - Card rows have navigation for overflow rather than indefinitely shrinking
-  cards. Portrait and landscape layouts keep the camera fixed during dragging.
+  cards. Short landscape layouts place player information, cards, and pagination
+  in separate lanes; enlarged text and short screens still scroll safely.
+  The camera stays fixed during dragging. Target-page notices keep off-page
+  choices discoverable, and deck/graveyard stacks distinguish empty piles.
 - Card Style, Board Theme, Render Quality, and Animations use the existing
   preferences. Choosing Three.js does not force HD over a saved artwork style.
-  Reduced motion and hidden pages suppress cosmetic effects.
+  Backgrounds use aspect-correct cropping and keep the previous theme visible
+  while a replacement loads. Reduced motion, animation-off settings, and hidden
+  pages suppress card movement, themed ambience, and cosmetic effects.
 - Three.js and Phaser load on demand. An unvisited renderer chunk may not be
   available offline; selecting it then falls back to the already-loaded DOM
   renderer. Open Three.js online once to cache its bundle and selected artwork.

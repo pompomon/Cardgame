@@ -1,26 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppController, type ControllerApi } from '../app/controller'
 import { createGameRecord } from '../app/game-recording'
+import { DEFAULT_CARD_VISUAL_STYLE } from '../app/card-visual-styles'
 import type { AppViewModel } from '../app/types'
 import type { CounterHandOptions } from '../app/response-options'
+import type { BoardHit } from '../renderers/three/contracts'
 import { createInitialGame } from '../game/engine'
 import { threePrimaryAction, threeResponse, threeTargets, type ThreePrimaryAction } from '../renderers/three/interface-model'
 
 const mocks = vi.hoisted(() => ({
-  board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), playEffect: vi.fn(), canvas: {} },
-  ui: { update: vi.fn(), isBlocked: vi.fn(), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
-    response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn() },
+  board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
+  ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
+    response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn() },
   boardConstruct: vi.fn(),
+  uiConstruct: vi.fn(),
+  inputConstruct: vi.fn(),
   input: { cancel: vi.fn(), reconcile: vi.fn(), dispose: vi.fn() },
 }))
 vi.mock('../renderers/three/board', () => ({
   ThreeBoard: class { constructor(...args: unknown[]) { mocks.boardConstruct(...args); return mocks.board } },
 }))
 vi.mock('../renderers/three/interface', () => ({
-  ThreeInterface: class { constructor() { return mocks.ui } },
+  ThreeInterface: class { constructor(...args: unknown[]) { mocks.uiConstruct(...args); return mocks.ui } },
 }))
 vi.mock('../renderers/three/interaction', () => ({
-  ThreeInteraction: class { constructor() { return mocks.input } },
+  ThreeInteraction: class { constructor(...args: unknown[]) { mocks.inputConstruct(...args); return mocks.input } },
 }))
 import { ThreeRenderer } from '../renderers/three'
 
@@ -53,18 +57,82 @@ function harness() {
   } as unknown as HTMLElement
   const renderer = new ThreeRenderer()
   renderer.mount(container, {} as ControllerApi)
-  return { renderer, document, media, elements }
+  return { renderer, document, media, elements, container }
 }
 
 afterEach(() => {
   vi.clearAllMocks()
   mocks.ui.update.mockReset()
+  mocks.ui.isBlocked.mockReturnValue(false)
   mocks.ui.response = null
   mocks.ui.primaryAction = null
   vi.unstubAllGlobals()
 })
 
 describe('Three.js composition', () => {
+  it('mounts a separate HUD before the stable board and delegates hover only while mounted', () => {
+    const { renderer, elements, container } = harness()
+    expect(container.replaceChildren).toHaveBeenLastCalledWith(elements[2], elements[0], elements[1])
+    expect(mocks.uiConstruct).toHaveBeenLastCalledWith(elements[1], expect.anything(), expect.any(Function), expect.any(Function), elements[2])
+    const hover = mocks.inputConstruct.mock.calls.at(-1)![5] as (hit: BoardHit | null) => void
+    const hit: BoardHit = { key: 'card', cardId: 'card', name: 'Forest', owner: 0, zone: 'hand', playable: true }
+    hover(hit)
+    expect(mocks.ui.setHover).toHaveBeenCalledExactlyOnceWith(hit)
+    renderer.render(view())
+    expect(container.replaceChildren).toHaveBeenCalledTimes(1)
+    renderer.unmount()
+    hover(hit)
+    expect(mocks.ui.setHover).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reset lobby subviews or signaling drafts during status and settings notifications', () => {
+    const { renderer } = harness()
+    const snapshot = { ...view(), game: null, status: 'Waiting for offer' }
+    renderer.render(snapshot)
+    mocks.ui.reset.mockClear()
+    renderer.render({ ...snapshot, status: 'Offer ready', aiLevel: 'hard' })
+    expect(mocks.ui.reset).not.toHaveBeenCalled()
+    renderer.render({ ...snapshot, mode: 'p2p-host' })
+    expect(mocks.ui.reset).toHaveBeenCalledOnce()
+    renderer.unmount()
+  })
+
+  it('passes modal and decision blocking to the board without changing the projected game', () => {
+    const { renderer } = harness()
+    const snapshot = { ...view(), controllers: ['human', 'human'] as AppViewModel['controllers'] }
+    mocks.ui.isBlocked.mockReturnValue(true)
+    renderer.render(snapshot)
+    expect(mocks.board.render).toHaveBeenLastCalledWith(snapshot, 1, mocks.ui.targetIds, null, null, true)
+    expect(snapshot.game!.canInput).toBe(true)
+    renderer.unmount()
+  })
+
+  it('preserves menu/log navigation when seeking backwards in the same replay', () => {
+    const { renderer } = harness()
+    const snapshot = { ...view(), replay: { active: true, step: 5, totalSteps: 10, isPlaying: false } }
+    renderer.render(snapshot)
+    mocks.ui.reset.mockClear()
+    renderer.render({ ...snapshot, replay: { ...snapshot.replay, step: 2 } })
+    expect(mocks.ui.reset).toHaveBeenCalledExactlyOnceWith(true)
+    renderer.unmount()
+  })
+
+  it('reserves queued Mountain targets before board reconciliation and releases them on disposal', () => {
+    const { renderer } = harness()
+    const snapshot: AppViewModel = { ...view(), animationSpeed: 'normal', cardVisualStyle: DEFAULT_CARD_VISUAL_STYLE }
+    renderer.render(snapshot)
+    mocks.board.retainEffectTargets.mockClear()
+    mocks.board.render.mockClear()
+    renderer.render({ ...snapshot, game: { ...snapshot.game!, events: [{
+      kind: 'ability_mountain_destroy', actor: 1, target: 0, cardName: 'Island', targetInstanceId: 'destroyed-island',
+    }] } })
+    expect(mocks.board.retainEffectTargets).toHaveBeenCalledWith(['destroyed-island'])
+    expect(mocks.board.retainEffectTargets.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.board.render.mock.invocationCallOrder[0])
+    renderer.unmount()
+    expect(mocks.board.retainEffectTargets).toHaveBeenLastCalledWith([])
+  })
+
   it('keeps P2P in the lobby until the seed handshake completes', () => {
     const { renderer, elements } = harness()
     const pending = { ...view(), mode: 'p2p-host' as const, p2pStarted: false }
@@ -83,7 +151,7 @@ describe('Three.js composition', () => {
     renderer.render(snapshot)
     expect(mocks.board.render).toHaveBeenCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ actor: 1, canInput: false }) }),
-      0, mocks.ui.targetIds, null, null,
+      0, mocks.ui.targetIds, null, null, false,
     )
     expect(snapshot.game!.canInput).toBe(true)
     renderer.unmount()
@@ -125,13 +193,14 @@ describe('Three.js composition', () => {
     renderer.render(next)
     expect(mocks.board.render).toHaveBeenLastCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ canInput: false }) }),
-      0, mocks.ui.targetIds, null, null,
+      0, mocks.ui.targetIds, null, null, false,
     )
     renderer.render({ ...next, animationSpeed: 'off' })
     expect(mocks.board.render).toHaveBeenLastCalledWith(
       expect.objectContaining({ game: expect.objectContaining({ canInput: true }) }),
       1, mocks.ui.targetIds, expect.objectContaining({ requiredIslandId: 'island', choices: [expect.objectContaining({ cardId: 'forest' })] }),
       expect.objectContaining({ type: 'pass_response', disabled: false }),
+      false,
     )
     renderer.unmount()
   })

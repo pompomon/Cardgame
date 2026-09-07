@@ -208,11 +208,12 @@ function createHarness() {
   } satisfies ThreeBoardApi
   const playCard = vi.fn()
   const activate = vi.fn()
+  const hover = vi.fn()
   const interaction = new ThreeInteraction(
-    board, () => controls.view, () => controls.blocked, playCard, activate,
+    board, () => controls.view, () => controls.blocked, playCard, activate, hover,
   )
   return {
-    interaction, canvas, board, playCard, activate, controls,
+    interaction, canvas, board, playCard, activate, hover, controls,
     document: canvas.ownerDocument,
     window: canvas.ownerDocument.defaultView,
     start: (fields: EventFields = {}) => canvas.emit('pointerdown', fields),
@@ -243,6 +244,105 @@ function responseHarness() {
 type Harness = ReturnType<typeof createHarness>
 
 describe('ThreeInteraction', () => {
+  it('previews idle mouse movement without capture, submission, prevention or redundant notifications', () => {
+    const h = createHarness()
+    const event = h.move({ buttons: 0 })
+    expect(h.hover).toHaveBeenCalledExactlyOnceWith(handHit)
+    h.move({ buttons: 0, clientX: 185 })
+    expect(h.hover).toHaveBeenCalledTimes(1)
+    expect(h.canvas.setPointerCapture).not.toHaveBeenCalled()
+    expect(h.board.beginDrag).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    h.controls.hit = battlefieldHit
+    h.move({ buttons: 0 })
+    expect(h.hover).toHaveBeenLastCalledWith(battlefieldHit)
+    h.interaction.dispose()
+    expect(h.hover).toHaveBeenLastCalledWith(null)
+  })
+
+  it.each([
+    { pointerType: 'touch', buttons: 0 },
+    { pointerType: 'pen', buttons: 0 },
+    { pointerType: '', buttons: 0 },
+    { buttons: 1 }, { buttons: 2 }, { buttons: 4 },
+    { buttons: 0, isPrimary: false }, { buttons: 0, clientX: -1 },
+  ])('does not add mouse-hover behavior to %j', (event) => {
+    const h = createHarness()
+    h.move(event)
+    expect(h.hover).not.toHaveBeenCalled()
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.canvas.setPointerCapture).not.toHaveBeenCalled()
+    h.interaction.dispose()
+  })
+
+  it.each([
+    ['pointer exit', (h: Harness) => h.canvas.emit('pointerleave')],
+    ['empty board', (h: Harness) => h.move({ buttons: 0, clientX: 300 })],
+    ['mouse down', (h: Harness) => h.start()],
+    ['secondary down', (h: Harness) => h.start({ button: 2 })],
+    ['window exit', (h: Harness) => h.window.emit('pointerout')],
+    ['blur', (h: Harness) => h.window.emit('blur')],
+    ['Escape', (h: Harness) => h.window.emit('keydown', { key: 'Escape' })],
+    ['visibility', (h: Harness) => { h.document.hidden = true; h.document.emit('visibilitychange') }],
+    ['reset', (h: Harness) => h.interaction.cancel()],
+    ['disposal', (h: Harness) => h.interaction.dispose()],
+  ] as const)('clears mouse hover on %s without firing an action', (_reason, cancel) => {
+    const h = createHarness()
+    h.move({ buttons: 0 })
+    cancel(h)
+    expect(h.hover).toHaveBeenNthCalledWith(2, null)
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    h.interaction.dispose()
+  })
+
+  it.each([
+    ['decision', (h: Harness) => { h.controls.view!.game!.turn += 1 }],
+    ['legality', (h: Harness) => { h.controls.view!.game!.legal.playLandByCard = {} }],
+    ['menu', (h: Harness) => { h.controls.blocked = true }],
+    ['removed source', (h: Harness) => { h.controls.view!.game!.players[0].handCards = [] }],
+    ['hidden source', (h: Harness) => { h.controls.view!.game!.players[0].handCards[0].name = HIDDEN_HAND_CARD_NAME }],
+    ['session', (h: Harness) => { h.controls.view!.seed += 1 }],
+  ] as const)('reconciles hovered cards after %s changes', (_reason, update) => {
+    const h = createHarness()
+    h.move({ buttons: 0 })
+    update(h)
+    h.interaction.reconcile()
+    expect(h.hover).toHaveBeenNthCalledWith(2, null)
+    h.interaction.dispose()
+  })
+
+  it('preserves hover across status/settings and never previews stale hidden AI cards', () => {
+    const h = createHarness()
+    h.move({ buttons: 0 })
+    h.controls.view = { ...h.controls.view!, status: 'Saved', animationSpeed: 'normal' }
+    h.interaction.reconcile()
+    expect(h.hover).toHaveBeenCalledTimes(1)
+    h.controls.view.controllers = ['ai', 'human']
+    h.interaction.reconcile()
+    expect(h.hover).toHaveBeenLastCalledWith(null)
+    h.hover.mockClear()
+    h.move({ buttons: 0 })
+    expect(h.hover).not.toHaveBeenCalled()
+    h.interaction.dispose()
+  })
+
+  it('does not reopen hover during a drag or alter the explicit mouse/touch/pen tap path', () => {
+    for (const pointerType of ['mouse', 'touch', 'pen']) {
+      const h = createHarness()
+      h.move({ buttons: 0 })
+      h.start({ pointerType })
+      h.move({ pointerType })
+      expect(h.hover).toHaveBeenLastCalledWith(null)
+      h.release({ pointerType })
+      expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit)
+      expect(h.hover).toHaveBeenCalledTimes(2)
+      h.interaction.dispose()
+    }
+  })
+
   it.each(['mouse', 'touch', 'pen'])('activates a %s response tap exactly once without dragging', (pointerType) => {
     const h = responseHarness()
     h.start({ pointerType })
@@ -795,7 +895,7 @@ describe('ThreeInteraction', () => {
 
   it('removes every listener and restores an active source idempotently on disposal', () => {
     const h = createHarness()
-    expect(h.canvas.listeners.size).toBe(5)
+    expect(h.canvas.listeners.size).toBe(6)
     expect(h.window.listeners.size).toBe(5)
     expect(h.document.listeners.size).toBe(1)
     h.start()

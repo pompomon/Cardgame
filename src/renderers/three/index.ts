@@ -5,6 +5,7 @@ import type { AppRenderer } from '../types'
 import { ThreeBoard } from './board'
 import { ThreeEffects, presentationBoundary } from './effects'
 import { ThreeInterface } from './interface'
+import { threeSessionKey } from './interface-model'
 import { ThreeInteraction } from './interaction'
 import './renderer.css'
 
@@ -33,22 +34,27 @@ export class ThreeRenderer implements AppRenderer {
     stage.setAttribute('aria-label', 'Three-dimensional card table')
     const controls = document.createElement('section')
     controls.className = 'three-controls'
-    container.replaceChildren(stage, controls)
+    const hud = document.createElement('section')
+    hud.className = 'three-hud-mount'
+    hud.hidden = true
+    container.replaceChildren(hud, stage, controls)
     this.stage = stage
     try {
       this.board = new ThreeBoard(stage, this.onFailure, () => this.interaction?.cancel(),
         (action) => this.ui?.activatePrimaryAction(action))
-      this.ui = new ThreeInterface(controls, controller, this.refresh, () => this.interaction?.cancel())
+      this.ui = new ThreeInterface(controls, controller, this.refresh, () => this.interaction?.cancel(), hud)
       this.interaction = new ThreeInteraction(
         this.board,
         () => this.stage?.hidden ? null : this.presentedView,
         () => this.ui?.isBlocked() ?? true,
         (cardId) => this.ui?.playCard(cardId),
         (hit) => this.ui?.activate(hit),
+        (hit) => this.ui?.setHover(hit),
       )
       this.effects = new ThreeEffects(
         (effect, duration, done) => this.board!.playEffect(effect, duration, done),
         this.refresh,
+        (ids) => this.board?.retainEffectTargets(ids),
       )
       document.addEventListener('visibilitychange', this.refresh)
       this.motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null
@@ -64,7 +70,12 @@ export class ThreeRenderer implements AppRenderer {
     if (!this.board || !this.ui) return
     if (presentationBoundary(this.view, view)) {
       this.interaction?.cancel()
-      this.ui.reset()
+      // A lobby status/settings update is an effects boundary, not a new UI
+      // session: resetting here would erase P2P drafts and close subviews.
+      if (this.view && (this.view.game && view.game || threeSessionKey(this.view) !== threeSessionKey(view))) {
+        this.ui.reset(this.view.replay.active && view.replay.active
+          && threeSessionKey(this.view) === threeSessionKey(view))
+      }
     }
     this.view = view
     const inGame = !!view.game
@@ -77,7 +88,7 @@ export class ThreeRenderer implements AppRenderer {
     if (this.stage) this.stage.hidden = !inGame
     this.board.setVisible(inGame && !document.hidden)
     this.ui.update(this.presentedView, actor)
-    if (inGame) this.board.render(this.presentedView, actor, this.ui.targetIds, this.ui.response, this.ui.primaryAction)
+    if (inGame) this.board.render(this.presentedView, actor, this.ui.targetIds, this.ui.response, this.ui.primaryAction, this.ui.isBlocked())
     this.interaction?.reconcile()
     this.effects?.pump()
   }

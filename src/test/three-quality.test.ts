@@ -7,17 +7,29 @@ describe('Three.js quality policy', () => {
     expect(profile.pixelRatio).toBe(2)
     expect(profile.shadows).toBe(false)
     expect(profile.effectParticles).toBe(3)
+    expect(profile.ambienceParticles).toBe(3)
   })
 
   it('reduces fill rate and effects for low quality without changing gameplay', () => {
     const profile = threeQualityProfile({ preference: 'low', width: 1440, height: 900, devicePixelRatio: 3 })
-    expect(profile).toMatchObject({ tier: 'low', pixelRatio: 1, shadows: false, effectParticles: 3, backgroundVariant: 'low' })
+    expect(profile).toMatchObject({ tier: 'low', pixelRatio: 1, shadows: false, effectParticles: 3, ambienceParticles: 0, backgroundVariant: 'low' })
     expect(Object.isFrozen(profile)).toBe(true)
   })
 
   it.each([{ reducedMotion: true }, { animationSpeed: 'off' as const }, { hidden: true }])('suppresses motion for %j', (setting) => {
     expect(threeQualityProfile({ preference: 'high', width: 1440, height: 960, ...setting }))
-      .toMatchObject({ motion: false, effectParticles: 0 })
+      .toMatchObject({ motion: false, effectParticles: 0, ambienceParticles: 0 })
+  })
+
+  it('budgets bounded ambience independently from transient effects', () => {
+    expect(threeQualityProfile({ preference: 'high', width: 1440, height: 900 }).ambienceParticles).toBe(8)
+    expect(threeQualityProfile({ preference: 'balanced', width: 1440, height: 900 }).ambienceParticles).toBe(3)
+    expect(threeQualityProfile({ preference: 'low', width: 1440, height: 900 }).ambienceParticles).toBe(0)
+  })
+
+  it('keeps a phone landscape cap when given visible viewport rather than expanded board height', () => {
+    const profile = threeQualityProfile({ preference: 'high', width: 844, height: 390, devicePixelRatio: 4 })
+    expect(profile).toMatchObject({ pixelRatio: 2, shadows: false, ambienceParticles: 3, backgroundVariant: 'hd' })
   })
 
   it('uses stable asset tiers when auto quality crosses desktop thresholds', () => {

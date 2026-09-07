@@ -20,14 +20,23 @@
   background: #142922;
 }
 
-.three-stage[hidden] {
+.three-stage[hidden],
+.three-hud-mount[hidden] {
   display: none;
+}
+
+.three-stage[data-layout="compact"] {
+  min-height: var(--three-board-min-height, 0px);
 }
 
 .three-controls {
   min-width: 0;
+  padding: 8px 0;
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
-  .three-stage { height: 88vh; }
+  .three-stage {
+    height: calc(100vh - 112px);
+    height: calc(100svh - 112px);
+  }
 }

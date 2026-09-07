@@ -272,6 +272,118 @@
   border-radius: 8px;
 }
 
+.three-hud-mount.three-interface {
+  padding: 0;
+}
+
+.three-interface .three-hud {
+  max-width: none;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+}
+
+.three-interface .three-required-prompt {
+  color: #ffdf91;
+}
+
+.three-interface .three-lobby {
+  max-width: 900px;
+}
+
+.three-interface .three-lobby-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.three-interface .three-log-scroll {
+  max-height: 320px;
+  max-height: min(320px, 45svh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.three-interface .three-log-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.three-interface .three-log-entry {
+  padding: 7px 4px;
+  border-bottom: 1px solid #476478;
+}
+
+.three-interface .three-log-visual {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.three-interface .three-log-actor {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid #bc7393;
+  border-radius: 6px;
+}
+
+.three-interface .three-log-actor[data-active="true"] {
+  border-color: #7bc9ff;
+}
+
+.three-interface .three-log-glyph,
+.three-interface .three-log-art {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  object-fit: contain;
+  text-align: center;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.three-interface .three-log-art--raster {
+  image-rendering: auto;
+}
+
+.three-interface .three-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.three-interface .three-hover-preview {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 40;
+  width: min(240px, 35vw, max(120px, calc(70vh - 6rem)));
+  width: min(240px, 35vw, max(120px, calc(70dvh - 6rem)));
+  padding: 10px;
+  border: 1px solid #b3a77d;
+  border-radius: 12px;
+  background: #102532;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 55%);
+  pointer-events: none;
+}
+
+.three-interface .three-hover-preview * {
+  pointer-events: none;
+}
+
+.three-interface .three-hover-preview > .card-tile {
+  width: 100%;
+}
+
 @media (max-width: 480px) {
   .three-interface .panel,
   .three-interface .three-hud {
@@ -288,6 +400,14 @@
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
+  .three-interface .three-hud {
+    padding: 4px 8px;
+  }
+
+  .three-interface .three-hud p {
+    margin: 2px 0;
+  }
+
   .three-interface .three-dialog {
     max-height: calc(100vh - 16px);
     max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
