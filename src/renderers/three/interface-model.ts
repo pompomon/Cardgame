@@ -288,7 +288,6 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
   if (!isThreeInGame(view)) return ''
   const game = view.game!
   const targets = threeTargets(view, ui)
-  const response = threePrimaryAction(view, ui)
   return `<section class="three-hud" aria-label="Game controls">
     <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
       <h2>Turn ${game.turn} · ${escapeHtml(game.phase)}</h2><span>Player ${game.actor + 1}</span></header>
@@ -298,7 +297,6 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
     ${view.mode === 'adventure-hvai' ? `<p>Adventure round ${view.adventure.currentRound}/7 · Chances ${view.adventure.remainingChances} · Win streak ${view.adventure.winStreak} · High score ${view.adventure.highScore}</p>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
     ${targets && !ui.menuOpen && !ui.preview ? `<p class="three-required-prompt">${escapeHtml(targets.title)}</p>` : ''}
-    ${response?.prompt ? `<p class="three-required-prompt">${escapeHtml(response.prompt)}</p>` : ''}
     ${ui.menuOpen ? '' : renderReplay(view)}</section>`
 }
 

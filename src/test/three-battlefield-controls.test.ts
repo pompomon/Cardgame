@@ -383,6 +383,44 @@ describe('constructed Three battlefield controls', () => {
     expect(sizes.every((entry) => entry.hidden)).toBe(true)
   })
 
+  it.each([
+    { actor: 0, canCounter: true },
+    { actor: 1, canCounter: true },
+    { actor: 0, canCounter: false },
+    { actor: 1, canCounter: false },
+  ])('keeps a single accessible Mountain response instruction in the battlefield (%j)', ({ actor, canCounter }) => {
+    const h = setup()
+    const game = h.app.game!
+    game.currentPlayer = 1 - actor
+    game.players[game.currentPlayer].hand = [{ id: 'pending-mountain', name: 'Mountain', type: 'land' }]
+    h.act('play_land')
+    // Enter respond first: the engine normally skips it without counter cards.
+    if (!canCounter) h.app.game!.players[actor].hand = []
+    const primary = h.present()!
+    expect(h.app.game!.phase).toBe('respond')
+    const prompts = h.host.all('three-board-instruction')
+    expect(prompts).toHaveLength(1)
+    const prompt = prompts[0]
+    expect(prompt.parent).toBe(h.near)
+    expect(prompt.hidden).toBe(false)
+    expect(prompt.getAttribute('role')).toBe('status')
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    expect(h.button.getAttribute('aria-describedby')).toBe(prompt.id)
+    expect(h.button.textContent).toBe('Pass Response')
+    expect(h.button.disabled).toBe(false)
+    expect(h.near.all('three-board-stats')[0].getAttribute('aria-label')).toContain(`Player ${actor + 1}:`)
+    const expected = canCounter
+      ? 'Respond to Mountain. Counter Mountain: tap a highlighted card to discard with Island. The first Island (blue ring) is included automatically; pink rings mark your choices.'
+      : 'Respond to Mountain. No legal counter cards available.'
+    expect(primary.prompt).toBe(expected)
+    expect(prompt.children.filter((child) => !child.hidden).map((child) => child.textContent)).toEqual([expected])
+    h.act('pass_response')
+    expect(h.app.game!.phase).toBe('main')
+    expect(prompt.hidden).toBe(true)
+    expect(prompt.children[0].textContent).not.toContain('Respond to Mountain')
+    expect(h.button.textContent).toBe('End Turn')
+  })
+
   it('keeps invisible prompt sizes in the same grid cell instead of collapsing their layout', () => {
     const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
     expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*display:\s*grid;/)
