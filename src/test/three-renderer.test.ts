@@ -138,10 +138,29 @@ describe('Three.js composition', () => {
     const pending = { ...view(), mode: 'p2p-host' as const, p2pStarted: false }
     renderer.render(pending)
     expect(elements[0].hidden).toBe(true)
-    expect(mocks.board.render).not.toHaveBeenCalled()
+    expect(mocks.board.render).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: null }), 0, mocks.ui.targetIds, null, null, false,
+    )
+    mocks.board.render.mockClear()
     renderer.render({ ...pending, p2pStarted: true })
     expect(elements[0].hidden).toBe(false)
     expect(mocks.board.render).toHaveBeenCalledOnce()
+    renderer.unmount()
+  })
+
+  it('reconciles an empty board on returning from a response to the lobby', () => {
+    const { renderer } = harness()
+    const snapshot = view()
+    snapshot.game = {
+      ...snapshot.game!, phase: 'respond',
+      pendingLandPlay: { cardId: 'pending', name: 'Island', actor: 0 },
+    }
+    renderer.render(snapshot)
+    renderer.render({ ...snapshot, game: null })
+    expect(mocks.board.setVisible).toHaveBeenLastCalledWith(false)
+    expect(mocks.board.render).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: null }), 0, mocks.ui.targetIds, null, null, false,
+    )
     renderer.unmount()
   })
 
