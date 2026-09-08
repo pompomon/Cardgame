@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildViewModel } from '../app/view-model'
-import { createInitialGame } from '../game/engine'
+import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import { HIDDEN_HAND_CARD_NAME, type AppState } from '../app/types'
 
 function createState(seed: number): AppState {
@@ -119,6 +119,48 @@ describe('buildViewModel', () => {
       'Counter with Island (discard Island + Forest)',
       'Counter with Island (discard Island + Mountain)',
     ])
+  })
+
+  it.each([0, 1])('projects only the public pending card, detached from player %s state', (actor) => {
+    const state = createState(57)
+    state.controllers = ['human', 'ai']
+    state.mode = 'local-hvai'
+    state.game!.currentPlayer = actor
+    state.game!.players[actor].hand = [
+      { id: 'pending', name: 'Swamp', type: 'land' },
+      { id: 'secret', name: 'Forest', type: 'land' },
+    ]
+    state.game!.players[1 - actor].hand = [
+      { id: 'island', name: 'Island', type: 'land' },
+      { id: 'discard', name: 'Mountain', type: 'land' },
+    ]
+    expect(buildViewModel(state, false).game!.pendingLandPlay).toBeNull()
+    const play = getLegalActions(state.game!, actor).find((action) => action.type === 'play_land' && action.cardId === 'pending')!
+    state.game = applyAction(state.game!, play)
+    const snapshot = buildViewModel(state, false)
+    expect(snapshot.game!.pendingLandPlay).toEqual({ cardId: 'pending', name: 'Swamp', actor })
+    expect(snapshot.game!.pendingLandPlay).not.toBe(state.game.pendingLandPlay)
+    expect(Object.isFrozen(snapshot.game!.pendingLandPlay)).toBe(true)
+    expectAllCardsHidden(snapshot.game!.players[1].handCards)
+    state.game.pendingLandPlay!.card.name = 'Forest'
+    expect(snapshot.game!.pendingLandPlay!.name).toBe('Swamp')
+  })
+
+  it.each(['counter_land', 'pass_response'] as const)('clears the pending snapshot after %s', (type) => {
+    const state = createState(57)
+    state.game!.players[0].hand = [{ id: 'play', name: 'Island', type: 'land' }]
+    state.game!.players[1].hand = [
+      { id: 'island', name: 'Island', type: 'land' },
+      { id: 'discard', name: 'Forest', type: 'land' },
+    ]
+    state.game = applyAction(state.game!, getLegalActions(state.game!, 0).find((action) => action.type === 'play_land')!)
+    const pending = buildViewModel(state, false).game!.pendingLandPlay
+    expect(pending).not.toBeNull()
+    state.game = applyAction(state.game!, getLegalActions(state.game!, 1).find((action) => action.type === type)!)
+    const next = buildViewModel(state, false).game!
+    expect(next.pendingLandPlay).toBeNull()
+    expect(next.pendingLandName).toBeNull()
+    expect(pending!.cardId).toBe('play')
   })
 
   it('projects game and adventure snapshots without sharing controller-owned references', () => {

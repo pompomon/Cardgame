@@ -62,6 +62,55 @@ describe('retained Three.js card registry', () => {
     expect(release).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['required', 'discard', 'target', 'playable'] as const)('uses four square-edged, evenly spaced frame strips for %s', (state) => {
+    const { registry } = fixture()
+    const initial = descriptor('card')
+    const card: CardDescriptor = {
+      ...initial, target: state === 'target',
+      hit: { ...initial.hit, playable: state === 'playable' },
+      response: state === 'required' || state === 'discard' ? state : null,
+    }
+    registry.reconcile([card])
+    const retained = registry.get(card.hit.key)!
+    const frame = retained.group.children[1] as Group
+    const [top, bottom, left, right] = frame.children as Mesh[]
+    const gap = state === 'required' ? 2 : 3
+    expect(frame.visible).toBe(true)
+    expect(frame.children).toHaveLength(4)
+    expect(new Set(frame.children.map((edge) => (edge as Mesh).geometry)).size).toBe(1)
+    expect(new Set(frame.children.map((edge) => (edge as Mesh).material)).size).toBe(1)
+    expect(top.position.y - top.scale.y / 2).toBe(card.height / 2 + gap)
+    expect(-bottom.position.y - bottom.scale.y / 2).toBe(card.height / 2 + gap)
+    expect(right.position.x - right.scale.x / 2).toBe(card.width / 2 + gap)
+    expect(-left.position.x - left.scale.x / 2).toBe(card.width / 2 + gap)
+    expect(top.scale.y).toBe(2)
+    expect(left.scale.x).toBe(2)
+    expect(top.scale.x / 2).toBe(right.position.x + right.scale.x / 2)
+    expect(top.position.y - top.scale.y / 2).toBe(right.scale.y / 2)
+    for (const edge of frame.children) expect(edge.rotation.toArray().slice(0, 3)).toEqual([0, 0, 0])
+    retained.setOpacity(0.5)
+    expect((top.material as MeshBasicMaterial).opacity).toBe(0.45)
+    registry.reconcile([card])
+    expect(frame.children).toEqual([top, bottom, left, right])
+    registry.dispose()
+  })
+
+  it('keeps presentation-only cards out of picking, counts and anchor history', () => {
+    const { registry, release } = fixture()
+    const card = registry.createPresentation({ ...descriptor('pending'), lifted: true })
+    expect(card.group.position.z).toBe(40)
+    expect(registry.size).toBe(0)
+    expect(registry.hitTest(card.anchor())).toBeNull()
+    expect(registry.anchorFor(undefined, 'pending')).toBeNull()
+    const disposeMaterial = vi.spyOn((card.group.children[3] as Mesh).material as MeshBasicMaterial, 'dispose')
+    card.dispose()
+    card.dispose()
+    expect(disposeMaterial).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledOnce()
+    expect(registry.layer.children).toHaveLength(0)
+    registry.dispose()
+  })
+
   describe('Three response board presentation', () => {
     function setupBoard() {
       const { registry, acquire } = fixture()

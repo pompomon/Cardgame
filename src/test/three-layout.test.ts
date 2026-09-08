@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pointInRect } from '../renderers/three/layout'
+import { boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pendingCardRect, pointInRect } from '../renderers/three/layout'
 
 describe('Three.js fixed tabletop layout', () => {
   it.each([[320, 690], [390, 844], [844, 690], [1440, 960]])('keeps page cards within %sx%s', (width, height) => {
@@ -106,5 +106,30 @@ describe('Three.js fixed tabletop layout', () => {
     expect(point).toEqual({ x: 500, y: 375 })
     expect(clientToBoard(10, 10, rect, layout, point)).toBe(false)
     expect(clientToBoard(320, 297, { ...rect, width: 0 }, layout, point)).toBe(false)
+  })
+
+  it.each([[320, 690], [390, 844], [844, 390], [1024, 600], [1440, 960]])('bounds pending cards and shadows outside chrome at %sx%s', (width, height) => {
+    const headers = { far: 90, near: 160, hand: 28 }
+    const controls = { far: 126, near: 126, hand: 44 }
+    const layout = boardLayout(width, height, headers, controls, compactBoardViewport(width, height))
+    for (const actor of [0, 1]) {
+      for (const owner of [0, 1]) {
+        const rect = pendingCardRect(layout, owner, actor)
+        const row = owner === actor ? 'near' : 'far'
+        const top = layout.height / 2 - rect.y - rect.height / 2
+        const left = layout.width / 2 + rect.x - rect.width / 2
+        expect(rect.width / rect.height).toBeCloseTo(layout.cardWidth / layout.cardHeight)
+        expect(rect.height).toBeGreaterThan(layout.cardHeight)
+        expect(rect.y).toBeGreaterThan(layout.rows[row].y)
+        expect(left).toBeGreaterThanOrEqual(layout.columns.cardsLeft)
+        expect(left + rect.width + 8).toBeLessThanOrEqual(layout.columns.cardsLeft + layout.columns.cardsWidth)
+        expect(top).toBeGreaterThanOrEqual(0)
+        expect(top + rect.height + 10).toBeLessThanOrEqual(layout.height)
+        if (!layout.compact) {
+          expect(top).toBeGreaterThanOrEqual(layout.rows[row].labelTop + headers[row])
+          expect(top + rect.height + 10).toBeLessThanOrEqual(layout.rows[row].controlsTop + 0.001)
+        }
+      }
+    }
   })
 })
