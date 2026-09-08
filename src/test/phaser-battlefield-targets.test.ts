@@ -17,6 +17,7 @@ function baseGame(overrides: Partial<GameUiState> = {}): GameUiState {
     actorControl: 'human',
     canInput: true,
     pendingLandName: null,
+    pendingLandPlay: null,
     pendingPlainsReuseName: null,
     players: [
       { id: 0, handCount: 1, deckCount: 10, graveyardCount: 0, handCards: [], graveyardCards: [], battlefield: [] },

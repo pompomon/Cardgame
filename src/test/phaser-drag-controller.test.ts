@@ -145,6 +145,7 @@ function gameWithOptions(
     actorControl: 'human',
     canInput: true,
     pendingLandName: null,
+    pendingLandPlay: null,
     pendingPlainsReuseName: null,
     players: [
       {

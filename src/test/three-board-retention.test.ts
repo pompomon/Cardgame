@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CanvasTexture, type Mesh, type MeshBasicMaterial } from 'three'
+import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial } from 'three'
 import type { AppViewModel } from '../app/types'
 import { buildCounterHandOptions, type CounterHandOptions } from '../app/response-options'
 import type { ThreeAssets } from '../renderers/three/assets'
@@ -24,24 +24,24 @@ function fixture(): { registry: ThreeCardRegistry; acquire: ReturnType<typeof vi
 }
 
 describe('retained Three.js card registry', () => {
-  it('updates distinct response rings in place and clears them without reallocating textures', () => {
+  it('updates distinct response frames in place and clears them without reallocating textures', () => {
     const { registry, acquire, release } = fixture()
     const card = { ...descriptor('island'), hit: { ...descriptor('island').hit, playable: false } }
     registry.reconcile([{ ...card, response: 'required' }])
     const retained = registry.get(card.hit.key)!
-    const ring = retained.group.children[1] as Mesh
-    const material = ring.material as MeshBasicMaterial
-    expect(ring.visible).toBe(true)
+    const frame = retained.group.children[1] as Group
+    const material = (frame.children[0] as Mesh).material as MeshBasicMaterial
+    expect(frame.visible).toBe(true)
     expect(material.color.getHexString()).toBe('80bfff')
-    const requiredScale = ring.scale.x
+    const requiredWidth = frame.children[0].scale.x
     registry.reconcile([{ ...card, response: 'discard' }])
     expect(material.color.getHexString()).toBe('e4a0ff')
-    expect(ring.scale.x).toBeGreaterThan(requiredScale)
+    expect(frame.children[0].scale.x).toBeGreaterThan(requiredWidth)
     expect(registry.get(card.hit.key)).toBe(retained)
     registry.reconcile([card])
-    expect(ring.visible).toBe(false)
+    expect(frame.visible).toBe(false)
     registry.reconcile([{ ...card, target: true }])
-    expect(ring.visible).toBe(true)
+    expect(frame.visible).toBe(true)
     expect(material.color.getHexString()).toBe('ffdf7e')
     expect(acquire).toHaveBeenCalledOnce()
     registry.dispose()
@@ -75,7 +75,7 @@ describe('retained Three.js card registry', () => {
         cardVisualStyle: 'classic', replay: { active: false },
         game: {
           actor: 0, actorControl: 'human', canInput: true, phase: 'respond',
-          pendingLandName: 'Swamp', isReplay: false,
+          pendingLandName: 'Swamp', pendingLandPlay: null, isReplay: false,
           players: [{ handCards, battlefield: [] }, { handCards: [], battlefield: [] }],
           legal: {
             playLandByCard: { island: [{ action: { type: 'play_land', actor: 0, cardId: 'island' } }] },
@@ -99,6 +99,7 @@ describe('retained Three.js card registry', () => {
         pages: { far: 0, near: 0, hand: 0 }, layout: { ...boardLayout(1000, 750), capacity: 2 },
         quality: { shadows: false }, targetIds: new Set(), effectDescriptors: new Map(), drag: null, canDrop: false,
         instruction: { hidden: true }, instructionText: { textContent: '' }, instructionSizes: [],
+        pendingCaption: { hidden: true, textContent: '' },
         dropMaterial: { opacity: 0 },
         primaryButton: { ownerDocument: { activeElement: null }, hidden: true, disabled: true, textContent: '', dataset: {} },
         primaryAction: null,

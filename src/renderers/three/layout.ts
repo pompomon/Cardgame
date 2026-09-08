@@ -151,6 +151,17 @@ export function cardSlotX(slot: number, visibleCount: number, layout: ThreeLayou
     + (slot - (visibleCount - 1) / 2) * (layout.cardWidth + layout.gap)
 }
 
+/** Leave room for the lifted shadow within the caster's card lane, not its chrome. */
+export function pendingCardRect(layout: ThreeLayout, owner: number, presentedActor: number): BoardRect {
+  const row = layout.rows[owner === presentedActor ? 'near' : 'far']
+  const ratio = layout.cardWidth / layout.cardHeight
+  const height = Math.max(1, Math.min(layout.cardHeight * 1.08, row.height + 4,
+    Math.max(1, layout.columns.cardsWidth - 32) / ratio))
+  const width = height * ratio
+  const offset = Math.max(0, Math.min(18, (layout.columns.cardsWidth - width) / 2 - 16))
+  return { x: cardSlotX(0, 1, layout) + offset, y: row.y + 4, width, height }
+}
+
 /** The camera uses CSS pixels, never the canvas's DPR-scaled backing store. */
 export function clientToBoard(
   clientX: number,

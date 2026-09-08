@@ -80,6 +80,7 @@ function makeGameView(): AppViewModel {
       actorControl: 'human',
       canInput: false,
       pendingLandName: null,
+      pendingLandPlay: null,
       pendingPlainsReuseName: null,
       players: [{
         id: 0,

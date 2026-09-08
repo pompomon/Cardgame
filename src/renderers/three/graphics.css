@@ -125,6 +125,22 @@
 }
 .three-board-instruction > span { grid-area: 1 / 1; }
 .three-board-instruction-size { visibility: hidden; }
+.three-board-pending-caption {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px;
+  transform: translateX(-50%);
+  border: 1px solid #a7d5ff;
+  border-radius: 3px;
+  background: #102238ed;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
 .three-board-stacks {
   display: flex;
   justify-content: center;

@@ -202,6 +202,11 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       actorControl,
       canInput,
       pendingLandName: game.pendingLandPlay?.card.name ?? null,
+      pendingLandPlay: game.pendingLandPlay ? Object.freeze({
+        cardId: game.pendingLandPlay.card.id,
+        name: game.pendingLandPlay.card.name,
+        actor: game.pendingLandPlay.actor,
+      }) : null,
       pendingPlainsReuseName: game.pendingPlainsReuse?.reusedCardName ?? null,
       players: [
         {

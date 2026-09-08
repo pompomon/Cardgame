@@ -410,7 +410,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.disabled).toBe(false)
     expect(h.near.all('three-board-stats')[0].getAttribute('aria-label')).toContain(`Player ${actor + 1}:`)
     const expected = canCounter
-      ? 'Respond to Mountain. Counter Mountain: tap a highlighted card to discard with Island. The first Island (blue ring) is included automatically; pink rings mark your choices.'
+      ? 'Respond to Mountain. Counter Mountain: tap a highlighted card to discard with Island. The first Island (blue frame) is included automatically; pink frames mark your choices.'
       : 'Respond to Mountain. No legal counter cards available.'
     expect(primary.prompt).toBe(expected)
     expect(prompt.children.filter((child) => !child.hidden).map((child) => child.textContent)).toEqual([expected])
