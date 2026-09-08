@@ -47,7 +47,7 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
    ```
 
    The browser build also exercises `import.meta.env.BASE_URL` static
-   replacement, and the CLI build emits the standalone Node 24 ESM bundle at
+   replacement, and the CLI build emits the standalone Node 22-targeted ESM bundle at
    `dist-cli/cardgame-cli.mjs`, so both must pass before merge. There is a regression test
    (`src/test/card-art-base-path.test.ts`) that invokes `vite build` with a
    custom `VITE_BASE_PATH` to verify the base is baked into the bundle. Preserve
