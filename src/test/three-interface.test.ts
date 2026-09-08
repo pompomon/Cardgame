@@ -37,7 +37,7 @@ function makeView(): AppViewModel {
     replay: { active: false, step: 0, totalSteps: 10, isPlaying: false },
     game: {
       turn: 1, phase: 'main', actor: 0, actorControl: 'human', canInput: true, winnerText: '',
-      pendingLandName: null, pendingPlainsReuseName: null, log: [], events: [], isReplay: false,
+      pendingLandName: null, pendingLandPlay: null, pendingPlainsReuseName: null, log: [], events: [], isReplay: false,
       revealedEnemyHandForSwamp: null,
       players: [
         { id: 0, handCount: 1, deckCount: 43, graveyardCount: 0, handCards: [{ id: 'source', name: 'Mountain' }], graveyardCards: [], battlefield: [] },
@@ -66,6 +66,7 @@ function responseView(actor = 0): AppViewModel {
   game.actor = actor
   game.phase = 'respond'
   game.pendingLandName = 'Swamp'
+  game.pendingLandPlay = { cardId: 'pending-swamp', name: 'Swamp', actor: 1 - actor }
   game.players[actor].handCards = [
     { id: 'required-island', name: 'Island' },
     { id: 'discard-forest-1', name: 'Forest' },
@@ -91,6 +92,22 @@ const defaultUi: InterfaceUi = {
   presentedActor: 0, menuOpen: false, pendingCardId: null, preview: null,
   phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
 }
+
+describe('Three pending-play decisions', () => {
+  it('invalidates same-name pending plays by card identity and owner, not status', () => {
+    const view = responseView()
+    const initial = threeDecisionKey(view)
+    view.status = 'Action rejected'
+    expect(threeDecisionKey(view)).toBe(initial)
+    view.game!.pendingLandPlay = { cardId: 'another-swamp', name: 'Swamp', actor: 1 }
+    expect(threeDecisionKey(view)).not.toBe(initial)
+    const next = threeDecisionKey(view)
+    view.game!.pendingLandPlay = { ...view.game!.pendingLandPlay, actor: 0 }
+    expect(threeDecisionKey(view)).not.toBe(next)
+    expect(threeResponse(view, defaultUi)?.instruction).toContain('blue frame')
+    expect(threeResponse(view, defaultUi)?.instruction).toContain('pink frames')
+  })
+})
 
 function hit(overrides: Partial<BoardHit> = {}): BoardHit {
   return { key: 'target-1', cardId: 'card-1', instanceId: 'target-1', name: 'Forest', owner: 1, zone: 'battlefield', playable: false, ...overrides }

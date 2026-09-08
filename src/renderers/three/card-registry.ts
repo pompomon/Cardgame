@@ -1,6 +1,6 @@
 import {
   BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial,
-  PlaneGeometry, RingGeometry,
+  PlaneGeometry,
 } from 'three'
 import type { CardVisualStyle } from '../../app/card-visual-styles'
 import { MAX_EFFECT_MS, MAX_QUEUED_EFFECTS } from '../../app/animation-settings'
@@ -15,6 +15,7 @@ export interface CardDescriptor extends BoardRect {
   readonly target: boolean
   readonly response?: 'required' | 'discard' | null
   readonly shadows: boolean
+  readonly lifted?: boolean
 }
 
 export interface CardAnchor extends BoardRect {
@@ -29,12 +30,10 @@ export function boardCardKey(cardId: string, owner: number, instanceId?: string)
 export class CardGeometry {
   readonly body = new BoxGeometry(1, 1, 1)
   readonly face = new PlaneGeometry(1, 1)
-  readonly ring = new RingGeometry(0.66, 0.70, 48)
 
   dispose(): void {
     this.body.dispose()
     this.face.dispose()
-    this.ring.dispose()
   }
 }
 
@@ -43,11 +42,11 @@ export class RetainedCard {
   private readonly bodyMaterial = new MeshStandardMaterial({ color: '#ebd9b9', roughness: 0.7, metalness: 0.1 })
   private readonly faceMaterial = new MeshBasicMaterial({ transparent: true })
   private readonly shadowMaterial = new MeshBasicMaterial({ color: '#020611', transparent: true, opacity: 0.3, depthWrite: false })
-  private readonly ringMaterial = new MeshBasicMaterial({ color: '#75f9b3', transparent: true, opacity: 0.9, depthWrite: false })
+  private readonly frameMaterial = new MeshBasicMaterial({ color: '#75f9b3', transparent: true, opacity: 0.9, depthWrite: false })
   private readonly body: Mesh
   private readonly face: Mesh
   private readonly shadow: Mesh
-  private readonly ring: Mesh
+  private readonly frame = new Group()
   private lease: TextureLease | null = null
   private signature = ''
   private disposed = false
@@ -62,8 +61,9 @@ export class RetainedCard {
     this.body = new Mesh(geometry.body, this.bodyMaterial)
     this.face = new Mesh(geometry.face, this.faceMaterial)
     this.shadow = new Mesh(geometry.face, this.shadowMaterial)
-    this.ring = new Mesh(geometry.ring, this.ringMaterial)
-    this.group.add(this.shadow, this.ring, this.body, this.face)
+    this.frame.name = 'card-highlight-frame'
+    for (let edge = 0; edge < 4; edge++) this.frame.add(new Mesh(geometry.face, this.frameMaterial))
+    this.group.add(this.shadow, this.frame, this.body, this.face)
     this.update(descriptor)
   }
 
@@ -96,28 +96,40 @@ export class RetainedCard {
       this.position(descriptor)
     }
     this.shadow.visible = descriptor.shadows
-    this.ring.visible = descriptor.target || descriptor.hit.playable || !!descriptor.response
-    this.ringMaterial.color.set(descriptor.response === 'required' ? '#80bfff'
+    this.frame.visible = descriptor.target || descriptor.hit.playable || !!descriptor.response
+    this.frameMaterial.color.set(descriptor.response === 'required' ? '#80bfff'
       : descriptor.response === 'discard' ? '#e4a0ff' : descriptor.target ? '#ffdf7e' : '#7bf5bd')
-    this.sizeRing()
+    this.sizeFrame()
     this.setOpacity(1)
   }
 
   private position({ x, y, width, height }: BoardRect): void {
-    this.group.position.set(x, y, 8)
+    this.group.position.set(x, y, this.descriptor.lifted ? 40 : 8)
     this.body.scale.set(width, height, 5)
     this.body.position.z = 2.5
     this.face.scale.set(width - 2, height - 2, 1)
     this.face.position.z = 5.1
-    this.shadow.scale.set(width + 8, height + 8, 1)
-    this.shadow.position.set(4, -6, -6)
-    this.sizeRing()
+    const shadowPadding = this.descriptor.lifted ? 4 : 8
+    this.shadow.scale.set(width + shadowPadding, height + shadowPadding, 1)
+    this.shadow.position.set(this.descriptor.lifted ? 6 : 4, this.descriptor.lifted ? -8 : -6, this.descriptor.lifted ? -22 : -6)
+    this.sizeFrame()
   }
 
-  private sizeRing(): void {
-    const ringScale = this.descriptor.response === 'required' ? 0.9 : 1.1
-    this.ring.scale.set(this.body.scale.x * ringScale, this.body.scale.y * ringScale, 1)
-    this.ring.position.z = -2
+  private sizeFrame(): void {
+    const gap = this.descriptor.response === 'required' ? 2 : 3
+    const thickness = 2
+    const width = this.body.scale.x + 2 * gap
+    const height = this.body.scale.y + 2 * gap
+    const [top, bottom, left, right] = this.frame.children
+    top.scale.set(width + 2 * thickness, thickness, 1)
+    bottom.scale.copy(top.scale)
+    top.position.set(0, (height + thickness) / 2, 0)
+    bottom.position.set(0, -(height + thickness) / 2, 0)
+    left.scale.set(thickness, height, 1)
+    right.scale.copy(left.scale)
+    left.position.set(-(width + thickness) / 2, 0, 0)
+    right.position.set((width + thickness) / 2, 0, 0)
+    this.frame.position.z = -2
   }
 
   advance(delta: number): void {
@@ -153,13 +165,13 @@ export class RetainedCard {
     this.bodyMaterial.opacity = opacity
     this.faceMaterial.opacity = opacity
     this.shadowMaterial.opacity = opacity * 0.3
-    this.ringMaterial.opacity = opacity * 0.9
+    this.frameMaterial.opacity = opacity * 0.9
   }
 
   setInert(): void {
     this.motion = null
     this.group.visible = false
-    this.ring.visible = false
+    this.frame.visible = false
   }
 
   anchor(): CardAnchor {
@@ -182,7 +194,7 @@ export class RetainedCard {
     this.bodyMaterial.dispose()
     this.faceMaterial.dispose()
     this.shadowMaterial.dispose()
-    this.ringMaterial.dispose()
+    this.frameMaterial.dispose()
     this.group.clear()
   }
 }
@@ -273,14 +285,20 @@ export class ThreeCardRegistry {
     for (const card of this.active.values()) card.finishMotion()
   }
 
+  /** Presentation-only cards share resources but never enter picking or history. */
+  createPresentation(descriptor: CardDescriptor): RetainedCard {
+    const card = new RetainedCard(this.geometry, this.assets, descriptor)
+    this.layer.add(card.group)
+    return card
+  }
+
   createProxy(source: RetainedCard): RetainedCard {
-    const proxy = new RetainedCard(this.geometry, this.assets, {
+    const proxy = this.createPresentation({
       ...source.descriptor, ...source.anchor(), visible: true, target: false, response: null,
       hit: { ...source.descriptor.hit, playable: false },
     })
     proxy.group.position.z = 60
     proxy.group.scale.set(1.08, 1.08, 1)
-    this.layer.add(proxy.group)
     return proxy
   }
 

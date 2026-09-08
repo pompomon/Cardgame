@@ -155,6 +155,7 @@ export interface GameUiState {
   actorControl: ControllerKind
   canInput: boolean
   pendingLandName: string | null
+  pendingLandPlay: Readonly<{ cardId: string; name: BasicLand; actor: number }> | null
   pendingPlainsReuseName: BasicLand | null
   players: [PlayerUiState, PlayerUiState]
   legal: {

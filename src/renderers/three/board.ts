@@ -16,7 +16,7 @@ import type { BoardHit, ThreeBoardApi } from './contracts'
 import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
 import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
-import { boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pointInRect, type BoardRow, type ThreeLayout } from './layout'
+import { boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pendingCardRect, pointInRect, type BoardRow, type ThreeLayout } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
 
@@ -65,6 +65,8 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly surfaces = new Map<BoardRow, Mesh<PlaneGeometry, MeshBasicMaterial>>()
   private readonly targetLabels = new Map<string, HTMLSpanElement>()
   private readonly effectCaption = document.createElement('p')
+  private readonly pendingCaption = document.createElement('p')
+  private pendingCard: RetainedCard | null = null
   private readonly instruction = document.createElement('p')
   private readonly instructionText = document.createElement('span')
   private readonly instructionSizes: HTMLSpanElement[] = []
@@ -145,6 +147,11 @@ export class ThreeBoard implements ThreeBoardApi {
       this.effectCaption.setAttribute('role', 'status')
       this.effectCaption.setAttribute('aria-live', 'polite')
       this.stage.append(this.effectCaption)
+      this.pendingCaption.className = 'three-board-pending-caption'
+      this.pendingCaption.hidden = true
+      this.pendingCaption.setAttribute('role', 'status')
+      this.pendingCaption.setAttribute('aria-live', 'polite')
+      this.stage.append(this.pendingCaption)
       this.primaryButton.type = 'button'
       this.primaryButton.className = 'three-board-primary'
       this.primaryButton.hidden = true
@@ -207,6 +214,8 @@ export class ThreeBoard implements ThreeBoardApi {
   ): void {
     if (this.disposed || this.failed) return
     const boundary = presentationBoundary(this.view, view)
+    const sessionBoundary = !this.view?.game || !view.game
+      || this.view.seed !== view.seed || this.view.mode !== view.mode
     const reoriented = this.actor !== presentedActor || boundary
     if (reoriented) {
       this.endDrag(false)
@@ -214,6 +223,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     if (boundary) {
       for (const effect of this.effects) effect.cancel()
+      if (sessionBoundary) this.clearPendingCard()
       this.cards?.clear()
     }
     this.view = view
@@ -232,6 +242,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const game = this.view?.game
     if (!game) {
       this.canDrop = false
+      this.clearPendingCard()
       this.cards?.reconcile([])
       this.syncTargetLabels([])
       this.effectCaption.hidden = true
@@ -336,11 +347,46 @@ export class ThreeBoard implements ThreeBoardApi {
     const duration = animate && !resized && this.quality.motion && !this.drag
       ? Math.min(220, durationMsForSpeed(this.view?.animationSpeed ?? 'normal')) : 0
     this.cards?.reconcile(descriptors, duration)
+    this.presentPendingCard()
     if (resized || invalidateHistory) this.cards?.invalidateHistoricalAnchors()
     this.reanchorEffects()
     this.syncTargetLabels(descriptors)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
+  }
+
+  private clearPendingCard(): void {
+    this.pendingCard?.dispose()
+    this.pendingCard = null
+    this.pendingCaption.hidden = true
+    this.pendingCaption.textContent = ''
+  }
+
+  private presentPendingCard(): void {
+    const game = this.view?.game
+    const pending = game?.phase === 'respond' ? game.pendingLandPlay : null
+    if (!pending || !this.cards) {
+      this.clearPendingCard()
+      return
+    }
+    const rect = pendingCardRect(this.layout, pending.actor, this.actor)
+    const descriptor: CardDescriptor = {
+      ...rect, hit: {
+        key: boardCardKey(pending.cardId, pending.actor), cardId: pending.cardId,
+        name: pending.name, owner: pending.actor, zone: 'battlefield', playable: false,
+      },
+      style: this.view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
+      visible: true, target: false, shadows: this.quality.shadows, lifted: true,
+    }
+    if (this.pendingCard?.descriptor.hit.key !== descriptor.hit.key) this.clearPendingCard()
+    if (this.pendingCard) this.pendingCard.update(descriptor)
+    else this.pendingCard = this.cards.createPresentation(descriptor)
+    this.pendingCard.group.name = 'pending-land-play'
+    this.pendingCaption.hidden = false
+    this.pendingCaption.textContent = `${pending.name} · awaiting response`
+    this.pendingCaption.style.left = `${this.layout.width / 2 + rect.x}px`
+    this.pendingCaption.style.top = `${this.layout.height / 2 - rect.y - rect.height / 2 + 4}px`
+    this.pendingCaption.style.width = `${rect.width - 8}px`
   }
 
   private syncTargetLabels(descriptors: readonly CardDescriptor[]): void {
@@ -396,6 +442,7 @@ export class ThreeBoard implements ThreeBoardApi {
 
   hitTest(clientX: number, clientY: number): BoardHit | null {
     if (!this.usable() || !clientToBoard(clientX, clientY, this.canvas.getBoundingClientRect(), this.layout, this.point)) return null
+    if (this.pendingCard && pointInRect(this.point, this.pendingCard.anchor())) return null
     return this.cards?.hitTest(this.point) ?? null
   }
 
@@ -788,6 +835,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.targetLabels.clear()
     for (const surface of this.surfaces.values()) surface.material.dispose()
     this.surfaces.clear()
+    this.clearPendingCard()
     this.cards?.dispose()
     this.background?.dispose()
     this.background = null

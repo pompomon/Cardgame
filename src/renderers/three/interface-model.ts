@@ -70,7 +70,7 @@ export function threeSessionKey(view: AppViewModel): string {
 export function threeDecisionKey(view: AppViewModel): string {
   const game = view.game
   return JSON.stringify([threeSessionKey(view), view.replay.step, game && [
-    game.turn, game.phase, game.actor, game.actorControl, game.canInput, game.pendingLandName,
+    game.turn, game.phase, game.actor, game.actorControl, game.canInput, game.pendingLandName, game.pendingLandPlay,
     game.pendingPlainsReuseName, game.legal, game.players, game.revealedEnemyHandForSwamp,
   ]])
 }
@@ -85,7 +85,7 @@ export function threeResponse(view: AppViewModel, ui: InterfaceUi): CounterHandO
     ...response,
     choices: response.requiredIslandId === null ? [] : response.choices.filter((choice) =>
       choice.cardName !== HIDDEN_HAND_CARD_NAME && choice.action.actor === game.actor),
-    instruction: `${response.instruction} The first Island (blue ring) is included automatically; pink rings mark your choices.`,
+    instruction: `${response.instruction} The first Island (blue frame) is included automatically; pink frames mark your choices.`,
   }
 }
 
