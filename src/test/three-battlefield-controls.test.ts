@@ -143,9 +143,13 @@ function setup() {
     presentedActor: 0, menuOpen: false, preview: null, pendingCardId: null,
     phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
   }
-  const present = (changes: Partial<InterfaceUi> = {}, replay = false) => {
+  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0) => {
     const view = buildViewModel(app, false)
-    if (replay) { view.replay.active = true; view.game!.isReplay = true }
+    if (replay) {
+      view.replay.active = true
+      view.replay.step = replayStep
+      view.game!.isReplay = true
+    }
     const nextUi = { ...ui, presentedActor: view.game!.actor, ...changes }
     const primary = threePrimaryAction(view, nextUi)
     board.render(view, nextUi.presentedActor, new Set(), threeResponse(view, nextUi), primary)
@@ -262,13 +266,19 @@ describe('constructed Three battlefield controls', () => {
     expect(done).toHaveBeenCalledOnce()
   })
 
-  it('shows response snapshots during replay, AI turns, hidden-page recovery and animation-off without idle frames', () => {
+  it('retains response snapshots through replay, AI turns, hidden-page recovery and animation-off without idle frames', () => {
     const h = setup()
     h.act('play_land')
+    const pending = h.pending()
     h.app.animationSpeed = 'off'
     h.app.controllers = ['ai', 'ai']
-    h.present({ presentedActor: 0 }, true)
-    expect(h.pending()?.visible).toBe(true)
+    h.present({ presentedActor: 0 }, true, 3)
+    expect(h.pending()).toBe(pending)
+    h.present({ presentedActor: 0 }, true, 1)
+    expect(h.pending()).toBe(pending)
+    h.present({ presentedActor: 0 })
+    expect(h.pending()).toBe(pending)
+    expect(pending?.visible).toBe(true)
     expect(h.button.hidden).toBe(true)
     h.document.hidden = true
     h.document.dispatchEvent(new Event('visibilitychange'))

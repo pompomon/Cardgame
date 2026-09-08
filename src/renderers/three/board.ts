@@ -214,6 +214,8 @@ export class ThreeBoard implements ThreeBoardApi {
   ): void {
     if (this.disposed || this.failed) return
     const boundary = presentationBoundary(this.view, view)
+    const sessionBoundary = !this.view?.game || !view.game
+      || this.view.seed !== view.seed || this.view.mode !== view.mode
     const reoriented = this.actor !== presentedActor || boundary
     if (reoriented) {
       this.endDrag(false)
@@ -221,7 +223,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     if (boundary) {
       for (const effect of this.effects) effect.cancel()
-      this.clearPendingCard()
+      if (sessionBoundary) this.clearPendingCard()
       this.cards?.clear()
     }
     this.view = view
