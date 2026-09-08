@@ -13,7 +13,7 @@ Deployed to GitHub Pages under a non-root base path.
 
 ## Validation sequence (always)
 
-Use Node 22 and `npm ci` for a clean, lockfile-based baseline. Keep intentional
+Use Node 24 and `npm ci` for a clean, lockfile-based baseline. Keep intentional
 dependency updates separate from environment recovery.
 
 1. `npm run lint` (= `tsc --noEmit`)

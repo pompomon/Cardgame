@@ -19,7 +19,7 @@ A simplified Magic-style 2-player card game shipped as an offline-capable SPA.
 
 ## Before you change code
 
-Use Node 22 and the committed lockfile for a clean baseline:
+Use Node 24 and the committed lockfile for a clean baseline:
 
 ```bash
 npm ci
