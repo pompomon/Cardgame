@@ -5,7 +5,7 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
 
 ## Sequence
 
-1. **Install** — use Node 22, matching the deployment workflow, and record the
+1. **Install** — use Node 24, matching the deployment workflow, and record the
    Node/npm versions and baseline commit. For a fresh checkout or CI reproduction,
    install from the committed lockfile:
 
@@ -47,7 +47,7 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
    ```
 
    The browser build also exercises `import.meta.env.BASE_URL` static
-   replacement, and the CLI build emits the standalone Node 22 ESM bundle at
+   replacement, and the CLI build emits the standalone Node 24 ESM bundle at
    `dist-cli/cardgame-cli.mjs`, so both must pass before merge. There is a regression test
    (`src/test/card-art-base-path.test.ts`) that invokes `vite build` with a
    custom `VITE_BASE_PATH` to verify the base is baked into the bundle. Preserve
