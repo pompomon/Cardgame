@@ -26,7 +26,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -56,7 +56,7 @@ jobs:
 
       - name: Upload artifact
         id: pages_artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
           retention-days: 1
@@ -73,7 +73,10 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5.0.1
+        env:
+          # Temporary targeted workaround for a bundled transitive dependency importing deprecated Node built-in punycode.
+          NODE_OPTIONS: --disable-warning=DEP0040
 
   cleanup:
     needs: [build, deploy]
