@@ -207,6 +207,9 @@
   gap: 5px;
   padding: 6px 8px;
 }
+.three-board-stage[data-layout="compact"] .three-board-label[data-row="near"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .three-board-stage[data-layout="compact"] .three-board-primary {
   width: 100%;
   min-width: 0;
@@ -222,7 +225,7 @@
   min-width: 64px;
 }
 .three-board-stage[data-layout="compact"] .three-board-stacks {
-  gap: 12px;
+  display: none;
 }
 @media (max-width: 480px) {
   .three-board-stage { border-radius: 10px; }

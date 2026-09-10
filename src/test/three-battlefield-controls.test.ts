@@ -572,6 +572,12 @@ describe('constructed Three battlefield controls', () => {
     expect(css).toMatch(/\.three-board-instruction-size\s*\{\s*visibility:\s*hidden;/)
   })
 
+  it('places compact near-player controls beside its summary and removes redundant stack graphics', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\[data-layout="compact"\] \.three-board-label\[data-row="near"\]\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
+    expect(css).toMatch(/\[data-layout="compact"\] \.three-board-stacks\s*\{[^}]*display:\s*none;/)
+  })
+
   it.each(['pointerdown', 'keydown'])('passes the captured decision through %s, not the next decision', (type) => {
     const h = setup()
     const original = h.present()!
