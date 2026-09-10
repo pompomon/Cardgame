@@ -13,7 +13,9 @@ export interface BoardRect extends Point {
 export interface RowLayout {
   readonly y: number
   readonly labelTop: number
+  readonly labelHeight: number
   readonly controlsTop: number
+  readonly controlsHeight: number
   readonly height: number
 }
 
@@ -64,6 +66,16 @@ export function boardColumns(width: number, compact: boolean): BoardColumns {
   }
 }
 
+function fitToBudget(sizes: readonly number[], minima: readonly number[], budget: number): number[] {
+  const total = sizes.reduce((sum, size) => sum + size, 0)
+  if (total <= budget) return [...sizes]
+  const minimum = minima.reduce((sum, size) => sum + size, 0)
+  if (minimum >= budget) return minima.map((size) => size * budget / minimum)
+  const extra = total - minimum
+  const available = budget - minimum
+  return sizes.map((size, index) => minima[index] + (size - minima[index]) * available / extra)
+}
+
 export function boardLayout(
   width: number,
   height: number,
@@ -78,28 +90,34 @@ export function boardLayout(
   const safeHeight = (value: number, minimum: number): number =>
     Number.isFinite(value) ? Math.max(minimum, value) : minimum
   const h = safeHeight(height, 1)
+  const headerHeights = rows.map((row) => safeHeight(headers[row], 28))
+  const controlHeights = rows.map((row) => safeHeight(controls[row], 44))
   if (compact) {
-    const minimumRows = rows.map((row) => Math.max(44, safeHeight(headers[row], 28), safeHeight(controls[row], 44)))
-    const minimum = minimumRows.reduce((sum, size) => sum + size, 0)
+    const measuredRows = rows.map((_, index) => Math.max(headerHeights[index], controlHeights[index]))
+    const minimumRows = rows.map(() => 44)
+    const rowSizes = fitToBudget(measuredRows, minimumRows, h)
+    const minimum = rowSizes.reduce((sum, size) => sum + size, 0)
     const spacing = Math.min(12, Math.max(0, (h - minimum) / (rows.length + 1)))
     const available = Math.max(rows.length, h - spacing * (rows.length + 1))
     const extra = Math.max(0, (available - minimum) / rows.length)
-    const rowHeights = minimumRows.map((size) => size + extra)
+    const rowHeights = rowSizes.map((size) => size + extra)
     const cardHeight = Math.max(1, Math.min(180, ...rowHeights))
     const cardWidth = Math.min(cardHeight * 0.73, columns.cardsWidth)
     const gap = 12
     let top = spacing
-    const row = (name: BoardRow, index: number): RowLayout => {
+    const row = (index: number): RowLayout => {
       const space = rowHeights[index]
       const center = top + space / 2
       top += space + spacing
       return {
         y: h / 2 - center, height: space,
-        labelTop: center - safeHeight(headers[name], 28) / 2,
-        controlsTop: center - safeHeight(controls[name], 44) / 2,
+        labelTop: center - Math.min(headerHeights[index], space) / 2,
+        labelHeight: Math.min(headerHeights[index], space),
+        controlsTop: center - Math.min(controlHeights[index], space) / 2,
+        controlsHeight: Math.min(controlHeights[index], space),
       }
     }
-    const positions = { far: row('far', 0), near: row('near', 1), hand: row('hand', 2) }
+    const positions = { far: row(0), near: row(1), hand: row(2) }
     return {
       width: w, height: h, cardWidth, cardHeight, gap, compact, columns, rows: positions,
       capacity: Math.max(1, Math.min(16, Math.floor((columns.cardsWidth + gap) / (cardWidth + gap)))),
@@ -109,8 +127,14 @@ export function boardLayout(
       },
     }
   }
-  const chromeHeight = rows.reduce((sum, row) =>
-    sum + safeHeight(headers[row], 28) + safeHeight(controls[row], 44), 0)
+  const fittedChrome = fitToBudget(
+    [...headerHeights, ...controlHeights],
+    [...rows.map(() => 28), ...rows.map(() => 44)],
+    Math.max(0, h - rows.length),
+  )
+  const fittedHeaders = fittedChrome.slice(0, rows.length)
+  const fittedControls = fittedChrome.slice(rows.length)
+  const chromeHeight = fittedChrome.reduce((sum, size) => sum + size, 0)
   const spacingSlots = rows.length * 3 + 1
   const spacing = Math.min(8, Math.max(0, (h - chromeHeight - rows.length * 32) / spacingSlots))
   const cardSpace = Math.max(1, (h - chromeHeight - spacing * spacingSlots) / rows.length)
@@ -119,14 +143,21 @@ export function boardLayout(
   const gap = 12
   const capacity = Math.max(1, Math.min(16, Math.floor((w - 24 + gap) / (cardWidth + gap))))
   let top = spacing
-  const row = (name: BoardRow): RowLayout => {
+  const row = (index: number): RowLayout => {
     const labelTop = top
-    const cardsTop = labelTop + safeHeight(headers[name], 28) + spacing
+    const cardsTop = labelTop + fittedHeaders[index] + spacing
     const controlsTop = cardsTop + cardSpace + spacing
-    top = controlsTop + safeHeight(controls[name], 44) + spacing
-    return { y: h / 2 - cardsTop - cardSpace / 2, labelTop, controlsTop, height: cardSpace }
+    top = controlsTop + fittedControls[index] + spacing
+    return {
+      y: h / 2 - cardsTop - cardSpace / 2,
+      labelTop,
+      labelHeight: fittedHeaders[index],
+      controlsTop,
+      controlsHeight: fittedControls[index],
+      height: cardSpace,
+    }
   }
-  const positions = { far: row('far'), near: row('near'), hand: row('hand') }
+  const positions = { far: row(0), near: row(1), hand: row(2) }
   return {
     width: w,
     height: h,

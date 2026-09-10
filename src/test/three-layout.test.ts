@@ -63,6 +63,22 @@ describe('Three.js fixed tabletop layout', () => {
     expect(pointInRect({ x: 0, y: layout.rows.hand.y }, layout.drop)).toBe(false)
   })
 
+  it.each([[320, false], [844, true]])('compacts oversized chrome within a 300px stage at width %s', (width, compact) => {
+    const headers = { far: 60, near: 130, hand: 40 }
+    const controls = { far: 120, near: 120, hand: 120 }
+    const layout = boardLayout(width, 300, headers, controls, compact)
+    expect(Object.values(headers).reduce((sum, size) => sum + size, 0)
+      + Object.values(controls).reduce((sum, size) => sum + size, 0)).toBeGreaterThan(layout.height)
+    for (const row of ['far', 'near', 'hand'] as const) {
+      const placement = layout.rows[row]
+      expect(placement.labelTop).toBeGreaterThanOrEqual(0)
+      expect(placement.labelTop + placement.labelHeight).toBeLessThanOrEqual(layout.height)
+      expect(placement.controlsTop).toBeGreaterThanOrEqual(0)
+      expect(placement.controlsTop + placement.controlsHeight).toBeLessThanOrEqual(layout.height)
+    }
+    expect(layout.rows.hand.controlsTop + layout.rows.hand.controlsHeight).toBeLessThanOrEqual(layout.height)
+  })
+
   it('clamps pages when cards leave a row and handles empty/invalid input', () => {
     expect(pageWindow(5, 100, 3)).toMatchObject({ page: 1, start: 3, end: 5, pages: 2 })
     expect(pageWindow(0, 4, 3)).toMatchObject({ page: 0, pages: 1, end: 0 })

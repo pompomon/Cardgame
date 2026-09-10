@@ -43,6 +43,7 @@
   color: #dbe3f1;
   text-align: center;
   font-weight: 650;
+  overflow: hidden;
   pointer-events: none;
 }
 .three-board-label p { margin: 0; }
@@ -86,6 +87,8 @@
   justify-content: center;
   gap: 8px;
   min-height: 44px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .three-board-pagination button {
   min-width: 82px;
