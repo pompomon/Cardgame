@@ -38,29 +38,30 @@ The selected renderer is also stored in `localStorage` for later visits.
 - Drag a playable hand card onto your battlefield. Touch and pen movement must
   cross a threshold; tapping opens a preview. Multiple legal targets are selected
   before committing the action.
-- Both battlefield headers show Hand, Deck, and Graveyard counts, even with
-  **Cards & keyboard controls** collapsed. **End Turn** or **Pass Response**
-  appears in the near-player battlefield header when appropriate; neither is
-  available during replay or after game over. Short screens scroll rather than
-  clipping the battlefield controls.
+- Both battlefield headers show Hand, Deck, and Graveyard counts. **End Turn**
+  or **Pass Response** appears in the near-player battlefield header when
+  appropriate; neither is available during replay or after game over.
 - When responding with Island, click or tap an eligible card in your hand to
   counter immediately, discarding that card plus the first Island automatically.
   Pink rings mark eligible discards; the blue-ringed Island is included, not a
   separate choice. Another Island can be the additional discard. Hand pagination
   keeps every choice reachable. Use **Pass Response** to decline.
-- Native play and target buttons provide the same actions without dragging.
-  During a response, each eligible native hand-card control names the full
-  discard cost and supports keyboard activation instead of opening a preview.
-  Menus and previews support keyboard navigation and cancellation.
+- **Game Menu → Cards & keyboard controls** opens the viewport-bounded native
+  controls. Native play and target buttons provide the same actions without
+  dragging. During a response, each eligible native hand-card control names the
+  full discard cost and supports keyboard activation instead of opening a
+  preview. Escape or **Back** returns to Game Menu; previews return to the Cards
+  dialog, with focus and internal scroll positions preserved.
 - Mouse hover shows a non-modal preview without taking focus; click, tap, or
   native keyboard controls still open the explicit preview. Hover is suppressed
   while dragging, choosing responses/targets, or using a menu.
 - The game menu contains a collapsible **Replay Log** with the latest 200
   structured events, or legacy text for older recordings. Scrolling back stops
   automatic following; **Follow latest** resumes it.
-- Card rows have navigation for overflow rather than indefinitely shrinking
-  cards. Short landscape layouts place player information, cards, and pagination
-  in separate lanes; enlarged text and short screens still scroll safely.
+- Card rows have navigation for overflow and resize to the stage height. Short
+  landscape layouts place player information, cards, and pagination in separate
+  lanes. Active gameplay fits the viewport without document or battlefield
+  scrolling; dialogs scroll internally when space or enlarged text requires it.
   The camera stays fixed during dragging. Target-page notices keep off-page
   choices discoverable, and deck/graveyard stacks distinguish empty piles.
 - Card Style, Board Theme, Render Quality, and Animations use the existing

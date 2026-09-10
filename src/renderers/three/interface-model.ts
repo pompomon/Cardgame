@@ -22,9 +22,11 @@ export type ThreeLobbyPage = 'root' | 'settings' | 'recording'
 export interface InterfaceUi {
   readonly presentedActor: number
   readonly menuOpen: boolean
+  readonly cardsOpen: boolean
   readonly pendingCardId: string | null
   readonly phaseDismissed: boolean
   readonly preview: BoardHit | null
+  readonly previewReturnToCards: boolean
   readonly hostAnswerDraft: string
   readonly joinOfferDraft: string
   readonly lobbyPage?: ThreeLobbyPage
@@ -97,12 +99,12 @@ export function threePrimaryAction(view: AppViewModel, ui: InterfaceUi): ThreePr
   if (game.phase === 'main') {
     return {
       type: 'end_turn', label: 'End Turn', decision, prompt: '',
-      disabled: !game.legal.canEndTurn || ui.menuOpen || !!ui.preview || !!ui.pendingCardId,
+      disabled: !game.legal.canEndTurn || ui.menuOpen || ui.cardsOpen || !!ui.preview || !!ui.pendingCardId,
     }
   }
   const response = threeResponse(view, ui)
   return response ? {
-    type: 'pass_response', label: 'Pass Response', decision, disabled: !response.canPass,
+    type: 'pass_response', label: 'Pass Response', decision, disabled: !response.canPass || ui.cardsOpen,
     prompt: `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
       ? response.instruction : 'No legal counter cards available.'}`,
   } : null
@@ -163,9 +165,9 @@ function button(action: string, label: string, disabled = false, attrs = ''): st
   return `<button type="button" data-action="${action}"${disabled ? ' disabled' : ''}${attrs}>${escapeHtml(label)}</button>`
 }
 
-function modal(kind: string, title: string, contents: string): string {
+function modal(kind: string, title: string, contents: string, closeAction = 'close', closeLabel = 'Close'): string {
   return `<dialog class="three-dialog" data-modal="${kind}" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" tabindex="-1">
-    <header><h2>${escapeHtml(title)}</h2>${button('close', 'Close', false, ' aria-label="Close dialog"')}</header>${contents}</dialog>`
+    <header><h2>${escapeHtml(title)}</h2>${button(closeAction, closeLabel, false, ` aria-label="${escapeHtml(closeLabel)}"`)}</header>${contents}</dialog>`
 }
 
 export function renderThreeSettings(view: AppViewModel): string {
@@ -205,7 +207,8 @@ function renderRecorder(view: AppViewModel): string {
 }
 
 function renderMenu(view: AppViewModel): string {
-  return modal('menu', 'Game Menu', `<div class="three-actions">${view.mode === 'adventure-hvai' && !view.replay.active
+  return modal('menu', 'Game Menu', `<div class="three-actions">${button('cards', 'Cards & keyboard controls', false, ' aria-haspopup="dialog"')}
+    ${view.mode === 'adventure-hvai' && !view.replay.active
     ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
     : button('back-to-lobby', view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby')
       + (view.mode === 'tutorial' || view.replay.active ? '' : button('rematch', 'Rematch'))}</div>
@@ -255,8 +258,8 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
   const previewAllowed = canPreviewCard({ phase: game.phase, pendingPlayLandTargetSelection: !!ui.pendingCardId, menuOpen: blocked })
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
   const owners = ui.presentedActor === 1 ? [1, 0] : [0, 1]
-  return `<details data-detail-key="cards"><summary>Cards &amp; keyboard controls</summary>
-    <p>Play, respond, or preview using the hand-card controls, or interact with the 3D board above.</p>
+  return modal('cards', 'Cards & keyboard controls',
+    `<p>Play, respond, or preview using the hand-card controls, or interact with the 3D board.</p>
     ${owners.map((owner) => {
       const player = game.players[owner]
       return `<section aria-label="Player ${owner + 1} cards"><h3>Player ${owner + 1} (${escapeHtml(view.controllers[owner])})${game.actor === owner ? ' · Active' : ''}</h3>
@@ -281,7 +284,8 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
         <h4>Battlefield</h4><div class="three-native-cards" data-scroll-key="battlefield-${owner}">${player.battlefield.map((card) =>
           button('preview', `Preview ${card.name}`, !previewAllowed, ` data-zone="battlefield" data-owner="${owner}" data-card-id="${escapeHtml(card.cardId)}" data-instance-id="${escapeHtml(card.instanceId)}"`),
         ).join('') || '<p>No lands.</p>'}</div></section>`
-    }).join('')}</details>`
+    }).join('')}`,
+    'cards-back', 'Back to Game Menu')
 }
 
 export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
@@ -320,12 +324,13 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includ
   const game = view.game!
   const targets = threeTargets(view, ui)
   const response = threeResponse(view, ui)
-  const blocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
+  const nativeBlocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
   const previewName = ui.preview ? threePreviewName(game, ui.preview) : null
   return `${includeHud ? renderThreeHud(view, ui) : ''}<section class="three-secondary-controls" aria-label="Additional game controls">
-    ${targets && !ui.menuOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
-    ${renderNativeCards(view, ui, blocked, response)}
+    ${targets && !ui.menuOpen && !ui.cardsOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${ui.menuOpen ? renderMenu(view) : ''}
-    ${previewName ? modal('preview', `${previewName} card preview`, renderCardTile(previewName, view.cardVisualStyle)) : ''}
+    ${ui.cardsOpen ? renderNativeCards(view, ui, nativeBlocked, response) : ''}
+    ${previewName ? modal('preview', `${previewName} card preview`, renderCardTile(previewName, view.cardVisualStyle),
+    'close', ui.previewReturnToCards ? 'Back to Cards' : 'Close') : ''}
     </section>`
 }

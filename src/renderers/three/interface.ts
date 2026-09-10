@@ -53,9 +53,11 @@ export class ThreeInterface {
   private view: AppViewModel | null = null
   private presentedActor = 0
   private menuOpen = false
+  private cardsOpen = false
   private pendingCardId: string | null = null
   private phaseDismissed = false
   private preview: BoardHit | null = null
+  private previewReturnToCards = false
   private hover: BoardHit | null = null
   private lobbyPage: ThreeLobbyPage = 'root'
   private hostAnswerDraft = ''
@@ -73,6 +75,10 @@ export class ThreeInterface {
   private modalKind: string | null = null
   private inlineTargetOpen = false
   private returnFocus: SavedFocus | null = null
+  private cardsReturnFocus: SavedFocus | null = null
+  private previewReturnFocus: SavedFocus | null = null
+  private targetReturnFocus: SavedFocus | null = null
+  private targetReturnToCards = false
   private disposed = false
   private fileGeneration = 0
   private readonly downloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -124,8 +130,9 @@ export class ThreeInterface {
 
   private ui(): InterfaceUi {
     return {
-      presentedActor: this.presentedActor, menuOpen: this.menuOpen, pendingCardId: this.pendingCardId,
-      phaseDismissed: this.phaseDismissed, preview: this.preview,
+      presentedActor: this.presentedActor, menuOpen: this.menuOpen, cardsOpen: this.cardsOpen,
+      pendingCardId: this.pendingCardId, phaseDismissed: this.phaseDismissed, preview: this.preview,
+      previewReturnToCards: this.previewReturnToCards,
       hostAnswerDraft: this.hostAnswerDraft, joinOfferDraft: this.joinOfferDraft,
       lobbyPage: this.lobbyPage,
     }
@@ -159,7 +166,7 @@ export class ThreeInterface {
   }
 
   get targetIds(): ReadonlySet<string> {
-    if (!this.view || this.menuOpen || this.preview || this.phaseDismissed) return new Set()
+    if (!this.view || this.menuOpen || this.cardsOpen || this.preview || this.phaseDismissed) return new Set()
     const target = threeTargets(this.view, this.ui())
     return new Set(target?.battlefield ? target.options.flatMap((option) => option.effectTargetId ? [option.effectTargetId] : []) : [])
   }
@@ -181,8 +188,13 @@ export class ThreeInterface {
   }
 
   isBlocked(): boolean {
-    return !this.disposed && (this.menuOpen || this.preview !== null || this.pendingCardId !== null
+    return !this.disposed && (this.menuOpen || this.cardsOpen || this.preview !== null || this.pendingCardId !== null
       || !this.phaseDismissed && !!this.view && threeTargets(this.view, this.ui()) !== null)
+  }
+
+  private nativeActionBlocked(): boolean {
+    return this.menuOpen || this.preview !== null || this.pendingCardId !== null
+      || !this.phaseDismissed && !!this.view && threeTargets(this.view, this.ui()) !== null
   }
 
   update(view: AppViewModel, presentedActor: number): void {
@@ -191,17 +203,29 @@ export class ThreeInterface {
     const decision = threeDecisionKey(view)
     if (this.session !== session) {
       this.menuOpen = false
+      this.cardsOpen = false
       this.preview = null
+      this.previewReturnToCards = false
       this.hostAnswerDraft = ''
       this.joinOfferDraft = ''
       this.lobbyPage = 'root'
+      this.cardsReturnFocus = null
+      this.previewReturnFocus = null
+      this.targetReturnFocus = null
+      this.targetReturnToCards = false
       this.fileGeneration += 1
     }
     if (this.decision !== decision || this.presentedActor !== presentedActor) {
+      this.cardsOpen = false
       this.pendingCardId = null
       this.phaseDismissed = false
       this.preview = null
+      this.previewReturnToCards = false
       this.hover = null
+      this.cardsReturnFocus = null
+      this.previewReturnFocus = null
+      this.targetReturnFocus = null
+      this.targetReturnToCards = false
       this.submittedDecision = null
     }
     this.view = view
@@ -226,12 +250,15 @@ export class ThreeInterface {
 
   playCard(cardId: string): void {
     const view = this.latestForAction()
-    if (!view?.game || !canThreeInput(view, this.presentedActor) || this.isBlocked() || view.game.phase !== 'main') return
+    if (!view?.game || !canThreeInput(view, this.presentedActor) || this.nativeActionBlocked() || view.game.phase !== 'main') return
     if (!view.game.players[view.game.actor].handCards.some((card) => card.id === cardId)) return
     const resolution = resolvePlayLandDrop(view.game, cardId)
     if (resolution.kind === 'single') {
       this.submit(resolution.action)
     } else if (resolution.kind === 'needs_target') {
+      this.targetReturnToCards = this.cardsOpen
+      this.targetReturnFocus = this.cardsOpen ? this.captureFocus() : null
+      this.cardsOpen = false
       this.pendingCardId = cardId
       this.changed()
     }
@@ -239,7 +266,7 @@ export class ThreeInterface {
 
   activate(hit: BoardHit): void {
     const view = this.latestForAction()
-    if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.preview) return
+    if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.cardsOpen || this.preview) return
     if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) {
       this.respondWithCard(hit.cardId, hit.owner)
       return
@@ -256,7 +283,7 @@ export class ThreeInterface {
 
   private respondWithCard(cardId: string, owner: number): void {
     const view = this.latestForAction()
-    if (!view?.game || owner !== view.game.actor || this.isBlocked()) return
+    if (!view?.game || owner !== view.game.actor || this.nativeActionBlocked()) return
     const choice = threeResponse(view, this.ui())?.choices.find((entry) => entry.cardId === cardId)
     if (choice) this.submit(choice.action)
   }
@@ -267,13 +294,16 @@ export class ThreeInterface {
     if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) return
     if (!canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })) return
     if (threePreviewName(view.game, hit) === null) return
+    this.previewReturnToCards = this.cardsOpen
+    this.previewReturnFocus = this.captureFocus()
+    this.cardsOpen = false
     this.preview = { ...hit }
     this.changed()
   }
 
   private chooseTarget(id?: string): void {
     const view = this.latestForAction()
-    if (!view?.game || !canThreeInput(view, this.presentedActor) || this.menuOpen || this.preview) return
+    if (!view?.game || !canThreeInput(view, this.presentedActor) || this.menuOpen || this.cardsOpen || this.preview) return
     const game = view.game
     const action = game.phase === 'main' && this.pendingCardId
       ? resolveTargetedPlayLandAction(game, this.pendingCardId, id)
@@ -294,9 +324,15 @@ export class ThreeInterface {
     if (threeDecisionKey(this.controller.getViewModel()) === submittedDecision) {
       this.submittedDecision = null
     } else if (this.decision === submittedDecision) {
+      this.cardsOpen = false
       this.pendingCardId = null
       this.phaseDismissed = true
       this.preview = null
+      this.previewReturnToCards = false
+      this.cardsReturnFocus = null
+      this.previewReturnFocus = null
+      this.targetReturnFocus = null
+      this.targetReturnToCards = false
     }
     if (!this.disposed) this.changed()
   }
@@ -430,14 +466,31 @@ export class ThreeInterface {
   }
 
   private close(): void {
-    if (!this.menuOpen && !this.preview && !this.pendingCardId && this.phaseDismissed) return
-    if (this.menuOpen) this.menuOpen = false
-    else if (this.preview) this.preview = null
-    else {
+    if (!this.menuOpen && !this.cardsOpen && !this.preview && !this.pendingCardId && this.phaseDismissed) return
+    let restore: SavedFocus | null = null
+    if (this.menuOpen) {
+      this.menuOpen = false
+    } else if (this.preview) {
+      restore = this.previewReturnFocus
+      this.preview = null
+      this.previewReturnFocus = null
+      if (this.previewReturnToCards) this.cardsOpen = true
+      this.previewReturnToCards = false
+    } else if (this.cardsOpen) {
+      restore = this.cardsReturnFocus
+      this.cardsOpen = false
+      this.menuOpen = true
+      this.cardsReturnFocus = null
+    } else {
+      restore = this.targetReturnFocus
       this.pendingCardId = null
       this.phaseDismissed = true
+      this.targetReturnFocus = null
+      if (this.targetReturnToCards) this.cardsOpen = true
+      this.targetReturnToCards = false
     }
     this.changed()
+    this.restoreFocus(restore)
   }
 
   private readonly handleKeydown = (event: KeyboardEvent): void => {
@@ -526,10 +579,23 @@ export class ThreeInterface {
         break
       case 'menu':
         this.pendingCardId = null
+        this.targetReturnFocus = null
+        this.targetReturnToCards = false
+        this.cardsOpen = false
         this.preview = null
+        this.previewReturnFocus = null
+        this.previewReturnToCards = false
         this.menuOpen = true
         this.changed()
         break
+      case 'cards':
+        if (!this.menuOpen) break
+        this.cardsReturnFocus = this.captureFocus()
+        this.menuOpen = false
+        this.cardsOpen = true
+        this.changed()
+        break
+      case 'cards-back': this.close(); break
       case 'close': this.close(); break
       case 'resume-target': this.phaseDismissed = false; this.changed(); break
       case 'play': if (element.dataset.cardId) this.playCard(element.dataset.cardId); break
@@ -634,10 +700,16 @@ export class ThreeInterface {
       this.detailStates.clear()
       this.followLatest = true
     }
+    this.cardsOpen = false
     this.pendingCardId = null
     this.phaseDismissed = true
     this.preview = null
+    this.previewReturnToCards = false
     this.hover = null
+    this.cardsReturnFocus = null
+    this.previewReturnFocus = null
+    this.targetReturnFocus = null
+    this.targetReturnToCards = false
     this.lobbyPage = 'root'
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
@@ -674,10 +746,16 @@ export class ThreeInterface {
     this.hoverContent.remove()
     if (this.hudHost) this.hudHost.innerHTML = ''
     this.view = null
+    this.cardsOpen = false
     this.preview = null
+    this.previewReturnToCards = false
     this.hover = null
     this.pendingCardId = null
     this.returnFocus = null
+    this.cardsReturnFocus = null
+    this.previewReturnFocus = null
+    this.targetReturnFocus = null
+    this.targetReturnToCards = false
     this.scrollPositions.clear()
     this.detailStates.clear()
   }

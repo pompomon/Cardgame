@@ -55,7 +55,7 @@ export function compactBoardViewport(width: number, height: number): boolean {
 export function boardColumns(width: number, compact: boolean): BoardColumns {
   const w = Number.isFinite(width) && width > 0 ? width : 1
   const labelWidth = compact ? Math.min(240, w * 0.26) : Math.max(1, w - 24)
-  const controlsWidth = compact ? 108 : Math.max(1, w - 20)
+  const controlsWidth = compact ? Math.min(280, Math.max(220, w * 0.32)) : Math.max(1, w - 20)
   const controlsLeft = compact ? w - controlsWidth - 12 : 10
   const cardsLeft = compact ? labelWidth + 24 : 12
   return {
@@ -77,19 +77,22 @@ export function boardLayout(
   const rows = ['far', 'near', 'hand'] as const
   const safeHeight = (value: number, minimum: number): number =>
     Number.isFinite(value) ? Math.max(minimum, value) : minimum
+  const h = safeHeight(height, 1)
   if (compact) {
-    const minimumRows = rows.map((row) => Math.max(104, safeHeight(headers[row], 28), safeHeight(controls[row], 44)))
-    const minimum = minimumRows.reduce((sum, size) => sum + size + 24, 0)
-    const h = Math.max(safeHeight(height, 1), minimum)
-    const extra = (h - minimum) / rows.length
-    const cardHeight = Math.min(180, ...minimumRows.map((size) => size + extra))
+    const minimumRows = rows.map((row) => Math.max(44, safeHeight(headers[row], 28), safeHeight(controls[row], 44)))
+    const minimum = minimumRows.reduce((sum, size) => sum + size, 0)
+    const spacing = Math.min(12, Math.max(0, (h - minimum) / (rows.length + 1)))
+    const available = Math.max(rows.length, h - spacing * (rows.length + 1))
+    const extra = Math.max(0, (available - minimum) / rows.length)
+    const rowHeights = minimumRows.map((size) => size + extra)
+    const cardHeight = Math.max(1, Math.min(180, ...rowHeights))
     const cardWidth = Math.min(cardHeight * 0.73, columns.cardsWidth)
     const gap = 12
-    let top = 0
+    let top = spacing
     const row = (name: BoardRow, index: number): RowLayout => {
-      const space = minimumRows[index] + extra
-      const center = top + 12 + space / 2
-      top += space + 24
+      const space = rowHeights[index]
+      const center = top + space / 2
+      top += space + spacing
       return {
         y: h / 2 - center, height: space,
         labelTop: center - safeHeight(headers[name], 28) / 2,
@@ -106,20 +109,21 @@ export function boardLayout(
       },
     }
   }
-  const overhead = rows.reduce((sum, row) => sum + safeHeight(headers[row], 28) + safeHeight(controls[row], 44) + 30, 0)
-  // Grow the table on short screens instead of squeezing cards under its HTML controls.
-  const h = Math.max(safeHeight(height, 1), overhead + 3 * 104)
-  const cardSpace = (h - overhead) / 3
-  const cardHeight = Math.min(204, cardSpace)
+  const chromeHeight = rows.reduce((sum, row) =>
+    sum + safeHeight(headers[row], 28) + safeHeight(controls[row], 44), 0)
+  const spacingSlots = rows.length * 3 + 1
+  const spacing = Math.min(8, Math.max(0, (h - chromeHeight - rows.length * 32) / spacingSlots))
+  const cardSpace = Math.max(1, (h - chromeHeight - spacing * spacingSlots) / rows.length)
+  const cardHeight = Math.max(1, Math.min(204, cardSpace))
   const cardWidth = Math.max(1, Math.min(cardHeight * 0.73, w - 32))
   const gap = 12
   const capacity = Math.max(1, Math.min(16, Math.floor((w - 24 + gap) / (cardWidth + gap))))
-  let top = 0
+  let top = spacing
   const row = (name: BoardRow): RowLayout => {
-    const labelTop = top + 6
-    const cardsTop = labelTop + safeHeight(headers[name], 28) + 8
-    const controlsTop = cardsTop + cardSpace + 8
-    top = controlsTop + safeHeight(controls[name], 44) + 8
+    const labelTop = top
+    const cardsTop = labelTop + safeHeight(headers[name], 28) + spacing
+    const controlsTop = cardsTop + cardSpace + spacing
+    top = controlsTop + safeHeight(controls[name], 44) + spacing
     return { y: h / 2 - cardsTop - cardSpace / 2, labelTop, controlsTop, height: cardSpace }
   }
   const positions = { far: row('far'), near: row('near'), hand: row('hand') }
@@ -155,11 +159,24 @@ export function cardSlotX(slot: number, visibleCount: number, layout: ThreeLayou
 export function pendingCardRect(layout: ThreeLayout, owner: number, presentedActor: number): BoardRect {
   const row = layout.rows[owner === presentedActor ? 'near' : 'far']
   const ratio = layout.cardWidth / layout.cardHeight
-  const height = Math.max(1, Math.min(layout.cardHeight * 1.08, row.height + 4,
-    Math.max(1, layout.columns.cardsWidth - 32) / ratio))
+  const shadow = 10
+  const horizontalLimit = Math.max(1, layout.columns.cardsWidth - 32) / ratio
+  let lift: number
+  let height: number
+  if (layout.compact) {
+    height = Math.max(1, Math.min(layout.cardHeight * 1.08, row.height - shadow, horizontalLimit))
+    lift = Math.min(shadow / 2, Math.max(0, (row.height - height) / 2))
+  } else {
+    const cardTop = layout.height / 2 - row.y - layout.cardHeight / 2
+    const gap = Math.max(0, row.controlsTop - cardTop - layout.cardHeight)
+    height = Math.max(1, Math.min(layout.cardHeight * 1.08,
+      layout.cardHeight + gap * 2 - shadow, horizontalLimit))
+    const growth = (height - layout.cardHeight) / 2
+    lift = Math.max(0, growth + shadow - gap)
+  }
   const width = height * ratio
   const offset = Math.max(0, Math.min(18, (layout.columns.cardsWidth - width) / 2 - 16))
-  return { x: cardSlotX(0, 1, layout) + offset, y: row.y + 4, width, height }
+  return { x: cardSlotX(0, 1, layout) + offset, y: row.y + lift, width, height }
 }
 
 /** The camera uses CSS pixels, never the canvas's DPR-scaled backing store. */

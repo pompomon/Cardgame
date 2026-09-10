@@ -97,6 +97,15 @@ describe('Three.js composition', () => {
     renderer.unmount()
   })
 
+  it('limits the viewport shell to active gameplay', () => {
+    const { renderer, container } = harness()
+    renderer.render(view())
+    expect(container.classList.add).toHaveBeenCalledWith('three-root--game')
+    renderer.render({ ...view(), game: null })
+    expect(container.classList.remove).toHaveBeenCalledWith('three-root--game')
+    renderer.unmount()
+  })
+
   it('passes modal and decision blocking to the board without changing the projected game', () => {
     const { renderer } = harness()
     const snapshot = { ...view(), controllers: ['human', 'human'] as AppViewModel['controllers'] }
@@ -179,11 +188,13 @@ describe('Three.js composition', () => {
   it('passes response feedback only after the human responder is presented', () => {
     mocks.ui.update.mockImplementation((snapshot: AppViewModel, presentedActor: number) => {
       mocks.ui.response = threeResponse(snapshot, {
-        presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
+        presentedActor, menuOpen: false, cardsOpen: false, pendingCardId: null, phaseDismissed: false,
+        previewReturnToCards: false,
         preview: null, hostAnswerDraft: '', joinOfferDraft: '',
       })
       mocks.ui.primaryAction = threePrimaryAction(snapshot, {
-        presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
+        presentedActor, menuOpen: false, cardsOpen: false, pendingCardId: null, phaseDismissed: false,
+        previewReturnToCards: false,
         preview: null, hostAnswerDraft: '', joinOfferDraft: '',
       })
     })
@@ -242,7 +253,8 @@ describe('Three.js composition', () => {
     const targets = () => {
       const [snapshot, presentedActor] = mocks.ui.update.mock.calls.at(-1)! as [AppViewModel, number]
       return threeTargets(snapshot, {
-        presentedActor, menuOpen: false, pendingCardId: null, phaseDismissed: false,
+        presentedActor, menuOpen: false, cardsOpen: false, pendingCardId: null, phaseDismissed: false,
+        previewReturnToCards: false,
         preview: null, hostAnswerDraft: '', joinOfferDraft: '',
       })
     }

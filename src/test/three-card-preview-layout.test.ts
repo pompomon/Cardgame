@@ -18,9 +18,14 @@ function ruleBody(selector: string): string {
 }
 
 describe('Three.js native card and preview layout', () => {
-  it('lets compact boards use their measured minimum instead of the stacked-board fallback', () => {
-    expect(rendererCss).toContain('.three-stage[data-layout="compact"] { min-height: var(--three-board-min-height, 0px); }')
-    expect(rendererCss).toContain('height: calc(100svh - 112px);')
+  it('keeps gameplay in a viewport shell and lets the Cards dialog scroll internally', () => {
+    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*height: 100dvh;/)
+    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*overflow: hidden;/)
+    expect(rendererCss).toMatch(/\.three-root--game \.three-controls \{[^}]*position: fixed;/)
+    expect(rendererCss).not.toContain('--three-board-min-height')
+    expect(ruleBody('.three-interface .three-dialog')).toContain('overflow: auto;')
+    expect(ruleBody('.three-interface .three-dialog[data-modal="cards"]'))
+      .toContain('width: min(1100px, calc(100% - 24px));')
   })
 
   it('keeps hover previews decorative, input-transparent and height-bounded', () => {

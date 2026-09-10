@@ -615,9 +615,7 @@ export class ThreeBoard implements ThreeBoardApi {
       headers[row] = chrome.header.offsetHeight
       controls[row] = chrome.controls.offsetHeight
     }
-    const minimum = boardLayout(width, 0, headers, controls, compact).height
-    this.host.style.setProperty('--three-board-min-height', `${minimum + 4}px`)
-    const height = Math.max(minimum, this.stage.clientHeight)
+    const height = Math.max(1, this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
     const nextLayout = boardLayout(width, height, headers, controls, compact)
     const layoutChanged = JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
@@ -819,7 +817,6 @@ export class ThreeBoard implements ThreeBoardApi {
     this.primaryButton.removeEventListener('blur', this.clearPrimaryPress)
     this.primaryAction = null
     this.pressedAction = null
-    this.host.style.removeProperty('--three-board-min-height')
     window.removeEventListener('resize', this.resize)
     window.removeEventListener('orientationchange', this.resize)
     window.visualViewport?.removeEventListener('resize', this.resize)
