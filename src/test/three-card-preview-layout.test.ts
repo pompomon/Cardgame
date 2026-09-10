@@ -26,8 +26,11 @@ describe('Three.js native card and preview layout', () => {
     expect(rendererCss).toMatch(/\.three-root--game \.three-controls \{[^}]*position: fixed;/)
     expect(rendererCss).not.toContain('--three-board-min-height')
     expect(ruleBody('.three-interface .three-dialog')).toContain('overflow: auto;')
-    expect(ruleBody('.three-interface .three-dialog[data-modal="cards"]'))
-      .toContain('width: min(1100px, calc(100% - 24px));')
+    const cardsDialog = ruleBody('.three-interface .three-dialog[data-modal="cards"]')
+    expect(cardsDialog).toContain('inset: 16px 12px;')
+    expect(cardsDialog).toContain('width: min(1100px, calc(100% - 24px));')
+    expect(cardsDialog).toContain('env(safe-area-inset-left)')
+    expect(cardsDialog).toContain('env(safe-area-inset-right)')
   })
 
   it('keeps hover previews decorative, input-transparent and height-bounded', () => {

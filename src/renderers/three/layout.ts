@@ -92,9 +92,10 @@ export function boardLayout(
   const h = safeHeight(height, 1)
   const headerHeights = rows.map((row) => safeHeight(headers[row], 28))
   const controlHeights = rows.map((row) => safeHeight(controls[row], 44))
+  const minimumHeaders = [28, 52, 28]
   if (compact) {
     const measuredRows = rows.map((_, index) => Math.max(headerHeights[index], controlHeights[index]))
-    const minimumRows = rows.map(() => 44)
+    const minimumRows = rows.map((_, index) => Math.max(44, minimumHeaders[index]))
     const rowSizes = fitToBudget(measuredRows, minimumRows, h)
     const minimum = rowSizes.reduce((sum, size) => sum + size, 0)
     const spacing = Math.min(12, Math.max(0, (h - minimum) / (rows.length + 1)))
@@ -129,7 +130,7 @@ export function boardLayout(
   }
   const fittedChrome = fitToBudget(
     [...headerHeights, ...controlHeights],
-    [...rows.map(() => 28), ...rows.map(() => 44)],
+    [...minimumHeaders, ...rows.map(() => 44)],
     Math.max(0, h - rows.length),
   )
   const fittedHeaders = fittedChrome.slice(0, rows.length)

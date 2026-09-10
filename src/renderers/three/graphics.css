@@ -47,7 +47,12 @@
   pointer-events: none;
 }
 .three-board-label p { margin: 0; }
-.three-board-label > div { min-width: 0; overflow-wrap: anywhere; }
+.three-board-label > div {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .three-board-stats {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -212,6 +217,7 @@
 }
 .three-board-stage[data-layout="compact"] .three-board-label[data-row="near"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-block: 3px;
 }
 .three-board-stage[data-layout="compact"] .three-board-primary {
   width: 100%;

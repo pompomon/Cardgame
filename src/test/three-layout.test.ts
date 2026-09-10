@@ -76,6 +76,7 @@ describe('Three.js fixed tabletop layout', () => {
       expect(placement.controlsTop).toBeGreaterThanOrEqual(0)
       expect(placement.controlsTop + placement.controlsHeight).toBeLessThanOrEqual(layout.height)
     }
+    expect(layout.rows.near.labelHeight).toBeGreaterThanOrEqual(52)
     expect(layout.rows.hand.controlsTop + layout.rows.hand.controlsHeight).toBeLessThanOrEqual(layout.height)
   })
 
