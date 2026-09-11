@@ -90,9 +90,9 @@ export function boardLayout(
   const safeHeight = (value: number, minimum: number): number =>
     Number.isFinite(value) ? Math.max(minimum, value) : minimum
   const h = safeHeight(height, 1)
-  const headerHeights = rows.map((row) => safeHeight(headers[row], 28))
-  const controlHeights = rows.map((row) => safeHeight(controls[row], 44))
   const minimumHeaders = [28, 52, 28]
+  const headerHeights = rows.map((row, index) => safeHeight(headers[row], minimumHeaders[index]))
+  const controlHeights = rows.map((row) => safeHeight(controls[row], 44))
   if (compact) {
     const measuredRows = rows.map((_, index) => Math.max(headerHeights[index], controlHeights[index]))
     const minimumRows = rows.map((_, index) => Math.max(44, minimumHeaders[index]))
@@ -130,7 +130,7 @@ export function boardLayout(
   }
   const fittedChrome = fitToBudget(
     [...headerHeights, ...controlHeights],
-    [...minimumHeaders, ...rows.map(() => 44)],
+    [0, minimumHeaders[1], 0, ...rows.map(() => 44)],
     Math.max(0, h - rows.length),
   )
   const fittedHeaders = fittedChrome.slice(0, rows.length)
