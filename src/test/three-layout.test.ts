@@ -80,20 +80,22 @@ describe('Three.js fixed tabletop layout', () => {
     expect(layout.rows.hand.controlsTop + layout.rows.hand.controlsHeight).toBeLessThanOrEqual(layout.height)
   })
 
-  it('preserves interactive chrome when the stacked stage is below the full chrome minimum', () => {
-    const layout = boardLayout(
-      320,
-      220,
-      { far: 60, near: 130, hand: 40 },
-      { far: 120, near: 120, hand: 120 },
-    )
-    expect(layout.rows.near.labelHeight).toBeGreaterThanOrEqual(52)
-    for (const row of ['far', 'near', 'hand'] as const) {
-      const controls = layout.rows[row]
-      expect(controls.controlsHeight).toBeGreaterThanOrEqual(44)
-      expect(controls.controlsTop + controls.controlsHeight).toBeLessThanOrEqual(layout.height + 0.001)
-    }
-  })
+  it.each([[320, 150, false], [844, 120, true]])(
+    'preserves interactive chrome below the full chrome minimum at %sx%s',
+    (width, height, compact) => {
+      const layout = boardLayout(
+        width,
+        height,
+        { far: 60, near: 130, hand: 40 },
+        { far: 120, near: 120, hand: 120 },
+        compact,
+      )
+      expect(layout.rows.near.labelHeight).toBeGreaterThanOrEqual(52)
+      for (const row of ['far', 'near', 'hand'] as const) {
+        expect(layout.rows[row].controlsHeight).toBeGreaterThanOrEqual(44)
+      }
+    },
+  )
 
   it('clamps pages when cards leave a row and handles empty/invalid input', () => {
     expect(pageWindow(5, 100, 3)).toMatchObject({ page: 1, start: 3, end: 5, pages: 2 })

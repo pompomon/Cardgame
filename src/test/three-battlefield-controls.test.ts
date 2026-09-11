@@ -572,6 +572,12 @@ describe('constructed Three battlefield controls', () => {
     expect(css).toMatch(/\.three-board-instruction-size\s*\{\s*visibility:\s*hidden;/)
   })
 
+  it('scrolls unavoidable stage overflow instead of clipping interactive chrome', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\.three-board-stage\s*\{[^}]*overflow-y:\s*auto;/)
+    expect(css).toMatch(/\.three-board-stage\s*\{[^}]*overscroll-behavior:\s*contain;/)
+  })
+
   it('places compact near-player controls beside its summary and removes redundant stack graphics', () => {
     const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
     expect(css).toMatch(/\[data-layout="compact"\] \.three-board-label\[data-row="near"\]\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)

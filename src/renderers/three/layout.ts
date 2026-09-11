@@ -70,7 +70,7 @@ function fitToBudget(sizes: readonly number[], minima: readonly number[], budget
   const total = sizes.reduce((sum, size) => sum + size, 0)
   if (total <= budget) return [...sizes]
   const minimum = minima.reduce((sum, size) => sum + size, 0)
-  if (minimum >= budget) return minima.map((size) => size * budget / minimum)
+  if (minimum >= budget) return [...minima]
   const extra = total - minimum
   const available = budget - minimum
   return sizes.map((size, index) => minima[index] + (size - minima[index]) * available / extra)
