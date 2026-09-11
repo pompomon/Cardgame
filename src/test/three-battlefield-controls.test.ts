@@ -42,7 +42,7 @@ class ElementStub extends EventTarget {
   readonly children: ElementStub[] = []
   readonly dataset: Record<string, string> = {}
   readonly attributes = new Map<string, string>()
-  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '' }
+  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', width: '' }
   parent: ElementStub | null = null
   className = ''
   textContent = ''
@@ -400,7 +400,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.host.all('three-board-target-pages')).toHaveLength(0)
     const layout = (h.board as unknown as { layout: ThreeLayout }).layout
     const registry = (h.board as unknown as {
-      cards: { get(key: string): { descriptor: { y: number } } | null }
+      cards: { get(key: string): { descriptor: { x: number; y: number; width: number } } | null }
     }).cards
     for (const index of [0, 7]) {
       const label = labels.find((entry) => entry.dataset.cardId === `land-${index}`)!
@@ -410,6 +410,15 @@ describe('constructed Three battlefield controls', () => {
         layout.height / 2 - card.descriptor.y,
       )?.instanceId).toBe(`target-${index}`)
     }
+    const compactLabel = labels.find((entry) => entry.dataset.cardId === 'land-0')!
+    expect(compactLabel.dataset.compact).toBe('true')
+    const first = registry.get(boardCardKey('land-0', 1, 'target-0'))!.descriptor
+    const second = registry.get(boardCardKey('land-1', 1, 'target-1'))!.descriptor
+    const exposedWidth = second.x - second.width / 2 - (first.x - first.width / 2)
+    expect(Number.parseFloat(compactLabel.style.width)).toBeLessThanOrEqual(Math.min(12, exposedWidth))
+    const fullLabel = labels.find((entry) => entry.dataset.cardId === 'land-7')!
+    expect(fullLabel.dataset.compact).toBe('false')
+    expect(fullLabel.textContent).toBe('Target')
     h.board.render(view, 0, new Set(), null, primary, true)
     expect(h.host.all('three-board-target-label')).toHaveLength(0)
   })

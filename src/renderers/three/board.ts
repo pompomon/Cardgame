@@ -405,6 +405,11 @@ export class ThreeBoard implements ThreeBoardApi {
         ? Math.min(anchor.x + anchor.width / 2, nextAnchor.x - nextAnchor.width / 2)
         : anchor.x + anchor.width / 2
       const exposedCenter = right > left ? (left + right) / 2 : anchor.x
+      const exposedWidth = Math.max(1, right - left)
+      const compact = exposedWidth < 64
+      targetLabel.element.dataset.compact = String(compact)
+      targetLabel.element.textContent = compact ? '' : 'Target'
+      targetLabel.element.style.width = compact ? `${Math.min(12, exposedWidth)}px` : ''
       targetLabel.element.style.left = `${this.layout.width / 2 + exposedCenter}px`
       targetLabel.element.style.top = `${this.layout.height / 2 - anchor.y - anchor.height / 2 + 2}px`
     }
