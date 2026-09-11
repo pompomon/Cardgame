@@ -8,6 +8,10 @@ import { ThreeAssets, type TextureLease } from './assets'
 import type { BoardHit } from './contracts'
 import { pointInRect, type BoardRect, type Point } from './layout'
 
+export const LIFTED_CARD_RENDER_ORDER = 1000
+export const DRAG_CARD_RENDER_ORDER = 1500
+export const EFFECT_RENDER_ORDER = 2000
+
 export interface CardDescriptor extends BoardRect {
   readonly hit: BoardHit
   readonly style: CardVisualStyle
@@ -83,7 +87,7 @@ export class RetainedCard {
       this.signature = signature
     }
     this.group.visible = descriptor.visible
-    this.group.renderOrder = descriptor.lifted ? 1000 : descriptor.stackIndex ?? 0
+    this.group.renderOrder = descriptor.lifted ? LIFTED_CARD_RENDER_ORDER : descriptor.stackIndex ?? 0
     this.group.scale.set(1, 1, 1)
     this.group.rotation.set(0, 0, 0)
     const duration = Number.isFinite(durationMs) ? Math.min(MAX_EFFECT_MS, Math.max(0, durationMs)) : 0
@@ -305,6 +309,7 @@ export class ThreeCardRegistry {
       hit: { ...source.descriptor.hit, playable: false },
     })
     proxy.group.position.z = 60
+    proxy.group.renderOrder = DRAG_CARD_RENDER_ORDER
     proxy.group.scale.set(1.08, 1.08, 1)
     return proxy
   }

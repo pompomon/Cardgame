@@ -2,7 +2,7 @@ import { CircleGeometry, Group, Mesh, MeshBasicMaterial, PlaneGeometry, RingGeom
 import { MAX_EFFECT_MS } from '../../app/animation-settings'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
 import { clamp } from '../phaser/layout'
-import type { CardAnchor, RetainedCard } from './card-registry'
+import { EFFECT_RENDER_ORDER, type CardAnchor, type RetainedCard } from './card-registry'
 
 export class EffectGeometry {
   readonly ring = new RingGeometry(0.9, 1, 48)
@@ -83,6 +83,7 @@ export class EffectVisual {
     this.beam.name = 'plains-beam'
     this.group.add(this.ring, this.halo, this.beam)
     this.group.position.z = 85
+    this.group.renderOrder = EFFECT_RENDER_ORDER
     const count = Number.isFinite(particles) ? clamp(Math.floor(particles), 0, 8) : 0
     const particleGeometry = this.recipe === 'radiance' ? geometry.beam
       : descriptor.visualStyle === 'classic' ? geometry.square

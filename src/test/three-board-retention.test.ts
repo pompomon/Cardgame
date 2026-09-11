@@ -3,7 +3,7 @@ import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial } from 'th
 import type { AppViewModel } from '../app/types'
 import { buildCounterHandOptions, type CounterHandOptions } from '../app/response-options'
 import type { ThreeAssets } from '../renderers/three/assets'
-import { boardCardKey, ThreeCardRegistry, type CardDescriptor } from '../renderers/three/card-registry'
+import { boardCardKey, DRAG_CARD_RENDER_ORDER, ThreeCardRegistry, type CardDescriptor } from '../renderers/three/card-registry'
 import { EffectGeometry, EffectVisual, effectRecipe } from '../renderers/three/effect-visual'
 import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { ThreeBoard } from '../renderers/three/board'
@@ -280,6 +280,7 @@ describe('retained Three.js card registry', () => {
     const source = registry.get(card.hit.key)!
     const proxy = registry.createProxy(source)
     expect(proxy.group.position.z).toBeGreaterThan(source.group.position.z)
+    expect(proxy.group.renderOrder).toBe(DRAG_CARD_RENDER_ORDER)
     expect(source.group.position.x).toBe(100)
     proxy.dispose()
     proxy.dispose()

@@ -42,7 +42,7 @@ class ElementStub extends EventTarget {
   readonly children: ElementStub[] = []
   readonly dataset: Record<string, string> = {}
   readonly attributes = new Map<string, string>()
-  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), top: '' }
+  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '' }
   parent: ElementStub | null = null
   className = ''
   textContent = ''
@@ -395,11 +395,23 @@ describe('constructed Three battlefield controls', () => {
     })
     h.board.render(view, 0, new Set(['target-0', 'target-7']), null, primary, true)
     expect(h.board.containsDrop(195, 380)).toBe(false)
-    expect(h.far.parent!.all('three-board-target-label')).toHaveLength(2)
+    const labels = h.far.parent!.all('three-board-target-label')
+    expect(labels).toHaveLength(2)
     expect(h.host.all('three-board-target-pages')).toHaveLength(0)
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const registry = (h.board as unknown as {
+      cards: { get(key: string): { descriptor: { y: number } } | null }
+    }).cards
+    for (const index of [0, 7]) {
+      const label = labels.find((entry) => entry.dataset.cardId === `land-${index}`)!
+      const card = registry.get(boardCardKey(`land-${index}`, 1, `target-${index}`))!
+      expect(h.board.hitTest(
+        Number.parseFloat(label.style.left),
+        layout.height / 2 - card.descriptor.y,
+      )?.instanceId).toBe(`target-${index}`)
+    }
     h.board.render(view, 0, new Set(), null, primary, true)
     expect(h.host.all('three-board-target-label')).toHaveLength(0)
-    expect(h.host.all('three-board-target-pages').every((entry) => entry.hidden)).toBe(true)
   })
 
   it.each([

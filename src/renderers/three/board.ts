@@ -36,6 +36,11 @@ interface DragVisual {
   fromY: number
 }
 
+interface TargetLabel {
+  readonly element: HTMLSpanElement
+  nextKey: string | null
+}
+
 const ROWS: readonly BoardRow[] = ['far', 'near', 'hand']
 const PLAY_INSTRUCTION = 'Drag a highlighted card into your battlefield'
 const CANCEL_INSTRUCTION = 'Move into your battlefield · release elsewhere to cancel'
@@ -57,7 +62,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly effectDescriptors = new Map<EffectVisual, VisualEffectDescriptor>()
   private readonly chrome = new Map<BoardRow, RowChrome>()
   private readonly surfaces = new Map<BoardRow, Mesh<PlaneGeometry, MeshBasicMaterial>>()
-  private readonly targetLabels = new Map<string, HTMLSpanElement>()
+  private readonly targetLabels = new Map<string, TargetLabel>()
   private readonly effectCaption = document.createElement('p')
   private readonly pendingCaption = document.createElement('p')
   private pendingCard: RetainedCard | null = null
@@ -360,23 +365,30 @@ export class ThreeBoard implements ThreeBoardApi {
 
   private syncTargetLabels(descriptors: readonly CardDescriptor[]): void {
     const visible = new Set<string>()
-    for (const descriptor of descriptors) {
+    for (const [index, descriptor] of descriptors.entries()) {
       if (!descriptor.visible || !descriptor.target) continue
       const key = descriptor.hit.key
       visible.add(key)
-      let label = this.targetLabels.get(key)
-      if (!label) {
-        label = document.createElement('span')
+      const next = descriptors[index + 1]
+      const nextKey = next?.hit.owner === descriptor.hit.owner && next.hit.zone === descriptor.hit.zone
+        ? next.hit.key : null
+      let targetLabel = this.targetLabels.get(key)
+      if (!targetLabel) {
+        const label = document.createElement('span')
         label.className = 'three-board-target-label'
         label.textContent = 'Target'
+        label.dataset.cardId = descriptor.hit.cardId
         label.setAttribute('aria-hidden', 'true')
         this.stage.append(label)
-        this.targetLabels.set(key, label)
+        targetLabel = { element: label, nextKey }
+        this.targetLabels.set(key, targetLabel)
+      } else {
+        targetLabel.nextKey = nextKey
       }
     }
-    for (const [key, label] of this.targetLabels) {
+    for (const [key, targetLabel] of this.targetLabels) {
       if (!visible.has(key)) {
-        label.remove()
+        targetLabel.element.remove()
         this.targetLabels.delete(key)
       }
     }
@@ -384,11 +396,17 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   private positionTargetLabels(): void {
-    for (const [key, label] of this.targetLabels) {
+    for (const [key, targetLabel] of this.targetLabels) {
       const anchor = this.cards?.get(key)?.anchor()
       if (!anchor) continue
-      label.style.left = `${this.layout.width / 2 + anchor.x}px`
-      label.style.top = `${this.layout.height / 2 - anchor.y - anchor.height / 2 + 2}px`
+      const nextAnchor = targetLabel.nextKey ? this.cards?.get(targetLabel.nextKey)?.anchor() : null
+      const left = anchor.x - anchor.width / 2
+      const right = nextAnchor && nextAnchor.owner === anchor.owner && nextAnchor.zone === anchor.zone
+        ? Math.min(anchor.x + anchor.width / 2, nextAnchor.x - nextAnchor.width / 2)
+        : anchor.x + anchor.width / 2
+      const exposedCenter = right > left ? (left + right) / 2 : anchor.x
+      targetLabel.element.style.left = `${this.layout.width / 2 + exposedCenter}px`
+      targetLabel.element.style.top = `${this.layout.height / 2 - anchor.y - anchor.height / 2 + 2}px`
     }
   }
 
