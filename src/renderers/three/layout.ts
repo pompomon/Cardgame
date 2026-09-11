@@ -14,16 +14,12 @@ export interface RowLayout {
   readonly y: number
   readonly labelTop: number
   readonly labelHeight: number
-  readonly controlsTop: number
-  readonly controlsHeight: number
   readonly height: number
 }
 
 export interface BoardColumns {
   readonly labelLeft: number
   readonly labelWidth: number
-  readonly controlsLeft: number
-  readonly controlsWidth: number
   readonly cardsLeft: number
   readonly cardsWidth: number
 }
@@ -33,20 +29,11 @@ export interface ThreeLayout {
   readonly height: number
   readonly cardWidth: number
   readonly cardHeight: number
-  readonly capacity: number
   readonly gap: number
   readonly compact: boolean
   readonly columns: BoardColumns
   readonly rows: Readonly<Record<BoardRow, RowLayout>>
   readonly drop: BoardRect
-}
-
-export interface PageWindow {
-  readonly page: number
-  readonly pages: number
-  readonly start: number
-  readonly end: number
-  readonly count: number
 }
 
 export function compactBoardViewport(width: number, height: number): boolean {
@@ -57,12 +44,10 @@ export function compactBoardViewport(width: number, height: number): boolean {
 export function boardColumns(width: number, compact: boolean): BoardColumns {
   const w = Number.isFinite(width) && width > 0 ? width : 1
   const labelWidth = compact ? Math.min(240, w * 0.26) : Math.max(1, w - 24)
-  const controlsWidth = compact ? Math.min(280, Math.max(220, w * 0.32)) : Math.max(1, w - 20)
-  const controlsLeft = compact ? w - controlsWidth - 12 : 10
   const cardsLeft = compact ? labelWidth + 24 : 12
   return {
-    labelLeft: 12, labelWidth, controlsLeft, controlsWidth, cardsLeft,
-    cardsWidth: Math.max(1, compact ? controlsLeft - cardsLeft - 12 : w - 24),
+    labelLeft: 12, labelWidth, cardsLeft,
+    cardsWidth: Math.max(1, compact ? w - cardsLeft - 12 : w - 24),
   }
 }
 
@@ -80,7 +65,6 @@ export function boardLayout(
   width: number,
   height: number,
   headers: Readonly<Record<BoardRow, number>> = { far: 48, near: 96, hand: 28 },
-  controls: Readonly<Record<BoardRow, number>> = { far: 44, near: 44, hand: 44 },
   compact = false,
 ): ThreeLayout {
   const w = Number.isFinite(width) && width > 0 ? width : 1
@@ -92,9 +76,8 @@ export function boardLayout(
   const h = safeHeight(height, 1)
   const minimumHeaders = [28, 52, 28]
   const headerHeights = rows.map((row, index) => safeHeight(headers[row], minimumHeaders[index]))
-  const controlHeights = rows.map((row) => safeHeight(controls[row], 44))
   if (compact) {
-    const measuredRows = rows.map((_, index) => Math.max(headerHeights[index], controlHeights[index]))
+    const measuredRows = rows.map((_, index) => Math.max(headerHeights[index], 44))
     const minimumRows = rows.map((_, index) => Math.max(44, minimumHeaders[index]))
     const rowSizes = fitToBudget(measuredRows, minimumRows, h)
     const minimum = rowSizes.reduce((sum, size) => sum + size, 0)
@@ -114,14 +97,11 @@ export function boardLayout(
         y: h / 2 - center, height: space,
         labelTop: center - Math.min(headerHeights[index], space) / 2,
         labelHeight: Math.min(headerHeights[index], space),
-        controlsTop: center - Math.min(controlHeights[index], space) / 2,
-        controlsHeight: Math.min(controlHeights[index], space),
       }
     }
     const positions = { far: row(0), near: row(1), hand: row(2) }
     return {
       width: w, height: h, cardWidth, cardHeight, gap, compact, columns, rows: positions,
-      capacity: Math.max(1, Math.min(16, Math.floor((columns.cardsWidth + gap) / (cardWidth + gap)))),
       drop: {
         x: columns.cardsLeft + columns.cardsWidth / 2 - w / 2, y: positions.near.y,
         width: columns.cardsWidth, height: positions.near.height,
@@ -129,32 +109,27 @@ export function boardLayout(
     }
   }
   const fittedChrome = fitToBudget(
-    [...headerHeights, ...controlHeights],
-    [0, minimumHeaders[1], 0, ...rows.map(() => 44)],
+    headerHeights,
+    [0, minimumHeaders[1], 0],
     Math.max(0, h - rows.length),
   )
-  const fittedHeaders = fittedChrome.slice(0, rows.length)
-  const fittedControls = fittedChrome.slice(rows.length)
+  const fittedHeaders = fittedChrome
   const chromeHeight = fittedChrome.reduce((sum, size) => sum + size, 0)
-  const spacingSlots = rows.length * 3 + 1
+  const spacingSlots = rows.length * 2 + 1
   const spacing = Math.min(8, Math.max(0, (h - chromeHeight - rows.length * 32) / spacingSlots))
   const cardSpace = Math.max(1, (h - chromeHeight - spacing * spacingSlots) / rows.length)
   const cardHeight = Math.max(1, Math.min(204, cardSpace))
   const cardWidth = Math.max(1, Math.min(cardHeight * 0.73, w - 32))
   const gap = 12
-  const capacity = Math.max(1, Math.min(16, Math.floor((w - 24 + gap) / (cardWidth + gap))))
   let top = spacing
   const row = (index: number): RowLayout => {
     const labelTop = top
     const cardsTop = labelTop + fittedHeaders[index] + spacing
-    const controlsTop = cardsTop + cardSpace + spacing
-    top = controlsTop + fittedControls[index] + spacing
+    top = cardsTop + cardSpace + spacing
     return {
       y: h / 2 - cardsTop - cardSpace / 2,
       labelTop,
       labelHeight: fittedHeaders[index],
-      controlsTop,
-      controlsHeight: fittedControls[index],
       height: cardSpace,
     }
   }
@@ -164,7 +139,6 @@ export function boardLayout(
     height: h,
     cardWidth,
     cardHeight,
-    capacity,
     gap,
     compact,
     columns,
@@ -173,18 +147,18 @@ export function boardLayout(
   }
 }
 
-export function pageWindow(count: number, requested: number, capacity: number): PageWindow {
-  const total = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
-  const size = Number.isFinite(capacity) ? Math.max(1, Math.floor(capacity)) : 1
-  const pages = Math.max(1, Math.ceil(total / size))
-  const page = Math.min(pages - 1, Math.max(0, Number.isFinite(requested) ? Math.floor(requested) : 0))
-  const start = page * size
-  return { page, pages, start, end: Math.min(total, start + size), count: total }
-}
-
 export function cardSlotX(slot: number, visibleCount: number, layout: ThreeLayout): number {
-  return layout.columns.cardsLeft + layout.columns.cardsWidth / 2 - layout.width / 2
-    + (slot - (visibleCount - 1) / 2) * (layout.cardWidth + layout.gap)
+  const count = Number.isFinite(visibleCount) ? Math.max(1, Math.floor(visibleCount)) : 1
+  const index = Number.isFinite(slot) ? Math.min(count - 1, Math.max(0, Math.floor(slot))) : 0
+  const minX = layout.columns.cardsLeft + layout.cardWidth / 2
+  const maxX = layout.columns.cardsLeft + layout.columns.cardsWidth - layout.cardWidth / 2
+  if (count === 1 || maxX <= minX) {
+    return layout.columns.cardsLeft + layout.columns.cardsWidth / 2 - layout.width / 2
+  }
+  const step = Math.min(layout.cardWidth + layout.gap, (maxX - minX) / (count - 1))
+  const usedWidth = step * (count - 1)
+  const startX = minX + (maxX - minX - usedWidth) / 2
+  return startX + index * step - layout.width / 2
 }
 
 /** Leave room for the lifted shadow within the caster's card lane, not its chrome. */
@@ -193,19 +167,8 @@ export function pendingCardRect(layout: ThreeLayout, owner: number, presentedAct
   const ratio = layout.cardWidth / layout.cardHeight
   const shadow = 10
   const horizontalLimit = Math.max(1, layout.columns.cardsWidth - 32) / ratio
-  let lift: number
-  let height: number
-  if (layout.compact) {
-    height = Math.max(1, Math.min(layout.cardHeight * 1.08, row.height - shadow, horizontalLimit))
-    lift = Math.min(shadow / 2, Math.max(0, (row.height - height) / 2))
-  } else {
-    const cardTop = layout.height / 2 - row.y - layout.cardHeight / 2
-    const gap = Math.max(0, row.controlsTop - cardTop - layout.cardHeight)
-    height = Math.max(1, Math.min(layout.cardHeight * 1.08,
-      layout.cardHeight + gap * 2 - shadow, horizontalLimit))
-    const growth = (height - layout.cardHeight) / 2
-    lift = Math.max(0, growth + shadow - gap)
-  }
+  const height = Math.max(1, Math.min(layout.cardHeight * 1.08, row.height - shadow, horizontalLimit))
+  const lift = Math.min(shadow / 2, Math.max(0, (row.height - height) / 2))
   const width = height * ratio
   const offset = Math.max(0, Math.min(18, (layout.columns.cardsWidth - width) / 2 - 16))
   return { x: cardSlotX(0, 1, layout) + offset, y: row.y + lift, width, height }

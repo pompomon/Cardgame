@@ -44,8 +44,9 @@ The selected renderer is also stored in `localStorage` for later visits.
 - When responding with Island, click or tap an eligible card in your hand to
   counter immediately, discarding that card plus the first Island automatically.
   Pink rings mark eligible discards; the blue-ringed Island is included, not a
-  separate choice. Another Island can be the additional discard. Hand pagination
-  keeps every choice reachable. Use **Pass Response** to decline.
+  separate choice. Another Island can be the additional discard. The hand overlaps
+  cards as needed while keeping every choice on the table. Use **Pass Response**
+  to decline.
 - **Game Menu → Cards & keyboard controls** opens the viewport-bounded native
   controls. Native play and target buttons provide the same actions without
   dragging. During a response, each eligible native hand-card control names the
@@ -58,12 +59,12 @@ The selected renderer is also stored in `localStorage` for later visits.
 - The game menu contains a collapsible **Replay Log** with the latest 200
   structured events, or legacy text for older recordings. Scrolling back stops
   automatic following; **Follow latest** resumes it.
-- Card rows have navigation for overflow and resize to the stage height. Short
-  landscape layouts place player information, cards, and pagination in separate
-  lanes. Active gameplay fits the viewport without document or battlefield
-  scrolling; dialogs scroll internally when space or enlarged text requires it.
-  The camera stays fixed during dragging. Target-page notices keep off-page
-  choices discoverable, and deck/graveyard stacks distinguish empty piles.
+- Card rows remain centered and overlap cards as needed so the entire hand and
+  both battlefields stay visible without pagination. Short landscape layouts
+  place player information beside the cards. Active gameplay fits the viewport
+  without document or battlefield scrolling; dialogs scroll internally when
+  space or enlarged text requires it. The camera stays fixed during dragging,
+  and deck/graveyard stacks distinguish empty piles.
 - Card Style, Board Theme, Render Quality, and Animations use the existing
   preferences. Choosing Three.js does not force HD over a saved artwork style.
   Backgrounds use aspect-correct cropping and keep the previous theme visible

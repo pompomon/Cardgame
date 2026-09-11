@@ -25,7 +25,7 @@
   height: 100%;
   touch-action: none;
 }
-.three-board-label, .three-board-pagination {
+.three-board-label {
   position: absolute;
   z-index: 1;
   box-sizing: border-box;
@@ -84,40 +84,6 @@
   border-color: #79e8bb;
   color: #dbffef;
   box-shadow: 0 0 16px #73e8b42b;
-}
-.three-board-pagination {
-  left: 10px;
-  right: auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.three-board-pagination button {
-  min-width: 82px;
-  min-height: 44px;
-  padding: 7px 11px;
-  border: 1px solid #9baec0;
-  border-radius: 9px;
-  background: #132538ee;
-  color: #fff;
-  font: 600 14px/1.2 system-ui, sans-serif;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.three-board-pagination button:disabled { opacity: 0.4; cursor: default; }
-.three-board-pagination button:focus-visible { outline: 3px solid #ffe198; outline-offset: 1px; }
-.three-board-pagination span {
-  min-width: 82px;
-  padding: 4px;
-  border-radius: 4px;
-  background: #07121dcc;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
 }
 .three-board-instruction {
   display: grid;
@@ -180,11 +146,6 @@
   opacity: 0.45;
   box-shadow: none;
 }
-.three-board-pagination .three-board-target-pages {
-  flex-basis: 100%;
-  color: #ffdf7e;
-  background: #1d251e;
-}
 .three-board-target-label {
   position: absolute;
   z-index: 2;
@@ -225,16 +186,6 @@
   width: 100%;
   min-width: 0;
 }
-.three-board-stage[data-layout="compact"] .three-board-pagination {
-  gap: 4px;
-}
-.three-board-stage[data-layout="compact"] .three-board-pagination button {
-  min-width: 72px;
-  flex: 1 1 72px;
-}
-.three-board-stage[data-layout="compact"] .three-board-pagination span {
-  min-width: 64px;
-}
 .three-board-stage[data-layout="compact"] .three-board-stacks {
   display: none;
 }
@@ -242,6 +193,4 @@
   .three-board-stage { border-radius: 10px; }
   .three-board-label { font-size: 13px; }
   .three-board-primary { min-width: 120px; width: 100%; }
-  .three-board-pagination { gap: 4px; }
-  .three-board-pagination button { padding-inline: 7px; }
 }

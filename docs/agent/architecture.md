@@ -51,7 +51,7 @@ src/
 │   │   ├── board.ts       Retained board, camera, picking and GPU ownership
 │   │   ├── assets.ts      Shared/ref-counted art textures and fallbacks
 │   │   ├── card-registry.ts Retained card identities and visual state
-│   │   ├── layout.ts      CSS-pixel coordinates and row pagination
+│   │   ├── layout.ts      CSS-pixel coordinates and adaptive row overlap
 │   │   ├── quality.ts     Actual drawing-buffer and effect quality bounds
 │   │   ├── interaction.ts Pointer capture, drag/drop and cancellation
 │   │   ├── interface.ts   Native HTML lobby, actions, menus and targets

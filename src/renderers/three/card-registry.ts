@@ -16,6 +16,7 @@ export interface CardDescriptor extends BoardRect {
   readonly response?: 'required' | 'discard' | null
   readonly shadows: boolean
   readonly lifted?: boolean
+  readonly stackIndex?: number
 }
 
 export interface CardAnchor extends BoardRect {
@@ -82,6 +83,7 @@ export class RetainedCard {
       this.signature = signature
     }
     this.group.visible = descriptor.visible
+    this.group.renderOrder = descriptor.lifted ? 1000 : descriptor.stackIndex ?? 0
     this.group.scale.set(1, 1, 1)
     this.group.rotation.set(0, 0, 0)
     const duration = Number.isFinite(durationMs) ? Math.min(MAX_EFFECT_MS, Math.max(0, durationMs)) : 0
@@ -104,7 +106,7 @@ export class RetainedCard {
   }
 
   private position({ x, y, width, height }: BoardRect): void {
-    this.group.position.set(x, y, this.descriptor.lifted ? 40 : 8)
+    this.group.position.set(x, y, this.descriptor.lifted ? 40 : 8 + (this.descriptor.stackIndex ?? 0) * 0.02)
     this.body.scale.set(width, height, 5)
     this.body.position.z = 2.5
     this.face.scale.set(width - 2, height - 2, 1)
@@ -266,8 +268,13 @@ export class ThreeCardRegistry {
 
   hitTest(point: Point): BoardHit | null {
     let hit: BoardHit | null = null
+    let stackIndex = -Infinity
     for (const card of this.active.values()) {
-      if (card.group.visible && pointInRect(point, card.anchor())) hit = card.descriptor.hit
+      const nextStackIndex = card.descriptor.stackIndex ?? 0
+      if (card.group.visible && pointInRect(point, card.anchor()) && nextStackIndex >= stackIndex) {
+        hit = card.descriptor.hit
+        stackIndex = nextStackIndex
+      }
     }
     return hit
   }
