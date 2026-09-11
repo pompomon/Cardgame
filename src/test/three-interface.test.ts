@@ -89,7 +89,8 @@ function responseHit(cardId = 'discard-forest-1', owner = 0): BoardHit {
 }
 
 const defaultUi: InterfaceUi = {
-  presentedActor: 0, menuOpen: false, pendingCardId: null, preview: null,
+  presentedActor: 0, menuOpen: false, cardsOpen: false, pendingCardId: null, preview: null,
+  previewReturnToCards: false,
   phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
 }
 
@@ -262,8 +263,12 @@ function setup(view = makeView(), separateHud = false) {
     ;(hud?.contains(element) ? hud : host).emit('click', { target: element })
     return element
   }
+  const openCards = (): void => {
+    click('[data-action="menu"]')
+    click('[data-action="cards"]')
+  }
   const update = (next: AppViewModel, actor = next.game?.actor ?? 0): void => { current = next; ui.update(next, actor) }
-  return { ui, host, content, hud, board, document, controller, onChange, onBlock, click, update, latest: (next: AppViewModel) => { current = next } }
+  return { ui, host, content, hud, board, document, controller, onChange, onBlock, click, openCards, update, latest: (next: AppViewModel) => { current = next } }
 }
 
 function setupPlainsForest({
@@ -362,6 +367,13 @@ describe('Three native markup and decisions', () => {
     const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
     for (const action of ['rematch', 'back-to-lobby', 'save-recording-download', 'save-recording-local', 'load-recording-file', 'load-recording-local', 'replay-start']) expect(html).toContain(`data-action="${action}"`)
     for (const id of ['ai-level-select', 'card-visual-style-select', 'animation-speed-select', 'board-theme-select', 'render-quality-select']) expect(html).toContain(`id="${id}"`)
+    expect(html).toContain('data-action="cards"')
+    expect(html).not.toContain('data-modal="cards"')
+    const cards = renderThreeInterface(view, { ...defaultUi, cardsOpen: true })
+    expect(cards).toContain('data-modal="cards"')
+    expect(cards).toContain('data-action="cards-back"')
+    expect(cards).toContain('data-action="play"')
+    expect(cards).not.toContain('data-modal="menu"')
     expect(html).not.toContain('Switch to')
     view.replay.active = true
     const replay = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
@@ -424,17 +436,18 @@ describe('Three native markup and decisions', () => {
     expect(empty).toContain('No log entries yet.')
   })
 
-  it('places menu/status/winner in the HUD and keeps secondary controls collapsed', () => {
+  it('places menu/status/winner in the HUD and keeps native controls out of document flow', () => {
     const view = responseView()
     view.game!.winnerText = 'Winner announcement'
     const hud = renderThreeHud(view, defaultUi)
     for (const text of ['☰ Menu', 'Turn 1', 'Player 1', 'Ready', 'Winner announcement']) expect(hud).toContain(text)
     expect(hud).not.toContain('Cards &amp; keyboard controls')
     const controls = renderThreeInterface(view, defaultUi, false)
-    expect(controls).toContain('<details data-detail-key="cards">')
+    expect(controls).not.toContain('data-modal="cards"')
     expect(controls).not.toContain('class="three-hud"')
     expect(controls).not.toContain('data-action="end_turn"')
     expect(controls).not.toContain('data-action="pass_response"')
+    expect(renderThreeInterface(view, { ...defaultUi, cardsOpen: true }, false)).toContain('data-modal="cards"')
   })
 
   it.each([true, false])('leaves response instructions to the battlefield (can counter: %s)', (canCounter) => {
@@ -470,7 +483,8 @@ describe('Three native markup and decisions', () => {
     const view = makeView()
     view.game!.players[1].handCards = [{ id: 'secret', name: HIDDEN_HAND_CARD_NAME }]
     view.game!.revealedEnemyHandForSwamp = [{ id: 'secret', name: 'Private Swamp name' }]
-    expect(renderThreeInterface(view, defaultUi)).toContain('Hidden card')
+    expect(renderThreeInterface(view, defaultUi)).not.toContain('Hidden card')
+    expect(renderThreeInterface(view, { ...defaultUi, cardsOpen: true })).toContain('Hidden card')
     expect(renderThreeInterface(view, defaultUi)).not.toContain('Private Swamp name')
     view.game!.phase = 'swamp_target'
     view.game!.legal.swampDiscardOptions = [{ action: { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 'secret' }, label: 'Choose hidden card' }]
@@ -478,7 +492,7 @@ describe('Three native markup and decisions', () => {
     expect(html).toContain('Private Swamp name')
     expect(html).toContain('data-modal="target"')
     expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Swamp discard target</p>')
-    expect(html).toContain('Hidden card')
+    expect(html).not.toContain('Hidden card')
     expect(html).not.toContain('Preview Private Swamp name')
   })
 
@@ -516,7 +530,8 @@ describe('Three battlefield primary action', () => {
       const html = renderThreeInterface(view, defaultUi)
       expect(html).not.toContain('data-action="end_turn"')
       expect(html).not.toContain('data-action="pass_response"')
-      expect(html).toContain(`Hand ${view.game!.players[0].handCount}`)
+      expect(renderThreeInterface(view, { ...defaultUi, cardsOpen: true }))
+        .toContain(`Hand ${view.game!.players[0].handCount}`)
     }
   })
 
@@ -643,6 +658,51 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     expect(h.board.isConnected).toBe(true)
   })
 
+  it('navigates Menu, Cards and Preview as nested dialogs with focus restoration', () => {
+    const h = setup(makeView(), true)
+    h.openCards()
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
+    const previewSelector = '[data-action="preview"][data-zone="hand"][data-card-id="source"]'
+    h.click(previewSelector)
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('preview')
+    expect(h.content.querySelector('[data-action="close"]')?.getAttribute('aria-label')).toBe('Back to Cards')
+    h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
+    expect(h.document.activeElement).toBe(h.content.querySelector(previewSelector))
+    h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('menu')
+    expect(h.document.activeElement?.dataset.action).toBe('cards')
+    h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.document.activeElement).toBe(h.hud!.querySelector('[data-action="menu"]'))
+    h.ui.dispose()
+  })
+
+  it('preserves Cards dialog scroll on settings updates and closes only after an accepted action', () => {
+    const view = makeView()
+    view.game!.legal.playLandByCard.source = [view.game!.legal.playLandByCard.source[0]]
+    const h = setup(view)
+    h.openCards()
+    const hand = h.content.querySelector('[data-scroll-key="hand-0"]')!
+    hand.scrollLeft = 37
+    hand.scrollTop = 19
+    h.update({ ...view, cardVisualStyle: 'hd' })
+    expect(h.content.querySelector('[data-scroll-key="hand-0"]')!.scrollLeft).toBe(37)
+    expect(h.content.querySelector('[data-scroll-key="hand-0"]')!.scrollTop).toBe(19)
+
+    h.controller.submitAction.mockImplementationOnce(() => h.latest({ ...view, status: 'Rejected' }))
+    h.click('[data-action="play"]')
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
+
+    h.controller.submitAction.mockImplementationOnce(() => h.latest({
+      ...view, game: { ...view.game!, canInput: false },
+    }))
+    h.click('[data-action="play"]')
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+    h.ui.dispose()
+  })
+
   it('retains separate subviews after notifications, restores navigation focus and guards recording readiness', () => {
     const view = { ...makeView(), game: null, recording: {
       canSave: false, canLoadLocal: false, hasLocalSave: false, metadata: null,
@@ -693,8 +753,6 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     const view = makeView()
     view.replay.active = true
     const h = setup(view)
-    const cards = h.content.querySelector('[data-detail-key="cards"]')!
-    expect(cards.open).toBe(false)
     h.click('[data-action="menu"]')
     const menu = h.content.querySelector('dialog')!
     menu.scrollTop = 90
@@ -713,7 +771,6 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     log = h.content.querySelector('[data-scroll-key="log"]')!
     expect(detail.open).toBe(true)
     expect(log.scrollTop).toBe(140)
-    expect(h.content.querySelector('[data-detail-key="cards"]')!.open).toBe(false)
     h.ui.reset(true)
     h.update({ ...view, replay: { ...view.replay, step: 2 } })
     expect(h.content.querySelector('dialog')?.dataset.modal).toBe('menu')
@@ -740,9 +797,6 @@ describe('Three HUD, lobby navigation and replay log state', () => {
   it('clears log expansion and reading position on a full session reset', () => {
     const h = setup()
     h.click('[data-action="menu"]')
-    const cards = h.content.querySelector('[data-detail-key="cards"]')!
-    cards.open = true
-    h.host.emit('toggle', { target: cards })
     const detail = h.content.querySelector('[data-detail-key="log"]')!
     detail.open = true
     h.host.emit('toggle', { target: detail })
@@ -752,7 +806,6 @@ describe('Three HUD, lobby navigation and replay log state', () => {
 
     h.ui.reset()
     h.click('[data-action="menu"]')
-    expect(h.content.querySelector('[data-detail-key="cards"]')!.open).toBe(false)
     const resetDetail = h.content.querySelector('[data-detail-key="log"]')!
     expect(resetDetail.open).toBe(false)
     resetDetail.open = true
@@ -833,7 +886,10 @@ describe('Plains-triggered Forest picker', () => {
   it.each(['board', 'native'] as const)('opens the graveyard dialog after selecting Forest via %s', (input) => {
     const h = setupPlainsForest({ multipleSources: true })
     if (input === 'board') h.ui.playCard('plains-play')
-    else h.click('[data-action="play"]')
+    else {
+      h.openCards()
+      h.click('[data-action="play"]')
+    }
     expect([...h.ui.targetIds]).toEqual(['self-forest', 'self-island'])
     if (input === 'board') h.ui.activate(h.forestHit)
     else h.click('[data-target-id="self-forest"]')
@@ -917,6 +973,7 @@ describe('Plains-triggered Forest picker', () => {
   it('does not open when Plains is countered', () => {
     const h = setupPlainsForest({ counter: true })
     h.ui.playCard('plains-play')
+    h.openCards()
     h.click('[data-action="respond-card"]')
     const game = h.realController.getViewModel().game!
     expect(game.phase).toBe('main')
@@ -1016,9 +1073,11 @@ describe('Three native interface behavior', () => {
       ...view,
       game: { ...view.game!, canInput: false },
     }))
+    h.openCards()
+    const native = h.content.querySelector('[data-action="play"]')!
     h.ui.playCard('source')
     h.ui.playCard('source')
-    h.click('[data-action="play"]')
+    h.host.emit('click', { target: native })
     expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.playLandByCard.source[0].action)
     h.ui.dispose()
   })
@@ -1195,6 +1254,7 @@ describe('Three native interface behavior', () => {
 
   it.each(['button', 'Escape'])('closes previews with %s, restoring focus without playing a card', (method) => {
     const h = setup()
+    h.openCards()
     const selector = '[data-action="preview"][data-zone="hand"][data-card-id="source"]'
     h.click(selector)
     const close = h.content.querySelector('[data-action="close"]')!
@@ -1207,8 +1267,11 @@ describe('Three native interface behavior', () => {
     }
     if (method === 'button') h.click('[data-action="close"]')
     else h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
-    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
     expect(h.document.activeElement).toBe(h.content.querySelector(selector))
+    expect(h.ui.isBlocked()).toBe(true)
+    h.click('[data-action="cards-back"]')
+    h.click('[data-action="close"]')
     expect(h.ui.isBlocked()).toBe(false)
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.ui.dispose()
@@ -1250,12 +1313,14 @@ describe('Three native interface behavior', () => {
 
   it('cancels battlefield targeting on Escape and restores the play button', () => {
     const h = setup()
+    h.openCards()
     h.click('[data-action="play"]')
     expect(h.document.activeElement?.dataset.action).toBe('target')
     h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
     expect(h.ui.targetIds.size).toBe(0)
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     expect(h.document.activeElement?.dataset.action).toBe('play')
+    expect(h.content.querySelector('[data-modal="cards"]')?.open).toBe(true)
     h.ui.dispose()
   })
 
@@ -1334,6 +1399,7 @@ describe('Three native interface behavior', () => {
       ...view,
       game: { ...view.game!, canInput: false },
     }))
+    h.openCards()
     h.click('[data-action="respond-card"]')
     h.ui.activatePrimaryAction(pass)
     h.ui.activate(responseHit())
@@ -1357,11 +1423,14 @@ describe('Three native interface behavior', () => {
   })
 
   describe('Three Island hand responses', () => {
-    it('presents a non-modal response, distinct cards, and no separate counter menu', () => {
+    it('keeps the board response non-modal and exposes distinct native choices in the Cards dialog', () => {
       const h = setup(responseView())
       expect(h.ui.isBlocked()).toBe(false)
       expect(h.content.querySelector('dialog')).toBeNull()
       expect(h.content.querySelector('[data-action="counter_land"]')).toBeNull()
+      h.openCards()
+      expect(h.ui.isBlocked()).toBe(true)
+      expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
       expect(h.content.querySelectorAll('[data-action="respond-card"]')).toHaveLength(3)
       expect(h.content.innerHTML).toContain('Island included automatically')
       expect(h.content.innerHTML).toContain('aria-live="polite"')
@@ -1383,6 +1452,7 @@ describe('Three native interface behavior', () => {
     it('accepts another Island through its native hand control and keeps unrelated focus stable', () => {
       const view = responseView()
       const h = setup(view)
+      h.openCards()
       const selector = '[data-action="respond-card"][data-card-id="discard-island"]'
       h.content.querySelector(selector)!.focus()
       h.update({ ...view, status: 'Saved', animationSpeed: 'off' })
@@ -1409,12 +1479,13 @@ describe('Three native interface behavior', () => {
     it('never turns an explicit preview into a counter or target action', () => {
       const view = responseView()
       const h = setup(view)
+      h.openCards()
       const button = h.content.querySelector('[data-action="respond-card"]')!
       button.dataset.action = 'preview'
       button.dataset.zone = 'hand'
       h.host.emit('click', { target: button })
       expect(h.controller.submitAction).not.toHaveBeenCalled()
-      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
       h.ui.activate(responseHit('discard-forest-1', 1))
       expect(h.controller.submitAction).not.toHaveBeenCalled()
       h.ui.dispose()
@@ -1425,8 +1496,11 @@ describe('Three native interface behavior', () => {
       const h = setup(view)
       h.controller.submitAction.mockImplementation(() => h.latest({ ...view, status: 'Send failed. Try again.' }))
       h.ui.activate(responseHit())
+      h.openCards()
       h.click('[data-action="respond-card"]')
       expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+      h.click('[data-action="cards-back"]')
+      h.click('[data-action="close"]')
       h.ui.activatePrimaryAction(h.ui.primaryAction!)
       expect(h.controller.submitAction).toHaveBeenLastCalledWith({ type: 'pass_response', actor: 0 })
       h.ui.dispose()
@@ -1440,13 +1514,17 @@ describe('Three native interface behavior', () => {
       expect(h.controller.submitAction).not.toHaveBeenCalled()
       h.click('[data-action="close"]')
       expect(h.ui.response?.choices).toHaveLength(3)
+      h.openCards()
       h.click('[data-action="preview"][data-zone="battlefield"]')
       expect(h.ui.response).toBeNull()
       h.ui.activate(responseHit())
       expect(h.controller.submitAction).not.toHaveBeenCalled()
       h.click('[data-action="close"]')
-      expect(h.ui.isBlocked()).toBe(false)
+      expect(h.content.querySelector('[data-modal="cards"]')?.open).toBe(true)
       expect(h.ui.response?.choices).toHaveLength(3)
+      h.click('[data-action="cards-back"]')
+      h.click('[data-action="close"]')
+      expect(h.ui.isBlocked()).toBe(false)
       h.ui.dispose()
     })
 
@@ -1500,6 +1578,7 @@ describe('Three native interface behavior', () => {
     it('rejects board and native choices when controller legality advances before the frame', () => {
       const view = responseView()
       const h = setup(view)
+      h.openCards()
       const next = responseView()
       next.game!.legal.counterOptions = []
       h.latest(next)
@@ -1527,6 +1606,7 @@ describe('Three native interface behavior', () => {
       h.ui.activate(responseHit())
       expect(h.content.innerHTML).toContain('Forest card preview')
       h.click('[data-action="close"]')
+      h.openCards()
       h.click('[data-action="preview"][data-zone="hand"][data-card-id="required-island"]')
       expect(h.content.innerHTML).toContain('Island card preview')
       expect(h.controller.submitAction).not.toHaveBeenCalled()

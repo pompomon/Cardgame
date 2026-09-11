@@ -18,9 +18,19 @@ function ruleBody(selector: string): string {
 }
 
 describe('Three.js native card and preview layout', () => {
-  it('lets compact boards use their measured minimum instead of the stacked-board fallback', () => {
-    expect(rendererCss).toContain('.three-stage[data-layout="compact"] { min-height: var(--three-board-min-height, 0px); }')
-    expect(rendererCss).toContain('height: calc(100svh - 112px);')
+  it('keeps gameplay in a viewport shell and lets the Cards dialog scroll internally', () => {
+    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*height: 100dvh;/)
+    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*overflow: hidden;/)
+    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*grid-template-rows: fit-content\(35dvh\) minmax\(0, 1fr\);/)
+    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-mount \{[^}]*max-height: 35dvh;[^}]*overflow: auto;/)
+    expect(rendererCss).toMatch(/\.three-root--game \.three-controls \{[^}]*position: fixed;/)
+    expect(rendererCss).not.toContain('--three-board-min-height')
+    expect(ruleBody('.three-interface .three-dialog')).toContain('overflow: auto;')
+    const cardsDialog = ruleBody('.three-interface .three-dialog[data-modal="cards"]')
+    expect(cardsDialog).toContain('inset: 16px 12px;')
+    expect(cardsDialog).toContain('width: min(1100px, calc(100% - 24px));')
+    expect(cardsDialog).toContain('env(safe-area-inset-left)')
+    expect(cardsDialog).toContain('env(safe-area-inset-right)')
   })
 
   it('keeps hover previews decorative, input-transparent and height-bounded', () => {

@@ -140,7 +140,8 @@ function setup() {
   boards.push(board)
   const app = state()
   const ui: InterfaceUi = {
-    presentedActor: 0, menuOpen: false, preview: null, pendingCardId: null,
+    presentedActor: 0, menuOpen: false, cardsOpen: false, preview: null, pendingCardId: null,
+    previewReturnToCards: false,
     phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
   }
   const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0) => {
@@ -383,7 +384,8 @@ describe('constructed Three battlefield controls', () => {
     }))
     const view = buildViewModel(h.app, false)
     const primary = threePrimaryAction(view, {
-      presentedActor: 0, menuOpen: false, preview: null, pendingCardId: '0-0',
+      presentedActor: 0, menuOpen: false, cardsOpen: false, preview: null, pendingCardId: '0-0',
+      previewReturnToCards: false,
       phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
     })
     h.board.render(view, 0, new Set(['target-0', 'target-7']), null, primary, true)
@@ -458,6 +460,7 @@ describe('constructed Three battlefield controls', () => {
     Object.assign(h.window, { innerWidth: 844, innerHeight: 390 })
     ObserverStub.latest.callback()
     expect(stage.dataset.layout).toBe('compact')
+    expect((h.board as unknown as { layout: ThreeLayout }).layout.height).toBe(390)
     expect(done).not.toHaveBeenCalled()
     const next = h.host.all('three-board-pagination')[0].children[2]
     expect(next.disabled).toBe(false)
@@ -569,6 +572,18 @@ describe('constructed Three battlefield controls', () => {
     expect(css).toMatch(/\.three-board-instruction-size\s*\{\s*visibility:\s*hidden;/)
   })
 
+  it('scrolls unavoidable stage overflow instead of clipping interactive chrome', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\.three-board-stage\s*\{[^}]*overflow-y:\s*auto;/)
+    expect(css).toMatch(/\.three-board-stage\s*\{[^}]*overscroll-behavior:\s*contain;/)
+  })
+
+  it('places compact near-player controls beside its summary and removes redundant stack graphics', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\[data-layout="compact"\] \.three-board-label\[data-row="near"\]\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
+    expect(css).toMatch(/\[data-layout="compact"\] \.three-board-stacks\s*\{[^}]*display:\s*none;/)
+  })
+
   it.each(['pointerdown', 'keydown'])('passes the captured decision through %s, not the next decision', (type) => {
     const h = setup()
     const original = h.present()!
@@ -618,6 +633,5 @@ describe('constructed Three battlefield controls', () => {
     expect(h.host.children).toHaveLength(0)
     expect(ObserverStub.latest.disconnect).toHaveBeenCalledOnce()
     expect(gpu.dispose).toHaveBeenCalledOnce()
-    expect(h.host.style.removeProperty).toHaveBeenCalledWith('--three-board-min-height')
   })
 })

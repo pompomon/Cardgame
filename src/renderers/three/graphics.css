@@ -5,7 +5,9 @@
   min-width: 0;
   height: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid #718888;
   border-radius: 18px;
   background: #101d28;
@@ -43,10 +45,16 @@
   color: #dbe3f1;
   text-align: center;
   font-weight: 650;
+  overflow: hidden;
   pointer-events: none;
 }
 .three-board-label p { margin: 0; }
-.three-board-label > div { min-width: 0; overflow-wrap: anywhere; }
+.three-board-label > div {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .three-board-stats {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -86,6 +94,8 @@
   justify-content: center;
   gap: 8px;
   min-height: 44px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .three-board-pagination button {
   min-width: 82px;
@@ -207,25 +217,31 @@
   gap: 5px;
   padding: 6px 8px;
 }
+.three-board-stage[data-layout="compact"] .three-board-label[data-row="near"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-block: 3px;
+}
 .three-board-stage[data-layout="compact"] .three-board-primary {
   width: 100%;
   min-width: 0;
 }
 .three-board-stage[data-layout="compact"] .three-board-pagination {
-  flex-direction: column;
   gap: 4px;
 }
 .three-board-stage[data-layout="compact"] .three-board-pagination button {
-  width: 100%;
+  min-width: 72px;
+  flex: 1 1 72px;
+}
+.three-board-stage[data-layout="compact"] .three-board-pagination span {
+  min-width: 64px;
 }
 .three-board-stage[data-layout="compact"] .three-board-stacks {
-  gap: 12px;
+  display: none;
 }
 @media (max-width: 480px) {
   .three-board-stage { border-radius: 10px; }
   .three-board-label { font-size: 13px; }
-  .three-board-label { grid-template-columns: minmax(0, 1fr); }
-  .three-board-primary { width: 100%; }
+  .three-board-primary { min-width: 120px; width: 100%; }
   .three-board-pagination { gap: 4px; }
   .three-board-pagination button { padding-inline: 7px; }
 }

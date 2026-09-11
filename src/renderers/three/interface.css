@@ -208,6 +208,21 @@
   font-size: 1.25rem;
 }
 
+.three-interface .three-dialog[data-modal="cards"] {
+  inset: 16px 12px;
+  inset: max(16px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  width: min(1100px, calc(100% - 24px));
+  width: min(1100px, calc(100% - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+}
+
+.three-interface .three-dialog[data-modal="cards"] > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 8px;
+  background: #102532;
+}
+
 /* Native cards also appear in target pickers, outside .dom-cardgame's sizing scope. */
 .three-interface .card-tile {
   --dom-radius: 12px;
@@ -382,6 +397,21 @@
 
 .three-interface .three-hover-preview > .card-tile {
   width: 100%;
+}
+
+.three-root--game .three-interface .three-target-panel {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 24px));
+  max-height: min(45vh, calc(100vh - 24px));
+  max-height: min(45dvh, calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #102532;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 55%);
 }
 
 @media (max-width: 480px) {

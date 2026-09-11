@@ -6,13 +6,34 @@
     max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
 
+.three-root.three-root--game {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: fit-content(35vh) minmax(0, 1fr);
+  grid-template-rows: fit-content(35dvh) minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.three-root--game .three-hud-mount {
+  min-height: 0;
+  max-height: 35vh;
+  max-height: 35dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .three-stage {
   position: relative;
   width: 100%;
   min-width: 0;
   height: 62vh;
   height: 62svh;
-  min-height: var(--three-board-min-height, 660px);
+  min-height: 0;
   max-height: 800px;
   overflow: hidden;
   border-radius: 18px;
@@ -20,13 +41,15 @@
   background: #142922;
 }
 
+.three-root--game .three-stage {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
 .three-stage[hidden],
 .three-hud-mount[hidden] {
   display: none;
-}
-
-.three-stage[data-layout="compact"] {
-  min-height: var(--three-board-min-height, 0px);
 }
 
 .three-controls {
@@ -34,9 +57,17 @@
   padding: 8px 0;
 }
 
-@media (max-height: 500px) and (orientation: landscape) {
-  .three-stage {
-    height: calc(100vh - 112px);
-    height: calc(100svh - 112px);
-  }
+.three-root--game .three-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  pointer-events: none;
+}
+
+.three-root--game .three-controls .three-dialog,
+.three-root--game .three-controls .three-target-panel {
+  pointer-events: auto;
 }

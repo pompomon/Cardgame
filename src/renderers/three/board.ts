@@ -612,12 +612,10 @@ export class ThreeBoard implements ThreeBoardApi {
       chrome.header.style.width = `${columns.labelWidth}px`
       chrome.controls.style.left = `${columns.controlsLeft}px`
       chrome.controls.style.width = `${columns.controlsWidth}px`
-      headers[row] = chrome.header.offsetHeight
-      controls[row] = chrome.controls.offsetHeight
+      headers[row] = Math.max(chrome.header.offsetHeight, chrome.header.scrollHeight || 0)
+      controls[row] = Math.max(chrome.controls.offsetHeight, chrome.controls.scrollHeight || 0)
     }
-    const minimum = boardLayout(width, 0, headers, controls, compact).height
-    this.host.style.setProperty('--three-board-min-height', `${minimum + 4}px`)
-    const height = Math.max(minimum, this.stage.clientHeight)
+    const height = Math.max(1, this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
     const nextLayout = boardLayout(width, height, headers, controls, compact)
     const layoutChanged = JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
@@ -641,7 +639,10 @@ export class ThreeBoard implements ThreeBoardApi {
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
       chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
+      chrome.header.style.maxHeight = `${this.layout.rows[row].labelHeight}px`
       chrome.controls.style.top = `${this.layout.rows[row].controlsTop}px`
+      chrome.controls.style.minHeight = `${Math.min(44, this.layout.rows[row].controlsHeight)}px`
+      chrome.controls.style.maxHeight = `${this.layout.rows[row].controlsHeight}px`
       const surface = this.surfaces.get(row)!
       surface.position.set(cardSlotX(0, 1, this.layout), this.layout.rows[row].y, 0)
       surface.scale.set(columns.cardsWidth, this.layout.rows[row].height + 4, 1)
@@ -819,7 +820,6 @@ export class ThreeBoard implements ThreeBoardApi {
     this.primaryButton.removeEventListener('blur', this.clearPrimaryPress)
     this.primaryAction = null
     this.pressedAction = null
-    this.host.style.removeProperty('--three-board-min-height')
     window.removeEventListener('resize', this.resize)
     window.removeEventListener('orientationchange', this.resize)
     window.visualViewport?.removeEventListener('resize', this.resize)

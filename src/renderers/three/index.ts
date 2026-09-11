@@ -80,6 +80,11 @@ export class ThreeRenderer implements AppRenderer {
     this.view = view
     const inGame = !!view.game
       && (!(view.mode === 'p2p-host' || view.mode === 'p2p-join') || view.p2pStarted)
+    if (inGame) {
+      this.container?.classList.add('three-root--game')
+    } else {
+      this.container?.classList.remove('three-root--game')
+    }
     const effectView = inGame ? view : { ...view, game: null }
     const actor = this.effects?.update(effectView, document.hidden || prefersReducedMotion()) ?? 0
     this.presentedView = view.game && actor !== view.game.actor
@@ -112,6 +117,7 @@ export class ThreeRenderer implements AppRenderer {
     this.ui = null
     this.board = null
     this.container?.classList.remove('three-root')
+    this.container?.classList.remove('three-root--game')
     this.container?.replaceChildren()
     this.container = null
     this.stage = null
