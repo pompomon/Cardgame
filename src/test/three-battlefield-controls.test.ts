@@ -42,7 +42,7 @@ class ElementStub extends EventTarget {
   readonly children: ElementStub[] = []
   readonly dataset: Record<string, string> = {}
   readonly attributes = new Map<string, string>()
-  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), top: '' }
+  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', width: '' }
   parent: ElementStub | null = null
   className = ''
   textContent = ''
@@ -206,7 +206,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.cards.children.filter((entry) => entry.name === 'pending-land-play')).toHaveLength(1)
     expect(h.app.game!.players[owner].battlefield).toHaveLength(0)
     expect(h.app.game!.players[owner].hand.some((card) => card.id === cardId)).toBe(false)
-    expect(h.host.all('three-board-pagination')[owner === presentedActor ? 1 : 0].children[1].textContent).toBe('0 cards')
+    expect(h.host.all('three-board-pagination')).toHaveLength(0)
     const caption = h.host.all('three-board-pending-caption')[0]
     expect(caption.textContent).toBe('Island · awaiting response')
     expect(caption.hidden).toBe(false)
@@ -238,21 +238,26 @@ describe('constructed Three battlefield controls', () => {
     expect(h.app.game!.players[0].graveyard.some((card) => card.id === cardId)).toBe(type === 'counter_land')
   })
 
-  it('retains the hover through pagination and resize without restarting an active effect', () => {
+  it('keeps an overflowing row visible through resize without restarting an active effect', () => {
     const h = setup()
     h.app.game!.players[0].battlefield = Array.from({ length: 8 }, (_, index) => ({
       instanceId: `caster-${index}`, card: { id: `caster-card-${index}`, name: 'Forest', type: 'land' },
     }))
     h.act('play_land')
+    const registry = (h.board as unknown as {
+      cards: { get(key: string): { descriptor: { visible: boolean; x: number; width: number } } | null }
+    }).cards
+    const row = Array.from({ length: 8 }, (_, index) =>
+      registry.get(boardCardKey(`caster-card-${index}`, 0, `caster-${index}`))!)
+    expect(row.every((card) => card.descriptor.visible)).toBe(true)
+    expect(row[1].descriptor.x - row[0].descriptor.x).toBeLessThan(row[0].descriptor.width)
+    expect(h.host.all('three-board-pagination')).toHaveLength(0)
     const pending = h.pending()!
     const done = vi.fn()
     const cancel = h.board.playEffect({
       kind: 'play_land', actor: 0, sourceInstanceId: 'caster-0', land: 'Forest', visualStyle: 'classic',
       palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
     }, 350, done)
-    const next = h.host.all('three-board-pagination')[0].children[2]
-    emit(next, 'click')
-    expect(h.pending()).toBe(pending)
     const oldX = pending.position.x
     const stage = h.host.all('three-board-stage')[0]
     stage.clientWidth = 844
@@ -377,7 +382,7 @@ describe('constructed Three battlefield controls', () => {
     expect(stacks[1].dataset.empty).toBe('false')
   })
 
-  it('suppresses drop input behind overlays but keeps paginated battlefield targets discoverable', () => {
+  it('suppresses drop input behind overlays while keeping every battlefield target visible', () => {
     const h = setup()
     h.app.game!.players[1].battlefield = Array.from({ length: 8 }, (_, index) => ({
       instanceId: `target-${index}`, card: { id: `land-${index}`, name: 'Forest', type: 'land' },
@@ -390,11 +395,32 @@ describe('constructed Three battlefield controls', () => {
     })
     h.board.render(view, 0, new Set(['target-0', 'target-7']), null, primary, true)
     expect(h.board.containsDrop(195, 380)).toBe(false)
-    expect(h.far.parent!.all('three-board-target-label')).toHaveLength(1)
-    expect(h.host.all('three-board-target-pages').some((entry) => entry.textContent.includes('Targets: page 1, 2'))).toBe(true)
+    const labels = h.far.parent!.all('three-board-target-label')
+    expect(labels).toHaveLength(2)
+    expect(h.host.all('three-board-target-pages')).toHaveLength(0)
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const registry = (h.board as unknown as {
+      cards: { get(key: string): { descriptor: { x: number; y: number; width: number } } | null }
+    }).cards
+    for (const index of [0, 7]) {
+      const label = labels.find((entry) => entry.dataset.cardId === `land-${index}`)!
+      const card = registry.get(boardCardKey(`land-${index}`, 1, `target-${index}`))!
+      expect(h.board.hitTest(
+        Number.parseFloat(label.style.left),
+        layout.height / 2 - card.descriptor.y,
+      )?.instanceId).toBe(`target-${index}`)
+    }
+    const compactLabel = labels.find((entry) => entry.dataset.cardId === 'land-0')!
+    expect(compactLabel.dataset.compact).toBe('true')
+    const first = registry.get(boardCardKey('land-0', 1, 'target-0'))!.descriptor
+    const second = registry.get(boardCardKey('land-1', 1, 'target-1'))!.descriptor
+    const exposedWidth = second.x - second.width / 2 - (first.x - first.width / 2)
+    expect(Number.parseFloat(compactLabel.style.width)).toBeLessThanOrEqual(Math.min(12, exposedWidth))
+    const fullLabel = labels.find((entry) => entry.dataset.cardId === 'land-7')!
+    expect(fullLabel.dataset.compact).toBe('false')
+    expect(fullLabel.textContent).toBe('Target')
     h.board.render(view, 0, new Set(), null, primary, true)
     expect(h.host.all('three-board-target-label')).toHaveLength(0)
-    expect(h.host.all('three-board-target-pages').every((entry) => entry.hidden)).toBe(true)
   })
 
   it.each([
@@ -443,7 +469,7 @@ describe('constructed Three battlefield controls', () => {
     expect(vi.mocked(requestAnimationFrame).mock.calls).toHaveLength(scheduled)
   })
 
-  it('reanchors effects on resize and pagination without completing or draining their queue', () => {
+  it('reanchors effects when an overlapping row resizes without completing or draining their queue', () => {
     const h = setup()
     h.app.game!.players[1].battlefield = Array.from({ length: 8 }, (_, index) => ({
       instanceId: `far-${index}`, card: { id: `far-card-${index}`, name: 'Forest', type: 'land' },
@@ -454,6 +480,11 @@ describe('constructed Three battlefield controls', () => {
       kind: 'play_land', actor: 1, sourceInstanceId: 'far-0', land: 'Forest', visualStyle: 'classic',
       palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
     }, 350, done)
+    const registry = (h.board as unknown as {
+      cards: { get(key: string): { descriptor: { x: number } } | null }
+    }).cards
+    const key = boardCardKey('far-card-0', 1, 'far-0')
+    const oldX = registry.get(key)!.descriptor.x
     const stage = h.host.all('three-board-stage')[0]
     stage.clientWidth = 844
     stage.clientHeight = 390
@@ -461,10 +492,7 @@ describe('constructed Three battlefield controls', () => {
     ObserverStub.latest.callback()
     expect(stage.dataset.layout).toBe('compact')
     expect((h.board as unknown as { layout: ThreeLayout }).layout.height).toBe(390)
-    expect(done).not.toHaveBeenCalled()
-    const next = h.host.all('three-board-pagination')[0].children[2]
-    expect(next.disabled).toBe(false)
-    emit(next, 'click')
+    expect(registry.get(key)!.descriptor.x).not.toBe(oldX)
     expect(done).not.toHaveBeenCalled()
     expect(h.host.all('three-board-effect-caption')[0].hidden).toBe(false)
     cancel()

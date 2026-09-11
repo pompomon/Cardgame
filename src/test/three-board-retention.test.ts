@@ -3,7 +3,7 @@ import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial } from 'th
 import type { AppViewModel } from '../app/types'
 import { buildCounterHandOptions, type CounterHandOptions } from '../app/response-options'
 import type { ThreeAssets } from '../renderers/three/assets'
-import { boardCardKey, ThreeCardRegistry, type CardDescriptor } from '../renderers/three/card-registry'
+import { boardCardKey, DRAG_CARD_RENDER_ORDER, ThreeCardRegistry, type CardDescriptor } from '../renderers/three/card-registry'
 import { EffectGeometry, EffectVisual, effectRecipe } from '../renderers/three/effect-visual'
 import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { ThreeBoard } from '../renderers/three/board'
@@ -60,6 +60,19 @@ describe('retained Three.js card registry', () => {
     registry.dispose()
     registry.dispose()
     expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps overlapping render depth and picking aligned with row order', () => {
+    const { registry } = fixture()
+    const upper = { ...descriptor('upper'), stackIndex: 1 }
+    const lower = { ...descriptor('lower'), stackIndex: 0 }
+    registry.reconcile([upper, lower])
+    const upperCard = registry.get(upper.hit.key)!
+    const lowerCard = registry.get(lower.hit.key)!
+    expect(upperCard.group.position.z).toBeGreaterThan(lowerCard.group.position.z)
+    expect(upperCard.group.renderOrder).toBeGreaterThan(lowerCard.group.renderOrder)
+    expect(registry.hitTest({ x: upper.x, y: upper.y })?.cardId).toBe('upper')
+    registry.dispose()
   })
 
   it.each(['required', 'discard', 'target', 'playable'] as const)('uses four square-edged, evenly spaced frame strips for %s', (state) => {
@@ -138,14 +151,12 @@ describe('retained Three.js card registry', () => {
       const response = buildCounterHandOptions(view.game!)
       const chrome = new Map(['far', 'near', 'hand'].map((row) => [row, {
         header: { dataset: {} }, label: { textContent: '', focus: vi.fn() },
-        stats: { textContent: '', setAttribute: vi.fn() }, controls: { hidden: false }, count: { textContent: '' },
+        stats: { textContent: '', setAttribute: vi.fn() },
         stacks: [{ textContent: '', dataset: {} }, { textContent: '', dataset: {} }],
-        targets: { textContent: '', hidden: true },
-        previous: { disabled: false, setAttribute: vi.fn() }, next: { disabled: false, setAttribute: vi.fn() },
       }]))
       const fields = {
         view, actor: 0, response: response as CounterHandOptions | null, cards: registry, chrome,
-        pages: { far: 0, near: 0, hand: 0 }, layout: { ...boardLayout(1000, 750), capacity: 2 },
+        layout: boardLayout(320, 690),
         quality: { shadows: false }, targetIds: new Set(), effectDescriptors: new Map(), drag: null, canDrop: false,
         instruction: { hidden: true }, instructionText: { textContent: '' }, instructionSizes: [],
         pendingCaption: { hidden: true, textContent: '' },
@@ -156,29 +167,32 @@ describe('retained Three.js card registry', () => {
       }
       const board = Object.assign(Object.create(ThreeBoard.prototype), fields) as typeof fields & {
         present(): void
-        changePage(row: string, delta: number): void
       }
       return { board, registry, acquire, view, response }
     }
 
-    it('keeps paginated discard choices reachable and never marks response cards playable', () => {
-      const { board, registry, acquire, response } = setupBoard()
+    it('keeps overlapping discard choices visible and reachable without marking them playable', () => {
+      const { board, registry, acquire, view, response } = setupBoard()
       board.present()
       expect(board.canDrop).toBe(false)
       expect(board.instruction.hidden).toBe(false)
       expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
       const island = registry.get(boardCardKey('island', 0))!
+      const firstForest = registry.get(boardCardKey('forest-1', 0))!
       const forest = registry.get(boardCardKey('forest-2', 0))!
       expect(island.descriptor.response).toBe('required')
       expect(island.descriptor.hit.playable).toBe(false)
       expect(forest.descriptor.response).toBe('discard')
-      expect(forest.descriptor.visible).toBe(false)
-      expect(registry.hitTest({ x: forest.descriptor.x, y: forest.descriptor.y })?.cardId).not.toBe('forest-2')
-      board.changePage('hand', 1)
-      expect(board.onResize).toHaveBeenCalledOnce()
-      expect(island.descriptor.visible).toBe(false)
       expect(forest.descriptor.visible).toBe(true)
-      expect(registry.hitTest(forest.descriptor)?.cardId).toBe('forest-2')
+      expect(firstForest.descriptor.x - island.descriptor.x).toBeLessThan(forest.descriptor.width)
+      for (const card of view.game!.players[0].handCards) {
+        const retained = registry.get(boardCardKey(card.id, 0))!
+        expect(retained.descriptor.visible).toBe(true)
+        expect(registry.hitTest({
+          x: retained.descriptor.x - retained.descriptor.width / 2 + 1,
+          y: retained.descriptor.y,
+        })?.cardId).toBe(card.id)
+      }
       expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
       expect(registry.get(boardCardKey('other-island', 0))!.descriptor.response).toBe('discard')
       expect(acquire).toHaveBeenCalledTimes(4)
@@ -266,6 +280,7 @@ describe('retained Three.js card registry', () => {
     const source = registry.get(card.hit.key)!
     const proxy = registry.createProxy(source)
     expect(proxy.group.position.z).toBeGreaterThan(source.group.position.z)
+    expect(proxy.group.renderOrder).toBe(DRAG_CARD_RENDER_ORDER)
     expect(source.group.position.x).toBe(100)
     proxy.dispose()
     proxy.dispose()

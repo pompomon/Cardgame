@@ -127,7 +127,7 @@ DOM dependency graph. A source-only assertion cannot establish this.
 
 GPU mocks cannot prove visual correctness or device performance. Check a
 production preview in actual WebGL2 browsers: mouse, touch/pen, orientation
-changes, target pickers, card pagination, reduced motion, offline loads, and
+changes, target pickers, overlapping card rows, reduced motion, offline loads, and
 context loss. Record which browsers/devices were actually exercised; do not
 claim Android/iOS coverage from desktop emulation.
 

@@ -16,7 +16,7 @@ import type { BoardHit, ThreeBoardApi } from './contracts'
 import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
 import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
-import { boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pendingCardRect, pointInRect, type BoardRow, type ThreeLayout } from './layout'
+import { boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pendingCardRect, pointInRect, type BoardRow, type ThreeLayout } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
 
@@ -24,13 +24,7 @@ interface RowChrome {
   readonly header: HTMLDivElement
   readonly label: HTMLParagraphElement
   readonly stats: HTMLParagraphElement
-  readonly controls: HTMLDivElement
-  readonly previous: HTMLButtonElement
-  readonly next: HTMLButtonElement
-  readonly count: HTMLSpanElement
-  readonly targets: HTMLSpanElement
   readonly stacks: readonly HTMLSpanElement[]
-  readonly dispose: () => void
 }
 
 interface DragVisual {
@@ -40,6 +34,11 @@ interface DragVisual {
   elapsed: number
   fromX: number
   fromY: number
+}
+
+interface TargetLabel {
+  readonly element: HTMLSpanElement
+  nextKey: string | null
 }
 
 const ROWS: readonly BoardRow[] = ['far', 'near', 'hand']
@@ -63,7 +62,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly effectDescriptors = new Map<EffectVisual, VisualEffectDescriptor>()
   private readonly chrome = new Map<BoardRow, RowChrome>()
   private readonly surfaces = new Map<BoardRow, Mesh<PlaneGeometry, MeshBasicMaterial>>()
-  private readonly targetLabels = new Map<string, HTMLSpanElement>()
+  private readonly targetLabels = new Map<string, TargetLabel>()
   private readonly effectCaption = document.createElement('p')
   private readonly pendingCaption = document.createElement('p')
   private pendingCard: RetainedCard | null = null
@@ -73,7 +72,6 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly primaryButton = document.createElement('button')
   private primaryAction: ThreePrimaryAction | null = null
   private pressedAction: ThreePrimaryAction | null = null
-  private readonly pages: Record<BoardRow, number> = { far: 0, near: 0, hand: 0 }
   private readonly point = { x: 0, y: 0 }
   private readonly onFailure: (message: string) => void
   private readonly onResize: () => void
@@ -192,10 +190,7 @@ export class ThreeBoard implements ThreeBoardApi {
       if (typeof ResizeObserver !== 'undefined') {
         this.observer = new ResizeObserver(this.resize)
         this.observer.observe(this.stage)
-        for (const chrome of this.chrome.values()) {
-          this.observer.observe(chrome.header)
-          this.observer.observe(chrome.controls)
-        }
+        for (const chrome of this.chrome.values()) this.observer.observe(chrome.header)
       }
       this.applySize()
       this.setBackground(DEFAULT_BOARD_THEME)
@@ -219,7 +214,6 @@ export class ThreeBoard implements ThreeBoardApi {
     const reoriented = this.actor !== presentedActor || boundary
     if (reoriented) {
       this.endDrag(false)
-      for (const row of ROWS) this.pages[row] = 0
     }
     if (boundary) {
       for (const effect of this.effects) effect.cancel()
@@ -248,7 +242,6 @@ export class ThreeBoard implements ThreeBoardApi {
       this.effectCaption.hidden = true
       this.instruction.hidden = true
       this.primaryButton.hidden = true
-      for (const chrome of this.chrome.values()) chrome.controls.hidden = true
       return
     }
     const descriptors: CardDescriptor[] = []
@@ -291,36 +284,16 @@ export class ThreeBoard implements ThreeBoardApi {
           stack.dataset.empty = String(count === 0)
         }
       }
-      chrome.controls.hidden = false
-      chrome.previous.setAttribute('aria-label', `Previous ${label} page`)
-      chrome.next.setAttribute('aria-label', `Next ${label} page`)
     }
     const resized = this.applySize()
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
       const entries = row === 'hand' ? player.handCards : player.battlefield
-      const page = pageWindow(entries.length, this.pages[row], this.layout.capacity)
-      this.pages[row] = page.page
-      const chrome = this.chrome.get(row)!
-      chrome.previous.disabled = page.page === 0 || this.drag !== null
-      chrome.next.disabled = page.page === page.pages - 1 || this.drag !== null
-      chrome.count.textContent = page.count === 0 ? '0 cards' : `${page.start + 1}–${page.end} of ${page.count}`
-      const targetPages = new Set<number>()
-      entries.forEach((card, index) => {
-        const id = 'instanceId' in card ? card.instanceId : card.id
-        const cardId = 'cardId' in card ? card.cardId : card.id
-        if (this.targetIds.has(id) || this.targetIds.has(cardId)) {
-          targetPages.add(Math.floor(index / this.layout.capacity) + 1)
-        }
-      })
-      chrome.targets.hidden = targetPages.size === 0
-      chrome.targets.textContent = targetPages.size ? `Targets: page ${[...targetPages].join(', ')}` : ''
       for (let index = 0; index < entries.length; index++) {
         const card = entries[index]
         const instanceId = 'instanceId' in card ? card.instanceId : undefined
         const cardId = 'cardId' in card ? card.cardId : card.id
-        const visible = index >= page.start && index < page.end
         const hit: BoardHit = {
           key: boardCardKey(cardId, owner, instanceId),
           cardId, instanceId, name: card.name, owner, zone: row === 'hand' ? 'hand' : 'battlefield',
@@ -328,10 +301,11 @@ export class ThreeBoard implements ThreeBoardApi {
             && (game.legal.playLandByCard[cardId]?.length ?? 0) > 0,
         }
         descriptors.push({
-          hit, style, visible,
-          x: visible ? cardSlotX(index - page.start, page.end - page.start, this.layout) : 0,
+          hit, style, visible: true,
+          x: cardSlotX(index, entries.length, this.layout),
           y: this.layout.rows[row].y,
           width: this.layout.cardWidth, height: this.layout.cardHeight,
+          stackIndex: index,
           target: this.targetIds.has(instanceId ?? cardId) || this.targetIds.has(cardId),
           response: row === 'hand' && card.name !== HIDDEN_HAND_CARD_NAME
             ? response?.requiredIslandId === cardId ? 'required' : responseIds.has(cardId) ? 'discard' : null
@@ -342,7 +316,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     if (this.drag && !this.drag.returning) {
       const desired = descriptors.find((descriptor) => descriptor.hit.key === this.drag?.source.descriptor.hit.key)
-      if (!desired?.hit.playable || !desired.visible) this.endDrag(false)
+      if (!desired?.hit.playable) this.endDrag(false)
     }
     const duration = animate && !resized && this.quality.motion && !this.drag
       ? Math.min(220, durationMsForSpeed(this.view?.animationSpeed ?? 'normal')) : 0
@@ -391,23 +365,30 @@ export class ThreeBoard implements ThreeBoardApi {
 
   private syncTargetLabels(descriptors: readonly CardDescriptor[]): void {
     const visible = new Set<string>()
-    for (const descriptor of descriptors) {
+    for (const [index, descriptor] of descriptors.entries()) {
       if (!descriptor.visible || !descriptor.target) continue
       const key = descriptor.hit.key
       visible.add(key)
-      let label = this.targetLabels.get(key)
-      if (!label) {
-        label = document.createElement('span')
+      const next = descriptors[index + 1]
+      const nextKey = next?.hit.owner === descriptor.hit.owner && next.hit.zone === descriptor.hit.zone
+        ? next.hit.key : null
+      let targetLabel = this.targetLabels.get(key)
+      if (!targetLabel) {
+        const label = document.createElement('span')
         label.className = 'three-board-target-label'
         label.textContent = 'Target'
+        label.dataset.cardId = descriptor.hit.cardId
         label.setAttribute('aria-hidden', 'true')
         this.stage.append(label)
-        this.targetLabels.set(key, label)
+        targetLabel = { element: label, nextKey }
+        this.targetLabels.set(key, targetLabel)
+      } else {
+        targetLabel.nextKey = nextKey
       }
     }
-    for (const [key, label] of this.targetLabels) {
+    for (const [key, targetLabel] of this.targetLabels) {
       if (!visible.has(key)) {
-        label.remove()
+        targetLabel.element.remove()
         this.targetLabels.delete(key)
       }
     }
@@ -415,11 +396,22 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   private positionTargetLabels(): void {
-    for (const [key, label] of this.targetLabels) {
+    for (const [key, targetLabel] of this.targetLabels) {
       const anchor = this.cards?.get(key)?.anchor()
       if (!anchor) continue
-      label.style.left = `${this.layout.width / 2 + anchor.x}px`
-      label.style.top = `${this.layout.height / 2 - anchor.y - anchor.height / 2 + 2}px`
+      const nextAnchor = targetLabel.nextKey ? this.cards?.get(targetLabel.nextKey)?.anchor() : null
+      const left = anchor.x - anchor.width / 2
+      const right = nextAnchor && nextAnchor.owner === anchor.owner && nextAnchor.zone === anchor.zone
+        ? Math.min(anchor.x + anchor.width / 2, nextAnchor.x - nextAnchor.width / 2)
+        : anchor.x + anchor.width / 2
+      const exposedCenter = right > left ? (left + right) / 2 : anchor.x
+      const exposedWidth = Math.max(1, right - left)
+      const compact = exposedWidth < 64
+      targetLabel.element.dataset.compact = String(compact)
+      targetLabel.element.textContent = compact ? '' : 'Target'
+      targetLabel.element.style.width = compact ? `${Math.min(12, exposedWidth)}px` : ''
+      targetLabel.element.style.left = `${this.layout.width / 2 + exposedCenter}px`
+      targetLabel.element.style.top = `${this.layout.height / 2 - anchor.y - anchor.height / 2 + 2}px`
     }
   }
 
@@ -464,10 +456,6 @@ export class ThreeBoard implements ThreeBoardApi {
     proxy.group.rotation.set(-0.06, 0.08, -0.025)
     source.setOpacity(0.35)
     this.drag = { source, proxy, returning: false, elapsed: 0, fromX: 0, fromY: 0 }
-    for (const chrome of this.chrome.values()) {
-      chrome.previous.disabled = true
-      chrome.next.disabled = true
-    }
     this.invalidate()
   }
 
@@ -500,7 +488,6 @@ export class ThreeBoard implements ThreeBoardApi {
     this.dropMaterial.color.set('#70e7b1')
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
     this.instructionText.textContent = PLAY_INSTRUCTION
-    this.updatePageButtons()
     this.invalidate()
   }
 
@@ -605,19 +592,15 @@ export class ThreeBoard implements ThreeBoardApi {
     this.stage.dataset.layout = compact ? 'compact' : 'stacked'
     const columns = boardColumns(width, compact)
     const headers = { far: 0, near: 0, hand: 0 }
-    const controls = { far: 0, near: 0, hand: 0 }
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
       chrome.header.style.left = `${columns.labelLeft}px`
       chrome.header.style.width = `${columns.labelWidth}px`
-      chrome.controls.style.left = `${columns.controlsLeft}px`
-      chrome.controls.style.width = `${columns.controlsWidth}px`
       headers[row] = Math.max(chrome.header.offsetHeight, chrome.header.scrollHeight || 0)
-      controls[row] = Math.max(chrome.controls.offsetHeight, chrome.controls.scrollHeight || 0)
     }
     const height = Math.max(1, this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
-    const nextLayout = boardLayout(width, height, headers, controls, compact)
+    const nextLayout = boardLayout(width, height, headers, compact)
     const layoutChanged = JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
     this.layout = nextLayout
     this.camera.left = -width / 2
@@ -640,9 +623,6 @@ export class ThreeBoard implements ThreeBoardApi {
       const chrome = this.chrome.get(row)!
       chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
       chrome.header.style.maxHeight = `${this.layout.rows[row].labelHeight}px`
-      chrome.controls.style.top = `${this.layout.rows[row].controlsTop}px`
-      chrome.controls.style.minHeight = `${Math.min(44, this.layout.rows[row].controlsHeight)}px`
-      chrome.controls.style.maxHeight = `${this.layout.rows[row].controlsHeight}px`
       const surface = this.surfaces.get(row)!
       surface.position.set(cardSlotX(0, 1, this.layout), this.layout.rows[row].y, 0)
       surface.scale.set(columns.cardsWidth, this.layout.rows[row].height + 4, 1)
@@ -705,53 +685,8 @@ export class ThreeBoard implements ThreeBoardApi {
       summary.append(holder)
     }
     header.append(summary)
-    const controls = document.createElement('div')
-    controls.className = 'three-board-pagination'
-    const previous = document.createElement('button')
-    const next = document.createElement('button')
-    const count = document.createElement('span')
-    const targets = document.createElement('span')
-    targets.className = 'three-board-target-pages'
-    targets.hidden = true
-    previous.type = next.type = 'button'
-    previous.textContent = '‹ Previous'
-    next.textContent = 'Next ›'
-    count.setAttribute('aria-live', 'polite')
-    const back = (): void => this.changePage(row, -1)
-    const forward = (): void => this.changePage(row, 1)
-    previous.addEventListener('click', back)
-    next.addEventListener('click', forward)
-    controls.append(previous, count, next, targets)
-    this.stage.append(header, controls)
-    this.chrome.set(row, {
-      header, label, stats, controls, previous, next, count, targets, stacks,
-      dispose: (): void => {
-        previous.removeEventListener('click', back)
-        next.removeEventListener('click', forward)
-      },
-    })
-  }
-
-  private changePage(row: BoardRow, delta: number): void {
-    if (!this.usable()) return
-    this.endDrag(false)
-    this.onResize()
-    this.pages[row] += delta
-    this.present(false, true)
-    this.invalidate()
-  }
-
-  private updatePageButtons(): void {
-    const game = this.view?.game
-    if (!game) return
-    for (const row of ROWS) {
-      const owner = row === 'far' ? 1 - this.actor : this.actor
-      const count = row === 'hand' ? game.players[owner].handCards.length : game.players[owner].battlefield.length
-      const page = pageWindow(count, this.pages[row], this.layout.capacity)
-      const chrome = this.chrome.get(row)!
-      chrome.previous.disabled = page.page === 0 || this.drag !== null
-      chrome.next.disabled = page.page === page.pages - 1 || this.drag !== null
-    }
+    this.stage.append(header)
+    this.chrome.set(row, { header, label, stats, stacks })
   }
 
   private invalidate = (): void => {
@@ -830,7 +765,6 @@ export class ThreeBoard implements ThreeBoardApi {
     for (const effect of this.effects) effect.cancel()
     this.effects.clear()
     this.effectDescriptors.clear()
-    for (const chrome of this.chrome.values()) chrome.dispose()
     this.chrome.clear()
     this.targetLabels.clear()
     for (const surface of this.surfaces.values()) surface.material.dispose()

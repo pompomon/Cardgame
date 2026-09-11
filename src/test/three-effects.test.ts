@@ -5,7 +5,7 @@ import { CanvasTexture, type Mesh, type MeshBasicMaterial } from 'three'
 import { MAX_EFFECT_MS, MAX_QUEUED_EFFECTS } from '../app/animation-settings'
 import { visualEffectForEvent, type VisualEffectDescriptor } from '../app/visual-effects'
 import { EffectGeometry, EffectVisual, effectRecipe } from '../renderers/three/effect-visual'
-import { boardCardKey, ThreeCardRegistry, type CardAnchor } from '../renderers/three/card-registry'
+import { boardCardKey, EFFECT_RENDER_ORDER, LIFTED_CARD_RENDER_ORDER, ThreeCardRegistry, type CardAnchor } from '../renderers/three/card-registry'
 import type { ThreeAssets } from '../renderers/three/assets'
 import { ThreeEffects, presentationBoundary } from '../renderers/three/effects'
 import { withFakeTimers } from './helpers/timers'
@@ -247,6 +247,8 @@ describe('distinct Three effect recipes', () => {
 
   it('expands paired landing ripples without drawing a cross-board beam', () => {
     const effect = create(play)
+    expect(effect.visual.group.renderOrder).toBe(EFFECT_RENDER_ORDER)
+    expect(effect.visual.group.renderOrder).toBeGreaterThan(LIFTED_CARD_RENDER_ORDER)
     const ring = effect.mesh('effect-ring')
     const radius = ring.scale.x
     effect.visual.advance(200)

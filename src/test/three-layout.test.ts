@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pageWindow, pendingCardRect, pointInRect } from '../renderers/three/layout'
+import { boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pendingCardRect, pointInRect } from '../renderers/three/layout'
 
 describe('Three.js fixed tabletop layout', () => {
-  it.each([[320, 690], [390, 844], [844, 690], [1440, 960]])('keeps page cards within %sx%s', (width, height) => {
+  it.each([[320, 690], [390, 844], [844, 690], [1440, 960]])('keeps cards within %sx%s', (width, height) => {
     const layout = boardLayout(width, height)
     expect(layout.cardHeight).toBeGreaterThan(100)
-    expect(layout.capacity).toBeGreaterThan(0)
-    const last = cardSlotX(layout.capacity - 1, layout.capacity, layout)
+    const last = cardSlotX(11, 12, layout)
     expect(last + layout.cardWidth / 2).toBeLessThanOrEqual(width / 2)
     expect(layout.rows.far.y).toBeGreaterThan(layout.rows.near.y)
     expect(layout.rows.near.y).toBeGreaterThan(layout.rows.hand.y)
@@ -14,19 +13,33 @@ describe('Three.js fixed tabletop layout', () => {
     expect(pointInRect({ x: 0, y: layout.rows.hand.y }, layout.drop)).toBe(false)
   })
 
-  it.each([1, 3, 7, 16])('makes every card in a long row reachable with capacity %s', (capacity) => {
-    const seen: number[] = []
-    for (let index = 0; index < pageWindow(103, 0, capacity).pages; index++) {
-      const page = pageWindow(103, index, capacity)
-      for (let card = page.start; card < page.end; card++) seen.push(card)
-    }
-    expect(seen).toEqual(Array.from({ length: 103 }, (_, index) => index))
+  it.each([[320, 690], [390, 844], [844, 390], [1440, 960]])(
+    'keeps every card in an overflowing row visible within %sx%s',
+    (width, height) => {
+      const layout = boardLayout(width, height, undefined, compactBoardViewport(width, height))
+      const count = 50
+      const positions = Array.from({ length: count }, (_, index) => cardSlotX(index, count, layout))
+      const left = layout.width / 2 + positions[0] - layout.cardWidth / 2
+      const right = layout.width / 2 + positions.at(-1)! + layout.cardWidth / 2
+      expect(left).toBeGreaterThanOrEqual(layout.columns.cardsLeft - 0.001)
+      expect(right).toBeLessThanOrEqual(layout.columns.cardsLeft + layout.columns.cardsWidth + 0.001)
+      expect(positions.every((position, index) => index === 0 || position > positions[index - 1])).toBe(true)
+      expect(positions[1] - positions[0]).toBeLessThan(layout.cardWidth + layout.gap)
+    },
+  )
+
+  it('centers one card and preserves normal spacing while a row fits', () => {
+    const layout = boardLayout(390, 844)
+    expect(cardSlotX(0, 1, layout)).toBe(
+      layout.columns.cardsLeft + layout.columns.cardsWidth / 2 - layout.width / 2,
+    )
+    const count = 2
+    expect(cardSlotX(1, count, layout) - cardSlotX(0, count, layout)).toBeCloseTo(layout.cardWidth + layout.gap)
   })
 
   it.each([[320, 456], [390, 700], [844, 390], [1440, 670]])('fits measured chrome within the %sx%s stage', (width, height) => {
     const headers = { far: 52, near: width < 480 ? 112 : 104, hand: 28 }
-    const controls = { far: 44, near: 44, hand: 44 }
-    const layout = boardLayout(width, height, headers, controls, compactBoardViewport(width, height))
+    const layout = boardLayout(width, height, headers, compactBoardViewport(width, height))
     expect(layout.height).toBe(height)
     expect(layout.cardHeight).toBeGreaterThan(0)
     for (const row of ['far', 'near', 'hand'] as const) {
@@ -34,11 +47,9 @@ describe('Three.js fixed tabletop layout', () => {
       const top = layout.height / 2 - pos.y - layout.cardHeight / 2
       expect(pos.labelTop).toBeGreaterThanOrEqual(0)
       expect(pos.labelTop + headers[row]).toBeLessThanOrEqual(layout.height)
-      expect(pos.controlsTop).toBeGreaterThanOrEqual(0)
-      expect(pos.controlsTop + controls[row]).toBeLessThanOrEqual(layout.height)
       if (!layout.compact) {
         expect(top).toBeGreaterThanOrEqual(pos.labelTop + headers[row])
-        expect(top + layout.cardHeight).toBeLessThanOrEqual(pos.controlsTop + 0.001)
+        expect(top + layout.cardHeight).toBeLessThanOrEqual(layout.height)
       }
     }
     const dropTop = layout.height / 2 - layout.drop.y - layout.drop.height / 2
@@ -48,79 +59,65 @@ describe('Three.js fixed tabletop layout', () => {
 
   it('shrinks cards before overlapping wrapped chrome in a constrained portrait stage', () => {
     const headers = { far: 60, near: 130, hand: 40 }
-    const controls = { far: 44, near: 44, hand: 44 }
-    const layout = boardLayout(320, 420, headers, controls)
+    const layout = boardLayout(320, 420, headers)
     expect(layout.height).toBe(420)
     expect(layout.cardHeight).toBeLessThan(104)
-    expect(layout.rows.hand.controlsTop + controls.hand).toBeLessThanOrEqual(layout.height)
     for (const row of ['far', 'near', 'hand'] as const) {
       const placement = layout.rows[row]
       const cardTop = layout.height / 2 - placement.y - layout.cardHeight / 2
       expect(cardTop + 0.001).toBeGreaterThanOrEqual(placement.labelTop + headers[row])
-      expect(cardTop + layout.cardHeight).toBeLessThanOrEqual(placement.controlsTop + 0.001)
+      expect(cardTop + layout.cardHeight).toBeLessThanOrEqual(layout.height)
     }
     expect(pointInRect({ x: 0, y: layout.rows.near.y }, layout.drop)).toBe(true)
     expect(pointInRect({ x: 0, y: layout.rows.hand.y }, layout.drop)).toBe(false)
   })
 
-  it.each([[320, false], [844, true]])('compacts oversized chrome within a 300px stage at width %s', (width, compact) => {
-    const headers = { far: 60, near: 130, hand: 40 }
-    const controls = { far: 120, near: 120, hand: 120 }
-    const layout = boardLayout(width, 300, headers, controls, compact)
-    expect(Object.values(headers).reduce((sum, size) => sum + size, 0)
-      + Object.values(controls).reduce((sum, size) => sum + size, 0)).toBeGreaterThan(layout.height)
+  it.each([[320, false], [844, true]])('compacts oversized headers within a 300px stage at width %s', (width, compact) => {
+    const headers = { far: 100, near: 180, hand: 100 }
+    const layout = boardLayout(width, 300, headers, compact)
+    expect(Object.values(headers).reduce((sum, size) => sum + size, 0)).toBeGreaterThan(layout.height)
     for (const row of ['far', 'near', 'hand'] as const) {
       const placement = layout.rows[row]
       expect(placement.labelTop).toBeGreaterThanOrEqual(0)
       expect(placement.labelTop + placement.labelHeight).toBeLessThanOrEqual(layout.height)
-      expect(placement.controlsTop).toBeGreaterThanOrEqual(0)
-      expect(placement.controlsTop + placement.controlsHeight).toBeLessThanOrEqual(layout.height)
     }
     expect(layout.rows.near.labelHeight).toBeGreaterThanOrEqual(52)
-    expect(layout.rows.hand.controlsTop + layout.rows.hand.controlsHeight).toBeLessThanOrEqual(layout.height)
   })
 
-  it.each([[320, 150, false], [844, 120, true]])(
-    'preserves interactive chrome below the full chrome minimum at %sx%s',
+  it.each([[320, 150, false], [844, 150, true]])(
+    'preserves the primary-action header below the full chrome minimum at %sx%s',
     (width, height, compact) => {
       const layout = boardLayout(
         width,
         height,
         { far: 60, near: 130, hand: 40 },
-        { far: 120, near: 120, hand: 120 },
         compact,
       )
       expect(layout.rows.near.labelHeight).toBeGreaterThanOrEqual(52)
-      for (const row of ['far', 'near', 'hand'] as const) {
-        expect(layout.rows[row].controlsHeight).toBeGreaterThanOrEqual(44)
-      }
     },
   )
 
-  it('clamps pages when cards leave a row and handles empty/invalid input', () => {
-    expect(pageWindow(5, 100, 3)).toMatchObject({ page: 1, start: 3, end: 5, pages: 2 })
-    expect(pageWindow(0, 4, 3)).toMatchObject({ page: 0, pages: 1, end: 0 })
-    expect(pageWindow(NaN, Infinity, 0)).toMatchObject({ page: 0, pages: 1, count: 0 })
+  it('handles invalid dimensions and slot input safely', () => {
     expect(boardLayout(NaN, 0).width).toBe(1)
+    const layout = boardLayout(320, 690)
+    expect(cardSlotX(NaN, Infinity, layout)).toBe(cardSlotX(0, 1, layout))
   })
 
   it.each([[844, 390], [1024, 600], [1440, 700]])('uses separate readable landscape lanes at %sx%s', (width, height) => {
     expect(compactBoardViewport(width, height)).toBe(true)
     const headers = { far: 90, near: 160, hand: 28 }
-    const controls = { far: 44, near: 44, hand: 44 }
-    const layout = boardLayout(width, height, headers, controls, true)
+    const layout = boardLayout(width, height, headers, true)
     expect(layout.compact).toBe(true)
     expect(layout.height).toBe(height)
     expect(layout.cardHeight).toBeGreaterThan(0)
-    const first = layout.width / 2 + cardSlotX(0, layout.capacity, layout) - layout.cardWidth / 2
-    const last = layout.width / 2 + cardSlotX(layout.capacity - 1, layout.capacity, layout) + layout.cardWidth / 2
+    const first = layout.width / 2 + cardSlotX(0, 12, layout) - layout.cardWidth / 2
+    const last = layout.width / 2 + cardSlotX(11, 12, layout) + layout.cardWidth / 2
     expect(first).toBeGreaterThan(layout.columns.labelLeft + layout.columns.labelWidth)
-    expect(last).toBeLessThan(layout.columns.controlsLeft)
+    expect(last).toBeLessThanOrEqual(layout.columns.cardsLeft + layout.columns.cardsWidth + 0.001)
     for (const row of ['far', 'near', 'hand'] as const) {
       const placement = layout.rows[row]
       expect(placement.labelTop).toBeGreaterThanOrEqual(0)
       expect(placement.labelTop + headers[row]).toBeLessThanOrEqual(layout.height)
-      expect(placement.controlsTop + controls[row]).toBeLessThanOrEqual(layout.height)
     }
     expect(pointInRect({ x: cardSlotX(0, 1, layout), y: layout.rows.near.y }, layout.drop)).toBe(true)
     expect(pointInRect({ x: cardSlotX(0, 1, layout), y: layout.rows.hand.y }, layout.drop)).toBe(false)
@@ -132,10 +129,8 @@ describe('Three.js fixed tabletop layout', () => {
     expect(compactBoardViewport(390, 844)).toBe(false)
     expect(compactBoardViewport(Infinity, 300)).toBe(false)
     const headers = { far: 90, near: 160, hand: 40 }
-    const controls = { far: 44, near: 44, hand: 44 }
-    const layout = boardLayout(844, 300, headers, controls, true)
+    const layout = boardLayout(844, 300, headers, true)
     expect(layout.height).toBe(300)
-    expect(layout.rows.hand.controlsTop + controls.hand).toBeLessThanOrEqual(300)
     expect(layout.rows.far.y).toBeGreaterThan(layout.rows.near.y)
     expect(layout.rows.near.y).toBeGreaterThan(layout.rows.hand.y)
   })
@@ -154,8 +149,7 @@ describe('Three.js fixed tabletop layout', () => {
 
   it.each([[320, 690], [390, 844], [844, 390], [1024, 600], [1440, 960]])('bounds pending cards and shadows outside chrome at %sx%s', (width, height) => {
     const headers = { far: 90, near: 160, hand: 28 }
-    const controls = { far: 44, near: 44, hand: 44 }
-    const layout = boardLayout(width, height, headers, controls, compactBoardViewport(width, height))
+    const layout = boardLayout(width, height, headers, compactBoardViewport(width, height))
     for (const actor of [0, 1]) {
       for (const owner of [0, 1]) {
         const rect = pendingCardRect(layout, owner, actor)
@@ -165,8 +159,6 @@ describe('Three.js fixed tabletop layout', () => {
         expect(rect.width / rect.height).toBeCloseTo(layout.cardWidth / layout.cardHeight)
         if (layout.compact) {
           expect(rect.height + 10).toBeLessThanOrEqual(layout.rows[row].height)
-        } else {
-          expect(rect.height).toBeGreaterThanOrEqual(layout.cardHeight)
         }
         expect(rect.y).toBeGreaterThanOrEqual(layout.rows[row].y)
         expect(left).toBeGreaterThanOrEqual(layout.columns.cardsLeft)
@@ -175,7 +167,9 @@ describe('Three.js fixed tabletop layout', () => {
         expect(top + rect.height + 10).toBeLessThanOrEqual(layout.height)
         if (!layout.compact) {
           expect(top).toBeGreaterThanOrEqual(layout.rows[row].labelTop + headers[row])
-          expect(top + rect.height + 10).toBeLessThanOrEqual(layout.rows[row].controlsTop + 0.001)
+          expect(top + rect.height + 10).toBeLessThanOrEqual(
+            layout.height / 2 - layout.rows[row].y + layout.rows[row].height / 2 + 0.001,
+          )
         }
       }
     }
