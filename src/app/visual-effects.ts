@@ -25,6 +25,7 @@ export interface VisualEffectDescriptor {
   targetInstanceId?: string
   targetCardId?: string
   targetCardName?: BasicLand
+  counterCards?: readonly [BasicLand, BasicLand]
   visualStyle: CardVisualStyle
   palette: VisualEffectPalette
 }
@@ -45,7 +46,7 @@ function descriptor(
   visualStyle: CardVisualStyle,
   details: Partial<Pick<
     VisualEffectDescriptor,
-    'targetActor' | 'sourceInstanceId' | 'targetInstanceId' | 'targetCardId' | 'targetCardName'
+    'targetActor' | 'sourceInstanceId' | 'targetInstanceId' | 'targetCardId' | 'targetCardName' | 'counterCards'
   >> = {},
 ): VisualEffectDescriptor {
   return { kind, actor, land, visualStyle, palette: paletteFor(land, visualStyle), ...details }
@@ -83,7 +84,9 @@ export function visualEffectForEvent(
         sourceInstanceId: event.sourceInstanceId,
       })
     case 'counter_resolved':
-      return descriptor('counter_resolved', event.actor, 'Island', visualStyle)
+      return descriptor('counter_resolved', event.actor, 'Island', visualStyle, {
+        counterCards: event.discardCardName ? ['Island', event.discardCardName] : undefined,
+      })
     default:
       return null
   }

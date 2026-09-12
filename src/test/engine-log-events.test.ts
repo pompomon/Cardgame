@@ -56,6 +56,28 @@ describe('engine LogEvent stream', () => {
     const discard = state.players[1].hand.find((card) => card.id !== island.id)!
     state = applyAction(state, { type: 'counter_land', actor: 1, discardCardId: discard.id })
     const last = state.events[state.events.length - 1]
-    expect(last).toEqual({ kind: 'counter_resolved', actor: 1, cardName: 'Forest' })
+    expect(last).toEqual({
+      kind: 'counter_resolved',
+      actor: 1,
+      cardName: 'Forest',
+      discardCardName: discard.name,
+    })
+  })
+
+  it('records another Island when it is selected as the additional counter discard', () => {
+    const p0Deck = makeDeck(['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest'])
+    const p1Deck = makeDeck(['Island', 'Island', 'Forest', 'Forest', 'Forest', 'Forest'])
+    let state = createInitialGame(2, [p0Deck, p1Deck])
+    const land = findInHand(state, 0, 'Forest')!
+    state = applyAction(state, { type: 'play_land', actor: 0, cardId: land.id })
+    const islands = state.players[1].hand.filter((card) => card.name === 'Island')
+    state = applyAction(state, { type: 'counter_land', actor: 1, discardCardId: islands[1].id })
+    expect(state.events.at(-1)).toEqual({
+      kind: 'counter_resolved',
+      actor: 1,
+      cardName: 'Forest',
+      discardCardName: 'Island',
+    })
+    expect(state.players[1].graveyard.slice(-2).map((card) => card.id)).toEqual(islands.map((card) => card.id))
   })
 })

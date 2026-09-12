@@ -53,6 +53,7 @@ export class EffectVisual {
   private readonly recipe: ReturnType<typeof effectRecipe>
   private readonly complete: () => void
   private readonly removed: { card: RetainedCard; release: () => void } | null
+  private readonly counterCards: readonly RetainedCard[]
   private elapsed = 0
   private finished = false
 
@@ -65,6 +66,7 @@ export class EffectVisual {
     particles: number,
     removed: { card: RetainedCard; release: () => void } | null,
     complete: () => void,
+    counterCards: readonly RetainedCard[] = [],
   ) {
     this.source = { ...source }
     this.target = { ...target }
@@ -72,6 +74,7 @@ export class EffectVisual {
     this.recipe = effectRecipe(descriptor.kind)
     this.complete = complete
     this.removed = removed
+    this.counterCards = [...counterCards]
     this.primary = new MeshBasicMaterial({ color: descriptor.palette.primary, transparent: true, depthWrite: false })
     this.secondary = new MeshBasicMaterial({ color: descriptor.palette.secondary, transparent: true, depthWrite: false })
     this.glow = new MeshBasicMaterial({ color: descriptor.palette.glow, transparent: true, depthWrite: false })
@@ -96,6 +99,7 @@ export class EffectVisual {
       this.group.add(spark)
     }
     this.positionRemoved()
+    this.positionCounterCards()
     this.advance(0)
   }
 
@@ -106,6 +110,7 @@ export class EffectVisual {
     this.source = { ...source }
     this.target = { ...target }
     if (movedTarget) this.positionRemoved()
+    this.positionCounterCards()
     this.advance(0)
   }
 
@@ -119,6 +124,31 @@ export class EffectVisual {
     })
     card.setInert()
     card.group.visible = true
+  }
+
+  private positionCounterCards(): void {
+    if (this.recipe !== 'counter' || this.counterCards.length !== 2) return
+    const width = Math.max(1, this.source.width * 0.72)
+    const height = Math.max(1, this.source.height * 0.72)
+    const gap = Math.min(12, Math.max(4, this.source.width * 0.1))
+    const offset = (width + gap) / 2
+    for (let index = 0; index < this.counterCards.length; index++) {
+      const card = this.counterCards[index]
+      card.update({
+        ...card.descriptor,
+        x: this.source.x + (index === 0 ? -offset : offset),
+        y: this.source.y,
+        width,
+        height,
+        visible: true,
+        target: false,
+        response: null,
+        lifted: true,
+        hit: { ...card.descriptor.hit, playable: false },
+      })
+      card.group.rotation.z = index === 0 ? -0.06 : 0.06
+      card.group.visible = true
+    }
   }
 
   advance(delta: number): void {
@@ -247,6 +277,8 @@ export class EffectVisual {
       spark.scale.setScalar(7 * (1 - t * 0.5))
       spark.rotation.z = angle + Math.PI
     }
+    const cardOpacity = t < 0.7 ? 1 : Math.max(0, (1 - t) / 0.3)
+    for (const card of this.counterCards) card.setOpacity(cardOpacity)
   }
 
   cancel = (): void => {
@@ -258,6 +290,7 @@ export class EffectVisual {
     this.secondary.dispose()
     this.glow.dispose()
     this.removed?.release()
+    for (const card of this.counterCards) card.dispose()
     this.complete()
   }
 }

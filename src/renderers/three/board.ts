@@ -94,6 +94,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private disposed = false
   private failed = false
   private frame: number | null = null
+  private effectCardSequence = 0
   private lastFrame: number | null = null
   private drag: DragVisual | null = null
   private canDrop = false
@@ -505,6 +506,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.effectCaption.hidden = false
     const source = this.cards?.anchorFor(effect.sourceInstanceId) ?? this.actorAnchor(effect.actor)
     const target = this.effectTargetAnchor(effect)
+    const counterCards = this.createCounterCards(effect, source)
     const removed = effect.kind === 'mountain_destroy' && effect.targetInstanceId
       ? this.cards?.pinRemoved(effect.targetInstanceId) ?? null : null
     const visual = new EffectVisual(this.effectGeometry, effect, source, target, duration, this.quality.effectParticles, removed, () => {
@@ -513,12 +515,42 @@ export class ThreeBoard implements ThreeBoardApi {
       this.effectCaption.hidden = this.effects.size === 0
       done()
       this.invalidate()
-    })
+    }, counterCards)
     this.effects.add(visual)
     this.effectDescriptors.set(visual, effect)
     this.scene.add(visual.group)
     this.invalidate()
     return visual.cancel
+  }
+
+  private createCounterCards(effect: VisualEffectDescriptor, anchor: CardAnchor): RetainedCard[] {
+    if (effect.kind !== 'counter_resolved' || !effect.counterCards || !this.cards) return []
+    const sequence = ++this.effectCardSequence
+    return effect.counterCards.map((name, index) => {
+      const cardId = `counter-cost-${sequence}-${index}`
+      const card = this.cards!.createPresentation({
+        x: anchor.x,
+        y: anchor.y,
+        width: anchor.width,
+        height: anchor.height,
+        hit: {
+          key: boardCardKey(cardId, effect.actor),
+          cardId,
+          name,
+          owner: effect.actor,
+          zone: 'battlefield',
+          playable: false,
+        },
+        style: effect.visualStyle,
+        visible: true,
+        target: false,
+        response: null,
+        shadows: this.quality.shadows,
+        lifted: true,
+      })
+      card.group.name = index === 0 ? 'counter-cost-island' : 'counter-cost-discard'
+      return card
+    })
   }
 
   retainEffectTargets(instanceIds: readonly string[]): void {

@@ -17,14 +17,28 @@ function ruleBody(selector: string): string {
   return match?.[1] ?? ''
 }
 
+function ruleBodyContaining(selector: string, declaration: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const matches = [...css.matchAll(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'g'))]
+  const body = matches.map((match) => match[1]).find((candidate) => candidate.includes(declaration))
+  expect(body, `Missing ${declaration} in a ${selector} rule`).toBeDefined()
+  return body ?? ''
+}
+
 describe('Three.js native card and preview layout', () => {
   it('keeps gameplay in a viewport shell and lets the Cards dialog scroll internally', () => {
     expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*height: 100dvh;/)
     expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*overflow: hidden;/)
-    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*grid-template-rows: fit-content\(35dvh\) minmax\(0, 1fr\);/)
-    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-mount \{[^}]*max-height: 35dvh;[^}]*overflow: auto;/)
+    expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*grid-template-rows: clamp\(96px, 16dvh, 144px\) minmax\(0, 1fr\);/)
+    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-mount \{[^}]*height: 100%;[^}]*overflow: auto;[^}]*scrollbar-gutter: stable;/)
     expect(rendererCss).toMatch(/\.three-root--game \.three-controls \{[^}]*position: fixed;/)
     expect(rendererCss).not.toContain('--three-board-min-height')
+    const hud = ruleBodyContaining('.three-interface .three-hud', 'min-height: 100%;')
+    expect(hud).toContain('min-height: 100%;')
+    expect(hud).toContain('font-size: 0.8125rem;')
+    expect(hud).toContain('line-height: 1.25;')
+    expect(ruleBody('.three-interface .three-hud p')).toContain('margin: 2px 0;')
+    expect(css).toMatch(/\.three-interface button,[^{]*\{[^}]*min-height: 44px;/)
     expect(ruleBody('.three-interface .three-dialog')).toContain('overflow: auto;')
     const cardsDialog = ruleBody('.three-interface .three-dialog[data-modal="cards"]')
     expect(cardsDialog).toContain('inset: 16px 12px;')

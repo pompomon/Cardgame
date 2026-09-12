@@ -293,8 +293,28 @@
 
 .three-interface .three-hud {
   max-width: none;
-  margin-bottom: 8px;
-  padding: 8px 12px;
+  min-height: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.three-interface .three-hud .three-header {
+  gap: 6px;
+}
+
+.three-interface .three-hud .three-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.three-interface .three-hud p {
+  margin: 2px 0;
+}
+
+.three-interface .three-hud button {
+  padding: 6px 10px;
 }
 
 .three-interface .three-required-prompt {

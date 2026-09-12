@@ -13,18 +13,18 @@
   height: 100dvh;
   min-height: 0;
   display: grid;
-  grid-template-rows: fit-content(35vh) minmax(0, 1fr);
-  grid-template-rows: fit-content(35dvh) minmax(0, 1fr);
+  grid-template-rows: clamp(96px, 16vh, 144px) minmax(0, 1fr);
+  grid-template-rows: clamp(96px, 16dvh, 144px) minmax(0, 1fr);
   gap: 8px;
   overflow: hidden;
 }
 
 .three-root--game .three-hud-mount {
+  height: 100%;
   min-height: 0;
-  max-height: 35vh;
-  max-height: 35dvh;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .three-stage {

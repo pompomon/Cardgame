@@ -28,7 +28,7 @@ const recipeEvents: LogEvent[] = [
   { kind: 'ability_swamp_discard', actor: 0, target: 1, cardName: 'Forest', sourceInstanceId: 'swamp', targetCardId: 'discarded' },
   mountain,
   { kind: 'ability_plains_reuse', actor: 0, reusedName: 'Forest', sourceInstanceId: 'plains' },
-  { kind: 'counter_resolved', actor: 1, cardName: 'Mountain' },
+  { kind: 'counter_resolved', actor: 1, cardName: 'Mountain', discardCardName: 'Swamp' },
 ]
 
 describe('Three.js event presentation', () => {
@@ -77,6 +77,33 @@ describe('Three.js event presentation', () => {
     expect(playback.mock.calls[1][1]).toBe(150)
     while (callbacks.length) callbacks.shift()!()
     expect(playback).toHaveBeenCalledTimes(MAX_QUEUED_EFFECTS)
+  })
+
+  it('uses the animation-speed duration for counter cards and skips them when animations are off', () => {
+    const counter = recipeEvents[5]
+    for (const [speed, duration] of [['fast', 150], ['normal', 350], ['slow', 700]] as const) {
+      const playback = vi.fn((_effect, _duration, done) => {
+        done()
+        return vi.fn()
+      })
+      const effects = new ThreeEffects(playback, vi.fn())
+      effects.update(view(), false)
+      effects.update({ ...view([counter]), animationSpeed: speed }, false)
+      effects.pump()
+      expect(playback).toHaveBeenCalledWith(
+        expect.objectContaining({ counterCards: ['Island', 'Swamp'] }),
+        duration,
+        expect.any(Function),
+      )
+      effects.dispose()
+    }
+    const playback = vi.fn()
+    const effects = new ThreeEffects(playback, vi.fn())
+    effects.update(view(), false)
+    effects.update({ ...view([counter]), animationSpeed: 'off' }, false)
+    effects.pump()
+    expect(playback).not.toHaveBeenCalled()
+    effects.dispose()
   })
 
   it('resets on replay rewind, same-seed replacement, and lobby transitions', () => {
@@ -322,6 +349,60 @@ describe('distinct Three effect recipes', () => {
     expect(effect.descriptor.actor).toBe(1)
     expect(effect.descriptor.targetActor).toBeUndefined()
     effect.finish()
+  })
+
+  it('centers non-interactive counter cards and owns them through reanchor and completion', () => {
+    const release = vi.fn()
+    const acquire = vi.fn((name: string) => ({
+      texture: new CanvasTexture({} as HTMLCanvasElement),
+      release,
+      name,
+    }))
+    const registry = new ThreeCardRegistry({ acquireCard: acquire } as unknown as ThreeAssets)
+    const descriptor = visualEffectForEvent(recipeEvents[5], 'hd')!
+    const cards = descriptor.counterCards!.map((name, index) => registry.createPresentation({
+      hit: {
+        key: boardCardKey(`counter-${index}`, descriptor.actor),
+        cardId: `counter-${index}`,
+        name,
+        owner: descriptor.actor,
+        zone: 'battlefield',
+        playable: false,
+      },
+      style: descriptor.visualStyle,
+      visible: true,
+      target: false,
+      shadows: false,
+      lifted: true,
+      ...source,
+    }))
+    const geometry = new EffectGeometry()
+    const done = vi.fn()
+    const visual = new EffectVisual(geometry, descriptor, source, target, 400, 4, null, done, cards)
+    expect(acquire.mock.calls.map(([name]) => name)).toEqual(['Island', 'Swamp'])
+    expect(registry.size).toBe(0)
+    expect(cards[0].group.position.x).toBeLessThan(source.x)
+    expect(cards[1].group.position.x).toBeGreaterThan(source.x)
+    expect((cards[0].group.position.x + cards[1].group.position.x) / 2).toBe(source.x)
+    expect(cards.every((card) => card.group.position.y === source.y)).toBe(true)
+    expect(cards.every((card) => registry.hitTest(card.anchor()) === null)).toBe(true)
+
+    const nextSource = { ...source, x: 90, y: -120, width: 80, height: 112 }
+    visual.reanchor(nextSource, target)
+    expect((cards[0].group.position.x + cards[1].group.position.x) / 2).toBe(nextSource.x)
+    expect(cards.every((card) => card.group.position.y === nextSource.y)).toBe(true)
+    expect(cards.every((card) => card.anchor().width < nextSource.width)).toBe(true)
+
+    visual.advance(399)
+    expect(registry.layer.children).toHaveLength(2)
+    visual.advance(1)
+    expect(done).toHaveBeenCalledOnce()
+    expect(registry.layer.children).toHaveLength(0)
+    expect(release).toHaveBeenCalledTimes(2)
+    visual.cancel()
+    expect(done).toHaveBeenCalledOnce()
+    registry.dispose()
+    geometry.dispose()
   })
 
   it('retains all recipe meshes and uses all shared palette colors without per-frame allocations', () => {
