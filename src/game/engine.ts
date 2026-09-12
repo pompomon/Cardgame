@@ -129,21 +129,24 @@ function opponentCanCounterWithIsland(player: PlayerState): boolean {
   return islandCount >= 1 && player.hand.length >= 2
 }
 
-function discardForIslandCounter(player: PlayerState, discardCardId?: string): boolean {
+function discardForIslandCounter(
+  player: PlayerState,
+  discardCardId?: string,
+): { island: Card; additional: Card } | null {
   const island = player.hand.find((card) => card.name === 'Island')
   if (!island) {
-    return false
+    return null
   }
   const other = discardCardId
     ? player.hand.find((card) => card.id === discardCardId && card.id !== island.id)
     : player.hand.find((card) => card.id !== island.id)
   if (!other) {
-    return false
+    return null
   }
   removeFromHand(player, island.id)
   removeFromHand(player, other.id)
   player.graveyard.push(island, other)
-  return true
+  return { island, additional: other }
 }
 
 function enumerateEffectTargetIds(state: GameState, actor: number, cardName: Card['name']): string[] {
@@ -519,14 +522,20 @@ export function applyAction(inputState: GameState, action: GameAction): GameStat
 
   if (action.type === 'counter_land' && state.phase === 'respond' && state.pendingLandPlay) {
     const responder = state.players[action.actor]
-    if (!discardForIslandCounter(responder, action.discardCardId)) {
+    const counterCost = discardForIslandCounter(responder, action.discardCardId)
+    if (!counterCost) {
       return state
     }
 
     const pending = state.pendingLandPlay
     const caster = state.players[pending.actor]
     caster.graveyard.push(pending.card)
-    pushLog(state, `Player ${action.actor + 1} counters ${pending.card.name}.`, { kind: 'counter_resolved', actor: action.actor, cardName: pending.card.name })
+    pushLog(state, `Player ${action.actor + 1} counters ${pending.card.name}.`, {
+      kind: 'counter_resolved',
+      actor: action.actor,
+      cardName: pending.card.name,
+      discardCardName: counterCost.additional.name,
+    })
     state.pendingLandPlay = null
     state.pendingPlainsReuse = null
     state.pendingSwampDiscard = null

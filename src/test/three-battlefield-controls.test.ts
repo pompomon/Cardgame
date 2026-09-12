@@ -3,13 +3,14 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial, type Scene } from 'three'
 import type { AppState } from '../app/types'
+import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import type { Card, GameAction } from '../game/types'
 import { ThreeBoard } from '../renderers/three/board'
 import { boardCardKey } from '../renderers/three/card-registry'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
+import { cardSlotX, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
 
 const gpu = vi.hoisted(() => ({
   render: vi.fn(), setSize: vi.fn(), setPixelRatio: vi.fn(), dispose: vi.fn(),
@@ -131,6 +132,17 @@ function emit(element: EventTarget, type: string, fields: Record<string, unknown
   const event = Object.assign(new Event(type, { cancelable: true }), { button: 0, isPrimary: true }, fields)
   element.dispatchEvent(event)
   return event
+}
+
+function counterEffect(actor: number, discard: 'Island' | 'Mountain' = 'Mountain'): VisualEffectDescriptor {
+  return {
+    kind: 'counter_resolved',
+    actor,
+    land: 'Island',
+    counterCards: ['Island', discard],
+    visualStyle: 'classic',
+    palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+  }
 }
 
 const boards: ThreeBoard[] = []
@@ -460,6 +472,83 @@ describe('constructed Three battlefield controls', () => {
     cancel()
     expect(caption.hidden).toBe(true)
     expect(done).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    { actor: 0, presentedActor: 0, row: 'near' },
+    { actor: 0, presentedActor: 1, row: 'far' },
+    { actor: 1, presentedActor: 0, row: 'far' },
+    { actor: 1, presentedActor: 1, row: 'near' },
+  ] as const)('shows the two counter cards over actor $actor with player $presentedActor presented', ({
+    actor, presentedActor, row,
+  }) => {
+    const h = setup()
+    h.present({ presentedActor })
+    const acquisitionCount = gpu.acquireCard.mock.calls.length
+    const done = vi.fn()
+    const cancel = h.board.playEffect(counterEffect(actor), 350, done)
+    const pair = h.cards.children.filter((entry) => entry.name.startsWith('counter-cost-'))
+    expect(pair.map((entry) => entry.name)).toEqual(['counter-cost-island', 'counter-cost-discard'])
+    expect(gpu.acquireCard.mock.calls.slice(acquisitionCount).map(([name]) => name)).toEqual(['Island', 'Mountain'])
+
+    let layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const expectedCenter = cardSlotX(0, 1, layout)
+    expect((pair[0].position.x + pair[1].position.x) / 2).toBeCloseTo(expectedCenter)
+    expect(pair[0].position.y).toBeCloseTo(layout.rows[row].y)
+    expect(pair[1].position.y).toBeCloseTo(layout.rows[row].y)
+    expect(pair[0].position.z).toBeGreaterThan(8)
+    const bounds = h.board.canvas.getBoundingClientRect()
+    for (const card of pair) {
+      expect(h.board.hitTest(
+        bounds.left + (layout.width / 2 + card.position.x) / layout.width * bounds.width,
+        bounds.top + (layout.height / 2 - card.position.y) / layout.height * bounds.height,
+      )).toBeNull()
+    }
+
+    const oldPositions = pair.map((card) => card.position.clone())
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 844
+    stage.clientHeight = 390
+    Object.assign(h.window, { innerWidth: 844, innerHeight: 390 })
+    ObserverStub.latest.callback()
+    layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    expect(h.cards.children.filter((entry) => entry.name.startsWith('counter-cost-'))).toEqual(pair)
+    expect((pair[0].position.x + pair[1].position.x) / 2).toBeCloseTo(cardSlotX(0, 1, layout))
+    expect(pair.every((card) => card.position.y === layout.rows[row].y)).toBe(true)
+    expect(pair.some((card, index) => !card.position.equals(oldPositions[index]))).toBe(true)
+
+    cancel()
+    cancel()
+    expect(done).toHaveBeenCalledOnce()
+    expect(h.cards.children.filter((entry) => entry.name.startsWith('counter-cost-'))).toHaveLength(0)
+  })
+
+  it('does not create counter cards when animations are off', () => {
+    const h = setup()
+    h.app.animationSpeed = 'off'
+    h.present()
+    const acquisitionCount = gpu.acquireCard.mock.calls.length
+    const done = vi.fn()
+    const cancel = h.board.playEffect(counterEffect(1), 350, done)
+    expect(done).toHaveBeenCalledOnce()
+    expect(gpu.acquireCard).toHaveBeenCalledTimes(acquisitionCount)
+    expect(h.cards.children.filter((entry) => entry.name.startsWith('counter-cost-'))).toHaveLength(0)
+    cancel()
+    expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('disposes active counter cards exactly once with the board', () => {
+    const h = setup()
+    const done = vi.fn()
+    h.board.playEffect(counterEffect(1, 'Island'), 700, done)
+    const pair = h.cards.children.filter((entry) => entry.name.startsWith('counter-cost-'))
+    const disposals = pair.map((card) =>
+      vi.spyOn((card.children[3] as Mesh).material as MeshBasicMaterial, 'dispose'))
+    h.board.dispose()
+    h.board.dispose()
+    expect(done).toHaveBeenCalledOnce()
+    expect(disposals.every((dispose) => dispose.mock.calls.length === 1)).toBe(true)
+    expect(pair.every((card) => card.parent === null)).toBe(true)
   })
 
   it('stops cosmetic work while hidden and leaves animation-off rendering idle', () => {

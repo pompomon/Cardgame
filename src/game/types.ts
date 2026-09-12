@@ -74,7 +74,7 @@ export type LogEvent =
   | { kind: 'ability_mountain_destroy'; actor: number; target: number; cardName: BasicLand; sourceInstanceId?: string; targetInstanceId?: string }
   | { kind: 'ability_plains_reuse'; actor: number; reusedName: BasicLand; sourceInstanceId?: string }
   | { kind: 'counter_offered'; responder: number; cardName: BasicLand }
-  | { kind: 'counter_resolved'; actor: number; cardName: BasicLand }
+  | { kind: 'counter_resolved'; actor: number; cardName: BasicLand; discardCardName?: BasicLand }
   | { kind: 'deck_empty_loss'; actor: number }
   | { kind: 'game_end'; winner: Winner }
 

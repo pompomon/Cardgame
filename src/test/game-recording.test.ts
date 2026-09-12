@@ -735,10 +735,28 @@ describe('game-recording', () => {
     ])).toHaveLength(2)
   })
 
+  it('accepts legacy and card-aware counter events', () => {
+    expect(sanitizeLogEvents([
+      { kind: 'counter_resolved', actor: 1, cardName: 'Forest' },
+      { kind: 'counter_resolved', actor: 0, cardName: 'Swamp', discardCardName: 'Mountain' },
+    ])).toEqual([
+      { kind: 'counter_resolved', actor: 1, cardName: 'Forest' },
+      { kind: 'counter_resolved', actor: 0, cardName: 'Swamp', discardCardName: 'Mountain' },
+    ])
+  })
+
   it('rejects malformed optional visual-effect identifiers', () => {
     expect(sanitizeLogEvents([
       { kind: 'play_land', actor: 0, cardName: 'Forest', sourceInstanceId: 42 },
       { kind: 'ability_mountain_destroy', actor: 0, target: 1, cardName: 'Island', targetInstanceId: '' },
+    ])).toEqual([])
+  })
+
+  it('rejects malformed counter discard names', () => {
+    expect(sanitizeLogEvents([
+      { kind: 'counter_resolved', actor: 1, cardName: 'Forest', discardCardName: 'Treasure' },
+      { kind: 'counter_resolved', actor: 1, cardName: 'Forest', discardCardName: null },
+      { kind: 'counter_resolved', actor: 1, cardName: 'Forest', discardCardName: 42 },
     ])).toEqual([])
   })
 })

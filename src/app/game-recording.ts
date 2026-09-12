@@ -82,8 +82,10 @@ function isLogEventLike(value: unknown): value is LogEvent {
     case 'turn_start':
       return isNonNegativeInteger(value.turn) && isActorIndex(value.actor)
     case 'draw':
+      return isActorIndex(value.actor) && isBasicLandName(value.cardName)
     case 'counter_resolved':
       return isActorIndex(value.actor) && isBasicLandName(value.cardName)
+        && (value.discardCardName === undefined || isBasicLandName(value.discardCardName))
     case 'play_land':
       return isActorIndex(value.actor) && isBasicLandName(value.cardName)
         && hasOptionalIdentifier(value, 'sourceInstanceId')

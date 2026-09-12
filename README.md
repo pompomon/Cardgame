@@ -46,7 +46,9 @@ The selected renderer is also stored in `localStorage` for later visits.
   Pink rings mark eligible discards; the blue-ringed Island is included, not a
   separate choice. Another Island can be the additional discard. The hand overlaps
   cards as needed while keeping every choice on the table. Use **Pass Response**
-  to decline.
+  to decline. With animations enabled, a resolved counter briefly shows both
+  discarded cards over the countering player's battlefield; the animation-speed
+  setting controls the display duration, and **Off** skips it.
 - **Game Menu → Cards & keyboard controls** opens the viewport-bounded native
   controls. Native play and target buttons provide the same actions without
   dragging. During a response, each eligible native hand-card control names the

@@ -42,4 +42,18 @@ describe('visual effect descriptors', () => {
     expect(effect?.land).toBe('Island')
     expect(effect?.palette.secondary).toBe('#5fb6ff')
   })
+
+  it('maps card-aware counters to the Island and selected additional discard', () => {
+    expect(visualEffectForEvent({
+      kind: 'counter_resolved',
+      actor: 1,
+      cardName: 'Forest',
+      discardCardName: 'Swamp',
+    }, 'hd')?.counterCards).toEqual(['Island', 'Swamp'])
+    expect(visualEffectForEvent({
+      kind: 'counter_resolved',
+      actor: 1,
+      cardName: 'Forest',
+    }, 'hd')?.counterCards).toBeUndefined()
+  })
 })
