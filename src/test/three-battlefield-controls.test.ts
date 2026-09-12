@@ -453,8 +453,8 @@ describe('constructed Three battlefield controls', () => {
     expect(caption.hidden).toBe(false)
     expect(caption.getAttribute('aria-live')).toBe('polite')
     expect(prompt.hidden).toBe(false)
-    const captionBottom = stage.clientHeight - Number.parseFloat(caption.style.bottom)
-    expect(captionBottom).toBeLessThan(Number.parseFloat(prompt.style.top))
+    const promptBottom = Number.parseFloat(prompt.style.top) + prompt.offsetHeight
+    expect(Number.parseFloat(caption.style.top)).toBeGreaterThanOrEqual(promptBottom + 4)
     expect(h.app.status).toBe('Storage unavailable')
     cancel()
     cancel()
@@ -575,11 +575,13 @@ describe('constructed Three battlefield controls', () => {
 
   it('keeps battlefield geometry fixed across main, drag, response and resolution prompts', () => {
     const h = setup()
+    const prompt = h.host.all('three-board-instruction')[0]
     const geometry = () => {
       const layout = (h.board as unknown as { layout: ThreeLayout }).layout
       return {
         cardWidth: layout.cardWidth,
         cardHeight: layout.cardHeight,
+        promptTop: prompt.style.top,
         rows: {
           far: { ...layout.rows.far },
           near: { ...layout.rows.near },
@@ -603,30 +605,47 @@ describe('constructed Three battlefield controls', () => {
     expect(geometry()).toEqual(initial)
   })
 
-  it('positions the prompt in the lower reserved region of portrait and compact-landscape card lanes', () => {
+  it.each([
+    { width: 390, height: 760, mode: 'stacked' },
+    { width: 844, height: 390, mode: 'compact' },
+  ])('anchors the prompt to the top of the presented battlefield in $mode layout', ({ width, height, mode }) => {
     const h = setup()
     const stage = h.host.all('three-board-stage')[0]
     const prompt = h.host.all('three-board-instruction')[0]
-    const expectPosition = () => {
-      const layout = (h.board as unknown as { layout: ThreeLayout }).layout
-      expect(Number.parseFloat(prompt.style.left)).toBeCloseTo(
-        layout.columns.cardsLeft + layout.columns.cardsWidth / 2,
+    stage.clientWidth = width
+    stage.clientHeight = height
+    Object.assign(h.window, { innerWidth: width, innerHeight: height })
+    ObserverStub.latest.callback()
+    expect(stage.dataset.layout).toBe(mode)
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const promptLeft = Number.parseFloat(prompt.style.left)
+    const promptTop = Number.parseFloat(prompt.style.top)
+    const promptWidth = Number.parseFloat(prompt.style.width)
+    const nearRowTop = layout.height / 2 - layout.rows.near.y - layout.rows.near.height / 2
+    expect(promptLeft).toBeCloseTo(layout.columns.cardsLeft + layout.columns.cardsWidth / 2)
+    expect(promptTop).toBeCloseTo(nearRowTop + 4)
+    expect(promptWidth).toBeCloseTo(Math.min(544, Math.max(1, layout.columns.cardsWidth - 24)))
+    expect(h.near.children[0].children[0].textContent).toContain('· ACTIVE')
+    if (layout.compact) {
+      expect(promptLeft - promptWidth / 2).toBeGreaterThan(
+        layout.columns.labelLeft + layout.columns.labelWidth,
       )
-      expect(Number.parseFloat(prompt.style.top)).toBeCloseTo(
-        layout.height / 2 - layout.rows.near.y + 4,
-      )
-      expect(Number.parseFloat(prompt.style.width)).toBeCloseTo(
-        Math.min(544, Math.max(1, layout.columns.cardsWidth - 24)),
+    } else {
+      expect(promptTop).toBeGreaterThan(
+        layout.rows.near.labelTop + layout.rows.near.labelHeight,
       )
     }
-    expect(stage.dataset.layout).toBe('stacked')
-    expectPosition()
-    stage.clientWidth = 844
-    stage.clientHeight = 390
-    Object.assign(h.window, { innerWidth: 844, innerHeight: 390 })
-    ObserverStub.latest.callback()
-    expect(stage.dataset.layout).toBe('compact')
-    expectPosition()
+    const done = vi.fn()
+    const cancel = h.board.playEffect({
+      kind: 'play_land', actor: 0, land: 'Forest', visualStyle: 'classic',
+      palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+    }, 150, done)
+    const caption = h.host.all('three-board-effect-caption')[0]
+    expect(Number.parseFloat(caption.style.top)).toBeGreaterThanOrEqual(
+      promptTop + prompt.offsetHeight + 4,
+    )
+    cancel()
+    expect(done).toHaveBeenCalledOnce()
   })
 
   it.each([
