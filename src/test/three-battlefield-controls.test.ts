@@ -42,7 +42,9 @@ class ElementStub extends EventTarget {
   readonly children: ElementStub[] = []
   readonly dataset: Record<string, string> = {}
   readonly attributes = new Map<string, string>()
-  readonly style = { setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', width: '' }
+  readonly style = {
+    setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', right: '', bottom: '', width: '', maxWidth: '',
+  }
   parent: ElementStub | null = null
   className = ''
   textContent = ''
@@ -435,6 +437,11 @@ describe('constructed Three battlefield controls', () => {
     const h = setup()
     h.app.status = 'Storage unavailable'
     h.present()
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 844
+    stage.clientHeight = 390
+    Object.assign(h.window, { innerWidth: 844, innerHeight: 390 })
+    ObserverStub.latest.callback()
     const done = vi.fn()
     const cancel = h.board.playEffect({
       kind, actor: 0, targetActor: 1, land: 'Forest', visualStyle: 'classic',
@@ -446,7 +453,8 @@ describe('constructed Three battlefield controls', () => {
     expect(caption.hidden).toBe(false)
     expect(caption.getAttribute('aria-live')).toBe('polite')
     expect(prompt.hidden).toBe(false)
-    expect(caption.style.top).not.toBe(prompt.style.top)
+    const captionBottom = stage.clientHeight - Number.parseFloat(caption.style.bottom)
+    expect(captionBottom).toBeLessThan(Number.parseFloat(prompt.style.top))
     expect(h.app.status).toBe('Storage unavailable')
     cancel()
     cancel()
@@ -595,7 +603,7 @@ describe('constructed Three battlefield controls', () => {
     expect(geometry()).toEqual(initial)
   })
 
-  it('centers the prompt overlay in the portrait and compact-landscape card lanes', () => {
+  it('positions the prompt in the lower reserved region of portrait and compact-landscape card lanes', () => {
     const h = setup()
     const stage = h.host.all('three-board-stage')[0]
     const prompt = h.host.all('three-board-instruction')[0]
@@ -605,7 +613,7 @@ describe('constructed Three battlefield controls', () => {
         layout.columns.cardsLeft + layout.columns.cardsWidth / 2,
       )
       expect(Number.parseFloat(prompt.style.top)).toBeCloseTo(
-        layout.height / 2 - layout.rows.near.y,
+        layout.height / 2 - layout.rows.near.y + 4,
       )
       expect(Number.parseFloat(prompt.style.width)).toBeCloseTo(
         Math.min(544, Math.max(1, layout.columns.cardsWidth - 24)),
@@ -664,9 +672,11 @@ describe('constructed Three battlefield controls', () => {
     expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*position:\s*absolute;/)
     expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*background:\s*rgb\(8 24 36 \/ 50%\);/)
     expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*pointer-events:\s*none;/)
+    expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*transform:\s*translateX\(-50%\);/)
     expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*display:\s*grid;/)
     expect(css).toMatch(/\.three-board-instruction > span\s*\{\s*grid-area:\s*1 \/ 1;/)
     expect(css).toMatch(/\.three-board-instruction-size\s*\{\s*visibility:\s*hidden;/)
+    expect(css).toMatch(/\.three-board-effect-caption\s*\{[^}]*transform:\s*translateX\(-50%\);/)
   })
 
   it('scrolls unavoidable stage overflow instead of clipping interactive chrome', () => {

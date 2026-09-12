@@ -92,7 +92,7 @@
   display: grid;
   margin: 0;
   padding: 3px 8px;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   border-radius: 6px;
   background: rgb(8 24 36 / 50%);
   color: #e0ffee;
@@ -170,7 +170,7 @@
 .three-board-effect-caption {
   position: absolute;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 2;
   max-width: calc(100% - 24px);
   margin: 0;
