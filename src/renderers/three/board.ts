@@ -621,12 +621,16 @@ export class ThreeBoard implements ThreeBoardApi {
     this.drop.position.y = this.layout.drop.y
     const nearRow = this.layout.rows.near
     const nearRowCenter = height / 2 - nearRow.y
-    this.effectCaption.style.left = `${width / 2 + this.layout.drop.x}px`
-    this.effectCaption.style.bottom = `${height - nearRowCenter + OVERLAY_GAP}px`
-    this.effectCaption.style.maxWidth = `${columns.cardsWidth - 12}px`
+    const nearRowTop = nearRowCenter - nearRow.height / 2
+    const instructionTop = nearRowTop + OVERLAY_GAP
     this.instruction.style.left = `${columns.cardsLeft + columns.cardsWidth / 2}px`
-    this.instruction.style.top = `${nearRowCenter + OVERLAY_GAP}px`
+    this.instruction.style.top = `${instructionTop}px`
     this.instruction.style.width = `${Math.min(MAX_INSTRUCTION_WIDTH, Math.max(1, columns.cardsWidth - 24))}px`
+    const instructionHeight = this.instruction.hidden
+      ? 0 : Math.max(this.instruction.offsetHeight, this.instruction.scrollHeight || 0)
+    this.effectCaption.style.left = `${width / 2 + this.layout.drop.x}px`
+    this.effectCaption.style.top = `${instructionTop + instructionHeight + (instructionHeight ? OVERLAY_GAP : 0)}px`
+    this.effectCaption.style.maxWidth = `${columns.cardsWidth - 12}px`
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
       chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
