@@ -235,6 +235,70 @@ describe('Three.js composition', () => {
     renderer.unmount()
   })
 
+  it('plays a resolved counter after board reconciliation with both discarded cards', () => {
+    const { renderer } = harness()
+    const game = createInitialGame(91)
+    game.currentPlayer = 0
+    game.phase = 'main'
+    game.winner = null
+    game.pendingLandPlay = null
+    game.pendingPlainsReuse = null
+    game.pendingSwampDiscard = null
+    game.players[0].hand = [{ id: 'played-forest', name: 'Forest', type: 'land' }]
+    game.players[0].battlefield = []
+    game.players[0].landsPlayedThisTurn = 0
+    game.players[1].hand = [
+      { id: 'counter-island', name: 'Island', type: 'land' },
+      { id: 'counter-mountain', name: 'Mountain', type: 'land' },
+    ]
+    game.players[1].battlefield = []
+    const controller = new AppController('three')
+    controller.importRecordingJson(JSON.stringify(
+      createGameRecord(91, 'local-hvh', ['human', 'human'], 'basic', game),
+    ))
+    controller.exitReplay()
+    controller.setAnimationSpeed('normal')
+    let complete!: () => void
+    const cancel = vi.fn()
+    mocks.board.playEffect.mockImplementationOnce((_effect, _duration, done) => {
+      complete = done
+      return cancel
+    })
+    const unsubscribe = controller.subscribe((view) => renderer.render(view))
+    mocks.board.render.mockClear()
+    mocks.board.playEffect.mockClear()
+
+    controller.submitAction({ type: 'play_land', actor: 0, cardId: 'played-forest' })
+    expect(controller.getViewModel().game!.phase).toBe('respond')
+    expect(mocks.board.playEffect).not.toHaveBeenCalled()
+
+    controller.submitAction({ type: 'counter_land', actor: 1, discardCardId: 'counter-mountain' })
+    expect(mocks.board.playEffect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'counter_resolved',
+        actor: 1,
+        counterCards: ['Island', 'Mountain'],
+      }),
+      350,
+      expect.any(Function),
+    )
+    expect(mocks.board.render.mock.invocationCallOrder.at(-1))
+      .toBeLessThan(mocks.board.playEffect.mock.invocationCallOrder.at(-1)!)
+    expect(mocks.board.render).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: expect.objectContaining({ actor: 0, canInput: false }) }),
+      1, mocks.ui.targetIds, null, null, false,
+    )
+
+    complete()
+    expect(mocks.board.render).toHaveBeenLastCalledWith(
+      expect.objectContaining({ game: expect.objectContaining({ actor: 0, canInput: true }) }),
+      0, mocks.ui.targetIds, null, null, false,
+    )
+    expect(cancel).not.toHaveBeenCalled()
+    unsubscribe()
+    renderer.unmount()
+  })
+
   it.each(['normal', 'off'] as const)('presents the Plains-triggered Forest choice after the caster handoff with animations %s', (speed) => {
     const { renderer } = harness()
     const game = createInitialGame(42)
