@@ -44,6 +44,8 @@ interface TargetLabel {
 const ROWS: readonly BoardRow[] = ['far', 'near', 'hand']
 const PLAY_INSTRUCTION = 'Drag a highlighted card into your battlefield'
 const CANCEL_INSTRUCTION = 'Move into your battlefield · release elsewhere to cancel'
+const MAX_INSTRUCTION_WIDTH = 544
+const OVERLAY_GAP = 4
 
 export class ThreeBoard implements ThreeBoardApi {
   readonly canvas: HTMLCanvasElement
@@ -164,8 +166,8 @@ export class ThreeBoard implements ThreeBoardApi {
       this.instruction.setAttribute('aria-live', 'polite')
       this.instruction.hidden = true
       this.instruction.append(this.instructionText)
-      // Reserve every drag prompt's wrapped height before a gesture starts;
-      // otherwise changing feedback triggers ResizeObserver and cancels the drag.
+      // Reserve every drag prompt's wrapped height so feedback does not make
+      // the overlay jump during a gesture.
       for (const text of [PLAY_INSTRUCTION, CANCEL_INSTRUCTION]) {
         const size = document.createElement('span')
         size.className = 'three-board-instruction-size'
@@ -175,7 +177,8 @@ export class ThreeBoard implements ThreeBoardApi {
         this.instructionSizes.push(size)
       }
       this.primaryButton.setAttribute('aria-describedby', this.instruction.id)
-      this.chrome.get('near')!.header.append(this.primaryButton, this.instruction)
+      this.chrome.get('near')!.header.append(this.primaryButton)
+      this.stage.append(this.instruction)
       host.append(this.stage)
       this.canvas.addEventListener('webglcontextlost', this.contextLost)
       window.addEventListener('resize', this.resize)
@@ -616,9 +619,14 @@ export class ThreeBoard implements ThreeBoardApi {
     this.drop.scale.set(this.layout.drop.width, this.layout.drop.height, 1)
     this.drop.position.x = this.layout.drop.x
     this.drop.position.y = this.layout.drop.y
+    const nearRow = this.layout.rows.near
+    const nearRowCenter = height / 2 - nearRow.y
     this.effectCaption.style.left = `${width / 2 + this.layout.drop.x}px`
-    this.effectCaption.style.top = `${height / 2 - this.layout.rows.near.y}px`
+    this.effectCaption.style.bottom = `${height - nearRowCenter + OVERLAY_GAP}px`
     this.effectCaption.style.maxWidth = `${columns.cardsWidth - 12}px`
+    this.instruction.style.left = `${columns.cardsLeft + columns.cardsWidth / 2}px`
+    this.instruction.style.top = `${nearRowCenter + OVERLAY_GAP}px`
+    this.instruction.style.width = `${Math.min(MAX_INSTRUCTION_WIDTH, Math.max(1, columns.cardsWidth - 24))}px`
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
       chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
