@@ -165,8 +165,8 @@ export class ThreeBoard implements ThreeBoardApi {
       this.instruction.setAttribute('aria-live', 'polite')
       this.instruction.hidden = true
       this.instruction.append(this.instructionText)
-      // Reserve every drag prompt's wrapped height before a gesture starts;
-      // otherwise changing feedback triggers ResizeObserver and cancels the drag.
+      // Reserve every drag prompt's wrapped height so feedback does not make
+      // the overlay jump during a gesture.
       for (const text of [PLAY_INSTRUCTION, CANCEL_INSTRUCTION]) {
         const size = document.createElement('span')
         size.className = 'three-board-instruction-size'
