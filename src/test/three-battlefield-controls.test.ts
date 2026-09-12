@@ -61,7 +61,11 @@ class ElementStub extends EventTarget {
     this.ownerDocument = ownerDocument
   }
   get offsetHeight(): number {
-    return this.className === 'three-board-label' ? (this.dataset.row === 'near' ? 160 : 52) : 44
+    if (this.className !== 'three-board-label') return 44
+    const base = this.dataset.row === 'near' ? 112 : 52
+    const prompt = this.children.find((child) => child.className === 'three-board-instruction')
+    if (!prompt || prompt.hidden) return base
+    return base + (prompt.children[0]?.textContent.length > 80 ? 112 : 44)
   }
   append(...children: ElementStub[]): void {
     children.forEach((child) => { child.parent = this; this.children.push(child) })
@@ -437,9 +441,12 @@ describe('constructed Three battlefield controls', () => {
       palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
     }, 150, done)
     const caption = h.host.all('three-board-effect-caption')[0]
+    const prompt = h.host.all('three-board-instruction')[0]
     expect(caption.textContent).toBe(label)
     expect(caption.hidden).toBe(false)
     expect(caption.getAttribute('aria-live')).toBe('polite')
+    expect(prompt.hidden).toBe(false)
+    expect(caption.style.top).not.toBe(prompt.style.top)
     expect(h.app.status).toBe('Storage unavailable')
     cancel()
     cancel()
@@ -533,6 +540,9 @@ describe('constructed Three battlefield controls', () => {
     const h = setup()
     const sizes = h.host.all('three-board-instruction-size')
     const prompt = h.host.all('three-board-instruction')[0]
+    const stage = h.host.all('three-board-stage')[0]
+    expect(prompt.parent).toBe(stage)
+    expect(prompt.parent).not.toBe(h.near)
     expect(sizes.map((entry) => entry.textContent)).toEqual([
       'Drag a highlighted card into your battlefield',
       'Move into your battlefield · release elsewhere to cancel',
@@ -555,6 +565,62 @@ describe('constructed Three battlefield controls', () => {
     expect(sizes.every((entry) => entry.hidden)).toBe(true)
   })
 
+  it('keeps battlefield geometry fixed across main, drag, response and resolution prompts', () => {
+    const h = setup()
+    const geometry = () => {
+      const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+      return {
+        cardWidth: layout.cardWidth,
+        cardHeight: layout.cardHeight,
+        rows: {
+          far: { ...layout.rows.far },
+          near: { ...layout.rows.near },
+          hand: { ...layout.rows.hand },
+        },
+      }
+    }
+    const initial = geometry()
+    h.board.beginDrag({
+      key: boardCardKey('0-0', 0), cardId: '0-0', owner: 0, zone: 'hand', name: 'Island', playable: true,
+    })
+    h.board.moveDrag(195, 380, false)
+    expect(geometry()).toEqual(initial)
+    h.board.endDrag(false)
+    expect(geometry()).toEqual(initial)
+    h.act('play_land')
+    expect(h.app.game!.phase).toBe('respond')
+    expect(geometry()).toEqual(initial)
+    h.act('counter_land')
+    expect(h.app.game!.phase).toBe('main')
+    expect(geometry()).toEqual(initial)
+  })
+
+  it('centers the prompt overlay in the portrait and compact-landscape card lanes', () => {
+    const h = setup()
+    const stage = h.host.all('three-board-stage')[0]
+    const prompt = h.host.all('three-board-instruction')[0]
+    const expectPosition = () => {
+      const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+      expect(Number.parseFloat(prompt.style.left)).toBeCloseTo(
+        layout.columns.cardsLeft + layout.columns.cardsWidth / 2,
+      )
+      expect(Number.parseFloat(prompt.style.top)).toBeCloseTo(
+        layout.height / 2 - layout.rows.near.y,
+      )
+      expect(Number.parseFloat(prompt.style.width)).toBeCloseTo(
+        Math.min(544, Math.max(1, layout.columns.cardsWidth - 24)),
+      )
+    }
+    expect(stage.dataset.layout).toBe('stacked')
+    expectPosition()
+    stage.clientWidth = 844
+    stage.clientHeight = 390
+    Object.assign(h.window, { innerWidth: 844, innerHeight: 390 })
+    ObserverStub.latest.callback()
+    expect(stage.dataset.layout).toBe('compact')
+    expectPosition()
+  })
+
   it.each([
     { actor: 0, canCounter: true },
     { actor: 1, canCounter: true },
@@ -573,7 +639,7 @@ describe('constructed Three battlefield controls', () => {
     const prompts = h.host.all('three-board-instruction')
     expect(prompts).toHaveLength(1)
     const prompt = prompts[0]
-    expect(prompt.parent).toBe(h.near)
+    expect(prompt.parent).toBe(h.host.all('three-board-stage')[0])
     expect(prompt.hidden).toBe(false)
     expect(prompt.getAttribute('role')).toBe('status')
     expect(prompt.getAttribute('aria-live')).toBe('polite')
@@ -593,8 +659,11 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.textContent).toBe('End Turn')
   })
 
-  it('keeps invisible prompt sizes in the same grid cell instead of collapsing their layout', () => {
+  it('keeps prompt sizing stable in a pointer-transparent 50%-background overlay', () => {
     const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*position:\s*absolute;/)
+    expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*background:\s*rgb\(8 24 36 \/ 50%\);/)
+    expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*pointer-events:\s*none;/)
     expect(css).toMatch(/\.three-board-instruction\s*\{[^}]*display:\s*grid;/)
     expect(css).toMatch(/\.three-board-instruction > span\s*\{\s*grid-area:\s*1 \/ 1;/)
     expect(css).toMatch(/\.three-board-instruction-size\s*\{\s*visibility:\s*hidden;/)

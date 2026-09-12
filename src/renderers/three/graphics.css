@@ -86,12 +86,15 @@
   box-shadow: 0 0 16px #73e8b42b;
 }
 .three-board-instruction {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
   display: grid;
-  grid-column: 1 / -1;
   margin: 0;
   padding: 3px 8px;
+  transform: translate(-50%, -50%);
   border-radius: 6px;
-  background: #081824ed;
+  background: rgb(8 24 36 / 50%);
   color: #e0ffee;
   text-align: center;
   font-size: 0.875rem;
