@@ -60,9 +60,10 @@ not player-facing after the migration.
 | `Plains` | **Echo Doppelgänger** | `echo-doppelganger` | **Mimic** | Repeat the ability of one of your other creatures. | — |
 
 `Echo Doppelgänger` deliberately uses Unicode in display copy. File names, URLs,
-texture keys derived from file names, CLI selectors, and generator arguments use
-the ASCII slug `echo-doppelganger`; code must never derive the asset path by
-lowercasing or otherwise transforming the display name.
+texture keys derived from file names, and generator arguments use the ASCII slug
+`echo-doppelganger`; code must never derive the asset path by lowercasing or
+otherwise transforming the display name. CLI choices remain numbered and show
+catalog display names.
 
 ## Approved terminology
 
@@ -138,11 +139,14 @@ formatted through the new catalog. Existing snapshots and recordings may also
 contain pre-structured `log: string[]` entries with old English text. Do not
 rewrite those persisted arrays. If the legacy fallback log is shown, pass only
 the finite set of known engine-generated, parameterized templates through a
-conservative presentation adapter. The adapter must recognize the template
-shape, map interpolated legacy card keys through the catalog, and translate
-verbs/zones such as `destroys` and `graveyard`; unknown or user-edited strings
-remain unchanged. Test this separately from structured-event formatting. This
-preserves data while minimizing legacy terminology in the UI.
+conservative, viewer-aware presentation adapter. The adapter must recognize the
+template shape, map interpolated legacy card keys through the catalog, translate
+verbs/zones such as `destroys` and `graveyard`, and redact an opponent's drawn
+card name when that card is hidden from the viewer. Structured-event formatting
+must apply the same draw redaction instead of rendering `LogEvent.draw.cardName`
+or card art. Unknown or user-edited strings remain unchanged. Test structured
+and legacy draw redaction separately. This preserves data while minimizing
+legacy terminology in the UI.
 
 ## Proposed centralized card catalog
 
@@ -314,8 +318,8 @@ discard pile.
   opponent-hand redaction.
 - **`src/app/game-presentation.ts`:** centralize visible card names, summon
   labels, Mimic/Drain Memory labels, Banish destination wording, Intercept,
-  Let It Through, and legacy-log presentation. Keep duplicate-action
-  disambiguation behavior.
+  Let It Through, and viewer-aware structured/legacy-log presentation. Keep
+  duplicate-action disambiguation behavior.
 - **`src/app/action-resolution.ts`:** retain legacy mechanical comparisons and
   target modes, but return catalog-backed target names and approved prompts.
 - **`src/app/response-options.ts`:** continue selecting the required mechanical
@@ -334,11 +338,13 @@ phase; only projected display copy differs.
   wording while leaving condition IDs, phases, keys, and tutorial sequencing
   stable.
 - **`src/renderers/phaser/log-events.ts`:** format structured events with
-  catalog display names and approved verbs. Keep the defensive unknown-event
-  fallback.
+  catalog display names and approved verbs, but omit an opponent's hidden draw
+  name and card art. Keep the defensive unknown-event fallback.
 - **`src/renderers/phaser/log-tiles.ts` and
-  `src/renderers/three/interface-log.ts`:** display new labels/art while
-  retaining the bounded structured-log and legacy-text fallback behavior.
+  `src/renderers/three/interface-log.ts`, plus the Replay Log drawer in
+  `src/renderers/dom.ts`:** display new labels/art through the shared
+  viewer-aware formatter/adapter while retaining bounded structured-log and
+  legacy-text fallback behavior.
 - **`src/cli/session.ts`:** render `Board`, `Discard pile`, and `Action phase`/
   `Interception window`; use catalog names in Hand/Board/target lists and shared
   action labels. Preserve hidden AI-hand redaction and the narrowly scoped
@@ -359,7 +365,8 @@ fallback, and terminal output all use one catalog and agree on exact names.
   staged raster failure handling.
 - **`src/renderers/dom.ts`:** change headings, Board/Discard pile counts,
   drop-zone labels, action tray, Interception window, Let It Through, target
-  sheets, status messages, empty states, preview labels, and drag instructions.
+  sheets, status messages, empty states, preview labels, drag instructions, and
+  route the Replay Log drawer through the shared viewer-aware legacy adapter.
 - **`src/style.css`:** accommodate Gravebloom Dryad and Echo Doppelgänger at
   supported phone widths and text zoom without reducing tap targets or clipping
   focus indicators.
@@ -460,7 +467,8 @@ public/cards/
 
 Artwork acceptance includes human review for readable silhouettes, urban-fantasy
 cohesion, absence of embedded text/logos, correct creature-to-ability mapping,
-color-role continuity, square crop safety, and contrast in all four styles.
+color-role continuity, square crop safety, and contrast in all three selectable
+styles plus the internal `hd-fallback` assets.
 
 ### Phase 5 — Persistence, recording, P2P, and compatibility verification
 
@@ -506,7 +514,7 @@ color-role continuity, square crop safety, and contrast in all four styles.
 | --- | --- | --- |
 | Stable identity and determinism | `src/test/game-types.test.ts`, `engine.test.ts`, `ai.test.ts`, `ai-perf.bench.ts`, `tutorial.test.ts` | Exact `BASIC_LANDS` order; unchanged seeded deck/action snapshots; unchanged legal actions and tutorial conditions |
 | Catalog and presentation | new catalog test, `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `action-validation.test.ts` | Exact names/rules/slugs; immutable snapshots; no display names in action payloads; Banish destination wording; hidden-hand redaction |
-| Engine events and logs | `engine-log-events.test.ts`, `phaser-log-events.test.ts`, `phaser-log-tiles.test.ts`, `visual-effects.test.ts` | Stable event discriminants and payload keys; new structured copy; safe unknown events; conservative legacy-text rendering |
+| Engine events and logs | `engine-log-events.test.ts`, `phaser-log-events.test.ts`, `phaser-log-tiles.test.ts`, `visual-effects.test.ts`, DOM tests | Stable event discriminants and payload keys; new structured copy; safe unknown events; conservative legacy-text rendering; viewer-aware redaction of opponent draw names and art for structured and legacy logs |
 | Response/interception | `phaser-response-options.test.ts`, `controller.test.ts`, `three-interface.test.ts`, DOM tests | Signal Siren remains the mechanical Island cost; another card is required; Let It Through parity; rejection/retry and duplicate activation |
 | DOM | `dom-card-rendering.test.ts`, `dom-effects.test.ts`, `dom-lobby.test.ts` | Catalog names, slugged asset URLs/fallbacks, Board/Discard pile labels, escaped copy, no stale raster retry |
 | Phaser | `phaser-card-rendering.test.ts`, `phaser-battlefield-view.test.ts`, `phaser-battlefield-targets.test.ts`, `phaser-drag-accessibility.test.ts`, `phaser-effects.test.ts`, `phaser-module-architecture.test.ts` | Long-name layout, action/a11y parity, target copy, effect feedback, lifecycle unchanged |
@@ -609,8 +617,9 @@ designed, versioned migration. Do not combine them with these PRs.
   remains.
 - Every Banish explanation says that the creature goes to its owner's discard
   pile.
-- Hidden opponent cards remain redacted except during the existing legal Drain
-  Memory target decision.
+- Hidden opponent cards, including names and art in structured or legacy draw
+  logs, remain redacted except during the existing legal Drain Memory target
+  decision.
 - Each approved slug exists under `classic`, `hd`, `hd-fallback`, and
   `monochrome`; missing/failed art reaches a playable fallback.
 - Artwork is delivered in a separate reviewable PR and the service-worker cache
