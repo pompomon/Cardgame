@@ -55,6 +55,12 @@ function makeRequest(path: string, init: RequestInit = {}): Request {
   return new Request(`${ORIGIN}${path}`, init)
 }
 
+function makeNavigationRequest(path: string): Request {
+  const request = makeRequest(path)
+  Object.defineProperty(request, 'mode', { value: 'navigate' })
+  return request
+}
+
 function makeResponse(body: string, init: ResponseInit = {}): Response {
   return new Response(body, { status: 200, ...init })
 }
@@ -417,6 +423,36 @@ describe('service worker lifecycle', () => {
 describe('service worker fetch handling', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  describe('network-first navigation', () => {
+    it('does not replace the manifest-validated shell with an unverified response', async () => {
+      const harness = loadServiceWorker()
+      const request = makeNavigationRequest('/Cardgame/')
+      const network = makeResponse('new deployment')
+      harness.fetchMock.mockResolvedValue(network)
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(network)
+      expect(harness.fetchMock).toHaveBeenCalledWith(request)
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
+      expect(harness.cachePut).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the validated shell when navigation is offline', async () => {
+      const harness = loadServiceWorker()
+      const request = makeNavigationRequest('/Cardgame/deep/link')
+      const cached = makeResponse('validated shell')
+      harness.cachedResponses.set('/Cardgame/index.html', cached)
+      harness.fetchMock.mockRejectedValue(new Error('offline'))
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(cached)
+      expect(harness.cachesMatch).toHaveBeenCalledWith('/Cardgame/index.html')
+      expect(harness.cachePut).not.toHaveBeenCalled()
+    })
   })
 
   describe('unhashed public asset network-first caching', () => {

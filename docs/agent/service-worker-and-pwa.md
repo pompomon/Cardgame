@@ -31,6 +31,8 @@ the entry JavaScript/CSS and lazy Three.js JavaScript/CSS before calling
 `skipWaiting()`. The shell cache is populated with HTML, manifest, and icon
 resources in the same transaction. If any current asset cannot be cached,
 installation fails and the previous worker and cache set remain active.
+The active worker may return newer network HTML for a navigation, but it never
+stores that unverified response over its manifest-validated offline shell.
 Before activation, cached `/cards/*` and `/boards/*` responses are moved from
 the compatible legacy cache into the runtime-asset cache. Removed renderer
 chunks, sprite responses, and other obsolete entries are deliberately not
