@@ -1,11 +1,9 @@
 # Urban-fantasy creature terminology migration plan
 
 > [!IMPORTANT]
-> **Renderer sections partially superseded on 2026-09-16.** The terminology
-> goals and persistence decisions remain historical planning context, but every
-> DOM/Phaser implementation or parity task is obsolete. Future browser work
-> targets the Three.js battlefield and its native HTML interface only; CLI tasks
-> remain separate. See [ADR 0002](../agent/adr/0002-three-only-renderer.md).
+> **Renderer scope updated on 2026-09-16.** Browser work targets the Three.js
+> battlefield and its native HTML interface as one renderer; CLI tasks remain
+> separate. See [ADR 0002](../agent/adr/0002-three-only-renderer.md).
 
 ## Status and approved decisions
 
@@ -30,8 +28,9 @@ The following decisions are approved and are requirements for implementation:
 - Give each current mechanical card identity one stable display name, ability
   name, rules text, asset slug, and visual/color role through a centralized
   catalog.
-- Make the DOM, Phaser, Three.js, accessibility, CLI, tutorial, action prompts,
-  logs, effects, and documentation use the same player-facing vocabulary.
+- Make the Three.js battlefield, native HTML accessibility surface, CLI,
+  tutorial, action prompts, logs, effects, and documentation use the same
+  player-facing vocabulary.
 - Preserve deterministic gameplay, AI behavior, P2P actions, saved Adventure
   runs, imported recordings, and replay behavior.
 - Ship complete creature artwork and graceful fallbacks for every existing
@@ -219,7 +218,8 @@ Implementation requirements:
 ## Suggested player-facing copy
 
 These strings are a copy baseline. Implement them through shared helpers where
-the same action appears in more than one renderer.
+the same action appears in the browser and CLI or in both WebGL and native HTML
+surfaces.
 
 ### Tutorial
 
@@ -308,25 +308,125 @@ discard pile.
 
 ## Phased file-by-file implementation plan
 
-### Phase 0 — Baseline and contract tests
+### Phase 0 — Baseline and compatibility contracts
 
-- Use Node 24 and run `npm ci`; record Node/npm versions and the baseline
-  revision.
-- Capture baseline results for `npm run lint`, `npm run test`,
-  `npm run test:bench`, and `npm run build`. Although the benchmark is not
-  expected to change, run it for final migration/deployment parity.
-- In `src/test/game-types.test.ts`, preserve the exact `BASIC_LANDS` order
-  assertion.
-- Add catalog contract tests before changing consumers: exact five-key coverage,
-  exact approved copy, unique ASCII slugs matching
-  `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, and the Unicode-display/ASCII-slug distinction
-  for Echo Doppelgänger. Assert that the exported record, every entry, and every
-  nested ability object are frozen at runtime.
+Phase 0 establishes a reproducible pre-migration baseline and lands the catalog
+as an isolated, tested contract. It must not change a current consumer,
+player-facing output, engine behavior, action/event/persistence schema, artwork,
+service-worker behavior, dependencies, or the lockfile. Adding the unused pure
+app-layer catalog here keeps the phase independently green; Phase 1 starts
+consumer integration.
+
+#### 0.1 — Record the clean baseline
+
+1. Start from a clean worktree. Record the baseline commit, `node --version`,
+   and `npm --version`; use Node 24.
+2. Run `npm ci` against the committed lockfile. If it changes `package-lock.json`
+   or fails, classify that as an environment/dependency problem rather than
+   altering dependencies for this migration.
+3. Run, in order, `npm run lint`, `npm run test`, `npm run test:bench`, and
+   `npm run build`. Record each exit code, the observed Vitest file/test count,
+   the benchmark result, and relevant build output against the baseline commit.
+4. Stop on a baseline failure and identify the first meaningful error before
+   changing tests or expectations. Do not bless an unexplained failure as the
+   new expected behavior.
+
+Keep baseline evidence in the PR/task record, not in generated repository files.
+The ignored `.ai-bench-report.json`, `dist/`, and `dist-cli/` outputs are not
+artifacts to commit.
+
+#### 0.2 — Inventory the contracts that already have coverage
+
+Before adding tests, map each migration invariant to its existing guard and
+avoid duplicating equivalent cases:
+
+- `src/test/game-types.test.ts` already asserts the exact canonical
+  `BASIC_LANDS` order. Keep the literal
+  `Forest, Island, Mountain, Plains, Swamp` expectation.
+- `src/test/engine.test.ts` and `src/test/engine-log-events.test.ts` cover legal
+  actions, target flows, state transitions, stable instance IDs, and exact
+  structured event payloads.
+- `src/test/tutorial.test.ts` covers deterministic tutorial decks, opening
+  hands, policy behavior, sequencing, and the turn-11 completion state.
+- `src/test/action-validation.test.ts`, `src/test/game-recording.test.ts`, and
+  `src/test/adventure-persistence.test.ts` protect current action shapes,
+  recording versions/upgrades, legacy keys, and stored game snapshots.
+- `src/test/game-presentation.test.ts` and `src/test/view-model.test.ts` protect
+  action identity, immutable projections, and the narrowly scoped opponent-hand
+  reveal.
+- `src/test/ai.test.ts` and `src/test/cli-session.test.ts` protect deterministic
+  policy/session behavior independently of presentation copy.
+
+Do not update old player-facing string assertions in this phase; those changes
+belong with the shared presentation work that intentionally changes them.
+
+#### 0.3 — Add the missing deck-order characterization
+
+Add `src/test/cards.test.ts` for the compatibility seam in
+`src/game/cards.ts`:
+
+- Assert the complete ordered `{ id, name, type }` signature from
+  `createStarterDeck` for fixed seed/player inputs. Comparing two calls or only
+  card counts is insufficient because both would still pass after a
+  deterministic but incompatible reorder.
+- Assert the complete ordered signatures returned by `createTutorialDecks`,
+  including the scripted opening cards and stable legacy IDs. Retain the
+  existing count, opening-hand, tutorial-policy, and completion assertions in
+  `tutorial.test.ts`.
+- Keep all expected identities as legacy `BasicLand` values and every serialized
+  card type as `'land'`. Do not put creature display names into engine fixtures.
+
+These assertions must be captured from the clean baseline and reviewed as
+compatibility fixtures. They are the before/after oracle if Phase 1 replaces the
+private ordered list in `src/game/cards.ts` with the canonical export.
+
+#### 0.4 — Land the isolated catalog contract
+
+Add `src/app/card-catalog.ts` without importing it from any existing production
+consumer, and add `src/test/card-catalog.test.ts` in the same green change:
+
+- Define all five entries exactly as approved above, including serialized key,
+  display name, ASCII asset slug, primary ability name/rules text, optional
+  response ability, and stable visual role.
+- Enforce compile-time exhaustive coverage with
+  `satisfies Readonly<Record<BasicLand, CardCatalogEntry>>`. Iterate catalog
+  consumers through `BASIC_LANDS`; do not derive identity order from display
+  names or object-key sorting.
+- Assert exact five-key coverage and exact copy for every field. Verify that only
+  Signal Siren has the approved response ability.
+- Assert that slugs are unique and match
+  `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`. Explicitly prove that
+  `Echo Doppelgänger` maps to `echo-doppelganger` rather than deriving a path
+  from Unicode display copy.
+- Assert `Object.isFrozen` for the exported record, every entry, every primary
+  ability, and the optional response ability. Also assert that lookup helpers
+  return the canonical frozen values.
+- Export only forward key-to-entry/name/slug helpers. Do not add a display-name
+  parser, serialization helper, engine import, asset URL construction, or
+  fallback copy in this phase.
+
+#### 0.5 — Targeted and full validation
+
+1. Run the focused suites for `game-types`, `cards`, and `card-catalog`.
+2. Run the full post-change sequence on the final Phase 0 revision:
+   `npm run lint`, `npm run test`, `npm run test:bench`, then `npm run build`.
+3. Compare the post-change test count, benchmark, and build result with the
+   separately recorded baseline. Any deck, tutorial, legal-action, event,
+   recording, or AI behavior difference is a Phase 0 failure.
+4. Scan the changed files for secrets, commit, and run the required CodeQL
+   validation. Browser interaction and screenshots are not required because no
+   UI consumer changes in this phase; report them as not run with that reason.
+
+Phase 0 is complete when the baseline and post-change evidence are recorded,
+the deck-order and catalog contracts pass, the catalog has no runtime consumer,
+the worktree contains no generated artifacts, and all required automated checks
+pass.
 
 ### Phase 1 — Catalog and engine/presentation boundary
 
-- **`src/app/card-catalog.ts` (new):** add the exhaustive immutable catalog and
-  lookup helpers described above.
+- **`src/app/card-catalog.ts`:** retain the exhaustive immutable catalog and
+  lookup helpers established in Phase 0; extend its API only when a concrete
+  presentation consumer requires it.
 - **`src/game/types.ts`:** retain all types, discriminants, persisted names, and
   canonical order. Add no display copy here.
 - **`src/game/cards.ts`:** preserve deck and tutorial order exactly. If its
@@ -366,14 +466,12 @@ phase; only projected display copy differs.
 - **`src/app/controller.ts`:** replace the tutorial-start status with the
   approved creature wording while leaving game setup, persistence, and packets
   unchanged.
-- **`src/renderers/phaser/log-events.ts`:** format structured events with
-  catalog display names and approved verbs, but omit an opponent's hidden draw
-  name and card art. Keep the defensive unknown-event fallback.
-- **`src/renderers/phaser/log-tiles.ts` and
-  `src/renderers/three/interface-log.ts`, plus the Replay Log drawer in
-  `src/renderers/dom.ts`:** display new labels/art through the shared
-  viewer-aware formatter/adapter while retaining bounded structured-log and
-  legacy-text fallback behavior.
+- **`src/app/log-presentation.ts`:** format structured events with catalog
+  display names and approved verbs, but omit an opponent's hidden draw name and
+  card art. Keep the defensive unknown-event fallback.
+- **`src/renderers/three/interface-log.ts`:** display new labels/art in the
+  Replay Log through the shared viewer-aware formatter/adapter while retaining
+  bounded structured-log and legacy-text fallback behavior.
 - **`src/cli/session.ts`:** render `Board`, `Discard pile`, and `Action phase`/
   `Interception window`; use catalog names in Hand/Board/target lists and shared
   action labels. Preserve hidden AI-hand redaction and the narrowly scoped
@@ -385,45 +483,7 @@ phase; only projected display copy differs.
 Acceptance gate: tutorial, browser action labels, structured logs, legacy-log
 fallback, and terminal output all use one catalog and agree on exact names.
 
-### Phase 3 — DOM, Phaser, Three.js, and accessibility parity
-
-#### DOM
-
-- **`src/renderers/dom-utils.ts`:** update card tile and log helpers to accept a
-  serialized key plus catalog display metadata; use the approved app
-  title/subtitle in the lobby; retain escaped output and staged raster failure
-  handling.
-- **`src/renderers/dom.ts`:** change headings, Board/Discard pile counts,
-  drop-zone labels, action tray, Interception window, Let It Through, target
-  sheets, status messages, empty states, preview labels, drag instructions, and
-  route the Replay Log drawer through the shared viewer-aware legacy adapter.
-- **`src/style.css`:** accommodate Gravebloom Dryad and Echo Doppelgänger at
-  supported phone widths and text zoom without reducing tap targets or clipping
-  focus indicators.
-
-#### Phaser
-
-- **`src/renderers/phaser/card-factory.ts`,
-  `card-view.ts`, `card-rendering.ts`, and `theme.ts`:** use legacy identity for
-  mechanics/palette and catalog display name/slug for labels and art.
-- **`src/renderers/phaser/lobby-scene.ts`:** use the approved app title/subtitle,
-  retaining the renderer designation as secondary copy.
-- **`src/renderers/phaser/battlefield-view.ts` and `drop-zone-view.ts`:** render
-  `Board` labels and summon/drop guidance without changing geometry ownership.
-- **`src/renderers/phaser/hand-controls.ts`,
-  `response-controls.ts`, `battlefield-targets.ts`, and `target-picker.ts`:**
-  update Intercept, Let It Through, Banish, Reclaim, Drain Memory, and Mimic
-  prompts. Target labels must use catalog names and Banish must name the
-  discard-pile destination.
-- **`src/renderers/phaser/interaction-feedback.ts`,
-  `effects.ts`, and `effect-controller.ts`:** update player-visible captions
-  while retaining existing event recipes, queueing, anchors, and cleanup.
-- **`src/renderers/phaser/a11y-navigation.ts`:** mirror every visible action and
-  target with the same approved accessible label, including `Let It Through`.
-- Keep `src/renderers/phaser/index.ts` a composition root and within its existing
-  architecture line-count guard.
-
-#### Three.js
+### Phase 3 — Three.js browser renderer and accessibility
 
 - **`src/renderers/three/assets.ts` and `card-registry.ts`:** resolve art by
   catalog slug but retain serialized identity, palette role, stable card IDs,
@@ -446,9 +506,9 @@ fallback, and terminal output all use one catalog and agree on exact names.
   subtitle/description for browser and installed-app metadata; preserve relative
   manifest/icon URLs and the non-root deployment base path.
 
-Acceptance gate: all three renderers expose identical game meaning and legal
-actions; keyboard and screen-reader routes do not reveal hidden cards or retain
-old visible terms.
+Acceptance gate: the WebGL battlefield and native HTML interface expose
+identical game meaning and legal actions; keyboard and screen-reader routes do
+not reveal hidden cards or retain old visible terms.
 
 ### Phase 4 — Creature artwork, layout, and cache (separate PR)
 
@@ -479,11 +539,10 @@ public/cards/
   creature-appropriate fallbacks. Retain raster-failure suppression and cached
   data URLs; retain `DEFAULT_CARD_VISUAL_STYLE` in
   `src/app/card-visual-styles.ts`.
-- **`src/renderers/phaser/card-art-loader.ts`,
-  `src/renderers/phaser/card-rendering.ts`, and
-  `src/renderers/three/assets.ts`:** preload and resolve slugged assets through
-  shared helpers; attempt each failed URL at most once and end on a playable
-  procedural fallback.
+- **`src/renderers/three/assets.ts` and
+  `src/renderers/three/native-html.ts`:** preload or resolve slugged assets
+  through shared helpers; attempt each failed URL at most once and end on a
+  playable procedural fallback.
 - **`scripts/generate-card-art.mjs`:** generate deterministic,
   creature-appropriate `classic`, `hd-fallback`, and `monochrome` files under
   the approved slugs. The `classic` PNGs and procedural classic fallback must
@@ -499,8 +558,8 @@ public/cards/
   them; runtime code must request the new slug paths. Remove obsolete assets in
   the artwork PR only after confirming no source/docs references remain.
 - **`public/sw.js`:** keep network-first handling for unhashed `/cards/*` and
-  bump `CACHE_VERSION` with the artwork change so stale same-path assets and old
-  cache entries are retired.
+  bump `RUNTIME_ASSET_VERSION` with any same-path artwork replacement so stale
+  assets and old runtime cache entries are retired.
 
 Artwork acceptance includes human review for readable silhouettes, urban-fantasy
 cohesion, absence of embedded text/logos, correct creature-to-ability mapping,
@@ -533,7 +592,7 @@ styles plus the internal `hd-fallback` assets.
 ### Phase 6 — Documentation audit and release verification
 
 - **`README.md`:** complete the player-facing terminology update and document
-  all three renderers and CLI consistently.
+  the Three.js browser renderer and CLI consistently.
 - **`AGENTS.md` and `docs/agent/architecture.md`:** add a concise contributor
   rule that player-facing card copy comes from the catalog while serialized
   identities remain stable.
@@ -542,7 +601,7 @@ styles plus the internal `hd-fallback` assets.
 - **`docs/agent/testing.md`:** add catalog/copy parity and mobile long-label
   checks to the relevant matrices.
 - **`docs/agent/service-worker-and-pwa.md` and
-  `docs/agent/dom-and-css.md`:** document slugged art/cache behavior and
+  `docs/agent/three-interface.md`:** document slugged art/cache behavior and
   long-label/accessibility requirements.
 - Do not revise historical documents under `docs/history/` to pretend they used
   the new vocabulary. Label links or quotations as historical where needed.
@@ -553,13 +612,11 @@ styles plus the internal `hd-fallback` assets.
 
 | Area | Relevant tests | Required additions/checks |
 | --- | --- | --- |
-| Stable identity and determinism | `src/test/game-types.test.ts`, `engine.test.ts`, `ai.test.ts`, `ai-perf.bench.ts`, `tutorial.test.ts` | Exact `BASIC_LANDS` order; unchanged seeded deck/action snapshots; unchanged legal actions and tutorial conditions |
-| Catalog and presentation | new catalog test, `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `action-validation.test.ts` | Exact names/rules/slugs; record, entries, and nested abilities frozen; immutable snapshots; no display names in action payloads; Banish destination wording; hidden-hand redaction |
-| Engine events and logs | `engine-log-events.test.ts`, `phaser-log-events.test.ts`, `phaser-log-tiles.test.ts`, `visual-effects.test.ts`, DOM tests | Stable event discriminants and payload keys; new structured copy; safe unknown events; conservative legacy-text rendering; viewer-aware redaction of opponent draw names and art for structured and legacy logs |
-| Response/interception | `phaser-response-options.test.ts`, `controller.test.ts`, `three-interface.test.ts`, DOM tests | Signal Siren remains the mechanical Island cost; another card is required; Let It Through parity; rejection/retry and duplicate activation |
-| DOM | `dom-card-rendering.test.ts`, `dom-effects.test.ts`, `dom-lobby.test.ts` | Approved app title/subtitle, catalog names, slugged asset URLs/fallbacks, Board/Discard pile labels, escaped copy, no stale raster retry |
-| Phaser | `phaser-card-rendering.test.ts`, `phaser-battlefield-view.test.ts`, `phaser-battlefield-targets.test.ts`, `phaser-drag-accessibility.test.ts`, `phaser-effects.test.ts`, `phaser-lobby-actions.test.ts`, `phaser-module-architecture.test.ts` | Approved app title/subtitle, long-name layout, action/a11y parity, target copy, effect feedback, lifecycle unchanged |
-| Three.js | `three-assets.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Approved app title/subtitle, slug/fallback order, overlay wrapping, native controls, focus/retry/cancellation, compact labels, resource cleanup |
+| Stable identity and determinism | `src/test/game-types.test.ts`, `cards.test.ts`, `engine.test.ts`, `ai.test.ts`, `ai-perf.bench.ts`, `tutorial.test.ts` | Exact `BASIC_LANDS` order; unchanged seeded deck/action snapshots; unchanged legal actions and tutorial conditions |
+| Catalog and presentation | `card-catalog.test.ts`, `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `action-validation.test.ts` | Exact names/rules/slugs; record, entries, and nested abilities frozen; immutable snapshots; no display names in action payloads; Banish destination wording; hidden-hand redaction |
+| Engine events and logs | `engine-log-events.test.ts`, `log-presentation.test.ts`, `visual-effects.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts` | Stable event discriminants and payload keys; new structured copy; safe unknown events; conservative legacy-text rendering; viewer-aware redaction of opponent draw names and art for structured and legacy logs |
+| Response/interception | `controller.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-renderer.test.ts` | Signal Siren remains the mechanical Island cost; another card is required; Let It Through parity; rejection/retry and duplicate activation |
+| Three.js browser renderer | `three-assets.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Approved app title/subtitle, catalog names, slug/fallback order, escaped copy, no stale raster retry, overlay wrapping, native controls, focus/retry/cancellation, compact labels, and resource cleanup |
 | CLI | `cli-session.test.ts` | Creature names and zones; Action/Interception phases; hidden hand remains hidden except during Drain Memory |
 | Saves and replay | `game-recording.test.ts`, `adventure-persistence.test.ts`, `adventure.test.ts`, `view-model.test.ts`, `controller.test.ts` | Existing fixtures load unchanged; legacy Adventure labels are not rendered verbatim; pending target states resume; v1/v2 recording compatibility; no schema/version churn |
 | Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory in four directories; deterministic classic/HD-fallback/monochrome generation; square/dimension checks; non-root base URLs; fallback order; network-first cards; required cache bump |
@@ -584,9 +641,9 @@ benchmark result, tested revision, and any skipped/blocked checks separately.
 
 ## Manual verification matrix
 
-- DOM, Phaser, and Three.js at desktop and narrow mobile widths, portrait and
-  short landscape, normal and 200% text size.
-- Browser tab and installed-app metadata plus every renderer lobby use the exact
+- Three.js and its native HTML interface at desktop and narrow mobile widths,
+  portrait and short landscape, normal and 200% text size.
+- Browser tab and installed-app metadata plus the Three.js lobby use the exact
   approved app title and subtitle/description.
 - Keyboard-only and screen-reader traversal of Hand, Board, Discard pile,
   summon actions, all four target flows, Intercept, Let It Through, and End Turn.
@@ -615,7 +672,7 @@ benchmark result, tested revision, and any skipped/blocked checks separately.
 2. **Creature artwork, layout, and cache**
    - Add all approved slugged assets, update art generators and loaders, verify
      long-name layout and fallback paths, update `public/cards/README.md`, and
-     bump `public/sw.js` `CACHE_VERSION`.
+     bump `public/sw.js` `RUNTIME_ASSET_VERSION` when replacing same-path art.
    - Keep this PR independently reviewable for visual quality and generated
      binary changes.
 3. **Documentation audit**
@@ -635,8 +692,8 @@ designed, versioned migration. Do not combine them with these PRs.
 | Mixed-version P2P clients disagree | Keep action discriminants, payload fields, BasicLand values, card IDs, seed handling, and mechanics unchanged; ensure display strings never enter packets |
 | Catalog iteration changes deterministic ordering | Iterate only the canonical `BASIC_LANDS` tuple in its current order; never use sorted display names or object-key order for deck creation |
 | Unicode display name leaks into asset paths | Store `Echo Doppelgänger` and `echo-doppelganger` independently; validate ASCII slugs and exact URLs |
-| Stale artwork remains offline | Use network-first `/cards/*`, bump `CACHE_VERSION` in the artwork PR, test activation/cache cleanup and offline fallback, and suppress repeated failed URLs |
-| Legacy terms leak from one renderer or accessibility tree | Centralize copy, add parity assertions, and run the repository-wide source/DOM/accessibility/CLI audit below |
+| Stale artwork remains offline | Use network-first `/cards/*`, bump `RUNTIME_ASSET_VERSION` for same-path replacements in the artwork PR, test activation/cache cleanup and offline fallback, and suppress repeated failed URLs |
+| Legacy terms leak from one presentation surface or accessibility tree | Centralize copy, add parity assertions, and run the repository-wide source/native-HTML/accessibility/CLI audit below |
 | Engine imports presentation catalog | Keep catalog in `src/app/`; engine emits stable mechanical events and app/renderers format them |
 | Banish sounds like deletion rather than zone movement | Every rule, prompt, log, and accessible description states that the target goes to its owner's discard pile |
 | Old saves are rejected by renamed validators | Do not rename or narrow current accepted keys/fields; keep recording version and Adventure guards stable and test current fixtures before changing copy |
@@ -656,9 +713,9 @@ designed, versioned migration. Do not combine them with these PRs.
 - The canonical identity order remains
   `Forest, Island, Mountain, Plains, Swamp`, and deterministic seed/action
   fixtures are unchanged.
-- DOM, Phaser, Three.js, accessibility mirrors, CLI, tutorial, logs, effects,
-  prompts, status messages, lobbies, installed-app metadata, compact labels, and
-  README use the approved player-facing terms.
+- The Three.js battlefield, native HTML accessibility surface, CLI, tutorial,
+  logs, effects, prompts, status messages, lobby, installed-app metadata,
+  compact labels, and README use the approved player-facing terms.
 - The player-facing zone is **Board** everywhere. No visible “Battlefield”
   remains.
 - Every Banish explanation says that the creature goes to its owner's discard
@@ -682,12 +739,10 @@ context)**.
 - [ ] Card faces, previews, menus, actions, status text, tutorial hints, target
       pickers, logs, effect captions, empty states, and winner text use catalog
       names.
-- [ ] DOM visible text and ARIA labels use Creature, Summon, Board, Discard
-      pile, Banish, Intercept, Interception window, Let It Through, Reclaim,
-      Drain Memory, Mimic, and Action phase.
-- [ ] Phaser canvas text and native accessibility navigation use the same terms.
 - [ ] Three.js canvas/HTML interface, native card dialog, prompts, logs, and
-      accessible controls use the same terms.
+      accessible controls use Creature, Summon, Board, Discard pile, Banish,
+      Intercept, Interception window, Let It Through, Reclaim, Drain Memory,
+      Mimic, and Action phase.
 - [ ] CLI state, phase, zone, action, target, and transcript output use the same
       terms.
 - [ ] README and current contributor docs describe the shipped UI accurately.
