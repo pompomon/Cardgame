@@ -424,7 +424,7 @@ pass.
 
 ### Phase 1 — Catalog and engine/presentation boundary
 
-- **`src/app/card-catalog.ts`:** consume the exhaustive immutable catalog and
+- **`src/app/card-catalog.ts`:** retain the exhaustive immutable catalog and
   lookup helpers established in Phase 0; extend its API only when a concrete
   presentation consumer requires it.
 - **`src/game/types.ts`:** retain all types, discriminants, persisted names, and
