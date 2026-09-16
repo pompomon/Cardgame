@@ -18,8 +18,8 @@ guidance:
 - `AGENTS.md` and `.github/copilot-instructions.md` for non-negotiable rules.
 - `docs/agent/architecture.md` for layering and module ownership.
 - `docs/agent/state-and-persistence.md` for trust-boundary validation.
-- `docs/agent/phaser-renderer.md` for Phaser 4 renderer pitfalls.
-- `docs/agent/dom-and-css.md` for DOM/CSS behavior and accessibility pitfalls.
+- `docs/agent/three-renderer.md` for GPU lifecycle and interaction pitfalls.
+- `docs/agent/three-interface.md` for native HTML/CSS and accessibility pitfalls.
 - `docs/agent/service-worker-and-pwa.md` for GitHub Pages base-path, service
   worker, offline, and PWA install behavior.
 - `docs/agent/testing.md` for test conventions.
@@ -29,9 +29,9 @@ guidance:
 
 ### Correctness
 
-- Preserve the dependency direction `renderers/{dom,phaser}/ -> app/ -> game/`.
-  `src/game/` must stay pure and independent of DOM, Phaser, browser storage, and
-  app orchestration concerns.
+- Preserve the dependency direction `renderers/three/ -> app/ -> game/`.
+  `src/game/` must stay pure and independent of browser APIs, Three.js, storage,
+  and app orchestration concerns.
 - Verify game actions remain legal under `isLegalActionForState` and engine
   equality rules, including exact fields such as `effectTargetId`.
 - Check that every value crossing a trust boundary is deeply validated before
@@ -61,25 +61,27 @@ guidance:
 - Watch for unnecessary full-state JSON serialization on frequent actions.
   Large `localStorage` writes should happen at commit boundaries or be otherwise
   bounded.
-- In Phaser renderer changes, avoid creating many small GameObjects per card,
-  icon, log row, pixel tile, or render pass. Prefer existing cached textures,
-  bucketed sizes, reusable helpers, and pure layout modules.
+- In Three.js changes, avoid recreating meshes, geometries, materials, textures,
+  or native markup per animation frame. Prefer retained registry objects,
+  bounded asset caches, reusable helpers, and pure layout modules.
 - Ensure long logs, imported recordings, replay views, target pickers, and
   accessibility mirrors are capped or culled.
-- Verify event listeners, timers, tweens, intervals, and Phaser containers are
-  cleaned up on scene shutdown, unmount, lobby transitions, replay exits, and new
-  games.
+- Verify event listeners, observers, animation frames, timers, GPU resources,
+  pointer capture, and temporary presentations are cleaned up on failure,
+  unmount, lobby transitions, replay exits, and new games.
 - Preserve reduced-quality and reduced-motion behavior. Performance fallbacks
   must not alter rules, queue ordering, completion semantics, or user decisions.
 
 ### User experience
 
-- Check DOM and Phaser parity for observable behavior: game rules, settings,
-  replay, adventure flow, install UI, animation settings, and card visual style.
+- Check parity between the Three.js battlefield and native HTML controls for
+  legal actions, settings, replay, Adventure flow, install UI, animations, and
+  card visual style.
 - Verify mobile layouts remain usable in portrait and landscape, including safe
   area handling and touch targets.
-- Preserve accessibility mirrors for Phaser UI and semantic/keyboard behavior in
-  DOM UI.
+- Preserve semantic and keyboard alternatives in the native Three.js interface.
+  WebGL2 failures must use the host's accessible recovery screen without losing
+  controller state or introducing another renderer.
 - Ensure status messages do not overwrite important warnings, especially storage
   unavailable or persistence-failure messages.
 - Review visible error, fallback, and empty states for clarity. Users should know
@@ -95,10 +97,10 @@ guidance:
   statically replaces literal member expressions.
 - In `index.html`, prefer `%BASE_URL%...` or relative `./...` paths instead of
   root-absolute URLs.
-- Keep public asset caching intentional: network-first for same-path card, board,
-  and sprite assets; cache-first for hashed Vite assets.
-- If same-path public card, board, or sprite assets change, check whether
-  `CACHE_VERSION` and release notes need updates.
+- Keep public asset caching intentional: network-first for same-path card and
+  board assets; cache-first for hashed Vite assets.
+- If same-path public card or board assets change, check whether
+  `RUNTIME_ASSET_VERSION` and release notes need updates.
 - Do not let `404.html` replace the SPA shell cache entry.
 - Ensure base-path helpers and `404.html` normalize paths without producing
   scheme-relative URLs.

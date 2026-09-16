@@ -8,14 +8,14 @@ import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
+import { hasSavedAdventureRun, isAdventureResumable, LOBBY_MODE_OPTIONS } from '../../app/lobby-presentation'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
 import { buildCounterHandOptions, type CounterHandOptions } from '../../app/response-options'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel, type GameUiState, type Mode } from '../../app/types'
 import { canPreviewCard } from '../card-preview'
-import { escapeHtml, renderCardTile, renderInstallControls, renderP2P, rendererSwitchLink } from '../dom-utils'
-import { hasSavedAdventureRun, isAdventureResumable, LOBBY_MODE_OPTIONS } from '../phaser/lobby-actions'
 import type { BoardHit } from './contracts'
 import { renderThreeLog } from './interface-log'
+import { escapeHtml, renderCardTile, renderInstallControls, renderP2P } from './native-html'
 
 export type ThreeLobbyPage = 'root' | 'settings' | 'recording'
 
@@ -231,7 +231,7 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
       <p>Total Rounds: ${adventure.totalRoundsPlayed} · Cards Played: ${adventure.totalCardsPlayed}</p>
       <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
       ${hasSavedAdventureRun(adventure) ? button('abandon-adventure', 'Reset Adventure Run') : ''}</section>
-    ${renderInstallControls()}<p>${rendererSwitchLink(view.renderer)}</p>`
+    ${renderInstallControls()}`
   return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
     <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Basic Land Game${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '<p>Land-only 2-player game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>

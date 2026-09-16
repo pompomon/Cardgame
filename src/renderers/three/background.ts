@@ -1,7 +1,7 @@
 import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three'
 import type { BoardTheme } from '../../app/board-theme'
-import { computeCoverFitCrop } from '../phaser/board-background'
-import { clamp } from '../phaser/layout'
+import { computeCoverFitCrop } from '../shared/image-fit'
+import { clamp } from '../shared/math'
 import type { TextureLease, ThreeAssets } from './assets'
 import type { ThreeQualityProfile } from './quality'
 

@@ -12,7 +12,6 @@ function createState(seed: number): AppState {
     offer: '',
     answer: '',
     status: '',
-    renderer: 'dom',
     recording: null,
     replay: null,
     hasSavedRecording: false,
@@ -61,7 +60,7 @@ describe('buildViewModel', () => {
     expect(vm.renderQualityPreference).toBe('auto')
     expect(vm.adventure.status).toBe('inactive')
     // The structured event stream is exposed alongside the log strings so
-    // renderers (Phaser visual log, ability animations) can consume it.
+    // presentation code (visual log, ability animations) can consume it.
     expect(Array.isArray(vm.game?.events)).toBe(true)
     expect(vm.game?.events[0]).toEqual({ kind: 'game_started' })
     expect(vm.tutorial).toEqual({ active: false, stepId: null, hint: null })

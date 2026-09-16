@@ -66,10 +66,10 @@ with deterministic fixtures and existing Vitest helpers:
 
 Reuse the controller and `three-interface.test.ts` harness patterns, but include
 notifications that synchronously update the interface, not only mocks that return
-an unchanged view. Cover affected DOM, Phaser, and Three.js consumers when shared
-behavior changes. Check keyboard/focus and pointer paths where relevant. Do not
-introduce a new DOM/GPU test stack to replace existing focused tests; mocked
-coverage remains separate from real-browser verification.
+an unchanged view. Cover both the native HTML and battlefield consumers when
+shared behavior changes. Check keyboard/focus and pointer paths where relevant.
+Do not introduce a new browser/GPU test stack to replace existing focused tests;
+mocked coverage remains separate from real-browser verification.
 
 ## Browser-API tests
 
@@ -77,9 +77,9 @@ coverage remains separate from real-browser verification.
   `MediaQueryList.addListener` etc. The patterns in
   `src/test/install-support.test.ts` are the reference.
 - Vitest runs in Node by default in this repo (no global jsdom setup). For
-  DOM-related tests, follow existing patterns: assert string-rendered HTML
-  and manually stub the minimal `window`/`navigator` surface when needed
-  (see `src/test/dom-lobby.test.ts`).
+  native-interface tests, follow existing patterns: assert escaped HTML and
+  manually stub the minimal `window`/`navigator` surface when needed (see
+  `src/test/three-interface.test.ts`).
 
 ## Build-behavior tests
 
@@ -104,26 +104,22 @@ These tests are slower but catch failures that source-level checks miss.
 Replacement assets must satisfy those constraints; the
 `public/cards/README.md` docs match the test expectations.
 
-## Phaser tests
-
-The Phaser scenes are exercised through targeted tests under
-`src/test/phaser-*.test.ts`. The renderer falls back to procedural
-pixel icons when card-art textures aren't preloaded, which keeps tests
-green without bundling real PNGs at test time. When changing
-preload/fallback paths, keep that property — tests should not need
-network access.
-
 ## Three.js tests
 
 `three-*.test.ts` exercises pure layout/quality policies, pointer capture,
 retained resources, native UI actions, event playback, and renderer lifecycle.
-`renderer-host.test.ts` covers asynchronous loading and same-controller DOM
-fallback. Graphics tests use injected or mocked browser/GPU surfaces, not
-network assets.
+`renderer-host.test.ts` covers asynchronous loading, latest-view buffering,
+stale-load rejection, accessible retry, and same-controller recovery. Graphics
+tests use injected or mocked browser/GPU surfaces, not network assets.
 
 The production card-art base-path test also checks Vite's generated manifest:
-both graphics renderers must remain dynamic entries outside the initial
-DOM dependency graph. A source-only assertion cannot establish this.
+Three.js must remain a dynamic entry outside the initial application graph, no
+Phaser entry may be emitted, and public asset URLs must keep the configured
+non-root base. A source-only assertion cannot establish these properties.
+
+`browser-renderer-architecture.test.ts` guards the consolidation boundary: no
+Phaser dependency/import, standalone `DomRenderer`, renderer kind, or removed
+renderer directory may return.
 
 GPU mocks cannot prove visual correctness or device performance. Check a
 production preview in actual WebGL2 browsers: mouse, touch/pen, orientation
@@ -135,7 +131,7 @@ claim Android/iOS coverage from desktop emulation.
 
 1. Complete the [production build](validation-and-build.md#validation-evidence-and-production-preview)
    before smoke-testing its output. Verify preview-server readiness, the
-   configured base path, and renderer selection. Keep the built output unchanged
+   configured base path, legacy URL normalization, and Three.js startup. Keep the built output unchanged
    throughout the check; record browser/version, viewport, build revision, and
    any console or asset-loading errors.
 2. Use the supported browser tools for navigation, interaction, and screenshots.

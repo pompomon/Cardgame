@@ -27,7 +27,7 @@ export function cardArtUrl(land: BasicLand, style: CardVisualStyle): string {
 /**
  * Texture key for the geometric HD-fallback raster shipped under
  * `public/cards/hd-fallback/<Land>.png`. Preloaded alongside the primary
- * `hd` texture so the Phaser renderer can fall back to deterministic
+ * `hd` image so the Three.js native interface can fall back to deterministic
  * geometric art when the photoreal asset is missing.
  *
  * Only `'hd'` is accepted because it is the sole style that ships a backed

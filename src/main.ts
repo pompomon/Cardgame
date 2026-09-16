@@ -1,7 +1,8 @@
 import './style.css'
 import { AppController } from './app/controller'
 import { initInstallSupport, subscribeInstallSupport } from './app/install-support'
-import { persistRendererKind, pickRendererKind, readStoredRendererKind } from './app/renderer-selection'
+import { clearLegacyRendererPreference, removeLegacyRendererSearch } from './app/renderer-migration'
+import { serviceWorkerRegistrationUrl } from './app/service-worker-registration'
 import { joinBasePath } from './app/url-path'
 import { RendererHost } from './renderers/host'
 
@@ -26,16 +27,22 @@ function restoreGithubPagesDeepLink(): void {
 }
 
 restoreGithubPagesDeepLink()
+const rendererFreeSearch = removeLegacyRendererSearch(window.location.search)
+if (rendererFreeSearch !== window.location.search) {
+  window.history.replaceState(
+    null,
+    '',
+    `${window.location.pathname}${rendererFreeSearch}${window.location.hash}`,
+  )
+}
+clearLegacyRendererPreference()
 initInstallSupport()
 
-const rendererKind = pickRendererKind(window.location.search, readStoredRendererKind())
-persistRendererKind(rendererKind)
-
-const controller = new AppController(rendererKind)
+const controller = new AppController()
 const renderer = new RendererHost(app, controller)
 const unsubscribe = controller.subscribe((view) => renderer.render(view))
 const unsubscribeInstall = subscribeInstallSupport(() => renderer.refresh())
-void renderer.start(rendererKind)
+void renderer.start()
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
@@ -47,9 +54,7 @@ if (import.meta.hot) {
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    const baseUrl = import.meta.env.BASE_URL
-    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-    const serviceWorkerUrl = `${normalizedBaseUrl}sw.js?base=${encodeURIComponent(normalizedBaseUrl)}`
+    const serviceWorkerUrl = serviceWorkerRegistrationUrl(import.meta.env.BASE_URL, import.meta.url)
     void navigator.serviceWorker.register(serviceWorkerUrl)
   })
 }

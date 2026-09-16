@@ -20,15 +20,14 @@ The repository has three concentric layers. Dependencies flow strictly
 **inward**.
 
 ```
-renderers/{dom,phaser}/  ──→  app/  ──→  game/
+renderers/three/  ──→  app/  ──→  game/
 ```
 
 | Layer | Allowed to import from | Forbidden |
 | --- | --- | --- |
-| `src/game/` | `src/game/` only | `src/app/`, `src/renderers/`, DOM, Phaser, `localStorage`, network |
-| `src/app/` | `src/game/`, `src/app/` | `src/renderers/`, Phaser. DOM/storage allowed only via thin adapters (`safe-storage`, `install-support`, etc.) |
-| `src/renderers/dom/` | `src/app/`, `src/game/` types/guards | `src/renderers/phaser/`, Phaser |
-| `src/renderers/phaser/` | `src/app/`, `src/game/` types/guards, Phaser | `src/renderers/dom/` |
+| `src/game/` | `src/game/` only | `src/app/`, `src/renderers/`, browser APIs, storage, network |
+| `src/app/` | `src/game/`, `src/app/` | `src/renderers/`; DOM/storage only through thin adapters |
+| `src/renderers/three/` | `src/app/`, `src/game/` types/guards, `src/renderers/shared/`, Three.js | Controller internals |
 
 ### Cross-cutting rules
 
@@ -44,10 +43,11 @@ renderers/{dom,phaser}/  ──→  app/  ──→  game/
 3. **View-model immutability.** Renderers consume controller state
    exclusively through `AppViewModel`. Never pass `state.adventure` /
    `state.game` by reference; project an immutable snapshot.
-4. **No renderer parity drift.** Behavior observable to both renderers
-   (hand redaction, animation speed, card visual style) is implemented in
-   `app/` once. Renderers translate, they do not decide.
-5. **Engine purity.** `src/game/` must not import DOM, Phaser, `app/`, or
+4. **One presentation policy.** Behavior observable in both the Three.js board
+   and its native HTML interface (hand redaction, animation speed, card visual
+   style) is implemented in `app/` once. Presentation surfaces translate; they
+   do not decide.
+5. **Engine purity.** `src/game/` must not import browser APIs, Three.js, `app/`, or
    browser APIs. AI policies must not `structuredClone(GameState)` —
    enforced by `src/test/ai-no-state-clone.test.ts`.
 
@@ -79,5 +79,6 @@ it for backwards-compatible imports.
 
 - [`AGENTS.md`](../../../AGENTS.md) — non-negotiable rules.
 - [`docs/agent/architecture.md`](../architecture.md) — module map.
+- [`ADR 0002`](0002-three-only-renderer.md) — browser renderer consolidation.
 - [`docs/agent/state-and-persistence.md`](../state-and-persistence.md) —
   validation invariants this ADR encodes.

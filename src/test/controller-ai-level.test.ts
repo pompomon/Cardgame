@@ -44,7 +44,7 @@ describe('controller ai level wiring', () => {
   })
 
   it('passes selected ai level into local Human vs AI decisions', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.setAiLevel('hard')
     controller.startGame('local-hvai')
 
@@ -57,7 +57,7 @@ describe('controller ai level wiring', () => {
   })
 
   it('uses one shared selected ai level for both AI players in AI vs AI mode', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.setAiLevel('advanced')
     controller.startGame('local-aivai')
 

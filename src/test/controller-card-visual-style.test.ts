@@ -27,23 +27,23 @@ describe('controller card visual style', () => {
   })
 
   it('updates card visual style in view model', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     expect(controller.getViewModel().cardVisualStyle).toBe('hd')
     controller.setCardVisualStyle('hd')
     expect(controller.getViewModel().cardVisualStyle).toBe('hd')
   })
 
   it('persists selected style for new controller instances', () => {
-    const first = new AppController('dom')
+    const first = new AppController()
     first.setCardVisualStyle('monochrome')
 
-    const second = new AppController('dom')
+    const second = new AppController()
     expect(second.getViewModel().cardVisualStyle).toBe('monochrome')
   })
 
   it("migrates the legacy persisted 'neon' style to 'hd'", () => {
     localStorage.setItem('cardgame.card-visual-style', 'neon')
-    const controller = new AppController('dom')
+    const controller = new AppController()
     expect(controller.getViewModel().cardVisualStyle).toBe('hd')
     // Migration should also have rewritten the persisted value so later reads
     // observe the new identifier directly.

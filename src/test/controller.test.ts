@@ -111,7 +111,7 @@ describe('controller recording and replay', () => {
 
   it('records local and AI actions in timeline', () => {
     withFakeTimers(() => {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('local-aivai')
       vi.advanceTimersByTime(500)
 
@@ -122,7 +122,7 @@ describe('controller recording and replay', () => {
   })
 
   it('supports replay step controls and freezes live actions during replay', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
@@ -148,7 +148,7 @@ describe('controller recording and replay', () => {
   })
 
   it('records remote-source actions through controller remote path', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
@@ -161,7 +161,7 @@ describe('controller recording and replay', () => {
   })
 
   it('reports illegal remote actions instead of dropping them silently', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const before = parseExported(controller)
     expect(before.timeline).toHaveLength(0)
@@ -177,7 +177,7 @@ describe('controller recording and replay', () => {
   it('rejects remote actions that target the local actor in p2p mode', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const internals = controller as unknown as {
         p2p: {
@@ -218,7 +218,7 @@ describe('controller recording and replay', () => {
   })
 
   it('saves and loads recordings from local storage', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
@@ -226,7 +226,7 @@ describe('controller recording and replay', () => {
 
     controller.saveRecordingToLocalStorage()
 
-    const other = new AppController('dom')
+    const other = new AppController()
     other.loadRecordingFromLocalStorage()
     const view = other.getViewModel()
     expect(view.replay.active).toBe(true)
@@ -234,13 +234,13 @@ describe('controller recording and replay', () => {
   })
 
   it('reports invalid JSON on import', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.importRecordingJson('not-json')
     expect(controller.getViewModel().status).toContain('Failed to load recording')
   })
 
   it('imports p2p recordings into functional local mode after replay exits', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const payload = controller.exportRecordingJson()
     expect(payload).toBeTruthy()
@@ -257,7 +257,7 @@ describe('controller recording and replay', () => {
   })
 
   it('does not start replay playback when already at final step', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     controller.startReplay()
 
@@ -270,7 +270,7 @@ describe('controller recording and replay', () => {
 
   it('resumes AI scheduling after exiting replay at final state', () => {
     withFakeTimers(() => {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('local-hvai')
       expect(controller.getViewModel().game?.legal.canEndTurn).toBe(true)
       controller.submitAction({ type: 'end_turn', actor: 0 })
@@ -287,7 +287,7 @@ describe('controller recording and replay', () => {
   })
 
   it('clears active recording state when returning to lobby', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
@@ -303,7 +303,7 @@ describe('controller recording and replay', () => {
   })
 
   it('pauses active replay when recording import JSON is invalid', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
@@ -321,7 +321,7 @@ describe('controller recording and replay', () => {
 
   it('cancels stale AI timeout when starting a new game', () => {
     withFakeTimers(() => {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('local-aivai')
       controller.startGame('local-hvh')
       vi.advanceTimersByTime(500)
@@ -332,7 +332,7 @@ describe('controller recording and replay', () => {
   })
 
   it('blocks replay while connected to a peer game', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startGame('local-hvh')
     const internals = controller as unknown as {
       state: { mode: string | null }
@@ -350,7 +350,7 @@ describe('controller recording and replay', () => {
   it('does not flip p2pStarted when host startP2PGame() cannot send the start packet', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       expect(controller.getViewModel().p2pStarted).toBe(false)
 
@@ -367,7 +367,7 @@ describe('controller recording and replay', () => {
   it('flips p2pStarted on host only after the joiner acknowledges the start packet', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       expect(controller.getViewModel().p2pStarted).toBe(false)
 
@@ -420,7 +420,7 @@ describe('controller recording and replay', () => {
   it('flips p2pStarted on joiner when a start packet arrives and acks it', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-join')
       expect(controller.getViewModel().p2pStarted).toBe(false)
       const initialGame = controller.getViewModel().game
@@ -489,7 +489,7 @@ describe('controller recording and replay', () => {
   it('ignores incoming start packets while in host mode', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const internals = controller as unknown as {
         p2p: {
@@ -529,7 +529,7 @@ describe('controller recording and replay', () => {
   it('aborts rematch local mutations when the P2P rematch packet cannot be delivered', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       // Stub send() to fail. Without the abort-before-mutate logic, rematch()
       // would advance this peer's seed/game while the other peer stays on the
@@ -561,7 +561,7 @@ describe('controller recording and replay', () => {
   it('defers P2P rematch local mutations until the peer acks the rematch packet', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const sentPackets: Array<{ type: string; payload: unknown }> = []
       const internals = controller as unknown as {
@@ -612,7 +612,7 @@ describe('controller recording and replay', () => {
   it('does not start on joiner when start-ack cannot be sent', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-join')
       const internals = controller as unknown as {
         p2p: {
@@ -647,7 +647,7 @@ describe('controller recording and replay', () => {
   it('does not apply incoming rematch when rematch-ack cannot be sent', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-join')
       const internals = controller as unknown as {
         p2p: {
@@ -681,7 +681,7 @@ describe('controller recording and replay', () => {
   it('blocks actions and duplicate rematch clicks while waiting for rematch acknowledgement', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const sentPackets: Array<{ type: string; payload: unknown }> = []
       const internals = controller as unknown as {
@@ -723,7 +723,7 @@ describe('controller recording and replay', () => {
   it('ignores remote actions while start handshake is still pending', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const internals = controller as unknown as {
         state: { game: unknown; p2pStarted: boolean }
@@ -746,7 +746,7 @@ describe('controller recording and replay', () => {
   it('clears pending P2P handshake state when importing a recording', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const internals = controller as unknown as {
         p2p: {
@@ -792,7 +792,7 @@ describe('controller recording and replay', () => {
   it('closes P2P and ignores stale peer packets after switching to non-P2P mode', () => {
     const restoreRtc = installFakeRtcPeerConnection()
     try {
-      const controller = new AppController('dom')
+      const controller = new AppController()
       controller.startGame('p2p-host')
       const internals = controller as unknown as {
         p2p: {
@@ -817,7 +817,7 @@ describe('controller recording and replay', () => {
   })
 
   it('starts adventure run and exposes lobby resume state after pausing', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     let view = controller.getViewModel()
     expect(view.mode).toBe('adventure-hvai')
@@ -840,7 +840,7 @@ describe('controller recording and replay', () => {
   })
 
   it('keeps storage-unavailable warning when starting adventure if persist fails', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     withAdventureRunPersistFailure(() => {
       controller.startAdventure()
     })
@@ -851,7 +851,7 @@ describe('controller recording and replay', () => {
   })
 
   it('keeps storage-unavailable warning when resuming adventure if persist fails', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const storedRaw = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(storedRaw).toBeTruthy()
@@ -868,7 +868,7 @@ describe('controller recording and replay', () => {
   })
 
   it('keeps storage-unavailable warning when round completion persistence fails', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const internals = controller as unknown as {
       state: {
@@ -896,7 +896,7 @@ describe('controller recording and replay', () => {
   })
 
   it('keeps reset status message when abandoning from active adventure game', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     controller.abandonAdventure()
     const view = controller.getViewModel()
@@ -906,7 +906,7 @@ describe('controller recording and replay', () => {
   })
 
   it('pauses an adventure mid-round and restores the live game state on resume', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     // Play one card so the live game state diverges from a freshly-launched round.
     const action = firstPlayableAction(controller)
@@ -942,7 +942,7 @@ describe('controller recording and replay', () => {
   })
 
   it('clears stored adventure snapshot when pause-run persistence fails', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const action = firstPlayableAction(controller)
     expect(action).toBeTruthy()
@@ -962,14 +962,14 @@ describe('controller recording and replay', () => {
 
   it('preserves saved adventure run when importing a recording', () => {
     // Build a recording payload first, in isolation.
-    const recordingSource = new AppController('dom')
+    const recordingSource = new AppController()
     recordingSource.startGame('local-hvh')
     const json = recordingSource.exportRecordingJson()
     expect(json).toBeTruthy()
 
     // Reset storage and start a fresh controller with an active adventure run.
     installMemoryStorage()
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     expect(controller.getViewModel().adventure.hasSavedRun).toBe(true)
     const previousRun = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
@@ -986,7 +986,7 @@ describe('controller recording and replay', () => {
   })
 
   it('does not persist adventure run on every play_land action', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const baseline = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(baseline).toBeTruthy()
@@ -1014,7 +1014,7 @@ describe('controller recording and replay', () => {
   })
 
   it('preserves saved adventure run when starting another mode from the lobby', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const before = localStorage.getItem(ADVENTURE_RUN_STORAGE_KEY)
     expect(before).toBeTruthy()
@@ -1027,7 +1027,7 @@ describe('controller recording and replay', () => {
   })
 
   it('keeps storage-unavailable warning when demoting active adventure on mode switch', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     withAdventureRunPersistFailure(() => {
       controller.startGame('local-hvh')
@@ -1038,7 +1038,7 @@ describe('controller recording and replay', () => {
   })
 
   it('allows replay while a paused adventure run is saved', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     // Pause via storage by demoting the saved run to paused, then exit adventure mode.
     const internals = controller as unknown as { state: { mode: string | null; game: unknown } }
@@ -1050,7 +1050,7 @@ describe('controller recording and replay', () => {
   })
 
   it('awards an extra chance after third consecutive adventure win', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const internals = controller as unknown as {
       state: {
@@ -1085,7 +1085,7 @@ describe('controller recording and replay', () => {
   })
 
   it('fails adventure when last chance is lost and persists high score', () => {
-    const controller = new AppController('dom')
+    const controller = new AppController()
     controller.startAdventure()
     const internals = controller as unknown as {
       state: {

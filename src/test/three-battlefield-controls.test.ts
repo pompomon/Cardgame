@@ -115,7 +115,7 @@ function state(): AppState {
     id: `${owner}-${i}`, name: 'Island', type: 'land',
   }))
   return {
-    mode: 'local-hvh', renderer: 'three', seed: 53, game: createInitialGame(53, [deck(0), deck(1)]),
+    mode: 'local-hvh', seed: 53, game: createInitialGame(53, [deck(0), deck(1)]),
     controllers: ['human', 'human'], offer: '', answer: '', status: '', recording: null,
     replay: null, hasSavedRecording: false, aiLevel: 'basic', cardVisualStyle: 'classic',
     animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',

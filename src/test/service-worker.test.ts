@@ -8,6 +8,11 @@ const ORIGIN = 'https://example.test'
 const BASE_PATH = '/Cardgame/'
 
 type FetchListener = (event: FetchEventStub) => void
+type LifecycleListener = (event: LifecycleEventStub) => void
+
+type LifecycleEventStub = {
+  waitUntil: (promise: Promise<unknown>) => void
+}
 
 type FetchEventStub = {
   request: Request
@@ -30,12 +35,30 @@ type ServiceWorkerHarness = {
   waitUntilPromises: Promise<unknown>[]
 }
 
+type LifecycleHarness = {
+  activateListener: LifecycleListener
+  cacheAddAll: ReturnType<typeof vi.fn>
+  cacheAddAllCalls: Array<{ cacheName: string; paths: string[] }>
+  cacheEntries: Map<string, Map<string, Response>>
+  cachesDelete: ReturnType<typeof vi.fn>
+  cachesOpen: ReturnType<typeof vi.fn>
+  fetchMock: ReturnType<typeof vi.fn>
+  installListener: LifecycleListener
+  skipWaiting: ReturnType<typeof vi.fn>
+}
+
 function cacheKey(key: Request | string): string {
   return typeof key === 'string' ? key : key.url
 }
 
 function makeRequest(path: string, init: RequestInit = {}): Request {
   return new Request(`${ORIGIN}${path}`, init)
+}
+
+function makeNavigationRequest(path: string): Request {
+  const request = makeRequest(path)
+  Object.defineProperty(request, 'mode', { value: 'navigate' })
+  return request
 }
 
 function makeResponse(body: string, init: ResponseInit = {}): Response {
@@ -85,7 +108,7 @@ function loadServiceWorker(): ServiceWorkerHarness {
       listeners.set(type, listener)
     }),
     clients: { claim: vi.fn() },
-    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}`),
+    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}&build=index-build123.js`),
     skipWaiting: vi.fn(),
   }
   const fetchMock = vi.fn()
@@ -113,6 +136,118 @@ function loadServiceWorker(): ServiceWorkerHarness {
   }
 }
 
+function loadServiceWorkerLifecycle(
+  cacheKeys: string[] = [],
+  seededEntries: Record<string, Array<[string, Response]>> = {},
+): LifecycleHarness {
+  const listeners = new Map<string, EventListener>()
+  const cacheEntries = new Map(
+    Object.entries(seededEntries).map(([name, entries]) => [name, new Map(entries)]),
+  )
+  const cacheAddAllCalls: Array<{ cacheName: string; paths: string[] }> = []
+  const cacheAddAll = vi.fn(async (cacheName: string, paths: string[]) => {
+    cacheAddAllCalls.push({ cacheName, paths: [...paths] })
+  })
+  const cachesOpen = vi.fn(async (cacheName: string) => {
+    const entries = cacheEntries.get(cacheName) ?? new Map<string, Response>()
+    cacheEntries.set(cacheName, entries)
+    return {
+      addAll: (paths: string[]) => cacheAddAll(cacheName, paths),
+      delete: async (key: Request | string) => entries.delete(cacheKey(key)),
+      keys: async () => [...entries.keys()].map((url) => new Request(url)),
+      match: async (key: Request | string) => entries.get(cacheKey(key)),
+      put: async (key: Request | string, response: Response) => {
+        entries.set(cacheKey(key), response)
+      },
+    }
+  })
+  const cachesDelete = vi.fn(async (cacheName: string) => cacheEntries.delete(cacheName))
+  const caches = {
+    delete: cachesDelete,
+    keys: vi.fn(async () => [...new Set([...cacheKeys, ...cacheEntries.keys()])]),
+    match: vi.fn(),
+    open: cachesOpen,
+  }
+  const skipWaiting = vi.fn(async () => undefined)
+  const self = {
+    addEventListener: vi.fn((type: string, listener: EventListener) => {
+      listeners.set(type, listener)
+    }),
+    clients: { claim: vi.fn() },
+    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}&build=index-build123.js`),
+    skipWaiting,
+  }
+  const fetchMock = vi.fn()
+  const source = readFileSync(SERVICE_WORKER_PATH, 'utf8')
+
+  new Function('self', 'caches', 'fetch', 'Response', 'URL', source)(
+    self,
+    caches,
+    fetchMock,
+    Response,
+    URL,
+  )
+
+  const installListener = listeners.get('install')
+  const activateListener = listeners.get('activate')
+  expect(installListener, 'expected service worker to register an install listener').toBeDefined()
+  expect(activateListener, 'expected service worker to register an activate listener').toBeDefined()
+  return {
+    activateListener: activateListener as unknown as LifecycleListener,
+    cacheAddAll,
+    cacheAddAllCalls,
+    cacheEntries,
+    cachesDelete,
+    cachesOpen,
+    fetchMock,
+    installListener: installListener as unknown as LifecycleListener,
+    skipWaiting,
+  }
+}
+
+function dispatchLifecycle(listener: LifecycleListener): Promise<unknown> {
+  const pending: { value: Promise<unknown> | null } = { value: null }
+  listener({
+    waitUntil: (promise) => {
+      pending.value = promise
+    },
+  })
+  expect(pending.value, 'expected lifecycle listener to extend the event lifetime').not.toBeNull()
+  if (!pending.value) {
+    throw new Error('Lifecycle listener did not extend the event lifetime')
+  }
+  return pending.value
+}
+
+type BuildManifestFixture = Record<string, {
+  file: string
+  css?: string[]
+  assets?: string[]
+  imports?: string[]
+}>
+
+function mockInstallFetch(
+  harness: LifecycleHarness,
+  manifest: BuildManifestFixture,
+  indexHtml?: string,
+): void {
+  const indexEntry = manifest['index.html']
+  const html = indexHtml ?? [
+    `<script src="${BASE_PATH}${indexEntry.file}"></script>`,
+    ...(indexEntry.css ?? []).map((path) => `<link href="${BASE_PATH}${path}" rel="stylesheet">`),
+    ...(indexEntry.assets ?? []).map((path) => `<link href="${BASE_PATH}${path}">`),
+  ].join('')
+  harness.fetchMock.mockImplementation(async (path: string) => {
+    if (path === `${BASE_PATH}asset-manifest.json`) {
+      return makeResponse(JSON.stringify(manifest))
+    }
+    if (path === BASE_PATH || path === `${BASE_PATH}index.html`) {
+      return makeResponse(html)
+    }
+    return makeResponse(`shell:${path}`)
+  })
+}
+
 function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise<Response> | null {
   let responsePromise: Promise<Response> | null = null
   harness.fetchListener({
@@ -127,9 +262,197 @@ function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise
   return responsePromise
 }
 
+describe('service worker lifecycle', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('pre-caches the complete current Vite asset graph before activating', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    mockInstallFetch(harness, {
+      'index.html': {
+        file: 'assets/index-abc123.js',
+        css: ['assets/index-def456.css'],
+      },
+      'src/renderers/three/index.ts': {
+        file: 'assets/three-abc123.js',
+        css: ['assets/three-def456.css'],
+        imports: ['index.html'],
+      },
+    })
+
+    await dispatchLifecycle(harness.installListener)
+
+    expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/asset-manifest.json', { cache: 'no-store' })
+    expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/index.html', { cache: 'reload' })
+    expect(harness.cacheAddAllCalls).toEqual([
+      {
+        cacheName: 'cardgame-build-assets-v9-index-build123.js',
+        paths: [
+          '/Cardgame/assets/index-abc123.js',
+          '/Cardgame/assets/index-def456.css',
+          '/Cardgame/assets/three-abc123.js',
+          '/Cardgame/assets/three-def456.css',
+        ],
+      },
+    ])
+    expect([...harness.cacheEntries.get('cardgame-shell-v9-index-build123.js')!.keys()]).toEqual([
+      '/Cardgame/',
+      '/Cardgame/index.html',
+      '/Cardgame/icons.svg',
+      '/Cardgame/favicon.svg',
+      '/Cardgame/manifest.webmanifest',
+      '/Cardgame/apple-touch-icon.png',
+      '/Cardgame/pwa-192.png',
+      '/Cardgame/pwa-512.png',
+      '/Cardgame/pwa-maskable-512.png',
+      '/Cardgame/404.html',
+    ])
+    expect(harness.skipWaiting).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the previous worker active when the new asset graph cannot be cached', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    mockInstallFetch(harness, {
+      'index.html': { file: 'assets/index-abc123.js' },
+      'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
+    })
+    harness.cacheAddAll.mockRejectedValueOnce(new Error('offline'))
+
+    await expect(dispatchLifecycle(harness.installListener)).rejects.toThrow('offline')
+
+    expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('rejects a fresh manifest paired with a stale index shell', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    mockInstallFetch(
+      harness,
+      {
+        'index.html': { file: 'assets/index-current.js' },
+        'src/renderers/three/index.ts': { file: 'assets/three-current.js' },
+      },
+      '<script src="/Cardgame/assets/index-stale.js"></script>',
+    )
+
+    await expect(dispatchLifecycle(harness.installListener))
+      .rejects.toThrow('Index shell does not match asset manifest')
+
+    expect(harness.cachesOpen).not.toHaveBeenCalled()
+    expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('rejects manifest paths outside the built asset directory', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+      'index.html': { file: '../outside.js' },
+      'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
+    })))
+
+    await expect(dispatchLifecycle(harness.installListener)).rejects.toThrow('Invalid asset path')
+
+    expect(harness.cachesOpen).not.toHaveBeenCalled()
+    expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('moves cached card and board assets before deleting obsolete build caches', async () => {
+    const cardUrl = `${ORIGIN}${BASE_PATH}cards/hd/Forest.png`
+    const boardUrl = `${ORIGIN}${BASE_PATH}boards/classic/background-hd.png`
+    const spriteUrl = `${ORIGIN}${BASE_PATH}sprites/board-ui-atlas.png`
+    const chunkUrl = `${ORIGIN}${BASE_PATH}assets/phaser-retired.js`
+    const card = makeResponse('cached card')
+    const board = makeResponse('cached board')
+    const harness = loadServiceWorkerLifecycle(
+      ['cardgame-assets-v8'],
+      {
+        'cardgame-assets-v8': [
+          [cardUrl, card],
+          [boardUrl, board],
+          [spriteUrl, makeResponse('retired sprite')],
+          [chunkUrl, makeResponse('retired chunk')],
+        ],
+      },
+    )
+    mockInstallFetch(harness, {
+      'index.html': { file: 'assets/index-abc123.js' },
+      'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
+    })
+
+    await dispatchLifecycle(harness.installListener)
+
+    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v1')
+    expect(currentAssets?.get(cardUrl)).toBe(card)
+    expect(currentAssets?.get(boardUrl)).toBe(board)
+    expect(currentAssets?.has(spriteUrl)).toBe(false)
+    expect(currentAssets?.has(chunkUrl)).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-assets-v8')?.has(cardUrl)).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-assets-v8')?.has(boardUrl)).toBe(false)
+
+    await dispatchLifecycle(harness.activateListener)
+
+    expect(harness.cacheEntries.has('cardgame-assets-v8')).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(card)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(boardUrl)).toBe(board)
+  })
+
+  it('deletes only obsolete Cardgame caches during activation', async () => {
+    const harness = loadServiceWorkerLifecycle([
+      'cardgame-shell-v8',
+      'cardgame-assets-v8',
+      'cardgame-shell-v9-index-previous.js',
+      'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-runtime-assets-v0',
+      'cardgame-shell-v9-index-build123.js',
+      'cardgame-build-assets-v9-index-build123.js',
+      'cardgame-runtime-assets-v1',
+      'another-pages-app-v3',
+    ])
+
+    await dispatchLifecycle(harness.activateListener)
+
+    expect(harness.cachesDelete.mock.calls.map(([cacheName]) => cacheName)).toEqual([
+      'cardgame-shell-v8',
+      'cardgame-assets-v8',
+      'cardgame-shell-v9-index-previous.js',
+      'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-runtime-assets-v0',
+    ])
+  })
+})
+
 describe('service worker fetch handling', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  describe('network-first navigation', () => {
+    it('does not replace the manifest-validated shell with an unverified response', async () => {
+      const harness = loadServiceWorker()
+      const request = makeNavigationRequest('/Cardgame/')
+      const network = makeResponse('new deployment')
+      harness.fetchMock.mockResolvedValue(network)
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(network)
+      expect(harness.fetchMock).toHaveBeenCalledWith(request)
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
+      expect(harness.cachePut).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the validated shell when navigation is offline', async () => {
+      const harness = loadServiceWorker()
+      const request = makeNavigationRequest('/Cardgame/deep/link')
+      const cached = makeResponse('validated shell')
+      harness.cachedResponses.set('/Cardgame/index.html', cached)
+      harness.fetchMock.mockRejectedValue(new Error('offline'))
+
+      const response = await dispatchFetch(harness, request)
+
+      expect(response).toBe(cached)
+      expect(harness.cachesMatch).toHaveBeenCalledWith('/Cardgame/index.html')
+      expect(harness.cachePut).not.toHaveBeenCalled()
+    })
   })
 
   describe('unhashed public asset network-first caching', () => {
@@ -265,7 +588,7 @@ describe('service worker fetch handling', () => {
 
     it('returns a valid network response when runtime cache persistence fails', async () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/sprites/effects-atlas.png')
+      const request = makeRequest('/Cardgame/boards/classic/ambience-atlas.png')
       const cached = makeResponse('stale atlas')
       const network = makeResponse('network atlas')
       const networkClone = makeResponse('network atlas clone')
@@ -281,17 +604,15 @@ describe('service worker fetch handling', () => {
       expect(harness.cachesMatch).not.toHaveBeenCalled()
     })
 
-    it('uses a cached sprite atlas when offline', async () => {
+    it('does not intercept retired sprite paths', () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/sprites/board-ui-atlas.json')
-      const cached = makeResponse('cached atlas')
-      harness.cachedResponses.set(request.url, cached)
-      harness.fetchMock.mockRejectedValue(new Error('offline'))
 
-      const response = await dispatchFetch(harness, request)
+      const response = dispatchFetch(harness, request)
 
-      expect(response).toBe(cached)
-      expect(harness.cachesMatch).toHaveBeenCalledWith(request)
+      expect(response).toBeNull()
+      expect(harness.fetchMock).not.toHaveBeenCalled()
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
       expect(harness.cachePut).not.toHaveBeenCalled()
     })
   })

@@ -6,7 +6,7 @@ import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
 import { createInitialGame } from '../game/engine'
 import { BASIC_LANDS, type BasicLand } from '../game/types'
-import { noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/dom-utils'
+import { noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
 import { ThreeInterface } from '../renderers/three/interface'
 import {
   canThreeInput,
@@ -23,7 +23,7 @@ import type { BoardHit } from '../renderers/three/contracts'
 
 function makeView(): AppViewModel {
   return {
-    renderer: 'three', mode: 'local-hvh', seed: 42, status: 'Ready', offer: '', answer: '',
+    mode: 'local-hvh', seed: 42, status: 'Ready', offer: '', answer: '',
     controllers: ['human', 'human'], aiLevel: 'basic', cardVisualStyle: 'classic',
     animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
     p2pConnected: false, p2pStarted: false,
@@ -293,7 +293,7 @@ function setupPlainsForest({
   game.players[1 - actor].hand = counter
     ? [{ id: 'counter-island', name: 'Island', type: 'land' }, { id: 'counter-discard', name: 'Forest', type: 'land' }]
     : []
-  const controller = new AppController('three')
+  const controller = new AppController()
   controller.importRecordingJson(JSON.stringify(createGameRecord(42, 'local-hvh', ['human', 'human'], 'basic', game)))
   controller.exitReplay()
   const h = setup(controller.getViewModel())
@@ -1211,8 +1211,8 @@ describe('Three native interface behavior', () => {
       const dialog = h.content.querySelector('[data-modal="preview"]')!
       expect(dialog.open).toBe(true)
       expect(dialog.getAttribute('aria-label')).toBe(`${name} card preview`)
-      expect(dialog.querySelector('.dom-card__name')).not.toBeNull()
-      const image = dialog.querySelector('.dom-card__art-frame')!.querySelector('img')!
+      expect(dialog.querySelector('.three-card__name')).not.toBeNull()
+      const image = dialog.querySelector('.three-card__art-frame')!.querySelector('img')!
       if (isRasterCardVisualStyle(style)) {
         expect(image.getAttribute('src')).toBe(cardArtUrl(name, style))
         // The tree stub does not parse '>' inside quoted arrow-function handlers.

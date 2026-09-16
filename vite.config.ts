@@ -12,5 +12,8 @@ export default defineConfig(({ mode }) => {
   const pagesBasePath = normalizeBasePath(process.env.VITE_BASE_PATH ?? '/Cardgame/')
   return {
     base: mode === 'production' ? pagesBasePath : '/',
+    build: {
+      manifest: 'asset-manifest.json',
+    },
   }
 })

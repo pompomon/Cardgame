@@ -7,13 +7,9 @@ import { describe, expect, it } from 'vitest'
 import {
   ALL_BOARD_ATLAS_ASSETS,
   ALL_BOARD_BACKGROUND_ASSETS,
+  BOARD_AMBIENCE_ATLAS_FRAMES,
   type BoardBackgroundVariant,
 } from '../app/board-assets'
-import {
-  AMBIENCE_ATLAS_FRAMES,
-  BOARD_UI_ATLAS_FRAMES,
-  EFFECTS_ATLAS_FRAMES,
-} from '../renderers/phaser/asset-manifest'
 
 const PUBLIC_ROOT = resolve(__dirname, '..', '..', 'public')
 const GENERATOR_PATH = resolve(__dirname, '..', '..', 'scripts', 'generate-board-backgrounds.mjs')
@@ -56,16 +52,6 @@ function readPngSize(path: string): { width: number; height: number } {
   }
 }
 
-function expectedFrames(name: string): readonly string[] {
-  if (name.startsWith('ambience:')) {
-    return AMBIENCE_ATLAS_FRAMES
-  }
-  if (name === 'board-ui') {
-    return BOARD_UI_ATLAS_FRAMES
-  }
-  return EFFECTS_ATLAS_FRAMES
-}
-
 describe('board asset files', () => {
   it('ships every registered background at its quality-tier dimensions', () => {
     for (const asset of ALL_BOARD_BACKGROUND_ASSETS) {
@@ -95,7 +81,7 @@ describe('board asset files', () => {
       }
       const atlasFileName = asset.texturePath.split('/').slice(-1)[0]
       expect(atlas.meta?.image).toBe(atlasFileName)
-      expect(Object.keys(atlas.frames ?? {})).toEqual(expectedFrames(asset.name))
+      expect(Object.keys(atlas.frames ?? {})).toEqual(BOARD_AMBIENCE_ATLAS_FRAMES)
       expect(atlas.meta?.size?.w ?? atlas.meta?.size?.width).toBe(textureSize.width)
       expect(atlas.meta?.size?.h ?? atlas.meta?.size?.height).toBe(textureSize.height)
     }

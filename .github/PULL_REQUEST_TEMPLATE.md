@@ -13,7 +13,7 @@
 <!--
 Call out anything reviewers must double-check:
 - recording schema or snapshot shape changes (back-fill / validator updates)
-- service-worker `CACHE_VERSION` bump (e.g. same-path card-art replacement)
+- service-worker `RUNTIME_ASSET_VERSION` bump (e.g. same-path card-art replacement)
 - new `localStorage` keys or value-shape changes
 - Vite base-path / asset URL changes
 - behavior changes that affect saved adventure runs

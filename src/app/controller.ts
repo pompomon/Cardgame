@@ -39,7 +39,7 @@ import {
   snapshotFromRecord,
 } from './game-recording'
 import { buildViewModel } from './view-model'
-import type { AdventureState, AiLevel, AnimationSpeed, AppState, AppViewModel, CardVisualStyle, Mode, RendererKind } from './types'
+import type { AdventureState, AiLevel, AnimationSpeed, AppState, AppViewModel, CardVisualStyle, Mode } from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
@@ -115,7 +115,7 @@ export class AppController implements ControllerApi {
   private replayInterval: ReturnType<typeof setInterval> | null = null
   private aiTimeout: ReturnType<typeof setTimeout> | null = null
 
-  constructor(renderer: RendererKind) {
+  constructor() {
     this.state = {
       mode: null,
       game: null,
@@ -124,7 +124,6 @@ export class AppController implements ControllerApi {
       offer: '',
       answer: '',
       status: '',
-      renderer,
       recording: null,
       replay: null,
       hasSavedRecording: this.hasSavedRecording(),

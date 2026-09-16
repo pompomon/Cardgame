@@ -61,7 +61,7 @@ export interface GameState {
 }
 
 // Structured log event stream emitted in lock-step with `log: string[]`.
-// Renderers (Phaser visual log, future translations, ability animation queue)
+// Presentation layers (visual log, future translations, ability animation queue)
 // consume this without parsing free-form strings.
 export type LogEvent =
   | { kind: 'game_started' }

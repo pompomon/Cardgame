@@ -3,42 +3,41 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   checkCacheVersionForRepo,
   evaluateCacheVersionCheck,
-  extractCacheVersion,
+  extractRuntimeAssetVersion,
 } from './cache-version-check'
 
 const REPO_ROOT = resolve(__dirname, '..', '..')
 
-describe('cache-version unhashed-asset change warning', () => {
-  it('extracts CACHE_VERSION from the service worker source', () => {
-    expect(extractCacheVersion("const CACHE_VERSION = 'v7'\n")).toBe('v7')
+describe('runtime-asset-version unhashed-asset change warning', () => {
+  it('extracts RUNTIME_ASSET_VERSION from the service worker source', () => {
+    expect(extractRuntimeAssetVersion("const RUNTIME_ASSET_VERSION = 'v7'\n")).toBe('v7')
   })
 
   it.each([
     'public/cards/hd/Forest.png',
     'public/boards/classic/background-hd.png',
-    'public/sprites/board-ui-atlas.png',
-  ])('warns when %s changes without a CACHE_VERSION bump', (changedPath) => {
+  ])('warns when %s changes without a runtime asset version bump', (changedPath) => {
     const result = evaluateCacheVersionCheck({
-      baseCacheVersion: 'v7',
+      baseRuntimeAssetVersion: 'v7',
       changedPaths: [changedPath],
-      currentCacheVersion: 'v7',
+      currentRuntimeAssetVersion: 'v7',
     })
 
     expect(result.kind).toBe('warning')
     expect(result).toMatchObject({
-      message: expect.stringContaining('unhashed public assets changed without a public/sw.js CACHE_VERSION bump'),
+      message: expect.stringContaining('unhashed public assets changed without a public/sw.js RUNTIME_ASSET_VERSION bump'),
     })
     expect(result).toMatchObject({
       message: expect.stringContaining('Risk / migration notes'),
     })
   })
 
-  it('does not warn when an unhashed asset changes with a CACHE_VERSION bump', () => {
+  it('does not warn when an unhashed asset changes with a runtime asset version bump', () => {
     expect(
       evaluateCacheVersionCheck({
-        baseCacheVersion: 'v7',
+        baseRuntimeAssetVersion: 'v7',
         changedPaths: ['public/cards/monochrome/Island.png'],
-        currentCacheVersion: 'v8',
+        currentRuntimeAssetVersion: 'v8',
       }),
     ).toEqual({ kind: 'ok' })
   })
@@ -46,19 +45,19 @@ describe('cache-version unhashed-asset change warning', () => {
   it('does not warn when no unhashed public assets changed', () => {
     expect(
       evaluateCacheVersionCheck({
-        baseCacheVersion: 'v7',
+        baseRuntimeAssetVersion: 'v7',
         changedPaths: ['public/sw.js', 'src/app/card-art.ts'],
-        currentCacheVersion: 'v7',
+        currentRuntimeAssetVersion: 'v7',
       }),
     ).toEqual({ kind: 'ok' })
   })
 
-  it('skips instead of failing when CACHE_VERSION cannot be read', () => {
+  it('skips instead of failing when RUNTIME_ASSET_VERSION cannot be read', () => {
     expect(
       evaluateCacheVersionCheck({
-        baseCacheVersion: null,
+        baseRuntimeAssetVersion: null,
         changedPaths: ['public/cards/hd/Mountain.png'],
-        currentCacheVersion: 'v7',
+        currentRuntimeAssetVersion: 'v7',
       }),
     ).toMatchObject({ kind: 'skipped' })
   })
@@ -74,7 +73,7 @@ describe('cache-version unhashed-asset change warning', () => {
 
       expect(['ok', 'skipped', 'warning']).toContain(result.kind)
       if (result.kind === 'warning') {
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('CACHE_VERSION bump'))
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('RUNTIME_ASSET_VERSION bump'))
       } else {
         expect(warn).not.toHaveBeenCalled()
       }

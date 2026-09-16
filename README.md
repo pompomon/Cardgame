@@ -4,34 +4,25 @@
 
 Contributor and AI-agent conventions live in [`AGENTS.md`](AGENTS.md), with
 topic deep-dives under [`docs/agent/`](docs/agent/) (architecture,
-validation/build, state and persistence, Phaser renderer, DOM/CSS, service
-worker and PWA, testing, PR workflow). Read those before making non-trivial
-changes; they capture recurring review findings.
+validation/build, state and persistence, Three.js renderer and native interface,
+service worker and PWA, testing, PR workflow). Read those before making
+non-trivial changes; they capture recurring review findings.
 
-## Rendering options
+## Browser rendering
 
-The app supports three rendering backends:
+Three.js is the browser application's sole renderer. It combines a fixed-camera
+WebGL2 tabletop with native HTML menus, dialogs, P2P and recording controls, card
+lists, and accessible keyboard actions.
 
-- **DOM renderer** (default): existing HTML/CSS UI.
-- **Phaser renderer**: graphic board with drag-and-drop card play.
-- **Three.js renderer** (optional): fixed-camera dimensional tabletop with HD
-  artwork, mouse/touch/pen dragging, and native HTML menus and accessible actions.
-
-Choose renderer by query string:
-
-- `?renderer=dom`
-- `?renderer=phaser`
-- `?renderer=three`
-
-The selected renderer is also stored in `localStorage` for later visits.
+Old links containing `?renderer=dom`, `?renderer=phaser`, or `?renderer=three`
+remain usable. Startup removes that obsolete parameter while preserving other
+query parameters and the hash, then discards the old stored renderer preference.
 
 ### Three.js controls and compatibility
 
 - Requires WebGL2. Unsupported devices, initialization failures, or context loss
-  fall back to DOM without restarting the controller or the current match.
-  The saved renderer preference remains unchanged; DOM stays the default.
-- Renderer choices are available in the lobby. They navigate to a new page,
-  so return to the lobby (or pause Adventure) before switching.
+  show an accessible retry/reload screen. In-page retry preserves the controller
+  and current match; there is no non-WebGL gameplay fallback.
 - The lobby groups options into **Settings** and **Recording** submenus.
   During a match, the HUD above the table keeps Menu, turn/phase, status, and
   decision prompts available without opening the native card controls.
@@ -67,43 +58,33 @@ The selected renderer is also stored in `localStorage` for later visits.
   without document or battlefield scrolling; dialogs scroll internally when
   space or enlarged text requires it. The camera stays fixed during dragging,
   and deck/graveyard stacks distinguish empty piles.
-- Card Style, Board Theme, Render Quality, and Animations use the existing
-  preferences. Choosing Three.js does not force HD over a saved artwork style.
+- Card Style, Board Theme, Render Quality, and Animations use their existing
+  preferences. Startup does not force HD over a saved artwork style.
   Backgrounds use aspect-correct cropping and keep the previous theme visible
   while a replacement loads. Reduced motion, animation-off settings, and hidden
   pages suppress card movement, themed ambience, and cosmetic effects.
-- Three.js and Phaser load on demand. An unvisited renderer chunk may not be
-  available offline; selecting it then falls back to the already-loaded DOM
-  renderer. Open Three.js online once to cache its bundle and selected artwork.
-  No external CDN, font service, or runtime art-generation API is required.
+- Three.js loads on demand. Its chunk may not be available on a first offline
+  visit; reconnect and reload, then open the game online once to cache its bundle
+  and selected artwork. No external CDN, font service, or runtime art-generation
+  API is required.
 - Real-device performance varies. Lower Render Quality if interaction is slow;
   mobile Safari/Android hardware testing is recommended before wider rollout.
 
-### Phaser drag-and-drop controls
-
-- In main phase, when it is your human turn, drag a card from your hand to the battlefield drop zone.
-- If the card has multiple legal targets (for example Forest/Mountain/Plains target variants), an in-scene picker appears before action commit.
-- Direct Swamp plays now choose discard targets after the response window closes (so Island counters do not force a pre-response target pick).
-- In response phase, use explicit response buttons (counter/pass).
-- Phaser renderer fills the full available viewport and continuously reflows on resize.
-- Cards and battlefield zones scale from available width/height to remain usable in portrait and landscape.
-- Phaser lobby groups controls into top-level actions plus **Settings** and **Recording** submenus.
-- Card faces render pixel-art land icons (Forest/Island/Mountain/Plains/Swamp) plus text labels.
-
 ## Card visual styles
 
-- Lobby includes a shared **Card Visual Style** selector for both renderers (under **Settings** in Phaser).
+- The lobby includes a **Card Visual Style** selector under **Settings**.
 - Available styles:
   - **Classic**
   - **HD**
   - **Monochrome**
 - Style selection is a client-side presentation preference persisted in browser local storage.
-- Phaser uses static PNG card art for the selected style when those textures exist (including Classic, HD, and Monochrome in `ALL_CARD_ART`). DOM uses generated land icons for the selected style, and Phaser falls back to those generated icons when textures for the selected style are missing; generated icons are cached by land/style/size bucket.
+- Three.js uses static PNG card art for each style in `ALL_CARD_ART`; its native
+  interface falls back to generated land icons when an image cannot load.
 - Core implementation lives in `src/app/card-visuals.ts` and style options in `src/app/card-visual-styles.ts`.
 
 ## AI levels
 
-- Lobby now includes a shared AI level selector for all AI matches (under **Settings** in Phaser).
+- The lobby includes an AI level selector for all AI matches under **Settings**.
 - Available levels:
   - **Basic**: plays the first legal action.
   - **Advanced**: prioritizes winning progress and disruption when the opponent is near-win.
@@ -154,7 +135,7 @@ node dist-cli/cardgame-cli.mjs --mode ai-vs-ai --seed 42 --delay-ms 0
 
 The generated `dist-cli/cardgame-cli.mjs` uses the same engine and AI policies
 as the SPA. It intentionally excludes networking, Human vs Human, adventure,
-tutorial, browser persistence, recording/replay, DOM, and Phaser.
+tutorial, browser persistence, recording/replay, and browser presentation.
 
 ## Game recording and replay
 
@@ -252,7 +233,8 @@ inventory artifacts from the dynamic Copilot workflows separately.
 - First online load primes service-worker caches for app shell and install-critical assets.
 - After first successful load, navigation falls back to cached app shell when offline.
 - `public/404.html` redirects deep links back into the SPA entry so shared non-root paths keep working on GitHub Pages project hosting.
-- If users report stale content after deployment, bump `CACHE_VERSION` in `public/sw.js`, redeploy, then hard-refresh.
+- Hashed app builds rotate caches automatically. If same-path card or board art
+  must be invalidated, bump `RUNTIME_ASSET_VERSION` in `public/sw.js`.
 
 ## PWA assets and metadata maintenance
 
@@ -273,8 +255,10 @@ inventory artifacts from the dynamic Copilot workflows separately.
 
 ## Cache refresh guidance
 
-- Cache versioning is handled in `public/sw.js` via `CACHE_VERSION`.
-- If stale assets are observed after deployment, increment `CACHE_VERSION`, redeploy, and hard-refresh.
+- Shell/build cache schema and runtime-art epochs are handled separately in
+  `public/sw.js`.
+- If same-path card or board assets remain stale, increment
+  `RUNTIME_ASSET_VERSION`, redeploy, and hard-refresh.
 
 ## Rollback / redeploy guidance
 

@@ -6,7 +6,6 @@ const DEFAULT_BASE_REF = 'origin/main'
 const UNHASHED_ASSET_PREFIXES = [
   'public/cards/',
   'public/boards/',
-  'public/sprites/',
 ] as const
 const SERVICE_WORKER_PATH = 'public/sw.js'
 
@@ -16,24 +15,24 @@ export type CacheVersionCheckResult =
   | { kind: 'warning'; message: string }
 
 export type CacheVersionCheckInput = {
-  baseCacheVersion: string | null
+  baseRuntimeAssetVersion: string | null
   changedPaths: string[]
-  currentCacheVersion: string | null
+  currentRuntimeAssetVersion: string | null
 }
 
 type GitResult =
   | { ok: true; stdout: string }
   | { ok: false; reason: string }
 
-export function extractCacheVersion(source: string): string | null {
-  const match = source.match(/\bconst\s+CACHE_VERSION\s*=\s*['"]([^'"]+)['"]/)
+export function extractRuntimeAssetVersion(source: string): string | null {
+  const match = source.match(/\bconst\s+RUNTIME_ASSET_VERSION\s*=\s*['"]([^'"]+)['"]/)
   return match?.[1] ?? null
 }
 
 export function evaluateCacheVersionCheck({
-  baseCacheVersion,
+  baseRuntimeAssetVersion,
   changedPaths,
-  currentCacheVersion,
+  currentRuntimeAssetVersion,
 }: CacheVersionCheckInput): CacheVersionCheckResult {
   const changedAssetPaths = changedPaths.filter((path) =>
     UNHASHED_ASSET_PREFIXES.some((prefix) => path.startsWith(prefix)),
@@ -42,20 +41,20 @@ export function evaluateCacheVersionCheck({
     return { kind: 'ok' }
   }
 
-  if (baseCacheVersion === null || currentCacheVersion === null) {
-    return { kind: 'skipped', reason: 'CACHE_VERSION could not be read from public/sw.js' }
+  if (baseRuntimeAssetVersion === null || currentRuntimeAssetVersion === null) {
+    return { kind: 'skipped', reason: 'RUNTIME_ASSET_VERSION could not be read from public/sw.js' }
   }
 
-  if (baseCacheVersion !== currentCacheVersion) {
+  if (baseRuntimeAssetVersion !== currentRuntimeAssetVersion) {
     return { kind: 'ok' }
   }
 
   return {
     kind: 'warning',
     message: [
-      '[cache-version] unhashed public assets changed without a public/sw.js CACHE_VERSION bump.',
+      '[cache-version] unhashed public assets changed without a public/sw.js RUNTIME_ASSET_VERSION bump.',
       `Changed unhashed asset files: ${changedAssetPaths.join(', ')}`,
-      'If these are same-path card/board/sprite changes, bump CACHE_VERSION and note the bump in the PR "Risk / migration notes" section.',
+      'If these are same-path card/board changes, bump RUNTIME_ASSET_VERSION and note the bump in the PR "Risk / migration notes" section.',
     ].join('\n'),
   }
 }
@@ -73,7 +72,7 @@ export function checkCacheVersionForRepo(
     '--name-only',
     // Only modified/renamed/deleted paths matter for the same-path stale-cache
     // concern. Newly added (A) public art was never cached under its URL, so
-    // excluding it avoids false-positive CACHE_VERSION warnings.
+    // excluding it avoids false-positive runtime asset version warnings.
     '--diff-filter=MRD',
     baseRef,
     '--',
@@ -100,9 +99,9 @@ export function checkCacheVersionForRepo(
     .filter(Boolean)
 
   return evaluateCacheVersionCheck({
-    baseCacheVersion: extractCacheVersion(baseWorkerResult.stdout),
+    baseRuntimeAssetVersion: extractRuntimeAssetVersion(baseWorkerResult.stdout),
     changedPaths,
-    currentCacheVersion: extractCacheVersion(currentWorkerSource),
+    currentRuntimeAssetVersion: extractRuntimeAssetVersion(currentWorkerSource),
   })
 }
 

@@ -5,9 +5,7 @@ export const BOARD_BACKGROUND_VARIANTS = ['hd', 'balanced', 'low', 'fallback'] a
 
 export type BoardBackgroundVariant = typeof BOARD_BACKGROUND_VARIANTS[number]
 
-export const BOARD_SPRITE_ATLASES = ['board-ui', 'effects'] as const
-
-export type BoardSpriteAtlas = typeof BOARD_SPRITE_ATLASES[number]
+export const BOARD_AMBIENCE_ATLAS_FRAMES = ['ambient-mote', 'ambient-glow'] as const
 
 const BOARD_BACKGROUND_FILE_NAMES: Record<BoardBackgroundVariant, string> = {
   hd: 'background-hd.png',
@@ -66,18 +64,6 @@ export function boardAmbienceAtlasLocation(theme: BoardTheme): BoardAtlasAssetLo
   })
 }
 
-export function boardSpriteAtlasLocation(name: BoardSpriteAtlas): BoardAtlasAssetLocation {
-  const texturePath = `sprites/${name}-atlas.png`
-  const atlasPath = `sprites/${name}-atlas.json`
-  return Object.freeze({
-    name,
-    texturePath,
-    textureUrl: publicAssetUrl(texturePath),
-    atlasPath,
-    atlasUrl: publicAssetUrl(atlasPath),
-  })
-}
-
 export const ALL_BOARD_BACKGROUND_ASSETS: readonly BoardBackgroundAssetLocation[] = Object.freeze(
   BOARD_THEMES.flatMap((theme) =>
     BOARD_BACKGROUND_VARIANTS.map((variant) =>
@@ -88,5 +74,4 @@ export const ALL_BOARD_BACKGROUND_ASSETS: readonly BoardBackgroundAssetLocation[
 
 export const ALL_BOARD_ATLAS_ASSETS: readonly BoardAtlasAssetLocation[] = Object.freeze([
   ...BOARD_THEMES.map((theme) => boardAmbienceAtlasLocation(theme)),
-  ...BOARD_SPRITE_ATLASES.map((name) => boardSpriteAtlasLocation(name)),
 ])

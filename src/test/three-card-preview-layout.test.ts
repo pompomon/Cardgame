@@ -8,7 +8,7 @@ const rendererCss = readFileSync(join(__dirname, '..', 'renderers', 'three', 're
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
 const card = '.three-interface .card-tile'
 const preview = '.three-interface .three-dialog[data-modal="preview"]'
-const art = `${card} .dom-card__art-frame`
+const art = '.three-interface .three-card__art-frame'
 
 function ruleBody(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -63,7 +63,7 @@ describe('Three.js native card and preview layout', () => {
     expect(rule).toContain('display: grid;')
     expect(rule).toContain('grid-template-columns: minmax(0, 1fr);')
     expect(rule).toContain('grid-template-rows: auto auto;')
-    expect(rule).toContain('--dom-radius: 12px;')
+    expect(rule).toContain('--three-card-radius: 12px;')
     expect(rule).toContain('width: min(160px, 100%);')
     expect(rule).toContain('min-height: 0;')
     expect(ruleBody(`${preview} > .card-tile`)).not.toMatch(/display:\s*(?:inline-)?flex/)
@@ -82,7 +82,7 @@ describe('Three.js native card and preview layout', () => {
     const image = ruleBody(`${art} img`)
     expect(Array.from(image.matchAll(/image-rendering:\s*([^;]+);/g), (match) => match[1]))
       .toEqual(['crisp-edges', 'pixelated'])
-    const raster = '.three-interface .card-tile--raster .dom-card__art-frame img'
+    const raster = '.three-interface .card-tile--raster .three-card__art-frame img'
     expect(ruleBody(raster)).toContain('image-rendering: auto;')
     expect(css.indexOf(`${raster} {`)).toBeGreaterThan(css.indexOf(`${art} img {`))
   })
