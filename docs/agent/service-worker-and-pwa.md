@@ -19,7 +19,9 @@ redirect logic, not the SPA.
 Three.js remains a dynamic Vite entry outside the initial bundle. After one
 successful online load its hashed chunk is cached by the `/assets/*` policy.
 There is no gameplay fallback if that chunk is unavailable; `RendererHost`
-shows the accessible retry/reload screen while preserving controller state.
+shows an accessible recovery screen. A failed chunk import requires reload;
+graphics failures after the chunk loads can retry in-page with preserved
+controller state.
 
 ## Versioning
 

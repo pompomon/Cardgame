@@ -64,8 +64,9 @@ query parameters and the hash, then discards the old stored renderer preference.
   while a replacement loads. Reduced motion, animation-off settings, and hidden
   pages suppress card movement, themed ambience, and cosmetic effects.
 - Three.js loads on demand. Its chunk may not be available on a first offline
-  visit; open the game online once to cache its bundle and selected artwork.
-  No external CDN, font service, or runtime art-generation API is required.
+  visit; reconnect and reload, then open the game online once to cache its bundle
+  and selected artwork. No external CDN, font service, or runtime art-generation
+  API is required.
 - Real-device performance varies. Lower Render Quality if interaction is slow;
   mobile Safari/Android hardware testing is recommended before wider rollout.
 

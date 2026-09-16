@@ -90,8 +90,10 @@ surface are one renderer. “Native HTML” does not mean a fallback renderer.
 It buffers the newest `AppViewModel`, rejects stale loads, and keeps the
 `AppController` alive across graphics failures. WebGL2 is a runtime requirement.
 Load, mount, render, and context-loss failures unmount partial GPU state and show
-an accessible retry/reload panel. Retrying remounts Three.js against the same
-controller and current view.
+an accessible recovery panel. Mount, render, and context-loss retries remount
+Three.js against the same controller and current view. A module-load failure
+offers reload instead: browsers cache a failed dynamic import URL, so repeating
+the same in-page import would not issue a new request.
 
 There is no renderer setting in `AppState` or `AppViewModel`. On startup,
 `main.ts` removes obsolete `renderer` query parameters while preserving every

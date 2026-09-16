@@ -53,6 +53,7 @@ function renderer(): AppRenderer {
 
 function fixture() {
   vi.stubGlobal('document', { createElement: () => new FakeElement() })
+  vi.stubGlobal('window', { location: { reload: vi.fn() } })
   const container = new FakeElement()
   const controller = { reportStatus: vi.fn() } as unknown as ControllerApi
   const view = { status: '', seed: 42, game: { turn: 3 } } as AppViewModel
@@ -84,26 +85,24 @@ describe('renderer host', () => {
     expect(graphics.unmount).toHaveBeenCalledOnce()
   })
 
-  it('shows an accessible failure and retries with the preserved snapshot', async () => {
+  it('reloads after a chunk-load failure instead of retrying the cached module URL', async () => {
     const { container, controller, view } = fixture()
-    const graphics = renderer()
-    let attempts = 0
-    const host = new RendererHost(container as unknown as HTMLElement, controller, async () => {
-      attempts += 1
-      if (attempts === 1) throw new Error('offline chunk')
-      return graphics
+    const loader = vi.fn(async () => {
+      throw new Error('offline chunk')
     })
+    const host = new RendererHost(container as unknown as HTMLElement, controller, loader)
     host.render(view)
     await host.start()
 
     const panel = container.children[0]!
     expect(panel.attributes.get('role')).toBe('alert')
     expect(findByText(panel, 'WebGL2 renderer unavailable')).toBeDefined()
-    const retry = findByText(panel, 'Retry renderer')!
-    expect(retry.focused).toBe(true)
-    retry.click()
-    await vi.waitFor(() => expect(graphics.mount).toHaveBeenCalledWith(container, controller))
-    expect(graphics.render).toHaveBeenCalledWith(view)
+    expect(findByText(panel, 'Retry renderer')).toBeUndefined()
+    const reload = findByText(panel, 'Reload page')!
+    expect(reload.focused).toBe(true)
+    reload.click()
+    expect(window.location.reload).toHaveBeenCalledOnce()
+    expect(loader).toHaveBeenCalledOnce()
     expect(controller.reportStatus).not.toHaveBeenCalled()
   })
 
@@ -124,15 +123,24 @@ describe('renderer host', () => {
     expect(container.children[0]?.attributes.get('role')).toBe('alert')
   })
 
-  it('cleans partial initialization when mounting throws', async () => {
+  it('cleans partial initialization and retries with the preserved snapshot', async () => {
     const { container, controller, view } = fixture()
-    const graphics = renderer()
-    graphics.mount = vi.fn(() => { throw new Error('No WebGL2') })
-    const host = new RendererHost(container as unknown as HTMLElement, controller, async () => graphics)
+    const failedGraphics = renderer()
+    failedGraphics.mount = vi.fn(() => { throw new Error('No WebGL2') })
+    const recoveredGraphics = renderer()
+    const loader = vi.fn()
+      .mockResolvedValueOnce(failedGraphics)
+      .mockResolvedValueOnce(recoveredGraphics)
+    const host = new RendererHost(container as unknown as HTMLElement, controller, loader)
     host.render(view)
     await host.start()
-    expect(graphics.unmount).toHaveBeenCalledOnce()
+    expect(failedGraphics.unmount).toHaveBeenCalledOnce()
     expect(container.children[0]?.attributes.get('role')).toBe('alert')
+    const retry = findByText(container, 'Retry renderer')!
+    expect(retry.focused).toBe(true)
+    retry.click()
+    await vi.waitFor(() => expect(recoveredGraphics.mount).toHaveBeenCalledWith(container, controller))
+    expect(recoveredGraphics.render).toHaveBeenCalledWith(view)
   })
 
   it('moves to recovery when rendering throws', async () => {

@@ -65,7 +65,9 @@ See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-re
 - **No string→enum casts.** Use `isAiLevel`, `isCardVisualStyle`, etc.
 - **WebGL2 failure is explicit.** Preserve controller state and route load,
   initialization, render, and context-loss failure through `RendererHost`'s
-  accessible retry screen. Never add a hidden renderer fallback.
+  accessible recovery screen. Runtime failures retry in-page; failed dynamic
+  module loads require reload because browsers cache the failed URL. Never add
+  a hidden renderer fallback.
 - **No `structuredClone(GameState)` in hot loops** (AI evaluation, render).
 - **Reuse shared helpers/constants:** `DEFAULT_CARD_VISUAL_STYLE`, shared
   `clamp` from `src/renderers/shared/math.ts`, `isBasicLand`. Do not

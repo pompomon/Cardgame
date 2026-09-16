@@ -23,8 +23,11 @@ board resources.
 Do not create a second gameplay renderer as a fallback. WebGL2 load,
 initialization, render, and context-loss errors report to `RendererHost`. The
 host unmounts partial resources, preserves the controller and latest view, and
-shows a focused `role="alert"` panel with retry and reload controls. Failure
-messages must not overwrite gameplay status.
+shows a focused `role="alert"` recovery panel. Initialization, render, and
+context-loss failures offer in-page retry and reload. A failed dynamic module
+load offers reload only because browsers cache failed imports by URL; repeating
+the same import would not fetch it again. Failure messages must not overwrite
+gameplay status.
 
 ## Resource ownership
 

@@ -40,19 +40,25 @@ export class RendererHost {
     loading.textContent = 'Loading Three.js renderer…'
     this.container.replaceChildren(loading)
 
+    let renderer: AppRenderer
     try {
-      const renderer = await this.loader((message) => {
+      renderer = await this.loader((message) => {
         queueMicrotask(() => this.showFailure(generation, message))
       })
-      if (this.disposed || generation !== this.generation) {
-        renderer.unmount()
-        return
-      }
-      this.renderer = renderer
+    } catch {
+      this.showFailure(generation, 'The Three.js renderer files could not load.', false)
+      return
+    }
+    if (this.disposed || generation !== this.generation) {
+      renderer.unmount()
+      return
+    }
+    this.renderer = renderer
+    try {
       renderer.mount(this.container, this.controller)
       this.refresh()
     } catch {
-      this.showFailure(generation, 'The Three.js renderer could not load or initialize.')
+      this.showFailure(generation, 'The Three.js renderer could not initialize.')
     }
   }
 
@@ -71,7 +77,7 @@ export class RendererHost {
     }
   }
 
-  private showFailure(generation: number, message: string): void {
+  private showFailure(generation: number, message: string, canRetry = true): void {
     if (this.disposed || generation !== this.generation) return
     ++this.generation
     this.unmountRenderer()
@@ -89,17 +95,23 @@ export class RendererHost {
     reason.textContent = message
 
     const preservation = document.createElement('p')
-    preservation.textContent = 'Your current game is preserved in memory. Retry the renderer or reload the page.'
+    preservation.textContent = canRetry
+      ? 'Your current game is preserved in memory. Retry the renderer or reload the page.'
+      : 'Reload the page to fetch the renderer files again.'
 
     const actions = document.createElement('div')
     actions.className = 'renderer-failure__actions'
 
-    const retry = document.createElement('button')
-    retry.type = 'button'
-    retry.textContent = 'Retry renderer'
-    retry.addEventListener('click', () => {
-      void this.start()
-    }, { once: true })
+    let retry: HTMLButtonElement | null = null
+    if (canRetry) {
+      retry = document.createElement('button')
+      retry.type = 'button'
+      retry.textContent = 'Retry renderer'
+      retry.addEventListener('click', () => {
+        void this.start()
+      }, { once: true })
+      actions.append(retry)
+    }
 
     const reload = document.createElement('button')
     reload.type = 'button'
@@ -108,10 +120,11 @@ export class RendererHost {
       window.location.reload()
     }, { once: true })
 
-    actions.append(retry, reload)
+    actions.append(reload)
     panel.append(title, reason, preservation, actions)
     this.container.replaceChildren(panel)
-    retry.focus()
+    const focusTarget = retry ?? reload
+    focusTarget.focus()
   }
 
   private unmountRenderer(): void {

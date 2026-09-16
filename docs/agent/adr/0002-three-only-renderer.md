@@ -27,8 +27,10 @@ The application no longer stores or projects a renderer choice. At startup it:
 
 `RendererHost` retains the controller and latest view across Three.js load,
 initialization, render, and context-loss failures. It shows an accessible
-retry/reload screen rather than switching to a reduced renderer. An in-page
-retry remounts Three.js against the preserved controller state.
+recovery screen rather than switching to a reduced renderer. Initialization,
+render, and context-loss failures can remount Three.js in-page against the
+preserved controller state. A failed module fetch requires page reload because
+browsers remember failed dynamic imports by URL.
 
 Phaser code, the standalone DOM renderer, renderer selectors, Phaser-only
 sprites, related active guidance, and the Phaser production dependency are

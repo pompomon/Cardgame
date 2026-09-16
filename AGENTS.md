@@ -56,8 +56,9 @@ review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
 5. **View-model projects immutable snapshots.** Never leak internal controller
    state (`state.adventure`, `state.game`, …) by reference.
 6. **WebGL2 failure is explicit.** Route load, initialization, render, and
-   context-loss failures through `RendererHost`'s accessible retry screen.
-   Preserve controller state; do not add a hidden renderer fallback.
+   context-loss failures through `RendererHost`'s accessible recovery screen.
+   Runtime failures preserve controller state for in-page retry; failed dynamic
+   imports require reload. Do not add a hidden renderer fallback.
 7. **No `structuredClone(GameState)` in hot loops.** AI evaluation and render
    paths must not deep-clone the full game state per candidate action.
 8. **Reuse shared helpers and constants.** Use `DEFAULT_CARD_VISUAL_STYLE`,
