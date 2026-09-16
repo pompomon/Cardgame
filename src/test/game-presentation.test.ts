@@ -264,6 +264,40 @@ describe('shared game presentation', () => {
     ).text).toBe(
       'Echo Doppelgänger mimics Rooftop Gargoyle — Banish',
     )
+    expect(presentLegacyLogLine(
+      'Player 1 plays Forest.',
+      viewer,
+    ).text).toBe('P1 summons Gravebloom Dryad')
+    expect(presentLegacyLogLine(
+      'Swamp makes Player 2 discard Plains.',
+      viewer,
+    ).text).toBe(
+      'Memory Vampire drains a memory; P2 discards Echo Doppelgänger',
+    )
+    expect(presentLegacyLogLine(
+      'Player 2 may counter Mountain with Island.',
+      viewer,
+    ).text).toBe(
+      "P2 may intercept P1's summon of Rooftop Gargoyle",
+    )
+    expect(presentLegacyLogLine(
+      'Player 2 counters Mountain.',
+      viewer,
+    ).text).toBe(
+      'P2 intercepts Rooftop Gargoyle by discarding Signal Siren and another card',
+    )
+    expect(presentLegacyLogLine(
+      'Turn 12: Player 1 main phase.',
+      viewer,
+    ).text).toBe('P1 · Turn 12 • Action phase')
+    expect(presentLegacyLogLine(
+      'Player 2 loses by drawing from empty deck.',
+      viewer,
+    ).text).toBe('P2 loses (empty deck)')
+    expect(presentLegacyLogLine(
+      'Player 1 wins.',
+      viewer,
+    ).text).toBe('P1 wins the game')
     const unknown = 'Player 2 custom log: Mountain destroys everything.'
     expect(presentLegacyLogLine(unknown, viewer)).toEqual({
       actor: null,

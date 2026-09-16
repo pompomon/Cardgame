@@ -475,8 +475,9 @@ export function presentLegacyLogLine(
 
   match = /^Turn (\d+): Player ([12]) main phase\.$/.exec(line)
   actor = legacyPlayerIndex(match?.[2])
-  if (actor !== null && match) {
-    return presentLogEvent({ kind: 'turn_start', turn: Number(match[1]), actor }, viewer)
+  const turn = match ? Number(match[1]) : Number.NaN
+  if (actor !== null && Number.isSafeInteger(turn) && turn >= 0) {
+    return presentLogEvent({ kind: 'turn_start', turn, actor }, viewer)
   }
 
   match = /^Player ([12]) draws (Forest|Island|Mountain|Plains|Swamp)\.$/.exec(line)

@@ -442,9 +442,9 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it.each([
-    ['play_land', 'Land played'], ['forest_return', 'Forest returned'],
-    ['swamp_discard', 'Swamp discard'], ['mountain_destroy', 'Mountain destroyed a land'],
-    ['plains_reuse', 'Plains reused a land'], ['counter_resolved', 'Counter resolved'],
+    ['play_land', 'Summoned'], ['forest_return', 'Reclaimed'],
+    ['swamp_discard', 'Memory drained'], ['mountain_destroy', 'Banished to discard pile'],
+    ['plains_reuse', 'Ability mimicked'], ['counter_resolved', 'Intercepted'],
   ] as const)('announces %s separately from controller status and releases it once', (kind, label) => {
     const h = setup()
     h.app.status = 'Storage unavailable'
@@ -764,7 +764,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.disabled).toBe(false)
     expect(h.near.all('three-board-stats')[0].getAttribute('aria-label')).toContain(`Player ${actor + 1}:`)
     const expected = canCounter
-      ? 'Respond to Mountain. Counter Mountain: tap a highlighted card to discard with Island. The first Island (blue frame) is included automatically; pink frames mark your choices.'
+      ? 'Respond to Mountain. Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The first Island (blue frame) is included automatically; pink frames mark your choices.'
       : 'Respond to Mountain. No legal counter cards available.'
     expect(primary.prompt).toBe(expected)
     expect(prompt.children.filter((child) => !child.hidden).map((child) => child.textContent)).toEqual([expected])

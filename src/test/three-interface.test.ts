@@ -476,7 +476,14 @@ describe('Three native markup and decisions', () => {
     view.game!.players[0].graveyardCards = [{ id: 'target-1', name: 'Island' }, { id: 'target-2', name: 'Island' }]
     const targets = threeTargets(view, { ...defaultUi, pendingCardId: 'source' })!
     expect(targets.battlefield).toBe(false)
-    expect(targets.options).toEqual([{ cardName: 'Island', label: 'Island X2', effectTargetId: 'target-1', count: 2 }])
+    expect(targets.options).toEqual([{
+      cardName: 'Island',
+      serializedKey: 'Island',
+      displayName: 'Signal Siren',
+      label: 'Signal Siren X2',
+      effectTargetId: 'target-1',
+      count: 2,
+    }])
   })
 
   it('never widens hidden hand previews and scopes the Swamp reveal to the picker', () => {
@@ -901,7 +908,7 @@ describe('Plains-triggered Forest picker', () => {
     expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
     expect(h.content.querySelector('dialog')?.getAttribute('aria-label'))
       .toBe('Plains reuses Forest: return a graveyard card to your hand')
-    expect(h.content.innerHTML).toContain('Swamp X2')
+    expect(h.content.innerHTML).toContain('Memory Vampire X2')
     expect(h.ui.targetIds.size).toBe(0)
     expect(h.ui.isBlocked()).toBe(true)
     expect(h.content.querySelector('.three-target-panel')).toBeNull()
@@ -927,7 +934,12 @@ describe('Plains-triggered Forest picker', () => {
     })
     const game = h.realController.getViewModel().game!
     expect(game.phase).toBe('main')
-    expect(game.players[actor].handCards).toEqual([{ id: 'grave-1', name: 'Swamp' }])
+    expect(game.players[actor].handCards).toEqual([{
+      id: 'grave-1',
+      name: 'Swamp',
+      serializedKey: 'Swamp',
+      displayName: 'Memory Vampire',
+    }])
     expect(game.players[actor].graveyardCards.map((card) => card.id)).toEqual(['grave-0', 'grave-2'])
     expect(h.content.querySelector('dialog')).toBeNull()
     expect(h.ui.isBlocked()).toBe(false)
@@ -942,7 +954,12 @@ describe('Plains-triggered Forest picker', () => {
     expect(h.controller.submitAction).toHaveBeenCalledTimes(1)
     expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([])
     h.click('[data-target-id="grave-0"]')
-    expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([{ id: 'grave-0', name: 'Island' }])
+    expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([{
+      id: 'grave-0',
+      name: 'Island',
+      serializedKey: 'Island',
+      displayName: 'Signal Siren',
+    }])
     h.dispose()
   })
 

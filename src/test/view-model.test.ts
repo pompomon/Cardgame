@@ -151,6 +151,8 @@ describe('buildViewModel', () => {
     expectAllCardsHidden(snapshot.game!.players[1].handCards)
     state.game.pendingLandPlay!.card.name = 'Forest'
     expect(snapshot.game!.pendingLandPlay!.name).toBe('Swamp')
+    expect(snapshot.game!.pendingLandPlay!.serializedKey).toBe('Swamp')
+    expect(snapshot.game!.pendingLandPlay!.displayName).toBe('Memory Vampire')
   })
 
   it.each(['counter_land', 'pass_response'] as const)('clears the pending snapshot after %s', (type) => {
@@ -353,6 +355,8 @@ describe('buildViewModel hand-redaction', () => {
     expect(labels).not.toContain('Forest')
     expect(serializedProtectedSurfaces).not.toContain('Mountain')
     expect(serializedProtectedSurfaces).not.toContain('Forest')
+    expect(serializedProtectedSurfaces).not.toContain('Rooftop Gargoyle')
+    expect(serializedProtectedSurfaces).not.toContain('Gravebloom Dryad')
   })
 
   it('reveals the AI hand for Swamp targeting in adventure-hvai too', () => {
