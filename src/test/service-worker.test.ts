@@ -8,6 +8,11 @@ const ORIGIN = 'https://example.test'
 const BASE_PATH = '/Cardgame/'
 
 type FetchListener = (event: FetchEventStub) => void
+type LifecycleListener = (event: LifecycleEventStub) => void
+
+type LifecycleEventStub = {
+  waitUntil: (promise: Promise<unknown>) => void
+}
 
 type FetchEventStub = {
   request: Request
@@ -28,6 +33,17 @@ type ServiceWorkerHarness = {
   fetchListener: FetchListener
   fetchMock: ReturnType<typeof vi.fn>
   waitUntilPromises: Promise<unknown>[]
+}
+
+type LifecycleHarness = {
+  activateListener: LifecycleListener
+  cacheAddAll: ReturnType<typeof vi.fn>
+  cacheAddAllCalls: Array<{ cacheName: string; paths: string[] }>
+  cachesDelete: ReturnType<typeof vi.fn>
+  cachesOpen: ReturnType<typeof vi.fn>
+  fetchMock: ReturnType<typeof vi.fn>
+  installListener: LifecycleListener
+  skipWaiting: ReturnType<typeof vi.fn>
 }
 
 function cacheKey(key: Request | string): string {
@@ -113,6 +129,72 @@ function loadServiceWorker(): ServiceWorkerHarness {
   }
 }
 
+function loadServiceWorkerLifecycle(cacheKeys: string[] = []): LifecycleHarness {
+  const listeners = new Map<string, EventListener>()
+  const cacheAddAllCalls: Array<{ cacheName: string; paths: string[] }> = []
+  const cacheAddAll = vi.fn(async (cacheName: string, paths: string[]) => {
+    cacheAddAllCalls.push({ cacheName, paths: [...paths] })
+  })
+  const cachesOpen = vi.fn(async (cacheName: string) => ({
+    addAll: (paths: string[]) => cacheAddAll(cacheName, paths),
+  }))
+  const cachesDelete = vi.fn(async () => true)
+  const caches = {
+    delete: cachesDelete,
+    keys: vi.fn(async () => cacheKeys),
+    match: vi.fn(),
+    open: cachesOpen,
+  }
+  const skipWaiting = vi.fn(async () => undefined)
+  const self = {
+    addEventListener: vi.fn((type: string, listener: EventListener) => {
+      listeners.set(type, listener)
+    }),
+    clients: { claim: vi.fn() },
+    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}`),
+    skipWaiting,
+  }
+  const fetchMock = vi.fn()
+  const source = readFileSync(SERVICE_WORKER_PATH, 'utf8')
+
+  new Function('self', 'caches', 'fetch', 'Response', 'URL', source)(
+    self,
+    caches,
+    fetchMock,
+    Response,
+    URL,
+  )
+
+  const installListener = listeners.get('install')
+  const activateListener = listeners.get('activate')
+  expect(installListener, 'expected service worker to register an install listener').toBeDefined()
+  expect(activateListener, 'expected service worker to register an activate listener').toBeDefined()
+  return {
+    activateListener: activateListener as unknown as LifecycleListener,
+    cacheAddAll,
+    cacheAddAllCalls,
+    cachesDelete,
+    cachesOpen,
+    fetchMock,
+    installListener: installListener as unknown as LifecycleListener,
+    skipWaiting,
+  }
+}
+
+function dispatchLifecycle(listener: LifecycleListener): Promise<unknown> {
+  const pending: { value: Promise<unknown> | null } = { value: null }
+  listener({
+    waitUntil: (promise) => {
+      pending.value = promise
+    },
+  })
+  expect(pending.value, 'expected lifecycle listener to extend the event lifetime').not.toBeNull()
+  if (!pending.value) {
+    throw new Error('Lifecycle listener did not extend the event lifetime')
+  }
+  return pending.value
+}
+
 function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise<Response> | null {
   let responsePromise: Promise<Response> | null = null
   harness.fetchListener({
@@ -126,6 +208,101 @@ function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise
   })
   return responsePromise
 }
+
+describe('service worker lifecycle', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('pre-caches the complete current Vite asset graph before activating', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+      'index.html': {
+        file: 'assets/index-abc123.js',
+        css: ['assets/index-def456.css'],
+      },
+      'src/renderers/three/index.ts': {
+        file: 'assets/three-abc123.js',
+        css: ['assets/three-def456.css'],
+        imports: ['index.html'],
+      },
+    })))
+
+    await dispatchLifecycle(harness.installListener)
+
+    expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/asset-manifest.json', { cache: 'no-store' })
+    expect(harness.cacheAddAllCalls).toEqual([
+      {
+        cacheName: 'cardgame-shell-v9',
+        paths: [
+          '/Cardgame/',
+          '/Cardgame/index.html',
+          '/Cardgame/icons.svg',
+          '/Cardgame/favicon.svg',
+          '/Cardgame/manifest.webmanifest',
+          '/Cardgame/apple-touch-icon.png',
+          '/Cardgame/pwa-192.png',
+          '/Cardgame/pwa-512.png',
+          '/Cardgame/pwa-maskable-512.png',
+          '/Cardgame/404.html',
+        ],
+      },
+      {
+        cacheName: 'cardgame-assets-v9',
+        paths: [
+          '/Cardgame/assets/index-abc123.js',
+          '/Cardgame/assets/index-def456.css',
+          '/Cardgame/assets/three-abc123.js',
+          '/Cardgame/assets/three-def456.css',
+        ],
+      },
+    ])
+    expect(harness.skipWaiting).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the previous worker active when the new asset graph cannot be cached', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+      'index.html': { file: 'assets/index-abc123.js' },
+      'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
+    })))
+    harness.cacheAddAll.mockRejectedValueOnce(new Error('offline'))
+
+    await expect(dispatchLifecycle(harness.installListener)).rejects.toThrow('offline')
+
+    expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('rejects manifest paths outside the built asset directory', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+      'index.html': { file: '../outside.js' },
+      'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
+    })))
+
+    await expect(dispatchLifecycle(harness.installListener)).rejects.toThrow('Invalid asset path')
+
+    expect(harness.cachesOpen).not.toHaveBeenCalled()
+    expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('deletes only obsolete Cardgame caches during activation', async () => {
+    const harness = loadServiceWorkerLifecycle([
+      'cardgame-shell-v8',
+      'cardgame-assets-v8',
+      'cardgame-shell-v9',
+      'cardgame-assets-v9',
+      'another-pages-app-v3',
+    ])
+
+    await dispatchLifecycle(harness.activateListener)
+
+    expect(harness.cachesDelete.mock.calls.map(([cacheName]) => cacheName)).toEqual([
+      'cardgame-shell-v8',
+      'cardgame-assets-v8',
+    ])
+  })
+})
 
 describe('service worker fetch handling', () => {
   beforeEach(() => {

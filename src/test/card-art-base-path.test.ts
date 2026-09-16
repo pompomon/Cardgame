@@ -22,7 +22,7 @@ function runViteBuild(base: string): string {
   outDir = dir
   const result = spawnSync(
     process.execPath,
-    [resolve(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dir, '--emptyOutDir', '--manifest'],
+    [resolve(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dir, '--emptyOutDir'],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, VITE_BASE_PATH: base, NODE_ENV: 'production' },
@@ -75,8 +75,8 @@ describe('card-art base path (production bundle)', () => {
       `built bundle should reference the configured base '${TEST_BASE}'`,
     ).toBe(true)
 
-    const manifest = JSON.parse(readFileSync(join(dir, '.vite', 'manifest.json'), 'utf8')) as Record<
-      string, { file: string; isDynamicEntry?: boolean; imports?: string[] }
+    const manifest = JSON.parse(readFileSync(join(dir, 'asset-manifest.json'), 'utf8')) as Record<
+      string, { file: string; isDynamicEntry?: boolean; imports?: string[]; css?: string[]; assets?: string[] }
     >
     expect(manifest['src/renderers/three/index.ts'].isDynamicEntry).toBe(true)
     expect(Object.keys(manifest).filter((key) =>
@@ -90,5 +90,13 @@ describe('card-art base path (production bundle)', () => {
     }
     visit('index.html')
     expect(initialFiles.has(manifest['src/renderers/three/index.ts'].file)).toBe(false)
+    const cachedAssetPaths = new Set(Object.values(manifest).flatMap((entry) => [
+      entry.file,
+      ...(entry.css ?? []),
+      ...(entry.assets ?? []),
+    ]))
+    expect([...cachedAssetPaths].every((path) => path.startsWith('assets/'))).toBe(true)
+    expect(cachedAssetPaths.has(manifest['src/renderers/three/index.ts'].file)).toBe(true)
+    expect(manifest['src/renderers/three/index.ts'].css?.length).toBeGreaterThan(0)
   }, 120_000)
 })

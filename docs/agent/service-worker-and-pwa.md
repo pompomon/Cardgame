@@ -23,13 +23,23 @@ shows an accessible recovery screen. A failed chunk import requires reload;
 graphics failures after the chunk loads can retry in-page with preserved
 controller state.
 
+The production build emits `asset-manifest.json`. A new service worker reads
+that manifest during installation and fills its versioned asset cache with the
+entry JavaScript/CSS and the lazy Three.js JavaScript/CSS before calling
+`skipWaiting()`. The shell cache is populated with HTML, manifest, and icon
+resources in the same transaction. If any current asset cannot be cached,
+installation fails and the previous worker and cache set remain active.
+Activation deletes only older `cardgame-shell-*` and `cardgame-assets-*`
+caches; never delete unrelated origin-wide Cache Storage entries.
+
 ## Versioning
 
 - Bump `CACHE_VERSION` when replacing same-path card/board images, changing the
   worker's routing behavior, or removing an obsolete asset family.
 - A new deployment manifest alone does not require manual invalidation of every
   hashed asset name.
-- Activation deletes caches whose names do not match the current version.
+- Activation deletes older Cardgame caches only after the new version has
+  successfully cached its complete Vite asset graph.
 
 When changing public assets, update their README and verify old installations
 as well as clean installation.
@@ -65,7 +75,9 @@ After changing `public/sw.js`, base-path logic, or assets:
    worker/cache version.
 5. Inspect requests: hashed Three.js chunks should use `/assets/*`; cards and
    boards should retain the network-first paths.
-6. Confirm no obsolete renderer chunk or removed asset-family request appears.
+6. Confirm `asset-manifest.json` includes the lazy Three.js entry and that an
+   interrupted install leaves the prior worker active.
+7. Confirm no obsolete renderer chunk or removed asset-family request appears.
 
 Do not claim offline verification from a dev-server session; it must exercise
 the built service worker.

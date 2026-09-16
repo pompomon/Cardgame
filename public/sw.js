@@ -1,6 +1,7 @@
 const CACHE_VERSION = 'v9'
 const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
 const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
+const MANAGED_CACHE_PREFIXES = ['cardgame-shell-', 'cardgame-assets-']
 
 function normalizeBasePath(value) {
   if (!value || value === '/') {
@@ -15,7 +16,10 @@ const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
 const FALLBACK_URL = `${BASE_PATH}404.html`
-const CORE = [BASE_PATH, INDEX_URL, FALLBACK_URL]
+const ASSET_MANIFEST_URL = `${BASE_PATH}asset-manifest.json`
+const MAX_MANIFEST_ENTRIES = 1000
+const MAX_MANIFEST_ASSETS = 5000
+const REQUIRED_MANIFEST_ENTRIES = ['index.html', 'src/renderers/three/index.ts']
 const STATIC_FILE_PATHS = new Set([
   '/icons.svg',
   '/favicon.svg',
@@ -26,6 +30,11 @@ const STATIC_FILE_PATHS = new Set([
   '/pwa-maskable-512.png',
   '/404.html',
 ])
+const CORE = [
+  BASE_PATH,
+  INDEX_URL,
+  ...[...STATIC_FILE_PATHS].map((path) => `${BASE_PATH}${path.slice(1)}`),
+]
 
 function toBaseRelativePath(pathname) {
   if (BASE_PATH === '/') {
@@ -40,11 +49,61 @@ function toBaseRelativePath(pathname) {
   return null
 }
 
+function assetPathsFromManifest(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid asset manifest')
+  }
+  if (!REQUIRED_MANIFEST_ENTRIES.every((key) => Object.prototype.hasOwnProperty.call(value, key))) {
+    throw new Error('Asset manifest is incomplete')
+  }
+  const entries = Object.values(value)
+  if (entries.length > MAX_MANIFEST_ENTRIES) {
+    throw new Error('Asset manifest is too large')
+  }
+  const paths = new Set()
+  const addPath = (path) => {
+    if (typeof path !== 'string' || path.length > 512
+      || !/^assets\/[A-Za-z0-9._/-]+$/.test(path) || path.includes('..')) {
+      throw new Error('Invalid asset path')
+    }
+    paths.add(`${BASE_PATH}${path}`)
+    if (paths.size > MAX_MANIFEST_ASSETS) {
+      throw new Error('Asset manifest contains too many files')
+    }
+  }
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error('Invalid asset manifest entry')
+    }
+    addPath(entry.file)
+    for (const field of ['css', 'assets']) {
+      if (entry[field] === undefined) continue
+      if (!Array.isArray(entry[field])) {
+        throw new Error('Invalid asset manifest entry')
+      }
+      for (const path of entry[field]) addPath(path)
+    }
+  }
+  return [...paths]
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) => cache.addAll(CORE)),
+    (async () => {
+      const response = await fetch(ASSET_MANIFEST_URL, { cache: 'no-store' })
+      if (!response.ok) {
+        throw new Error('Asset manifest unavailable')
+      }
+      const assetPaths = assetPathsFromManifest(await response.json())
+      const shellCache = await caches.open(APP_SHELL_CACHE)
+      const assetCache = await caches.open(ASSET_CACHE)
+      await Promise.all([
+        shellCache.addAll(CORE),
+        assetCache.addAll(assetPaths),
+      ])
+      await self.skipWaiting()
+    })(),
   )
-  self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
@@ -52,6 +111,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
+          .filter((key) => MANAGED_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)))
           .filter((key) => key !== APP_SHELL_CACHE && key !== ASSET_CACHE)
           .map((key) => caches.delete(key)),
       ),
