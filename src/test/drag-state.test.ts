@@ -3,7 +3,7 @@ import {
   dragPointerType,
   DragStateMachine,
   TOUCH_DRAG_THRESHOLD_PX,
-} from '../renderers/phaser/drag-state'
+} from '../renderers/shared/drag-state'
 
 describe('DragStateMachine', () => {
   it('detects validated pointer types with a touch fallback', () => {

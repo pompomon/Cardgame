@@ -1,7 +1,7 @@
 import './style.css'
 import { AppController } from './app/controller'
 import { initInstallSupport, subscribeInstallSupport } from './app/install-support'
-import { persistRendererKind, pickRendererKind, readStoredRendererKind } from './app/renderer-selection'
+import { clearLegacyRendererPreference, removeLegacyRendererSearch } from './app/renderer-migration'
 import { joinBasePath } from './app/url-path'
 import { RendererHost } from './renderers/host'
 
@@ -26,16 +26,22 @@ function restoreGithubPagesDeepLink(): void {
 }
 
 restoreGithubPagesDeepLink()
+const rendererFreeSearch = removeLegacyRendererSearch(window.location.search)
+if (rendererFreeSearch !== window.location.search) {
+  window.history.replaceState(
+    null,
+    '',
+    `${window.location.pathname}${rendererFreeSearch}${window.location.hash}`,
+  )
+}
+clearLegacyRendererPreference()
 initInstallSupport()
 
-const rendererKind = pickRendererKind(window.location.search, readStoredRendererKind())
-persistRendererKind(rendererKind)
-
-const controller = new AppController(rendererKind)
+const controller = new AppController()
 const renderer = new RendererHost(app, controller)
 const unsubscribe = controller.subscribe((view) => renderer.render(view))
 const unsubscribeInstall = subscribeInstallSupport(() => renderer.refresh())
-void renderer.start(rendererKind)
+void renderer.start()
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {

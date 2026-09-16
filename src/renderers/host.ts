@@ -1,38 +1,22 @@
 import type { ControllerApi } from '../app/controller'
-import type { AppViewModel, RendererKind } from '../app/types'
-import { DomRenderer } from './dom'
+import type { AppViewModel } from '../app/types'
 import type { AppRenderer } from './types'
 
 export type RendererLoader = (
-  kind: RendererKind,
   onFailure: (message: string) => void,
 ) => Promise<AppRenderer>
 
-export const loadRenderer: RendererLoader = async (kind, onFailure) => {
-  switch (kind) {
-    case 'three': {
-      const { ThreeRenderer } = await import('./three')
-      return new ThreeRenderer(onFailure)
-    }
-    case 'phaser': {
-      const { PhaserRenderer } = await import('./phaser')
-      return new PhaserRenderer()
-    }
-    default:
-      return new DomRenderer()
-  }
+export const loadRenderer: RendererLoader = async (onFailure) => {
+  const { ThreeRenderer } = await import('./three')
+  return new ThreeRenderer(onFailure)
 }
 
-// The controller survives renderer failures, including an in-progress P2P game.
-// The persisted preference stays intact; only the rendered projection changes.
 export class RendererHost {
   private readonly container: HTMLElement
   private readonly controller: ControllerApi
   private readonly loader: RendererLoader
-  private readonly fallback: () => AppRenderer
   private renderer: AppRenderer | null = null
   private currentView: AppViewModel | null = null
-  private kind: RendererKind = 'dom'
   private generation = 0
   private disposed = false
 
@@ -40,28 +24,25 @@ export class RendererHost {
     container: HTMLElement,
     controller: ControllerApi,
     loader: RendererLoader = loadRenderer,
-    fallback: () => AppRenderer = () => new DomRenderer(),
   ) {
     this.container = container
     this.controller = controller
     this.loader = loader
-    this.fallback = fallback
   }
 
-  async start(kind: RendererKind): Promise<void> {
+  async start(): Promise<void> {
     if (this.disposed) return
     const generation = ++this.generation
-    this.renderer?.unmount()
-    this.renderer = null
-    this.kind = kind
+    this.unmountRenderer()
+
     const loading = document.createElement('p')
     loading.setAttribute('role', 'status')
-    loading.textContent = 'Loading renderer…'
+    loading.textContent = 'Loading Three.js renderer…'
     this.container.replaceChildren(loading)
+
     try {
-      const renderer = await this.loader(kind, (message) => {
-        // A graphics callback may fire while its own render stack is active.
-        queueMicrotask(() => this.useFallback(generation, message))
+      const renderer = await this.loader((message) => {
+        queueMicrotask(() => this.showFailure(generation, message))
       })
       if (this.disposed || generation !== this.generation) {
         renderer.unmount()
@@ -71,7 +52,7 @@ export class RendererHost {
       renderer.mount(this.container, this.controller)
       this.refresh()
     } catch {
-      this.useFallback(generation, 'The graphics renderer could not load or initialize.')
+      this.showFailure(generation, 'The Three.js renderer could not load or initialize.')
     }
   }
 
@@ -82,37 +63,71 @@ export class RendererHost {
 
   refresh(): void {
     if (!this.renderer || !this.currentView || this.disposed) return
+    const generation = this.generation
     try {
-      this.renderer.render({ ...this.currentView, renderer: this.kind })
-    } catch (error) {
-      if (this.kind === 'dom') throw error
-      this.useFallback(this.generation, 'The graphics renderer stopped unexpectedly.')
+      this.renderer.render(this.currentView)
+    } catch {
+      this.showFailure(generation, 'The Three.js renderer stopped unexpectedly.')
     }
   }
 
-  private useFallback(generation: number, message: string): void {
-    if (this.disposed || generation !== this.generation || this.kind === 'dom') return
+  private showFailure(generation: number, message: string): void {
+    if (this.disposed || generation !== this.generation) return
     ++this.generation
+    this.unmountRenderer()
+
+    const panel = document.createElement('section')
+    panel.className = 'renderer-failure'
+    panel.setAttribute('role', 'alert')
+    panel.setAttribute('aria-labelledby', 'renderer-failure-title')
+
+    const title = document.createElement('h1')
+    title.id = 'renderer-failure-title'
+    title.textContent = 'WebGL2 renderer unavailable'
+
+    const reason = document.createElement('p')
+    reason.textContent = message
+
+    const preservation = document.createElement('p')
+    preservation.textContent = 'Your current game is preserved in memory. Retry the renderer or reload the page.'
+
+    const actions = document.createElement('div')
+    actions.className = 'renderer-failure__actions'
+
+    const retry = document.createElement('button')
+    retry.type = 'button'
+    retry.textContent = 'Retry renderer'
+    retry.addEventListener('click', () => {
+      void this.start()
+    }, { once: true })
+
+    const reload = document.createElement('button')
+    reload.type = 'button'
+    reload.textContent = 'Reload page'
+    reload.addEventListener('click', () => {
+      window.location.reload()
+    }, { once: true })
+
+    actions.append(retry, reload)
+    panel.append(title, reason, preservation, actions)
+    this.container.replaceChildren(panel)
+    retry.focus()
+  }
+
+  private unmountRenderer(): void {
     try {
       this.renderer?.unmount()
     } catch {
-      // A lost graphics context must not prevent the accessible fallback.
+      // Graphics teardown is best-effort after initialization or context failure.
     }
     this.renderer = null
-    this.container.replaceChildren()
-    this.kind = 'dom'
-    this.renderer = this.fallback()
-    this.renderer.mount(this.container, this.controller)
-    this.controller.reportStatus(`${message} Using the DOM renderer; your game is preserved.`)
-    this.refresh()
   }
 
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
     ++this.generation
-    this.renderer?.unmount()
-    this.renderer = null
+    this.unmountRenderer()
     this.currentView = null
   }
 }

@@ -1,20 +1,61 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ControllerApi } from '../app/controller'
 import type { AppViewModel } from '../app/types'
-import type { AppRenderer } from '../renderers/types'
 import { RendererHost } from '../renderers/host'
+import type { AppRenderer } from '../renderers/types'
 
-vi.mock('../renderers/dom', () => ({ DomRenderer: class {} }))
+class FakeElement {
+  readonly attributes = new Map<string, string>()
+  readonly children: FakeElement[] = []
+  readonly listeners = new Map<string, Set<() => void>>()
+  className = ''
+  id = ''
+  type = ''
+  textContent = ''
+  focused = false
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value)
+  }
+
+  append(...children: FakeElement[]): void {
+    this.children.push(...children)
+  }
+
+  replaceChildren(...children: FakeElement[]): void {
+    this.children.length = 0
+    this.children.push(...children)
+  }
+
+  addEventListener(type: string, listener: () => void): void {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  click(): void {
+    for (const listener of this.listeners.get('click') ?? []) listener()
+  }
+
+  focus(): void {
+    this.focused = true
+  }
+}
+
+function findByText(root: FakeElement, text: string): FakeElement | undefined {
+  if (root.textContent === text) return root
+  return root.children.map((child) => findByText(child, text)).find(Boolean)
+}
 
 function renderer(): AppRenderer {
   return { mount: vi.fn(), render: vi.fn(), unmount: vi.fn() }
 }
 
 function fixture() {
-  vi.stubGlobal('document', { createElement: () => ({ setAttribute: vi.fn(), textContent: '' }) })
-  const container = { replaceChildren: vi.fn() } as unknown as HTMLElement
+  vi.stubGlobal('document', { createElement: () => new FakeElement() })
+  const container = new FakeElement()
   const controller = { reportStatus: vi.fn() } as unknown as ControllerApi
-  const view = { renderer: 'three', status: '', seed: 42, game: { turn: 3 } } as AppViewModel
+  const view = { status: '', seed: 42, game: { turn: 3 } } as AppViewModel
   return { container, controller, view }
 }
 
@@ -25,8 +66,12 @@ describe('renderer host', () => {
     const { container, controller, view } = fixture()
     const graphics = renderer()
     let resolve!: (value: AppRenderer) => void
-    const host = new RendererHost(container, controller, () => new Promise((done) => { resolve = done }))
-    const start = host.start('three')
+    const host = new RendererHost(
+      container as unknown as HTMLElement,
+      controller,
+      () => new Promise((done) => { resolve = done }),
+    )
+    const start = host.start()
     host.render(view)
     const latest = { ...view, seed: 43 }
     host.render(latest)
@@ -39,57 +84,78 @@ describe('renderer host', () => {
     expect(graphics.unmount).toHaveBeenCalledOnce()
   })
 
-  it('falls back on load failure without changing the controller or preferred snapshot', async () => {
-    const { container, controller, view } = fixture()
-    const dom = renderer()
-    const host = new RendererHost(container, controller, async () => { throw new Error('offline chunk') }, () => dom)
-    host.render(view)
-    await host.start('three')
-    expect(dom.mount).toHaveBeenCalledWith(container, controller)
-    expect(dom.render).toHaveBeenCalledWith({ ...view, renderer: 'dom' })
-    expect(view.renderer).toBe('three')
-    expect(controller.reportStatus).toHaveBeenCalledWith(expect.stringContaining('game is preserved'))
-  })
-
-  it('cleans partial initialization and handles runtime failures only once', async () => {
+  it('shows an accessible failure and retries with the preserved snapshot', async () => {
     const { container, controller, view } = fixture()
     const graphics = renderer()
-    const dom = renderer()
+    let attempts = 0
+    const host = new RendererHost(container as unknown as HTMLElement, controller, async () => {
+      attempts += 1
+      if (attempts === 1) throw new Error('offline chunk')
+      return graphics
+    })
+    host.render(view)
+    await host.start()
+
+    const panel = container.children[0]!
+    expect(panel.attributes.get('role')).toBe('alert')
+    expect(findByText(panel, 'WebGL2 renderer unavailable')).toBeDefined()
+    const retry = findByText(panel, 'Retry renderer')!
+    expect(retry.focused).toBe(true)
+    retry.click()
+    await vi.waitFor(() => expect(graphics.mount).toHaveBeenCalledWith(container, controller))
+    expect(graphics.render).toHaveBeenCalledWith(view)
+    expect(controller.reportStatus).not.toHaveBeenCalled()
+  })
+
+  it('handles duplicate runtime failure callbacks only once', async () => {
+    const { container, controller, view } = fixture()
+    const graphics = renderer()
     let fail!: (message: string) => void
-    const host = new RendererHost(container, controller, async (_kind, onFailure) => {
+    const host = new RendererHost(container as unknown as HTMLElement, controller, async (onFailure) => {
       fail = onFailure
       return graphics
-    }, () => dom)
+    })
     host.render(view)
-    await host.start('three')
+    await host.start()
     fail('Context lost.')
     fail('Context lost again.')
     await Promise.resolve()
     expect(graphics.unmount).toHaveBeenCalledOnce()
-    expect(dom.mount).toHaveBeenCalledOnce()
-    expect(dom.render).toHaveBeenCalledWith(expect.objectContaining({ renderer: 'dom', game: view.game }))
-    host.render({ ...view, seed: 100 })
-    expect(dom.render).toHaveBeenLastCalledWith(expect.objectContaining({ seed: 100 }))
+    expect(container.children[0]?.attributes.get('role')).toBe('alert')
   })
 
-  it('falls back when mounting throws', async () => {
+  it('cleans partial initialization when mounting throws', async () => {
     const { container, controller, view } = fixture()
     const graphics = renderer()
     graphics.mount = vi.fn(() => { throw new Error('No WebGL2') })
-    const dom = renderer()
-    const host = new RendererHost(container, controller, async () => graphics, () => dom)
+    const host = new RendererHost(container as unknown as HTMLElement, controller, async () => graphics)
     host.render(view)
-    await host.start('three')
+    await host.start()
     expect(graphics.unmount).toHaveBeenCalledOnce()
-    expect(dom.mount).toHaveBeenCalledOnce()
+    expect(container.children[0]?.attributes.get('role')).toBe('alert')
+  })
+
+  it('moves to recovery when rendering throws', async () => {
+    const { container, controller, view } = fixture()
+    const graphics = renderer()
+    graphics.render = vi.fn(() => { throw new Error('render failed') })
+    const host = new RendererHost(container as unknown as HTMLElement, controller, async () => graphics)
+    host.render(view)
+    await host.start()
+    expect(graphics.unmount).toHaveBeenCalledOnce()
+    expect(findByText(container, 'The Three.js renderer stopped unexpectedly.')).toBeDefined()
   })
 
   it('discards a late load after disposal', async () => {
     const { container, controller } = fixture()
     const graphics = renderer()
     let resolve!: (value: AppRenderer) => void
-    const host = new RendererHost(container, controller, () => new Promise((done) => { resolve = done }))
-    const start = host.start('three')
+    const host = new RendererHost(
+      container as unknown as HTMLElement,
+      controller,
+      () => new Promise((done) => { resolve = done }),
+    )
+    const start = host.start()
     host.dispose()
     resolve(graphics)
     await start

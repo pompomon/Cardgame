@@ -81,7 +81,6 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   if (!state.game) {
     return {
       mode: state.mode,
-      renderer: state.renderer,
       status: state.status,
       offer: state.offer,
       answer: state.answer,
@@ -179,7 +178,6 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
   return {
     mode: state.mode,
-    renderer: state.renderer,
     status: state.status,
     offer: state.offer,
     answer: state.answer,

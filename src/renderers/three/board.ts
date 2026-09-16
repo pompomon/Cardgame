@@ -763,7 +763,7 @@ export class ThreeBoard implements ThreeBoardApi {
     try {
       this.renderer?.render(this.scene, this.camera)
     } catch {
-      this.fail('Three.js rendering failed. Switching to the DOM renderer.')
+      this.fail('Three.js rendering failed.')
       return
     }
     if (this.effects.size || this.drag?.returning || this.cards?.animating || this.background?.animating) this.invalidate()
@@ -772,7 +772,7 @@ export class ThreeBoard implements ThreeBoardApi {
 
   private contextLost = (event: Event): void => {
     event.preventDefault()
-    this.fail('The WebGL context was lost. Switching to the DOM renderer.')
+    this.fail('The WebGL context was lost.')
   }
 
   private fail(message: string): void {

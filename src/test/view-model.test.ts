@@ -12,7 +12,6 @@ function createState(seed: number): AppState {
     offer: '',
     answer: '',
     status: '',
-    renderer: 'dom',
     recording: null,
     replay: null,
     hasSavedRecording: false,

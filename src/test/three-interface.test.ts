@@ -23,7 +23,7 @@ import type { BoardHit } from '../renderers/three/contracts'
 
 function makeView(): AppViewModel {
   return {
-    renderer: 'three', mode: 'local-hvh', seed: 42, status: 'Ready', offer: '', answer: '',
+    mode: 'local-hvh', seed: 42, status: 'Ready', offer: '', answer: '',
     controllers: ['human', 'human'], aiLevel: 'basic', cardVisualStyle: 'classic',
     animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
     p2pConnected: false, p2pStarted: false,
@@ -293,7 +293,7 @@ function setupPlainsForest({
   game.players[1 - actor].hand = counter
     ? [{ id: 'counter-island', name: 'Island', type: 'land' }, { id: 'counter-discard', name: 'Forest', type: 'land' }]
     : []
-  const controller = new AppController('three')
+  const controller = new AppController()
   controller.importRecordingJson(JSON.stringify(createGameRecord(42, 'local-hvh', ['human', 'human'], 'basic', game)))
   controller.exitReplay()
   const h = setup(controller.getViewModel())

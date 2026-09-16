@@ -105,7 +105,6 @@ const battlefieldHit: BoardHit = {
 function createView(): AppViewModel {
   return {
     mode: 'local-hvh',
-    renderer: 'dom',
     status: '',
     offer: '',
     answer: '',

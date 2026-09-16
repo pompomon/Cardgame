@@ -8,7 +8,6 @@ import type { RenderQualityPreference } from './render-quality'
 
 export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai' | 'p2p-host' | 'p2p-join' | 'tutorial'
 export type ControllerKind = 'human' | 'ai' | 'remote'
-export type RendererKind = 'dom' | 'phaser' | 'three'
 // Canonical `AiLevel` definition lives in `src/game/ai-levels.ts` so the
 // engine and AI policies do not have to reach across into `src/app/`
 // (closes the legacy `game/ → app/` seam documented in
@@ -71,7 +70,6 @@ export interface AppState {
   offer: string
   answer: string
   status: string
-  renderer: RendererKind
   recording: GameRecordFile | null
   replay: ReplaySessionState | null
   hasSavedRecording: boolean
@@ -189,7 +187,6 @@ export interface GameUiState {
 
 export interface AppViewModel {
   mode: Mode | null
-  renderer: RendererKind
   status: string
   offer: string
   answer: string

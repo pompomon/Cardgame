@@ -245,7 +245,7 @@ describe('Three.js composition', () => {
       { id: 'island', name: 'Island', type: 'land' },
       { id: 'discard', name: 'Forest', type: 'land' },
     ]
-    const controller = new AppController('three')
+    const controller = new AppController()
     controller.importRecordingJson(JSON.stringify(createGameRecord(42, 'local-hvh', ['human', 'human'], 'basic', game)))
     controller.exitReplay()
     controller.setAnimationSpeed(speed)

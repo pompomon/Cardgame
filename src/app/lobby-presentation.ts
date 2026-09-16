@@ -1,5 +1,3 @@
-import type { AiLevel } from '../game/ai-levels'
-import { AI_LEVEL_OPTIONS } from './ai-levels'
 import type { AdventureUiState, Mode } from './types'
 
 export const LOBBY_MODE_OPTIONS: ReadonlyArray<{ readonly mode: Mode; readonly label: string }> = [
@@ -17,9 +15,4 @@ export function isAdventureResumable(adventure: AdventureUiState | undefined): b
 
 export function hasSavedAdventureRun(adventure: AdventureUiState | undefined): boolean {
   return !!adventure?.hasSavedRun
-}
-
-export function selectedAiLevelLabel(aiLevel: AiLevel | undefined): string {
-  const selected = aiLevel ?? 'basic'
-  return AI_LEVEL_OPTIONS.find((option) => option.value === selected)?.label ?? 'Basic'
 }

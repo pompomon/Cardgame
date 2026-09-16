@@ -3,10 +3,8 @@ import {
   ALL_BOARD_ATLAS_ASSETS,
   ALL_BOARD_BACKGROUND_ASSETS,
   BOARD_BACKGROUND_VARIANTS,
-  BOARD_SPRITE_ATLASES,
   boardAmbienceAtlasLocation,
   boardBackgroundAssetLocation,
-  boardSpriteAtlasLocation,
 } from '../app/board-assets'
 import { BOARD_THEMES } from '../app/board-theme'
 
@@ -30,22 +28,13 @@ describe('board assets', () => {
     }
   })
 
-  it('exposes one ambience atlas per theme and shared UI/effects atlases', () => {
-    expect(ALL_BOARD_ATLAS_ASSETS).toHaveLength(
-      BOARD_THEMES.length + BOARD_SPRITE_ATLASES.length,
-    )
+  it('exposes one ambience atlas per theme', () => {
+    expect(ALL_BOARD_ATLAS_ASSETS).toHaveLength(BOARD_THEMES.length)
     for (const theme of BOARD_THEMES) {
       expect(boardAmbienceAtlasLocation(theme)).toMatchObject({
         name: `ambience:${theme}`,
         textureUrl: `/boards/${theme}/ambience-atlas.png`,
         atlasUrl: `/boards/${theme}/ambience-atlas.json`,
-      })
-    }
-    for (const name of BOARD_SPRITE_ATLASES) {
-      expect(boardSpriteAtlasLocation(name)).toMatchObject({
-        name,
-        textureUrl: `/sprites/${name}-atlas.png`,
-        atlasUrl: `/sprites/${name}-atlas.json`,
       })
     }
   })

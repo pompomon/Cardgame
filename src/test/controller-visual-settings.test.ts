@@ -14,7 +14,7 @@ function installMemoryStorage(): void {
   })
 }
 
-describe('controller renderer settings', () => {
+describe('controller visual settings', () => {
   beforeEach(() => {
     installMemoryStorage()
   })
@@ -23,18 +23,18 @@ describe('controller renderer settings', () => {
     localStorage.setItem('cardgame.board-theme', 'bad-theme')
     localStorage.setItem('cardgame.render-quality', 'bad-quality')
 
-    const controller = new AppController('dom')
+    const controller = new AppController()
     const view = controller.getViewModel()
     expect(view.boardTheme).toBe('classic')
     expect(view.renderQualityPreference).toBe('auto')
   })
 
   it('persists selected board theme and render quality between controller instances', () => {
-    const first = new AppController('dom')
+    const first = new AppController()
     first.setBoardTheme('verdant')
     first.setRenderQualityPreference('balanced')
 
-    const second = new AppController('dom')
+    const second = new AppController()
     const view = second.getViewModel()
     expect(view.boardTheme).toBe('verdant')
     expect(view.renderQualityPreference).toBe('balanced')
@@ -51,6 +51,6 @@ describe('controller renderer settings', () => {
       },
     })
 
-    expect(() => new AppController('dom')).not.toThrow()
+    expect(() => new AppController()).not.toThrow()
   })
 })
