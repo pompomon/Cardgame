@@ -1,7 +1,11 @@
 const CACHE_VERSION = 'v9'
-const APP_SHELL_CACHE = `cardgame-shell-${CACHE_VERSION}`
-const ASSET_CACHE = `cardgame-assets-${CACHE_VERSION}`
-const MANAGED_CACHE_PREFIXES = ['cardgame-shell-', 'cardgame-assets-']
+const RUNTIME_ASSET_VERSION = 'v1'
+const MANAGED_CACHE_PREFIXES = [
+  'cardgame-shell-',
+  'cardgame-build-assets-',
+  'cardgame-runtime-assets-',
+  'cardgame-assets-',
+]
 
 function normalizeBasePath(value) {
   if (!value || value === '/') {
@@ -12,6 +16,15 @@ function normalizeBasePath(value) {
 }
 
 const workerUrl = new URL(self.location.href)
+const requestedBuildId = workerUrl.searchParams.get('build') ?? ''
+const BUILD_ID = /^[A-Za-z0-9._-]{1,128}$/.test(requestedBuildId) ? requestedBuildId : 'legacy'
+const BUILD_CACHE_VERSION = `${CACHE_VERSION}-${BUILD_ID}`
+const APP_SHELL_CACHE = `cardgame-shell-${BUILD_CACHE_VERSION}`
+const BUILD_ASSET_CACHE = `cardgame-build-assets-${BUILD_CACHE_VERSION}`
+const RUNTIME_ASSET_CACHE = `cardgame-runtime-assets-${RUNTIME_ASSET_VERSION}`
+const LEGACY_RUNTIME_ASSET_CACHES = RUNTIME_ASSET_VERSION === 'v1'
+  ? new Set(['cardgame-assets-v8'])
+  : new Set()
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
@@ -85,7 +98,15 @@ function assetPathsFromManifest(value) {
       for (const path of entry[field]) addPath(path)
     }
   }
-  return [...paths]
+  const indexEntry = value['index.html']
+  return {
+    all: [...paths],
+    index: [
+      indexEntry.file,
+      ...(indexEntry.css ?? []),
+      ...(indexEntry.assets ?? []),
+    ].map((path) => `${BASE_PATH}${path}`),
+  }
 }
 
 function isRuntimeAssetPath(path) {
@@ -94,7 +115,7 @@ function isRuntimeAssetPath(path) {
 
 async function migrateRuntimeAssets(targetCache) {
   const sourceNames = (await caches.keys())
-    .filter((name) => name.startsWith('cardgame-assets-') && name !== ASSET_CACHE)
+    .filter((name) => LEGACY_RUNTIME_ASSET_CACHES.has(name))
     .reverse()
   let scannedEntries = 0
   for (const sourceName of sourceNames) {
@@ -119,21 +140,52 @@ async function migrateRuntimeAssets(targetCache) {
   }
 }
 
+function validateIndexAssets(html, manifestAssets) {
+  const allAssets = new Set(manifestAssets.all)
+  for (const expected of manifestAssets.index) {
+    if (!html.includes(expected)) {
+      throw new Error('Index shell does not match asset manifest')
+    }
+  }
+  const attributePattern = /\b(?:src|href)=["']([^"']+)["']/g
+  for (const match of html.matchAll(attributePattern)) {
+    const url = new URL(match[1], `${self.location.origin}${INDEX_URL}`)
+    const relativePath = url.origin === self.location.origin
+      ? toBaseRelativePath(url.pathname)
+      : null
+    if (relativePath?.startsWith('/assets/') && !allAssets.has(url.pathname)) {
+      throw new Error('Index shell references an unknown build asset')
+    }
+  }
+}
+
+async function fetchFresh(path) {
+  const response = await fetch(path, { cache: 'reload' })
+  if (!response.ok) {
+    throw new Error(`Shell resource unavailable: ${path}`)
+  }
+  return response
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
-      const response = await fetch(ASSET_MANIFEST_URL, { cache: 'no-store' })
-      if (!response.ok) {
+      const manifestResponse = await fetch(ASSET_MANIFEST_URL, { cache: 'no-store' })
+      if (!manifestResponse.ok) {
         throw new Error('Asset manifest unavailable')
       }
-      const assetPaths = assetPathsFromManifest(await response.json())
+      const manifestAssets = assetPathsFromManifest(await manifestResponse.json())
+      const coreResponses = await Promise.all(CORE.map(fetchFresh))
+      const indexResponse = coreResponses[CORE.indexOf(INDEX_URL)]
+      validateIndexAssets(await indexResponse.clone().text(), manifestAssets)
       const shellCache = await caches.open(APP_SHELL_CACHE)
-      const assetCache = await caches.open(ASSET_CACHE)
+      const buildAssetCache = await caches.open(BUILD_ASSET_CACHE)
+      const runtimeAssetCache = await caches.open(RUNTIME_ASSET_CACHE)
       await Promise.all([
-        shellCache.addAll(CORE),
-        assetCache.addAll(assetPaths),
+        Promise.all(coreResponses.map((response, index) => shellCache.put(CORE[index], response))),
+        buildAssetCache.addAll(manifestAssets.all),
       ])
-      await migrateRuntimeAssets(assetCache)
+      await migrateRuntimeAssets(runtimeAssetCache)
       await self.skipWaiting()
     })(),
   )
@@ -141,16 +193,20 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys()
+      await Promise.all(
         keys
           .filter((key) => MANAGED_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)))
-          .filter((key) => key !== APP_SHELL_CACHE && key !== ASSET_CACHE)
+          .filter((key) =>
+            key !== APP_SHELL_CACHE
+            && key !== BUILD_ASSET_CACHE
+            && key !== RUNTIME_ASSET_CACHE)
           .map((key) => caches.delete(key)),
-      ),
-    ),
+      )
+      await self.clients.claim()
+    })(),
   )
-  self.clients.claim()
 })
 
 self.addEventListener('fetch', (event) => {
@@ -206,7 +262,7 @@ self.addEventListener('fetch', (event) => {
           if (!response.ok) {
             return
           }
-          return caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, response.clone()))
+          return caches.open(RUNTIME_ASSET_CACHE).then((cache) => cache.put(event.request, response.clone()))
         })
         .catch(() => {
           // Cache persistence is best-effort. A failed network request falls back
@@ -231,7 +287,7 @@ self.addEventListener('fetch', (event) => {
       const response = await fetch(event.request)
       if (response.ok) {
         const clone = response.clone()
-        void caches.open(ASSET_CACHE).then((cache) => cache.put(event.request, clone))
+        void caches.open(BUILD_ASSET_CACHE).then((cache) => cache.put(event.request, clone))
       }
       return response
     }),

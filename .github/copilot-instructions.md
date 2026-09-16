@@ -91,7 +91,8 @@ See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-re
 ## Service worker and base path
 
 - Network-first for `/cards/*` and `/boards/*` (unhashed), cache-first for
-  `/assets/*` (hashed). Bump `CACHE_VERSION` when same-path PNGs are replaced.
+  `/assets/*` (hashed). Bump `RUNTIME_ASSET_VERSION` when same-path PNGs are
+  replaced.
 - Do not precache `404.html` into the SPA shell slot.
 - In `index.html`, use `%BASE_URL%…` or `./…` — not absolute `/…` paths.
 - `joinBasePath` / `404.html` must normalize to exactly one leading `/` and

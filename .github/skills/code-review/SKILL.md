@@ -100,7 +100,7 @@ guidance:
 - Keep public asset caching intentional: network-first for same-path card and
   board assets; cache-first for hashed Vite assets.
 - If same-path public card or board assets change, check whether
-  `CACHE_VERSION` and release notes need updates.
+  `RUNTIME_ASSET_VERSION` and release notes need updates.
 - Do not let `404.html` replace the SPA shell cache entry.
 - Ensure base-path helpers and `404.html` normalize paths without producing
   scheme-relative URLs.

@@ -47,8 +47,8 @@ chain and records failed raster URLs so rerenders do not retry them continuously
 
 The service worker handles `/cards/*` network-first with cache fallback.
 Same-path replacements therefore refresh online while remaining available
-offline. Bump `CACHE_VERSION` when replacing same-path assets to ensure a clean
-upgrade boundary.
+offline. Bump `RUNTIME_ASSET_VERSION` when replacing same-path assets to ensure
+a clean upgrade boundary.
 
 ## Replacement workflow
 

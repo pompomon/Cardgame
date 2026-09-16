@@ -2,6 +2,7 @@ import './style.css'
 import { AppController } from './app/controller'
 import { initInstallSupport, subscribeInstallSupport } from './app/install-support'
 import { clearLegacyRendererPreference, removeLegacyRendererSearch } from './app/renderer-migration'
+import { serviceWorkerRegistrationUrl } from './app/service-worker-registration'
 import { joinBasePath } from './app/url-path'
 import { RendererHost } from './renderers/host'
 
@@ -53,9 +54,7 @@ if (import.meta.hot) {
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    const baseUrl = import.meta.env.BASE_URL
-    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-    const serviceWorkerUrl = `${normalizedBaseUrl}sw.js?base=${encodeURIComponent(normalizedBaseUrl)}`
+    const serviceWorkerUrl = serviceWorkerRegistrationUrl(import.meta.env.BASE_URL, import.meta.url)
     void navigator.serviceWorker.register(serviceWorkerUrl)
   })
 }

@@ -233,7 +233,8 @@ inventory artifacts from the dynamic Copilot workflows separately.
 - First online load primes service-worker caches for app shell and install-critical assets.
 - After first successful load, navigation falls back to cached app shell when offline.
 - `public/404.html` redirects deep links back into the SPA entry so shared non-root paths keep working on GitHub Pages project hosting.
-- If users report stale content after deployment, bump `CACHE_VERSION` in `public/sw.js`, redeploy, then hard-refresh.
+- Hashed app builds rotate caches automatically. If same-path card or board art
+  must be invalidated, bump `RUNTIME_ASSET_VERSION` in `public/sw.js`.
 
 ## PWA assets and metadata maintenance
 
@@ -254,8 +255,10 @@ inventory artifacts from the dynamic Copilot workflows separately.
 
 ## Cache refresh guidance
 
-- Cache versioning is handled in `public/sw.js` via `CACHE_VERSION`.
-- If stale assets are observed after deployment, increment `CACHE_VERSION`, redeploy, and hard-refresh.
+- Shell/build cache schema and runtime-art epochs are handled separately in
+  `public/sw.js`.
+- If same-path card or board assets remain stale, increment
+  `RUNTIME_ASSET_VERSION`, redeploy, and hard-refresh.
 
 ## Rollback / redeploy guidance
 

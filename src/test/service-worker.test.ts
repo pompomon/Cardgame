@@ -102,7 +102,7 @@ function loadServiceWorker(): ServiceWorkerHarness {
       listeners.set(type, listener)
     }),
     clients: { claim: vi.fn() },
-    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}`),
+    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}&build=index-build123.js`),
     skipWaiting: vi.fn(),
   }
   const fetchMock = vi.fn()
@@ -168,7 +168,7 @@ function loadServiceWorkerLifecycle(
       listeners.set(type, listener)
     }),
     clients: { claim: vi.fn() },
-    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}`),
+    location: new URL(`${ORIGIN}${BASE_PATH}sw.js?base=${BASE_PATH}&build=index-build123.js`),
     skipWaiting,
   }
   const fetchMock = vi.fn()
@@ -213,6 +213,35 @@ function dispatchLifecycle(listener: LifecycleListener): Promise<unknown> {
   return pending.value
 }
 
+type BuildManifestFixture = Record<string, {
+  file: string
+  css?: string[]
+  assets?: string[]
+  imports?: string[]
+}>
+
+function mockInstallFetch(
+  harness: LifecycleHarness,
+  manifest: BuildManifestFixture,
+  indexHtml?: string,
+): void {
+  const indexEntry = manifest['index.html']
+  const html = indexHtml ?? [
+    `<script src="${BASE_PATH}${indexEntry.file}"></script>`,
+    ...(indexEntry.css ?? []).map((path) => `<link href="${BASE_PATH}${path}" rel="stylesheet">`),
+    ...(indexEntry.assets ?? []).map((path) => `<link href="${BASE_PATH}${path}">`),
+  ].join('')
+  harness.fetchMock.mockImplementation(async (path: string) => {
+    if (path === `${BASE_PATH}asset-manifest.json`) {
+      return makeResponse(JSON.stringify(manifest))
+    }
+    if (path === BASE_PATH || path === `${BASE_PATH}index.html`) {
+      return makeResponse(html)
+    }
+    return makeResponse(`shell:${path}`)
+  })
+}
+
 function dispatchFetch(harness: ServiceWorkerHarness, request: Request): Promise<Response> | null {
   let responsePromise: Promise<Response> | null = null
   harness.fetchListener({
@@ -234,7 +263,7 @@ describe('service worker lifecycle', () => {
 
   it('pre-caches the complete current Vite asset graph before activating', async () => {
     const harness = loadServiceWorkerLifecycle()
-    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+    mockInstallFetch(harness, {
       'index.html': {
         file: 'assets/index-abc123.js',
         css: ['assets/index-def456.css'],
@@ -244,29 +273,15 @@ describe('service worker lifecycle', () => {
         css: ['assets/three-def456.css'],
         imports: ['index.html'],
       },
-    })))
+    })
 
     await dispatchLifecycle(harness.installListener)
 
     expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/asset-manifest.json', { cache: 'no-store' })
+    expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/index.html', { cache: 'reload' })
     expect(harness.cacheAddAllCalls).toEqual([
       {
-        cacheName: 'cardgame-shell-v9',
-        paths: [
-          '/Cardgame/',
-          '/Cardgame/index.html',
-          '/Cardgame/icons.svg',
-          '/Cardgame/favicon.svg',
-          '/Cardgame/manifest.webmanifest',
-          '/Cardgame/apple-touch-icon.png',
-          '/Cardgame/pwa-192.png',
-          '/Cardgame/pwa-512.png',
-          '/Cardgame/pwa-maskable-512.png',
-          '/Cardgame/404.html',
-        ],
-      },
-      {
-        cacheName: 'cardgame-assets-v9',
+        cacheName: 'cardgame-build-assets-v9-index-build123.js',
         paths: [
           '/Cardgame/assets/index-abc123.js',
           '/Cardgame/assets/index-def456.css',
@@ -275,19 +290,49 @@ describe('service worker lifecycle', () => {
         ],
       },
     ])
+    expect([...harness.cacheEntries.get('cardgame-shell-v9-index-build123.js')!.keys()]).toEqual([
+      '/Cardgame/',
+      '/Cardgame/index.html',
+      '/Cardgame/icons.svg',
+      '/Cardgame/favicon.svg',
+      '/Cardgame/manifest.webmanifest',
+      '/Cardgame/apple-touch-icon.png',
+      '/Cardgame/pwa-192.png',
+      '/Cardgame/pwa-512.png',
+      '/Cardgame/pwa-maskable-512.png',
+      '/Cardgame/404.html',
+    ])
     expect(harness.skipWaiting).toHaveBeenCalledOnce()
   })
 
   it('keeps the previous worker active when the new asset graph cannot be cached', async () => {
     const harness = loadServiceWorkerLifecycle()
-    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+    mockInstallFetch(harness, {
       'index.html': { file: 'assets/index-abc123.js' },
       'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
-    })))
+    })
     harness.cacheAddAll.mockRejectedValueOnce(new Error('offline'))
 
     await expect(dispatchLifecycle(harness.installListener)).rejects.toThrow('offline')
 
+    expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('rejects a fresh manifest paired with a stale index shell', async () => {
+    const harness = loadServiceWorkerLifecycle()
+    mockInstallFetch(
+      harness,
+      {
+        'index.html': { file: 'assets/index-current.js' },
+        'src/renderers/three/index.ts': { file: 'assets/three-current.js' },
+      },
+      '<script src="/Cardgame/assets/index-stale.js"></script>',
+    )
+
+    await expect(dispatchLifecycle(harness.installListener))
+      .rejects.toThrow('Index shell does not match asset manifest')
+
+    expect(harness.cachesOpen).not.toHaveBeenCalled()
     expect(harness.skipWaiting).not.toHaveBeenCalled()
   })
 
@@ -322,14 +367,14 @@ describe('service worker lifecycle', () => {
         ],
       },
     )
-    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+    mockInstallFetch(harness, {
       'index.html': { file: 'assets/index-abc123.js' },
       'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
-    })))
+    })
 
     await dispatchLifecycle(harness.installListener)
 
-    const currentAssets = harness.cacheEntries.get('cardgame-assets-v9')
+    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v1')
     expect(currentAssets?.get(cardUrl)).toBe(card)
     expect(currentAssets?.get(boardUrl)).toBe(board)
     expect(currentAssets?.has(spriteUrl)).toBe(false)
@@ -340,16 +385,20 @@ describe('service worker lifecycle', () => {
     await dispatchLifecycle(harness.activateListener)
 
     expect(harness.cacheEntries.has('cardgame-assets-v8')).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-assets-v9')?.get(cardUrl)).toBe(card)
-    expect(harness.cacheEntries.get('cardgame-assets-v9')?.get(boardUrl)).toBe(board)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(card)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(boardUrl)).toBe(board)
   })
 
   it('deletes only obsolete Cardgame caches during activation', async () => {
     const harness = loadServiceWorkerLifecycle([
       'cardgame-shell-v8',
       'cardgame-assets-v8',
-      'cardgame-shell-v9',
-      'cardgame-assets-v9',
+      'cardgame-shell-v9-index-previous.js',
+      'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-runtime-assets-v0',
+      'cardgame-shell-v9-index-build123.js',
+      'cardgame-build-assets-v9-index-build123.js',
+      'cardgame-runtime-assets-v1',
       'another-pages-app-v3',
     ])
 
@@ -358,6 +407,9 @@ describe('service worker lifecycle', () => {
     expect(harness.cachesDelete.mock.calls.map(([cacheName]) => cacheName)).toEqual([
       'cardgame-shell-v8',
       'cardgame-assets-v8',
+      'cardgame-shell-v9-index-previous.js',
+      'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-runtime-assets-v0',
     ])
   })
 })

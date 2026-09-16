@@ -16,9 +16,9 @@ static assets; rendering does not call an external generation service.
 - `*-mono.png` is used for the monochrome visual style.
 - Keep transparent edges where ambience cells require them.
 
-Same-path replacements require a `CACHE_VERSION` bump in `public/sw.js` because
-board assets are network-first with cache fallback. Hashed JavaScript and CSS
-bundles do not share this rule.
+Same-path replacements require a `RUNTIME_ASSET_VERSION` bump in `public/sw.js`
+because board assets are network-first with cache fallback. Hashed JavaScript
+and CSS bundles do not share this rule.
 
 `src/app/board-assets.ts` defines the canonical base-safe URL mapping. Do not
 duplicate board URLs in renderer code, and keep `import.meta.env.BASE_URL` as a
