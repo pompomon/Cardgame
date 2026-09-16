@@ -1,7 +1,7 @@
 import { CircleGeometry, Group, Mesh, MeshBasicMaterial, PlaneGeometry, RingGeometry } from 'three'
 import { MAX_EFFECT_MS } from '../../app/animation-settings'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
-import { clamp } from '../phaser/layout'
+import { clamp } from '../shared/math'
 import { EFFECT_RENDER_ORDER, type CardAnchor, type RetainedCard } from './card-registry'
 
 export class EffectGeometry {

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   dropFeedbackState,
   effectFeedbackForDescriptor,
-} from '../renderers/phaser/interaction-feedback'
+} from '../renderers/shared/interaction-feedback'
 
-describe('Phaser interaction feedback', () => {
+describe('shared interaction feedback', () => {
   it('maps drag, disabled, and target states without consulting game rules', () => {
     expect(dropFeedbackState({
       dragPhase: 'idle',

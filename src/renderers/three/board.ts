@@ -8,7 +8,7 @@ import { durationMsForSpeed, MAX_QUEUED_EFFECTS } from '../../app/animation-sett
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../../app/types'
 import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
-import { effectFeedbackForDescriptor } from '../phaser/interaction-feedback'
+import { effectFeedbackForDescriptor } from '../shared/interaction-feedback'
 import { ThreeAssets } from './assets'
 import { ThreeBackground } from './background'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'

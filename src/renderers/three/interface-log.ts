@@ -1,7 +1,6 @@
 import type { AppViewModel, GameUiState } from '../../app/types'
-import { escapeHtml, renderLandIcon } from '../dom-utils'
-import { formatLogEventText, formatLogEventTile } from '../phaser/log-events'
-import { MAX_RENDERED_LOG_TILES } from '../phaser/scene-config'
+import { formatLogEventText, formatLogEventTile, MAX_RENDERED_LOG_TILES } from '../../app/log-presentation'
+import { escapeHtml, renderLandIcon } from './native-html'
 
 export function renderThreeLog(game: GameUiState, style: AppViewModel['cardVisualStyle']): string {
   const events = game.events ?? []

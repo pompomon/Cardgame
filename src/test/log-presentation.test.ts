@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { formatLogEventText, formatLogEventTile, isLandTileEvent } from '../renderers/phaser/log-events'
+import { formatLogEventText, formatLogEventTile, isLandTileEvent } from '../app/log-presentation'
 import type { LogEvent } from '../game/types'
 
-describe('phaser log-events', () => {
+describe('log presentation', () => {
   it('renders draw events with land card icon', () => {
     const event: LogEvent = { kind: 'draw', actor: 0, cardName: 'Forest' }
     const tile = formatLogEventTile(event)

@@ -7,7 +7,7 @@ import type { CardVisualStyle } from '../../app/card-visual-styles'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isIntegerInRange, isRecordObject } from '../../app/validators'
 import { isBasicLand } from '../../game/types'
-import { computeCoverFitCrop } from '../phaser/board-background'
+import { computeCoverFitCrop } from '../shared/image-fit'
 
 const FAILED_URL_LIMIT = 128
 const ATLAS_METADATA_LIMIT = 16384

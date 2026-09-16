@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { noteRasterCardArtLoadFailure, renderCardTile, renderLandIcon, resetRasterCardArtLoadFailuresForTests } from '../renderers/dom'
+import {
+  noteRasterCardArtLoadFailure,
+  renderCardTile,
+  renderLandIcon,
+  resetRasterCardArtLoadFailuresForTests,
+} from '../renderers/three/native-html'
 
-describe('DOM renderer card tile output', () => {
+describe('Three.js native card tile output', () => {
   beforeEach(() => {
     resetRasterCardArtLoadFailuresForTests()
   })

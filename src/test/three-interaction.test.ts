@@ -3,7 +3,6 @@ import { DEFAULT_BOARD_THEME } from '../app/board-theme'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../app/render-quality'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
-import * as phaserDrag from '../renderers/phaser/drag-state'
 import * as sharedDrag from '../renderers/shared/drag-state'
 import type { BoardHit, ThreeBoardApi } from '../renderers/three/contracts'
 import { ThreeInteraction } from '../renderers/three/interaction'
@@ -391,11 +390,6 @@ describe('ThreeInteraction', () => {
     h.release()
     expect(h.activate).toHaveBeenCalledOnce()
     h.interaction.dispose()
-  })
-
-  it('keeps the Phaser drag-state exports identical to the shared implementation', () => {
-    expect(phaserDrag).toEqual(sharedDrag)
-    expect(phaserDrag.DragStateMachine).toBe(sharedDrag.DragStateMachine)
   })
 
   it('captures immediately, follows a mouse without a threshold, and submits only once', () => {
