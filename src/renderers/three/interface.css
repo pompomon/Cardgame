@@ -223,9 +223,9 @@
   background: #102532;
 }
 
-/* Native cards also appear in target pickers, outside .dom-cardgame's sizing scope. */
+/* Native card tiles are shared by dialogs, target pickers, previews, and logs. */
 .three-interface .card-tile {
-  --dom-radius: 12px;
+  --three-card-radius: 12px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
@@ -233,14 +233,33 @@
   max-width: 100%;
   min-width: 0;
   min-height: 0;
+  padding: 7px;
+  overflow: hidden;
+  border: 2px solid var(--tile-stroke, #476478);
+  border-radius: var(--three-card-radius);
+  color: var(--tile-text, #f1f5ff);
+  background: var(--tile-fill, #172d3c);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%), 0 12px 24px rgb(0 0 0 / 32%);
 }
 
-.three-interface .card-tile .dom-card__art-frame {
+.three-interface .card-tile--hidden {
+  place-items: center;
+  grid-template-rows: 1fr auto;
+}
+
+.three-interface .three-card__art-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
   width: 100%;
   aspect-ratio: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: calc(var(--three-card-radius) - 6px);
+  background: rgb(0 0 0 / 18%);
 }
 
-.three-interface .card-tile .dom-card__art-frame img {
+.three-interface .three-card__art-frame img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -250,13 +269,81 @@
   image-rendering: pixelated;
 }
 
-.three-interface .card-tile--raster .dom-card__art-frame img {
+.three-interface .card-tile--raster .three-card__art-frame img {
   image-rendering: auto;
 }
 
-.three-interface .card-tile .dom-card__name {
+.three-interface .three-card__name {
+  position: relative;
+  z-index: 1;
   margin: 7px 0 0;
   padding: 7px 8px;
+  min-height: 1.4em;
+  border-radius: 10px;
+  color: var(--tile-text, #f1f5ff);
+  background: rgb(9 13 35 / 78%);
+  font-weight: 800;
+  text-align: center;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 75%);
+}
+
+.three-interface .three-card__back {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100px;
+  border: 2px solid #698698;
+  border-radius: 8px;
+  background: repeating-linear-gradient(45deg, #263b4b, #263b4b 10px, #42667d 10px, #42667d 20px);
+  font: 900 2rem/1 monospace;
+}
+
+.three-interface .three-card--forest {
+  box-shadow: inset 0 0 0 2px rgb(70 210 122 / 28%), 0 12px 24px rgb(0 0 0 / 32%);
+}
+
+.three-interface .three-card--mountain {
+  box-shadow: inset 0 0 0 2px rgb(255 107 90 / 30%), 0 12px 24px rgb(0 0 0 / 32%);
+}
+
+.three-interface .three-card--island {
+  box-shadow: inset 0 0 0 2px rgb(122 162 255 / 32%), 0 12px 24px rgb(0 0 0 / 32%);
+}
+
+.three-interface .three-card--plains {
+  box-shadow: inset 0 0 0 2px rgb(255 226 142 / 34%), 0 12px 24px rgb(0 0 0 / 32%);
+}
+
+.three-interface .three-card--swamp {
+  box-shadow: inset 0 0 0 2px rgb(185 143 255 / 32%), 0 12px 24px rgb(0 0 0 / 32%);
+}
+
+.three-interface .card-tile-icon {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.three-interface .card-tile-icon--raster {
+  image-rendering: auto;
+}
+
+.three-interface .three-install-controls,
+.three-interface .three-p2p {
+  margin-top: 16px;
+  border-top: 1px solid #476478;
+  padding-top: 10px;
+}
+
+.three-interface .three-install-hint {
+  color: #c4d8e5;
+}
+
+.three-interface .three-signal-grid {
+  display: grid;
+  gap: 8px;
 }
 
 .three-interface .three-dialog[data-modal="preview"] {

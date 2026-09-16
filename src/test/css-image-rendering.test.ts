@@ -9,7 +9,9 @@ function normalizeCssWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-const styleCss = normalizeCssWhitespace(readFileSync(join(REPO_ROOT, 'src/style.css'), 'utf8'))
+const styleCss = normalizeCssWhitespace(
+  readFileSync(join(REPO_ROOT, 'src/renderers/three/interface.css'), 'utf8'),
+)
 
 function ruleBody(selector: string): string {
   const normalizedSelector = normalizeCssWhitespace(selector)
@@ -25,22 +27,19 @@ function imageRenderingValues(selector: string): string[] {
 
 describe('CSS image-rendering declarations', () => {
   it('keeps pixelated after crisp-edges for procedural icon fallbacks', () => {
-    expect(imageRenderingValues('.action-icon')).toEqual(['crisp-edges', 'pixelated'])
-    expect(imageRenderingValues('.card-tile-icon')).toEqual(['crisp-edges', 'pixelated'])
+    expect(imageRenderingValues('.three-interface .card-tile-icon')).toEqual(['crisp-edges', 'pixelated'])
   })
 
   it('keeps raster card-style images on smooth scaling overrides', () => {
-    expect(imageRenderingValues('.action-icon.action-icon--raster, .card-tile-icon.card-tile-icon--raster')).toEqual(['auto'])
-    expect(imageRenderingValues('.card-tile--raster .card-tile-bg')).toEqual(['auto'])
+    expect(imageRenderingValues('.three-interface .card-tile-icon--raster')).toEqual(['auto'])
+    expect(imageRenderingValues('.three-interface .card-tile--raster .three-card__art-frame img')).toEqual(['auto'])
   })
 
   it('places raster icon overrides after the base icon rules', () => {
-    const actionIconIndex = styleCss.indexOf('.action-icon {')
-    const cardTileIconIndex = styleCss.indexOf('.card-tile-icon {')
-    const rasterOverrideIndex = styleCss.indexOf('.action-icon.action-icon--raster, .card-tile-icon.card-tile-icon--raster')
+    const cardTileIconIndex = styleCss.indexOf('.three-interface .card-tile-icon {')
+    const rasterOverrideIndex = styleCss.indexOf('.three-interface .card-tile-icon--raster {')
 
-    expect(actionIconIndex).toBeGreaterThanOrEqual(0)
-    expect(cardTileIconIndex).toBeGreaterThan(actionIconIndex)
+    expect(cardTileIconIndex).toBeGreaterThanOrEqual(0)
     expect(rasterOverrideIndex).toBeGreaterThan(cardTileIconIndex)
   })
 })

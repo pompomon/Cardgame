@@ -79,7 +79,9 @@ describe('card-art base path (production bundle)', () => {
       string, { file: string; isDynamicEntry?: boolean; imports?: string[] }
     >
     expect(manifest['src/renderers/three/index.ts'].isDynamicEntry).toBe(true)
-    expect(manifest['src/renderers/phaser/index.ts'].isDynamicEntry).toBe(true)
+    expect(Object.keys(manifest).filter((key) =>
+      key.startsWith('src/renderers/') && key.endsWith('/index.ts'),
+    )).toEqual(['src/renderers/three/index.ts'])
     const initialFiles = new Set<string>()
     const visit = (key: string): void => {
       if (initialFiles.has(manifest[key].file)) return
@@ -88,6 +90,5 @@ describe('card-art base path (production bundle)', () => {
     }
     visit('index.html')
     expect(initialFiles.has(manifest['src/renderers/three/index.ts'].file)).toBe(false)
-    expect(initialFiles.has(manifest['src/renderers/phaser/index.ts'].file)).toBe(false)
   }, 120_000)
 })

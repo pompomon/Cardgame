@@ -6,7 +6,6 @@ const DEFAULT_BASE_REF = 'origin/main'
 const UNHASHED_ASSET_PREFIXES = [
   'public/cards/',
   'public/boards/',
-  'public/sprites/',
 ] as const
 const SERVICE_WORKER_PATH = 'public/sw.js'
 
@@ -55,7 +54,7 @@ export function evaluateCacheVersionCheck({
     message: [
       '[cache-version] unhashed public assets changed without a public/sw.js CACHE_VERSION bump.',
       `Changed unhashed asset files: ${changedAssetPaths.join(', ')}`,
-      'If these are same-path card/board/sprite changes, bump CACHE_VERSION and note the bump in the PR "Risk / migration notes" section.',
+      'If these are same-path card/board changes, bump CACHE_VERSION and note the bump in the PR "Risk / migration notes" section.',
     ].join('\n'),
   }
 }

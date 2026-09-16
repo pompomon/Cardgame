@@ -265,7 +265,7 @@ describe('service worker fetch handling', () => {
 
     it('returns a valid network response when runtime cache persistence fails', async () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/sprites/effects-atlas.png')
+      const request = makeRequest('/Cardgame/boards/classic/ambience-atlas.png')
       const cached = makeResponse('stale atlas')
       const network = makeResponse('network atlas')
       const networkClone = makeResponse('network atlas clone')
@@ -281,17 +281,15 @@ describe('service worker fetch handling', () => {
       expect(harness.cachesMatch).not.toHaveBeenCalled()
     })
 
-    it('uses a cached sprite atlas when offline', async () => {
+    it('does not intercept retired sprite paths', () => {
       const harness = loadServiceWorker()
       const request = makeRequest('/Cardgame/sprites/board-ui-atlas.json')
-      const cached = makeResponse('cached atlas')
-      harness.cachedResponses.set(request.url, cached)
-      harness.fetchMock.mockRejectedValue(new Error('offline'))
 
-      const response = await dispatchFetch(harness, request)
+      const response = dispatchFetch(harness, request)
 
-      expect(response).toBe(cached)
-      expect(harness.cachesMatch).toHaveBeenCalledWith(request)
+      expect(response).toBeNull()
+      expect(harness.fetchMock).not.toHaveBeenCalled()
+      expect(harness.cachesMatch).not.toHaveBeenCalled()
       expect(harness.cachePut).not.toHaveBeenCalled()
     })
   })

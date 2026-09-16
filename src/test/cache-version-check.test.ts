@@ -16,7 +16,6 @@ describe('cache-version unhashed-asset change warning', () => {
   it.each([
     'public/cards/hd/Forest.png',
     'public/boards/classic/background-hd.png',
-    'public/sprites/board-ui-atlas.png',
   ])('warns when %s changes without a CACHE_VERSION bump', (changedPath) => {
     const result = evaluateCacheVersionCheck({
       baseCacheVersion: 'v7',
