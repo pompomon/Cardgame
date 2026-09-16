@@ -3,9 +3,10 @@ import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
 import {
   labelGameAction,
-  projectHandCards,
+  projectPlayersForPresentation,
   revealedEnemyHandForSwamp,
 } from './game-presentation'
+import { displayCardName } from './card-catalog'
 import { getCurrentTutorialStep } from './tutorial'
 import type {
   AdventureUiState,
@@ -132,6 +133,9 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     replayActive,
   )
   const revealEnemyHandForSwamp = revealedEnemyHandForSwampCards !== null
+  const players = projectPlayersForPresentation(game, state.controllers)
+  const pendingLandKey = game.pendingLandPlay?.card.name ?? null
+  const pendingPlainsReuseKey = game.pendingPlainsReuse?.reusedCardName ?? null
 
   const playLandByCard: Record<string, PlayLandOption[]> = {}
   const counterOptions: CounterOption[] = []
@@ -199,41 +203,20 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       actor,
       actorControl,
       canInput,
-      pendingLandName: game.pendingLandPlay?.card.name ?? null,
+      pendingLandName: pendingLandKey,
+      pendingLandDisplayName: pendingLandKey ? displayCardName(pendingLandKey) : null,
       pendingLandPlay: game.pendingLandPlay ? Object.freeze({
         cardId: game.pendingLandPlay.card.id,
         name: game.pendingLandPlay.card.name,
+        serializedKey: game.pendingLandPlay.card.name,
+        displayName: displayCardName(game.pendingLandPlay.card.name),
         actor: game.pendingLandPlay.actor,
       }) : null,
-      pendingPlainsReuseName: game.pendingPlainsReuse?.reusedCardName ?? null,
-      players: [
-        {
-          id: 0,
-          handCount: game.players[0].hand.length,
-          deckCount: game.players[0].deck.length,
-          graveyardCount: game.players[0].graveyard.length,
-          handCards: projectHandCards(game.players[0].hand, state.controllers, 0),
-          graveyardCards: game.players[0].graveyard.map((card) => ({ id: card.id, name: card.name })),
-          battlefield: game.players[0].battlefield.map((entry) => ({
-            instanceId: entry.instanceId,
-            cardId: entry.card.id,
-            name: entry.card.name,
-          })),
-        },
-        {
-          id: 1,
-          handCount: game.players[1].hand.length,
-          deckCount: game.players[1].deck.length,
-          graveyardCount: game.players[1].graveyard.length,
-          handCards: projectHandCards(game.players[1].hand, state.controllers, 1),
-          graveyardCards: game.players[1].graveyard.map((card) => ({ id: card.id, name: card.name })),
-          battlefield: game.players[1].battlefield.map((entry) => ({
-            instanceId: entry.instanceId,
-            cardId: entry.card.id,
-            name: entry.card.name,
-          })),
-        },
-      ],
+      pendingPlainsReuseName: pendingPlainsReuseKey,
+      pendingPlainsReuseDisplayName: pendingPlainsReuseKey
+        ? displayCardName(pendingPlainsReuseKey)
+        : null,
+      players,
       legal: {
         playLandByCard,
         counterOptions,

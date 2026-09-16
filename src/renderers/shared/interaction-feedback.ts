@@ -26,7 +26,7 @@ export function dropFeedbackState(input: DropFeedbackInput): DropFeedbackState {
 }
 
 export function effectFeedbackForDescriptor(
-  descriptor: Pick<VisualEffectDescriptor, 'kind' | 'palette'> | null,
+  descriptor: Pick<VisualEffectDescriptor, 'kind' | 'palette' | 'caption'> | null,
 ): EffectFeedback {
   if (!descriptor) {
     return { label: '', tint: 0xffffff }
@@ -34,19 +34,22 @@ export function effectFeedbackForDescriptor(
   const tint = /^#[0-9a-f]{6}$/i.test(descriptor.palette.secondary)
     ? Number.parseInt(descriptor.palette.secondary.slice(1), 16)
     : 0xffffff
+  if (typeof descriptor.caption === 'string' && descriptor.caption.length > 0) {
+    return { label: descriptor.caption, tint }
+  }
   switch (descriptor.kind) {
     case 'play_land':
-      return { label: 'Land played', tint }
+      return { label: 'Summoned', tint }
     case 'forest_return':
-      return { label: 'Forest returned', tint }
+      return { label: 'Reclaimed', tint }
     case 'swamp_discard':
-      return { label: 'Swamp discard', tint }
+      return { label: 'Memory drained', tint }
     case 'mountain_destroy':
-      return { label: 'Mountain destroyed a land', tint }
+      return { label: 'Banished to discard pile', tint }
     case 'plains_reuse':
-      return { label: 'Plains reused a land', tint }
+      return { label: 'Ability mimicked', tint }
     case 'counter_resolved':
-      return { label: 'Counter resolved', tint }
+      return { label: 'Intercepted', tint }
     default:
       return { label: 'Action resolved', tint }
   }

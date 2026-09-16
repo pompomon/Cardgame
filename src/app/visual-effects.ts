@@ -1,4 +1,5 @@
 import { cardVisualPaletteFor } from './card-visuals'
+import { displayCardName } from './card-catalog'
 import type { CardVisualStyle } from './types'
 import type { BasicLand, LogEvent } from '../game/types'
 
@@ -26,6 +27,9 @@ export interface VisualEffectDescriptor {
   targetCardId?: string
   targetCardName?: BasicLand
   counterCards?: readonly [BasicLand, BasicLand]
+  sourceDisplayName?: string
+  targetDisplayName?: string
+  caption?: string
   visualStyle: CardVisualStyle
   palette: VisualEffectPalette
 }
@@ -46,10 +50,43 @@ function descriptor(
   visualStyle: CardVisualStyle,
   details: Partial<Pick<
     VisualEffectDescriptor,
-    'targetActor' | 'sourceInstanceId' | 'targetInstanceId' | 'targetCardId' | 'targetCardName' | 'counterCards'
+    'targetActor' | 'sourceInstanceId' | 'targetInstanceId' | 'targetCardId' | 'targetCardName'
+      | 'targetDisplayName' | 'counterCards'
   >> = {},
 ): VisualEffectDescriptor {
-  return { kind, actor, land, visualStyle, palette: paletteFor(land, visualStyle), ...details }
+  let caption: string
+  switch (kind) {
+    case 'play_land':
+      caption = 'Summoned'
+      break
+    case 'forest_return':
+      caption = 'Reclaimed'
+      break
+    case 'swamp_discard':
+      caption = 'Memory drained'
+      break
+    case 'mountain_destroy':
+      caption = 'Banished to discard pile'
+      break
+    case 'plains_reuse':
+      caption = 'Ability mimicked'
+      break
+    case 'counter_resolved':
+      caption = 'Intercepted'
+      break
+    default:
+      caption = 'Action resolved'
+  }
+  return {
+    kind,
+    actor,
+    land,
+    sourceDisplayName: displayCardName(land),
+    caption,
+    visualStyle,
+    palette: paletteFor(land, visualStyle),
+    ...details,
+  }
 }
 
 export function visualEffectForEvent(
@@ -65,12 +102,16 @@ export function visualEffectForEvent(
       return descriptor('forest_return', event.actor, 'Forest', visualStyle, {
         sourceInstanceId: event.sourceInstanceId,
         targetCardId: event.targetCardId,
+        targetCardName: event.cardName,
+        targetDisplayName: displayCardName(event.cardName),
       })
     case 'ability_swamp_discard':
       return descriptor('swamp_discard', event.actor, 'Swamp', visualStyle, {
         targetActor: event.target,
         sourceInstanceId: event.sourceInstanceId,
         targetCardId: event.targetCardId,
+        targetCardName: event.cardName,
+        targetDisplayName: displayCardName(event.cardName),
       })
     case 'ability_mountain_destroy':
       return descriptor('mountain_destroy', event.actor, 'Mountain', visualStyle, {
@@ -78,14 +119,19 @@ export function visualEffectForEvent(
         sourceInstanceId: event.sourceInstanceId,
         targetInstanceId: event.targetInstanceId,
         targetCardName: event.cardName,
+        targetDisplayName: displayCardName(event.cardName),
       })
     case 'ability_plains_reuse':
       return descriptor('plains_reuse', event.actor, 'Plains', visualStyle, {
         sourceInstanceId: event.sourceInstanceId,
+        targetCardName: event.reusedName,
+        targetDisplayName: displayCardName(event.reusedName),
       })
     case 'counter_resolved':
       return descriptor('counter_resolved', event.actor, 'Island', visualStyle, {
         counterCards: event.discardCardName ? ['Island', event.discardCardName] : undefined,
+        targetCardName: event.cardName,
+        targetDisplayName: displayCardName(event.cardName),
       })
     default:
       return null

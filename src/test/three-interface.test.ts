@@ -1284,7 +1284,7 @@ describe('Three native interface behavior', () => {
     h.update({ ...view, status: 'Updated status' })
     expect(h.content.querySelector('[data-modal="preview"]')).not.toBeNull()
     const next = makeView()
-    next.game!.players[1].battlefield.shift()
+    next.game!.players[1].battlefield = next.game!.players[1].battlefield.slice(1)
     h.update(next)
     expect(h.content.querySelector('dialog')).toBeNull()
     expect(h.ui.isBlocked()).toBe(false)
@@ -1464,7 +1464,11 @@ describe('Three native interface behavior', () => {
 
     it('does not counter or preview required, missing, hidden or ineligible responder cards', () => {
       const view = responseView()
-      view.game!.players[0].handCards.push({ id: 'hidden', name: HIDDEN_HAND_CARD_NAME }, { id: 'ineligible', name: 'Mountain' })
+      view.game!.players[0].handCards = [
+        ...view.game!.players[0].handCards,
+        { id: 'hidden', name: HIDDEN_HAND_CARD_NAME },
+        { id: 'ineligible', name: 'Mountain' },
+      ]
       view.game!.legal.counterOptions.push({
         action: { type: 'counter_land', actor: 0, discardCardId: 'hidden' }, label: 'Hidden',
       })
