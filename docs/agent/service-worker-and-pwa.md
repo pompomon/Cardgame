@@ -5,7 +5,8 @@ URL handling consistent with Vite's configured non-root base path.
 
 ## Cache strategy
 
-The worker derives its scope prefix from `self.registration.scope`.
+The worker derives its base path from the registration URL's `base` query
+parameter.
 
 - **Vite assets (`/assets/*`)** are hashed and cache-first.
 - **Card art and board imagery (`/cards/*`, `/boards/*`)** keep stable public
@@ -28,8 +29,8 @@ includes the hashed entry filename, so every changed entry build runs a distinct
 installation. The new worker reads a no-store manifest, fetches a fresh HTML
 shell, verifies that its hashed references match, and fills its build cache with
 the entry JavaScript/CSS and lazy Three.js JavaScript/CSS before calling
-`skipWaiting()`. The shell cache is populated with HTML, manifest, and icon
-resources in the same transaction. If any current asset cannot be cached,
+`skipWaiting()`. The shell cache is populated with HTML and static resources in
+the same transaction. If any current asset cannot be cached,
 installation fails and the previous worker and cache set remain active.
 The active worker may return newer network HTML for a navigation, but it never
 stores that unverified response over its manifest-validated offline shell.

@@ -3,17 +3,20 @@
 Three.js loads board backgrounds from:
 
 ```text
-public/boards/<theme>/table-1280x720.png
-public/boards/<theme>/table-1280x720-mono.png
-public/boards/<theme>/ambience-256x256.png
+public/boards/<theme>/background-hd.png
+public/boards/<theme>/background-balanced.png
+public/boards/<theme>/background-low.png
+public/boards/<theme>/background-fallback.png
+public/boards/<theme>/ambience-atlas.png
+public/boards/<theme>/ambience-atlas.json
 ```
 
-The configured themes are `arcane`, `grove`, and `volcanic`. Files are committed
+The configured themes are `classic`, `moonlit`, and `verdant`. Files are committed
 static assets; rendering does not call an external generation service.
 
-- Table images must be PNG, landscape, and at least `1280×720`.
-- Ambience atlases must be PNG and at least `256×256`.
-- `*-mono.png` is used for the monochrome visual style.
+- Background images are landscape PNGs: `1920×1080` (`hd`), `1280×720`
+  (`balanced`), `960×540` (`low`), and `640×360` (`fallback`).
+- Ambience atlases use a `128×64` PNG texture and matching JSON metadata.
 - Keep transparent edges where ambience cells require them.
 
 Same-path replacements require a `RUNTIME_ASSET_VERSION` bump in `public/sw.js`
