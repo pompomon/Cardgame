@@ -8,8 +8,9 @@ This file inlines the highest-signal rules so Copilot has them in every prompt.
 
 ## Stack
 
-Vite + TypeScript SPA. Phaser 4 optional renderer. vitest. Service worker.
-Deployed to GitHub Pages under a non-root base path.
+Vite + TypeScript SPA. Three.js / WebGL2 is the sole browser renderer, with a
+native HTML interface. vitest. Service worker. Deployed to GitHub Pages under a
+non-root base path.
 
 ## Validation sequence (always)
 
@@ -58,21 +59,22 @@ See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-re
   value matching the function's contract — a safe placeholder for
   formatter/rendering paths (never let `formatLogEventTile`/similar return
   `undefined`), or a documented sentinel like `null` for selector paths
-  where "no result" is normal (e.g. `effectDescriptorForEvent`).
+  where "no result" is normal (e.g. `visualEffectForEvent`).
 - **View-model returns immutable snapshots.** Do not pass
   `state.adventure`/`state.game` by reference into renderers.
 - **No string→enum casts.** Use `isAiLevel`, `isCardVisualStyle`, etc.
-- **Phaser 4 masks don't clip in WebGL.** Use `setCrop` on Images and manual
-  viewport culling (`cullRowsToViewport`) for scrollable regions.
+- **WebGL2 failure is explicit.** Preserve controller state and route load,
+  initialization, render, and context-loss failure through `RendererHost`'s
+  accessible retry screen. Never add a hidden renderer fallback.
 - **No `structuredClone(GameState)` in hot loops** (AI evaluation, render).
 - **Reuse shared helpers/constants:** `DEFAULT_CARD_VISUAL_STYLE`, shared
-  `clamp` from `src/renderers/phaser/layout.ts`, `isBasicLand`. Do not
+  `clamp` from `src/renderers/shared/math.ts`, `isBasicLand`. Do not
   hardcode `'classic'` as a fallback.
 - **Status messages:** a later unconditional `state.status = …` overwrites
   the storage-unavailable warning emitted by `setAdventureRun(...)`. Either
   surface the warning last or guard the success message.
 
-## DOM / CSS
+## Native HTML / CSS
 
 - Unique element `id`s; use `class`/`data-action` when the same logical
   button appears in lobby + in-game menu (`abandon-adventure` pattern).
@@ -86,8 +88,8 @@ See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-re
 
 ## Service worker and base path
 
-- Network-first for `/cards/*` (unhashed), cache-first for `/assets/*`
-  (hashed). Bump `CACHE_VERSION` when same-path PNGs are replaced.
+- Network-first for `/cards/*` and `/boards/*` (unhashed), cache-first for
+  `/assets/*` (hashed). Bump `CACHE_VERSION` when same-path PNGs are replaced.
 - Do not precache `404.html` into the SPA shell slot.
 - In `index.html`, use `%BASE_URL%…` or `./…` — not absolute `/…` paths.
 - `joinBasePath` / `404.html` must normalize to exactly one leading `/` and

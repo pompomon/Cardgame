@@ -1,42 +1,34 @@
-# Board and sprite assets
+# Board backgrounds
 
-The Phaser board pipeline loads unhashed public assets from this directory and
-`public/sprites/`. All artwork here is deterministic, repository-original
-placeholder art and can be replaced in place without changing manifest code.
-
-## Background variants
-
-Each board theme (`classic`, `moonlit`, and `verdant`) ships four independently
-loadable 16:9 PNGs:
-
-- `background-hd.png` — 1920×1080
-- `background-balanced.png` — 1280×720
-- `background-low.png` — 960×540
-- `background-fallback.png` — 640×360 minimal placeholder
-
-The Phaser manifest selects the requested quality tier and then falls back
-toward the placeholder. If every PNG fails, gameplay continues with the
-existing procedural board.
-
-Each theme also has a two-frame `ambience-atlas.png` and matching Phaser JSON
-atlas. Repeated board UI and effect sprites live separately in:
+Three.js loads board backgrounds from:
 
 ```text
-public/sprites/
-  board-ui-atlas.png
-  board-ui-atlas.json
-  effects-atlas.png
-  effects-atlas.json
+public/boards/<theme>/table-1280x720.png
+public/boards/<theme>/table-1280x720-mono.png
+public/boards/<theme>/ambience-256x256.png
 ```
 
-Keeping the large backgrounds out of the atlases allows later retained views
-to load and evict one quality tier without discarding shared UI textures.
+The configured themes are `arcane`, `grove`, and `volcanic`. Files are committed
+static assets; rendering does not call an external generation service.
 
-These paths are not content-hashed. The service worker handles `/boards/*` and
-`/sprites/*` network-first, matching `/cards/*`, and keeps the latest successful
-response for offline fallback. Replace-in-place releases must bump
-`CACHE_VERSION` in `public/sw.js`.
+- Table images must be PNG, landscape, and at least `1280×720`.
+- Ambience atlases must be PNG and at least `256×256`.
+- `*-mono.png` is used for the monochrome visual style.
+- Keep transparent edges where ambience cells require them.
 
-The background PNGs are intentionally generated from the preset definitions in
-`tools/board-backgrounds/themes.json` by the manual script
-`npm run generate:board-backgrounds`.
+Same-path replacements require a `CACHE_VERSION` bump in `public/sw.js` because
+board assets are network-first with cache fallback. Hashed JavaScript and CSS
+bundles do not share this rule.
+
+`src/app/board-assets.ts` defines the canonical base-safe URL mapping. Do not
+duplicate board URLs in renderer code, and keep `import.meta.env.BASE_URL` as a
+literal member expression.
+
+After adding or replacing assets:
+
+1. Run asset and base-path tests.
+2. Build with the production non-root base path.
+3. Verify every theme/style online and after a cached offline reload.
+4. Inspect aspect-correct cover cropping at desktop, portrait, and short
+   landscape sizes.
+5. Confirm failed or slow replacements leave the previous background usable.

@@ -53,8 +53,8 @@ documented contract — never an accidental `undefined` fall-through.
   a safe placeholder such as `{ kind: 'unknown', text: '???' }`. Returning
   `undefined` will crash callers downstream.
 - **Selector/lookup paths** where "no result" is a normal outcome (e.g.
-  `effectDescriptorForEvent` in `src/renderers/phaser/effects.ts`, which
-  returns `null` for events with no animation recipe) may return that
+  `visualEffectForEvent` in `src/app/visual-effects.ts`, which returns `null`
+  for events with no animation recipe) may return that
   documented sentinel (`null`/`undefined`) — but the `default:` branch
   must still be present so unknown discriminants take the safe path
   explicitly.

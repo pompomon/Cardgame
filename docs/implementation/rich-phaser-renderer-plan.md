@@ -1,5 +1,12 @@
 # Implement retained-mode rich Phaser board renderer
 
+> [!IMPORTANT]
+> **Superseded on 2026-09-16.** This is a historical implementation record, not
+> current guidance. The Phaser and standalone DOM renderers, renderer selector,
+> and Phaser sprite pipeline were removed when Three.js became the sole browser
+> renderer. Use [`../agent/three-renderer.md`](../agent/three-renderer.md) and
+> [ADR 0002](../agent/adr/0002-three-only-renderer.md) for current requirements.
+
 ## Implementation checklist
 
 - [x] Phase 0 — Establish branch, validation baseline, and acceptance criteria

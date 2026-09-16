@@ -1,5 +1,12 @@
 # Urban-fantasy creature terminology migration plan
 
+> [!IMPORTANT]
+> **Renderer sections partially superseded on 2026-09-16.** The terminology
+> goals and persistence decisions remain historical planning context, but every
+> DOM/Phaser implementation or parity task is obsolete. Future browser work
+> targets the Three.js battlefield and its native HTML interface only; CLI tasks
+> remain separate. See [ADR 0002](../agent/adr/0002-three-only-renderer.md).
+
 ## Status and approved decisions
 
 This is an implementation plan only. It does not change game behavior, persisted
