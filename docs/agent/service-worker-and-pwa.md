@@ -29,8 +29,11 @@ entry JavaScript/CSS and the lazy Three.js JavaScript/CSS before calling
 `skipWaiting()`. The shell cache is populated with HTML, manifest, and icon
 resources in the same transaction. If any current asset cannot be cached,
 installation fails and the previous worker and cache set remain active.
-Activation deletes only older `cardgame-shell-*` and `cardgame-assets-*`
-caches; never delete unrelated origin-wide Cache Storage entries.
+Before activation, cached `/cards/*` and `/boards/*` responses are moved from
+older asset caches into the new cache. Removed renderer chunks, sprite
+responses, and other obsolete entries are deliberately not migrated. Activation
+then deletes only older `cardgame-shell-*` and `cardgame-assets-*` caches; never
+delete unrelated origin-wide Cache Storage entries.
 
 ## Versioning
 

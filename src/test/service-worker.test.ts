@@ -39,6 +39,7 @@ type LifecycleHarness = {
   activateListener: LifecycleListener
   cacheAddAll: ReturnType<typeof vi.fn>
   cacheAddAllCalls: Array<{ cacheName: string; paths: string[] }>
+  cacheEntries: Map<string, Map<string, Response>>
   cachesDelete: ReturnType<typeof vi.fn>
   cachesOpen: ReturnType<typeof vi.fn>
   fetchMock: ReturnType<typeof vi.fn>
@@ -129,19 +130,35 @@ function loadServiceWorker(): ServiceWorkerHarness {
   }
 }
 
-function loadServiceWorkerLifecycle(cacheKeys: string[] = []): LifecycleHarness {
+function loadServiceWorkerLifecycle(
+  cacheKeys: string[] = [],
+  seededEntries: Record<string, Array<[string, Response]>> = {},
+): LifecycleHarness {
   const listeners = new Map<string, EventListener>()
+  const cacheEntries = new Map(
+    Object.entries(seededEntries).map(([name, entries]) => [name, new Map(entries)]),
+  )
   const cacheAddAllCalls: Array<{ cacheName: string; paths: string[] }> = []
   const cacheAddAll = vi.fn(async (cacheName: string, paths: string[]) => {
     cacheAddAllCalls.push({ cacheName, paths: [...paths] })
   })
-  const cachesOpen = vi.fn(async (cacheName: string) => ({
-    addAll: (paths: string[]) => cacheAddAll(cacheName, paths),
-  }))
-  const cachesDelete = vi.fn(async () => true)
+  const cachesOpen = vi.fn(async (cacheName: string) => {
+    const entries = cacheEntries.get(cacheName) ?? new Map<string, Response>()
+    cacheEntries.set(cacheName, entries)
+    return {
+      addAll: (paths: string[]) => cacheAddAll(cacheName, paths),
+      delete: async (key: Request | string) => entries.delete(cacheKey(key)),
+      keys: async () => [...entries.keys()].map((url) => new Request(url)),
+      match: async (key: Request | string) => entries.get(cacheKey(key)),
+      put: async (key: Request | string, response: Response) => {
+        entries.set(cacheKey(key), response)
+      },
+    }
+  })
+  const cachesDelete = vi.fn(async (cacheName: string) => cacheEntries.delete(cacheName))
   const caches = {
     delete: cachesDelete,
-    keys: vi.fn(async () => cacheKeys),
+    keys: vi.fn(async () => [...new Set([...cacheKeys, ...cacheEntries.keys()])]),
     match: vi.fn(),
     open: cachesOpen,
   }
@@ -173,6 +190,7 @@ function loadServiceWorkerLifecycle(cacheKeys: string[] = []): LifecycleHarness 
     activateListener: activateListener as unknown as LifecycleListener,
     cacheAddAll,
     cacheAddAllCalls,
+    cacheEntries,
     cachesDelete,
     cachesOpen,
     fetchMock,
@@ -284,6 +302,46 @@ describe('service worker lifecycle', () => {
 
     expect(harness.cachesOpen).not.toHaveBeenCalled()
     expect(harness.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('moves cached card and board assets before deleting obsolete build caches', async () => {
+    const cardUrl = `${ORIGIN}${BASE_PATH}cards/hd/Forest.png`
+    const boardUrl = `${ORIGIN}${BASE_PATH}boards/classic/background-hd.png`
+    const spriteUrl = `${ORIGIN}${BASE_PATH}sprites/board-ui-atlas.png`
+    const chunkUrl = `${ORIGIN}${BASE_PATH}assets/phaser-retired.js`
+    const card = makeResponse('cached card')
+    const board = makeResponse('cached board')
+    const harness = loadServiceWorkerLifecycle(
+      ['cardgame-assets-v8'],
+      {
+        'cardgame-assets-v8': [
+          [cardUrl, card],
+          [boardUrl, board],
+          [spriteUrl, makeResponse('retired sprite')],
+          [chunkUrl, makeResponse('retired chunk')],
+        ],
+      },
+    )
+    harness.fetchMock.mockResolvedValue(makeResponse(JSON.stringify({
+      'index.html': { file: 'assets/index-abc123.js' },
+      'src/renderers/three/index.ts': { file: 'assets/three-abc123.js' },
+    })))
+
+    await dispatchLifecycle(harness.installListener)
+
+    const currentAssets = harness.cacheEntries.get('cardgame-assets-v9')
+    expect(currentAssets?.get(cardUrl)).toBe(card)
+    expect(currentAssets?.get(boardUrl)).toBe(board)
+    expect(currentAssets?.has(spriteUrl)).toBe(false)
+    expect(currentAssets?.has(chunkUrl)).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-assets-v8')?.has(cardUrl)).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-assets-v8')?.has(boardUrl)).toBe(false)
+
+    await dispatchLifecycle(harness.activateListener)
+
+    expect(harness.cacheEntries.has('cardgame-assets-v8')).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-assets-v9')?.get(cardUrl)).toBe(card)
+    expect(harness.cacheEntries.get('cardgame-assets-v9')?.get(boardUrl)).toBe(board)
   })
 
   it('deletes only obsolete Cardgame caches during activation', async () => {

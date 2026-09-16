@@ -19,6 +19,7 @@ const FALLBACK_URL = `${BASE_PATH}404.html`
 const ASSET_MANIFEST_URL = `${BASE_PATH}asset-manifest.json`
 const MAX_MANIFEST_ENTRIES = 1000
 const MAX_MANIFEST_ASSETS = 5000
+const MAX_MIGRATION_CACHE_ENTRIES = 10000
 const REQUIRED_MANIFEST_ENTRIES = ['index.html', 'src/renderers/three/index.ts']
 const STATIC_FILE_PATHS = new Set([
   '/icons.svg',
@@ -87,6 +88,37 @@ function assetPathsFromManifest(value) {
   return [...paths]
 }
 
+function isRuntimeAssetPath(path) {
+  return path.startsWith('/cards/') || path.startsWith('/boards/')
+}
+
+async function migrateRuntimeAssets(targetCache) {
+  const sourceNames = (await caches.keys())
+    .filter((name) => name.startsWith('cardgame-assets-') && name !== ASSET_CACHE)
+    .reverse()
+  let scannedEntries = 0
+  for (const sourceName of sourceNames) {
+    const sourceCache = await caches.open(sourceName)
+    for (const request of await sourceCache.keys()) {
+      scannedEntries++
+      if (scannedEntries > MAX_MIGRATION_CACHE_ENTRIES) {
+        throw new Error('Previous asset caches contain too many entries')
+      }
+      const url = new URL(request.url)
+      const relativePath = url.origin === self.location.origin
+        ? toBaseRelativePath(url.pathname)
+        : null
+      if (!relativePath || !isRuntimeAssetPath(relativePath)) continue
+      if (!await targetCache.match(request)) {
+        const response = await sourceCache.match(request)
+        if (!response) continue
+        await targetCache.put(request, response)
+      }
+      await sourceCache.delete(request)
+    }
+  }
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
@@ -101,6 +133,7 @@ self.addEventListener('install', (event) => {
         shellCache.addAll(CORE),
         assetCache.addAll(assetPaths),
       ])
+      await migrateRuntimeAssets(assetCache)
       await self.skipWaiting()
     })(),
   )
@@ -159,8 +192,7 @@ self.addEventListener('fetch', (event) => {
   // Public art paths are intentionally unhashed, so they use network-first
   // refresh with cache fallback. Vite's content-hashed /assets/* stay
   // cache-first below.
-  const isRuntimeAsset = relativePath.startsWith('/cards/')
-    || relativePath.startsWith('/boards/')
+  const isRuntimeAsset = isRuntimeAssetPath(relativePath)
   const isStaticAsset = relativePath.startsWith('/assets/') || STATIC_FILE_PATHS.has(relativePath)
   if (!isStaticAsset && !isRuntimeAsset) {
     return
