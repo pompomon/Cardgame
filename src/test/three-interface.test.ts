@@ -472,7 +472,7 @@ describe('Three native markup and decisions', () => {
     expect(battlefield.battlefield).toBe(true)
     expect(battlefield.options).toHaveLength(2)
     expect(renderThreeHud(view, { ...defaultUi, pendingCardId: 'source' }))
-      .toContain('<p class="three-required-prompt">Choose Mountain target</p>')
+      .toContain('<p class="three-required-prompt">Choose an opposing creature to send to its owner&#39;s discard pile.</p>')
     view.game!.players[0].handCards[0].name = 'Forest'
     view.game!.players[0].graveyardCards = [{ id: 'target-1', name: 'Island' }, { id: 'target-2', name: 'Island' }]
     const targets = threeTargets(view, { ...defaultUi, pendingCardId: 'source' })!
@@ -499,7 +499,8 @@ describe('Three native markup and decisions', () => {
     const html = renderThreeInterface(view, defaultUi)
     expect(html).toContain('Private Swamp name')
     expect(html).toContain('data-modal="target"')
-    expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Swamp discard target</p>')
+    expect(renderThreeHud(view, defaultUi))
+      .toContain('<p class="three-required-prompt">Choose a card from your opponent&#39;s hand for them to discard.</p>')
     expect(html).not.toContain('Hidden card')
     expect(html).not.toContain('Preview Private Swamp name')
   })
@@ -512,7 +513,8 @@ describe('Three native markup and decisions', () => {
     const target = threeTargets(view, defaultUi)!
     expect(target.battlefield).toBe(true)
     expect(target.options).toHaveLength(1)
-    expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Plains reuse target for Mountain</p>')
+    expect(renderThreeHud(view, defaultUi))
+      .toContain('<p class="three-required-prompt">Choose an opposing creature to send to its owner&#39;s discard pile.</p>')
     expect(renderThreeInterface(view, defaultUi)).toContain('data-action="target" data-target-id="target-1"')
     expect(renderThreeInterface(view, { ...defaultUi, phaseDismissed: true })).toContain('data-action="resume-target"')
   })
@@ -908,7 +910,7 @@ describe('Plains-triggered Forest picker', () => {
     expect(game.players[0].handCards).toEqual([])
     expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
     expect(h.content.querySelector('dialog')?.getAttribute('aria-label'))
-      .toBe('Plains reuses Forest: return a graveyard card to your hand')
+      .toBe('Choose a creature in your discard pile to return to your hand.')
     expect(h.content.innerHTML).toContain('Memory Vampire X2')
     expect(h.ui.targetIds.size).toBe(0)
     expect(h.ui.isBlocked()).toBe(true)

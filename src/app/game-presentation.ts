@@ -350,7 +350,8 @@ function presentedLogEntry(
 }
 
 function canSeeDrawnCard(viewer: LogViewerContext, actor: number): boolean {
-  return !shouldHideHandFromViewer(viewer.controllers, actor)
+  return viewer.controllers[actor] === 'human'
+    || viewer.controllers[1 - actor] !== 'human'
 }
 
 export function presentLogEvent(

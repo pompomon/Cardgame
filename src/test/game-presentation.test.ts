@@ -189,6 +189,25 @@ describe('shared game presentation', () => {
     expect(JSON.stringify(hiddenDraw)).not.toContain('Mountain')
     expect(JSON.stringify(hiddenDraw)).not.toContain('Rooftop Gargoyle')
 
+    for (const [controllers, actor] of [
+      [['human', 'remote'], 1],
+      [['remote', 'human'], 0],
+    ] as const) {
+      const remoteDraw = presentLogEvent(
+        { kind: 'draw', actor, cardName: 'Mountain' },
+        { controllers },
+      )
+      expect(remoteDraw).toEqual({
+        actor,
+        label: 'draws a card',
+        text: `P${actor + 1} draws a card`,
+        card: null,
+        translated: true,
+      })
+      expect(JSON.stringify(remoteDraw)).not.toContain('Mountain')
+      expect(JSON.stringify(remoteDraw)).not.toContain('Rooftop Gargoyle')
+    }
+
     expect(presentLogEvent({
       kind: 'play_land',
       actor: 0,
