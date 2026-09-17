@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getCurrentTutorialStep } from '../app/tutorial'
+import { getCurrentTutorialStep, TUTORIAL_STEPS } from '../app/tutorial'
 import { tutorialPolicy } from '../game/ai-policies/tutorial'
 import { createTutorialDecks } from '../game/cards'
 import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
@@ -97,6 +97,21 @@ function playAiTurn(state: GameState): GameState {
 }
 
 describe('tutorial mode', () => {
+  it('uses the approved creature terminology for every hint', () => {
+    expect(TUTORIAL_STEPS.map(({ id, hint }) => [id, hint])).toEqual([
+      ['play-island-first', 'Summon Signal Siren. Your opponent has a Signal Siren and will intercept your first summon.'],
+      ['island-countered', 'Your opponent may intercept now by discarding Signal Siren and one other card. If they do, your Signal Siren goes to your discard pile.'],
+      ['play-forest', 'Summon Gravebloom Dryad to reclaim Signal Siren from your discard pile.'],
+      ['play-island-draw', 'Summon Signal Siren again. Listen In draws one card.'],
+      ['play-mountain', "Summon Rooftop Gargoyle, then choose an opposing creature to banish to its owner's discard pile."],
+      ['play-swamp', "Summon Memory Vampire, then choose one card from your opponent's hand for them to discard."],
+      ['swamp-target', "Choose a card from your opponent's hand for them to discard."],
+      ['play-plains', 'Summon Echo Doppelgänger, then choose one of your other creatures whose ability it should mimic.'],
+      ['plains-target', 'Choose one of your other creatures whose ability Echo Doppelgänger should repeat.'],
+      ['win', 'You won by summoning all five creature types to your board. Tutorial complete!'],
+    ])
+  })
+
   it('builds deterministic scripted tutorial decks', () => {
     const [playerDeck, aiDeck] = createTutorialDecks()
     const [playerDeckAgain, aiDeckAgain] = createTutorialDecks()
@@ -162,7 +177,7 @@ describe('tutorial mode', () => {
 
     state = applyAction(state, findPlayAction(state, 'Island'))
     expect(getCurrentTutorialStep(state)?.id).toBe('island-countered')
-    expect(getCurrentTutorialStep(state)?.hint).toContain('can counter your Island now')
+    expect(getCurrentTutorialStep(state)?.hint).toContain('may intercept now')
     state = takeAiAction(state)
     expect(state.players[0].graveyard.some((card) => card.name === 'Island')).toBe(true)
     expect(getCurrentTutorialStep(state)?.id).toBeUndefined()
