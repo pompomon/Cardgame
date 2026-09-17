@@ -470,6 +470,41 @@ describe('Three native markup and decisions', () => {
     expect(html).not.toContain('three-log-art')
   })
 
+  it.each([
+    { mode: 'p2p-host' as const, controllers: ['human', 'remote'] as const, actor: 1, source: 'structured' as const },
+    { mode: 'p2p-host' as const, controllers: ['human', 'remote'] as const, actor: 1, source: 'legacy' as const },
+    { mode: 'p2p-join' as const, controllers: ['remote', 'human'] as const, actor: 0, source: 'structured' as const },
+    { mode: 'p2p-join' as const, controllers: ['remote', 'human'] as const, actor: 0, source: 'legacy' as const },
+  ])('uses imported $mode recording visibility for $source Replay Log draws', ({
+    mode,
+    controllers,
+    actor,
+    source,
+  }) => {
+    const view = makeView()
+    view.replay.active = true
+    view.game!.isReplay = true
+    view.recording.metadata = {
+      seed: 42,
+      mode,
+      controllers: [...controllers],
+      aiLevel: 'basic',
+      completed: true,
+    }
+    if (source === 'structured') {
+      view.game!.events = [{ kind: 'draw', actor, cardName: 'Mountain' }]
+    } else {
+      view.game!.events = []
+      view.game!.log = [`Player ${actor + 1} draws Mountain.`]
+    }
+
+    const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+
+    expect(html.match(new RegExp(`P${actor + 1} draws a card`, 'g'))).toHaveLength(1)
+    expect(html).not.toContain('Rooftop Gargoyle')
+    expect(html).not.toContain('three-log-art')
+  })
+
   it('places menu/status/winner in the HUD and keeps native controls out of document flow', () => {
     const view = responseView()
     view.game!.winnerText = 'Winner announcement'
