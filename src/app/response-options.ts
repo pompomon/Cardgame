@@ -38,7 +38,8 @@ function serializedKeyForCard(card: UiCard): BasicLand | null {
 
 export function buildCounterHandOptions(game: ResponseHandGame): CounterHandOptions {
   const hand = game.players[game.actor]?.handCards ?? []
-  const requiredIslandId = hand.find((card) => serializedKeyForCard(card) === 'Island')?.id ?? null
+  const requiredCard = hand.find((card) => serializedKeyForCard(card) === 'Island')
+  const requiredIslandId = requiredCard?.id ?? null
   const choices: CounterHandChoice[] = []
 
   for (const option of game.legal.counterOptions) {
@@ -61,11 +62,12 @@ export function buildCounterHandOptions(game: ResponseHandGame): CounterHandOpti
 
   const targetName = game.pendingLandDisplayName
     ?? (isBasicLand(game.pendingLandName) ? displayCardName(game.pendingLandName) : 'the creature')
+  const requiredCardDisplayName = requiredCard?.displayName ?? displayCardName('Island')
   return {
     requiredIslandId,
-    requiredCardDisplayName: displayCardName('Island'),
-    instruction: `Intercept the summon of ${targetName}? Discard Signal Siren and one other highlighted card, or choose Let It Through.`,
-    requiredCardHint: 'Signal Siren is included automatically; choose the other card to discard.',
+    requiredCardDisplayName,
+    instruction: `Intercept the summon of ${targetName}? Discard ${requiredCardDisplayName} and one other highlighted card, or choose Let It Through.`,
+    requiredCardHint: `${requiredCardDisplayName} is included automatically; choose the other card to discard.`,
     choices,
     canPass: game.legal.canPassResponse,
     passLabel: 'Let It Through',

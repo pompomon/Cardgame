@@ -105,12 +105,19 @@ describe('response options', () => {
     })
 
     expect(options.requiredIslandId).toBe('required')
+    expect(options.requiredCardDisplayName).toBe('Localized Signal Siren')
     expect(options.choices[0]).toMatchObject({
       cardId: 'discard',
       serializedKey: 'Forest',
       displayName: 'Localized Gravebloom Dryad',
       a11yLabel: 'Accessible intercept choice',
     })
+    expect(options.instruction).toBe(
+      'Intercept the summon of Gravebloom Dryad? Discard Localized Signal Siren and one other highlighted card, or choose Let It Through.',
+    )
+    expect(options.requiredCardHint).toBe(
+      'Localized Signal Siren is included automatically; choose the other card to discard.',
+    )
     expect(options.canPass).toBe(false)
     expect(options.passLabel).toBe('Let It Through')
   })
