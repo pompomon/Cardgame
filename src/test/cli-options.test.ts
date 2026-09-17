@@ -83,7 +83,7 @@ describe('CLI options', () => {
     const context = makeIo(false)
     const exitCode = await runCli(['--help'], context.io)
     expect(exitCode).toBe(0)
-    expect(context.output.join('\n')).toContain('Cardgame terminal CLI')
+    expect(context.output.join('\n')).toContain('Urban Creatures terminal CLI')
     expect(context.errors).toEqual([])
   })
 

@@ -1,6 +1,6 @@
 import { isBasicLand, type BasicLand, type LogEvent } from '../game/types'
 import { cardCatalogEntry, displayCardName } from './card-catalog'
-import { shouldHideHandFromViewer } from './game-presentation'
+import { displayGamePhase, shouldHideHandFromViewer } from './game-presentation'
 import type { ControllerKind } from './types'
 
 export const MAX_RENDERED_LOG_TILES = 200
@@ -64,10 +64,10 @@ export function presentLogEvent(
     case 'turn_start':
       return presentedLogEntry(
         event.actor,
-        `Turn ${event.turn} • Action phase`,
+        `Turn ${event.turn} • ${displayGamePhase('main')}`,
         null,
         '▶',
-        `P${event.actor + 1} · Turn ${event.turn} • Action phase`,
+        `P${event.actor + 1} · Turn ${event.turn} • ${displayGamePhase('main')}`,
       )
     case 'draw':
       if (!canSeeDrawnCard(viewer, event.actor)) {

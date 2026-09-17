@@ -1,5 +1,6 @@
 import { activeActor } from '../app/active-actor'
 import {
+  displayGamePhase,
   labelGameActions,
   projectPlayersForPresentation,
   revealedEnemyHandForSwamp,
@@ -37,7 +38,7 @@ function controllerLabel(controller: ControllerKind): string {
   return controller === 'human' ? 'Human' : 'AI'
 }
 
-function formatBattlefield(names: readonly string[]): string {
+function formatBoard(names: readonly string[]): string {
   return names.length > 0 ? names.join(', ') : 'empty'
 }
 
@@ -51,6 +52,12 @@ function formatHand(names: readonly string[]): string {
   return names.join(', ')
 }
 
+function displayCardName(card: { readonly name: string; readonly displayName?: string }): string {
+  return card.name === HIDDEN_HAND_CARD_NAME
+    ? HIDDEN_HAND_CARD_NAME
+    : card.displayName ?? card.name
+}
+
 export function formatTerminalGameState(
   state: GameState,
   controllers: readonly [ControllerKind, ControllerKind],
@@ -58,8 +65,8 @@ export function formatTerminalGameState(
 ): readonly string[] {
   const players = projectPlayersForPresentation(state, controllers)
   const phaseSummary = state.phase === 'gameOver'
-    ? `Turn ${state.turn} | Phase: ${state.phase}`
-    : `Turn ${state.turn} | Phase: ${state.phase} | Active: Player ${actor + 1} (${controllerLabel(controllers[actor])})`
+    ? `Turn ${state.turn} | Phase: ${displayGamePhase(state.phase)}`
+    : `Turn ${state.turn} | Phase: ${displayGamePhase(state.phase)} | Active: Player ${actor + 1} (${controllerLabel(controllers[actor])})`
   const lines = [
     '',
     phaseSummary,
@@ -67,14 +74,14 @@ export function formatTerminalGameState(
   for (const player of players) {
     lines.push(
       `Player ${player.id + 1} (${controllerLabel(controllers[player.id])})`
-      + ` | Deck: ${player.deckCount} | Hand: ${player.handCount} | Graveyard: ${player.graveyardCount}`,
+      + ` | Deck: ${player.deckCount} | Hand: ${player.handCount} | Discard pile: ${player.graveyardCount}`,
     )
-    lines.push(`  Hand: ${formatHand(player.handCards.map((card) => card.name))}`)
-    lines.push(`  Battlefield: ${formatBattlefield(player.battlefield.map((card) => card.name))}`)
+    lines.push(`  Hand: ${formatHand(player.handCards.map(displayCardName))}`)
+    lines.push(`  Board: ${formatBoard(player.battlefield.map(displayCardName))}`)
   }
   const revealed = revealedEnemyHandForSwamp(state, actor, controllers)
   if (revealed) {
-    lines.push(`  Revealed discard targets: ${revealed.map((card) => card.name).join(', ') || 'none'}`)
+    lines.push(`  Drain Memory targets: ${revealed.map(displayCardName).join(', ') || 'none'}`)
   }
   return Object.freeze(lines)
 }
@@ -137,11 +144,11 @@ export async function runGameSession(
 
     const actor = activeActor(state)
     if (!canAct(state, actor)) {
-      throw new Error(`Player ${actor + 1} cannot act during phase ${state.phase}.`)
+      throw new Error(`Player ${actor + 1} cannot act during ${displayGamePhase(state.phase)}.`)
     }
     const legalActions = getLegalActions(state, actor)
     if (legalActions.length === 0) {
-      throw new Error(`No legal actions are available for Player ${actor + 1} during phase ${state.phase}.`)
+      throw new Error(`No legal actions are available for Player ${actor + 1} during ${displayGamePhase(state.phase)}.`)
     }
     const revealEnemyHand = revealedEnemyHandForSwamp(state, actor, controllers) !== null
     const labeledActions = labelGameActions(

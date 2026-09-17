@@ -3,6 +3,7 @@ import type {
   BattlefieldCard,
   Card,
   GameAction,
+  GamePhase,
   GameState,
   PlayerState,
 } from '../game/types'
@@ -23,6 +24,21 @@ export interface PlayerPresentationSummary {
 export interface LabeledGameAction {
   readonly action: GameAction
   readonly label: string
+}
+
+export function displayGamePhase(phase: GamePhase): string {
+  switch (phase) {
+    case 'main':
+    case 'plains_target':
+    case 'swamp_target':
+      return 'Action phase'
+    case 'respond':
+      return 'Interception window'
+    case 'gameOver':
+      return 'Game over'
+    default:
+      return 'Unknown phase'
+  }
 }
 
 export type VisibleUiCard = Readonly<UiCard & {

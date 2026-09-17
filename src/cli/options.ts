@@ -126,7 +126,7 @@ export function parseCliArgs(
 
 export function formatCliHelp(): string {
   return [
-    'Cardgame terminal CLI',
+    'Urban Creatures terminal CLI',
     '',
     'Usage:',
     '  cardgame-cli --mode <human-vs-ai|ai-vs-ai> [options]',
