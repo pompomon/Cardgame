@@ -1444,15 +1444,25 @@ describe('Three native interface behavior', () => {
 
   describe('Three Island hand responses', () => {
     it('keeps the board response non-modal and exposes distinct native choices in the Cards dialog', () => {
-      const h = setup(responseView())
+      const view = responseView()
+      view.game!.players[0].handCards = view.game!.players[0].handCards.map((card) =>
+        card.id === 'required-island'
+          ? { ...card, serializedKey: 'Island', displayName: 'Localized Signal Siren' }
+          : card)
+      const h = setup(view)
       expect(h.ui.isBlocked()).toBe(false)
       expect(h.content.querySelector('dialog')).toBeNull()
       expect(h.content.querySelector('[data-action="counter_land"]')).toBeNull()
+      expect(h.ui.primaryAction?.prompt).toContain(
+        'The blue frame marks Localized Signal Siren, which is included automatically',
+      )
       h.openCards()
       expect(h.ui.isBlocked()).toBe(true)
       expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
       expect(h.content.querySelectorAll('[data-action="respond-card"]')).toHaveLength(3)
-      expect(h.content.innerHTML).toContain('Island included automatically')
+      expect(h.content.innerHTML).toContain(
+        'Localized Signal Siren is included automatically; choose the other card to discard.',
+      )
       expect(h.content.innerHTML).toContain('aria-live="polite"')
       expect(h.ui.response?.requiredIslandId).toBe('required-island')
       expect(h.ui.targetIds.size).toBe(0)

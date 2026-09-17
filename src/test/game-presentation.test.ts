@@ -159,6 +159,39 @@ describe('shared game presentation', () => {
     expect(revealedEnemyHandForSwamp(state, 0, HUMAN_VS_AI)).toBeNull()
   })
 
+  it('redacts the remote hand for both P2P seats', () => {
+    for (const [controllers, remotePlayer] of [
+      [['human', 'remote'], 1],
+      [['remote', 'human'], 0],
+    ] as const) {
+      const state = createInitialGame(4)
+      state.players[remotePlayer].hand = [
+        { id: 'remote-secret', name: 'Mountain', type: 'land' },
+      ]
+
+      const players = projectPlayersForPresentation(state, controllers)
+      expect(players[remotePlayer].handCards).toEqual([{
+        id: 'remote-secret',
+        name: HIDDEN_HAND_CARD_NAME,
+        displayName: 'Hidden card',
+      }])
+      expect(JSON.stringify(players[remotePlayer].handCards)).not.toContain('Mountain')
+      expect(JSON.stringify(players[remotePlayer].handCards)).not.toContain('Rooftop Gargoyle')
+
+      const humanPlayer = 1 - remotePlayer
+      expect(revealedEnemyHandForSwamp(state, humanPlayer, controllers)).toBeNull()
+      state.phase = 'swamp_target'
+      state.pendingSwampDiscard = { actor: humanPlayer }
+      expect(revealedEnemyHandForSwamp(state, humanPlayer, controllers)?.[0]).toMatchObject({
+        id: 'remote-secret',
+        serializedKey: 'Mountain',
+        displayName: 'Rooftop Gargoyle',
+      })
+      expect(projectPlayersForPresentation(state, controllers)[remotePlayer].handCards[0]?.name)
+        .toBe(HIDDEN_HAND_CARD_NAME)
+    }
+  })
+
   it('projects structured events through catalog copy without revealing hidden draws', () => {
     const viewer = { controllers: HUMAN_VS_AI }
     const visibleDraw = presentLogEvent(

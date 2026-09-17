@@ -764,7 +764,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.disabled).toBe(false)
     expect(h.near.all('three-board-stats')[0].getAttribute('aria-label')).toContain(`Player ${actor + 1}:`)
     const expected = canCounter
-      ? 'Respond to Rooftop Gargoyle. Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The first Island (blue frame) is included automatically; pink frames mark your choices.'
+      ? 'Respond to Rooftop Gargoyle. Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The blue frame marks Signal Siren, which is included automatically; pink frames mark your choices.'
       : 'Respond to Rooftop Gargoyle. No legal counter cards available.'
     expect(primary.prompt).toBe(expected)
     expect(prompt.children.filter((child) => !child.hidden).map((child) => child.textContent)).toEqual([expected])

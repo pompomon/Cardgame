@@ -85,7 +85,7 @@ export function shouldHideHandFromViewer(
   controllers: readonly [ControllerKind, ControllerKind],
   playerIndex: number,
 ): boolean {
-  return controllers[playerIndex] === 'ai' && controllers[1 - playerIndex] === 'human'
+  return controllers[playerIndex] !== 'human' && controllers[1 - playerIndex] === 'human'
 }
 
 export function projectHandCards(
@@ -350,8 +350,7 @@ function presentedLogEntry(
 }
 
 function canSeeDrawnCard(viewer: LogViewerContext, actor: number): boolean {
-  return viewer.controllers[actor] === 'human'
-    || viewer.controllers[1 - actor] !== 'human'
+  return !shouldHideHandFromViewer(viewer.controllers, actor)
 }
 
 export function presentLogEvent(

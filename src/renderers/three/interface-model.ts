@@ -88,7 +88,7 @@ export function threeResponse(view: AppViewModel, ui: InterfaceUi): CounterHandO
     ...response,
     choices: response.requiredIslandId === null ? [] : response.choices.filter((choice) =>
       choice.cardName !== HIDDEN_HAND_CARD_NAME && choice.action.actor === game.actor),
-    instruction: `${response.instruction} The first Island (blue frame) is included automatically; pink frames mark your choices.`,
+    instruction: `${response.instruction} The blue frame marks ${response.requiredCardDisplayName}, which is included automatically; pink frames mark your choices.`,
   }
 }
 
@@ -266,8 +266,11 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
           const choice = owner === game.actor ? responseChoices.get(card.id) : undefined
           if (responding && response) {
             const required = response.requiredIslandId === card.id
-            return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(card.name)}</span>
-              ${required ? '<span>Island included automatically</span>' : choice
+            const cardDisplayName = required
+              ? response.requiredCardDisplayName
+              : choice?.displayName ?? card.displayName ?? card.name
+            return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(cardDisplayName)}</span>
+              ${required ? `<span>${escapeHtml(response.requiredCardHint)}</span>` : choice
                 ? button('respond-card', choice.a11yLabel, false, ` data-card-id="${escapeHtml(card.id)}" data-owner="${owner}"`)
                 : '<span>Not available for this counter</span>'}</div>`
           }
