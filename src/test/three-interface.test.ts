@@ -422,19 +422,52 @@ describe('Three native markup and decisions', () => {
     view.game!.log = ['Legacy line must not duplicate events']
     const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
     expect(html).toContain('3 older entries omitted')
-    expect(html).not.toContain('Turn 2 • main phase')
-    expect(html).toContain('Turn 3 • main phase')
+    expect(html).not.toContain('Turn 2 • Action phase')
+    expect(html).toContain('Turn 3 • Action phase')
     expect(html).not.toContain('Legacy line must not duplicate events')
     expect(html.match(/class="three-log-entry"/g)).toHaveLength(200)
     expect(html.match(/class="three-log-visual" aria-hidden="true"/g)).toHaveLength(200)
     expect(html.match(/class="three-sr-only"/g)).toHaveLength(200)
     expect(html).toContain('class="three-log-actor" data-active="false">P2')
     expect(html).toContain('class="three-log-art"')
-    expect(html.match(/P2 plays Island/g)).toHaveLength(1)
+    expect(html.match(/P2 summons Signal Siren/g)).toHaveLength(1)
     expect(html).not.toContain('role="log"')
     expect(html.match(/aria-live="polite"/g)).toHaveLength(1)
     const empty = renderThreeInterface(makeView(), { ...defaultUi, menuOpen: true })
     expect(empty).toContain('No log entries yet.')
+  })
+
+  it('translates known legacy Replay Log lines and preserves escaped unknown text', () => {
+    const view = makeView()
+    view.game!.events = []
+    view.game!.log = [
+      'Player 1 plays Plains.',
+      "Mountain destroys Player 2's Island.",
+      '<custom log>',
+    ]
+
+    const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+
+    expect(html).toContain('P1 summons Echo Doppelgänger')
+    expect(html).toContain(
+      'Rooftop Gargoyle banishes P2&#39;s Signal Siren to its owner&#39;s discard pile',
+    )
+    expect(html).toContain('class="three-log-art"')
+    expect(html).toContain('&lt;custom log&gt;')
+    expect(html).not.toContain('<custom log>')
+  })
+
+  it('omits hidden draw names and art from the Replay Log', () => {
+    const view = makeView()
+    view.controllers = ['human', 'ai']
+    view.game!.events = [{ kind: 'draw', actor: 1, cardName: 'Mountain' }]
+    view.game!.log = ['Player 2 draws Mountain.']
+
+    const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+
+    expect(html.match(/P2 draws a card/g)).toHaveLength(1)
+    expect(html).not.toContain('Rooftop Gargoyle')
+    expect(html).not.toContain('three-log-art')
   })
 
   it('places menu/status/winner in the HUD and keeps native controls out of document flow', () => {

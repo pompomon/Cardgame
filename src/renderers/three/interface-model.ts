@@ -206,7 +206,7 @@ function renderMenu(view: AppViewModel): string {
     ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
     : button('back-to-lobby', view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby')
       + (view.mode === 'tutorial' || view.replay.active ? '' : button('rematch', 'Rematch'))}</div>
-    ${renderThreeLog(view.game!, view.cardVisualStyle)}
+    ${renderThreeLog(view.game!, view.cardVisualStyle, view.controllers)}
     ${renderThreeSettings(view)}${renderInstallControls()}${renderRecorder(view)}${renderReplay(view)}`)
 }
 
