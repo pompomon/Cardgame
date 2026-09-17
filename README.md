@@ -1,4 +1,6 @@
-# Cardgame
+# Urban Creatures
+
+Urban-fantasy 2-player card game with local AI and optional P2P mode.
 
 ## Contributing / Agent docs
 
@@ -7,6 +9,29 @@ topic deep-dives under [`docs/agent/`](docs/agent/) (architecture,
 validation/build, state and persistence, Three.js renderer and native interface,
 service worker and PWA, testing, PR workflow). Read those before making
 non-trivial changes; they capture recurring review findings.
+
+## Terminology migration status
+
+The tutorial, Replay Log, and terminal CLI use the shared creature catalog:
+
+| Stable internal key | Player-facing creature | Ability |
+| --- | --- | --- |
+| `Forest` | Gravebloom Dryad | Reclaim |
+| `Island` | Signal Siren | Listen In / Intercept |
+| `Mountain` | Rooftop Gargoyle | Banish |
+| `Plains` | Echo Doppelgänger | Mimic |
+| `Swamp` | Memory Vampire | Drain Memory |
+
+This is a phased presentation migration. General Three.js battlefield/native
+controls and browser metadata are updated in the next phase, while replacement
+creature artwork lands separately. Until then, those surfaces and fallback art
+may still show legacy land terminology.
+
+The engine and compatibility formats intentionally retain `BasicLand`, the
+`Forest`/`Island`/`Mountain`/`Plains`/`Swamp` keys, `Card.type: 'land'`, phase and
+action discriminants, and fields such as `battlefield` and `graveyard`. Saved
+games, recordings, and P2P packets continue to use those stable identifiers;
+player-facing code maps them through `src/app/card-catalog.ts`.
 
 ## Browser rendering
 
@@ -30,15 +55,16 @@ query parameters and the hash, then discards the old stored renderer preference.
   cross a threshold; tapping opens a preview. Multiple legal targets are selected
   before committing the action.
 - Both battlefield headers show Hand, Deck, and Graveyard counts. **End Turn**
-  or **Pass Response** appears in the near-player battlefield header when
+  or **Let It Through** appears in the near-player battlefield header when
   appropriate; neither is available during replay or after game over.
-- When responding with Island, click or tap an eligible card in your hand to
-  counter immediately, discarding that card plus the first Island automatically.
-  Pink rings mark eligible discards; the blue-ringed Island is included, not a
-  separate choice. Another Island can be the additional discard. The hand overlaps
-  cards as needed while keeping every choice on the table. Use **Pass Response**
-  to decline. With animations enabled, a resolved counter briefly shows both
-  discarded cards over the countering player's battlefield; the animation-speed
+- When responding with Signal Siren, click or tap an eligible card in your hand
+  to intercept immediately, discarding that card plus the first mechanical
+  `Island` automatically. Pink rings mark eligible discards; the blue-ringed
+  Signal Siren is included, not a separate choice. Another Signal Siren can be
+  the additional discard. The hand overlaps cards as needed while keeping every
+  choice on the table. Use **Let It Through** to decline. With animations
+  enabled, a resolved interception briefly shows both discarded cards over the
+  intercepting player's battlefield; the animation-speed
   setting controls the display duration, and **Off** skips it.
 - **Game Menu → Cards & keyboard controls** opens the viewport-bounded native
   controls. Native play and target buttons provide the same actions without
@@ -50,8 +76,11 @@ query parameters and the hash, then discards the old stored renderer preference.
   native keyboard controls still open the explicit preview. Hover is suppressed
   while dragging, choosing responses/targets, or using a menu.
 - The game menu contains a collapsible **Replay Log** with the latest 200
-  structured events, or legacy text for older recordings. Scrolling back stops
-  automatic following; **Follow latest** resumes it.
+  structured events. It uses creature names and Summon, Reclaim, Banish, Drain
+  Memory, Mimic, and Intercept wording. Known legacy text entries are translated
+  for display without rewriting recordings; unknown text remains unchanged.
+  Opponent draw names and art remain hidden. Scrolling back stops automatic
+  following; **Follow latest** resumes it.
 - Card rows remain centered and overlap cards as needed so the entire hand and
   both battlefields stay visible without pagination. Short landscape layouts
   place player information beside the cards. Active gameplay fits the viewport
@@ -78,8 +107,9 @@ query parameters and the hash, then discards the old stored renderer preference.
   - **HD**
   - **Monochrome**
 - Style selection is a client-side presentation preference persisted in browser local storage.
-- Three.js uses static PNG card art for each style in `ALL_CARD_ART`; its native
-  interface falls back to generated land icons when an image cannot load.
+- Three.js uses static PNG card art for each style in `ALL_CARD_ART`; until the
+  separate creature-art phase lands, its native interface still falls back to
+  legacy-identity procedural icons when an image cannot load.
 - Core implementation lives in `src/app/card-visuals.ts` and style options in `src/app/card-visual-styles.ts`.
 
 ## AI levels
@@ -102,7 +132,8 @@ query parameters and the hash, then discards the old stored renderer preference.
 
 ## Terminal CLI
 
-The game can run without a browser or network connection in two modes:
+The Urban Creatures terminal CLI can run without a browser or network connection
+in two modes:
 
 - `human-vs-ai` — the human is Player 1 and the AI is Player 2.
 - `ai-vs-ai` — both players use the same selected AI level.
@@ -123,8 +154,12 @@ Supported options:
 - `--help`
 
 Omit `--mode` in an interactive terminal to choose from a prompt. During a
-Human vs AI game, enter a displayed action number or `q` to quit. The AI hand
-stays hidden except while the human is choosing a legal Swamp discard target.
+Human vs AI game, enter a displayed action number or `q` to quit. Terminal state
+uses creature names, **Board**, **Discard pile**, **Action phase**, and
+**Interception window**, while action choices use the same Summon, Mimic, Drain
+Memory, Intercept, and Let It Through labels as shared presentation code. The AI
+hand stays hidden except while the human is choosing a legal Drain Memory target,
+including when Echo Doppelgänger mimics that ability.
 
 To create a copyable standalone Node ESM bundle:
 
