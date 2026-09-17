@@ -104,7 +104,12 @@ export interface ReplaySessionState {
 
 export interface UiCard {
   id: string
+  /** Legacy mechanical identity retained until renderer migration is complete. */
   name: string
+  /** Stable serialized identity. Hidden cards intentionally omit this field. */
+  serializedKey?: BasicLand
+  /** Catalog-backed player-facing name. */
+  displayName?: string
 }
 
 // Sentinel `UiCard.name` value used by the view model to redact an AI's hand
@@ -117,7 +122,10 @@ export const HIDDEN_HAND_CARD_NAME = '__hidden__'
 export interface UiBattlefieldCard {
   instanceId: string
   cardId: string
+  /** Legacy mechanical identity retained until renderer migration is complete. */
   name: string
+  serializedKey?: BasicLand
+  displayName?: string
 }
 
 export interface PlayerUiState {
@@ -125,9 +133,9 @@ export interface PlayerUiState {
   handCount: number
   deckCount: number
   graveyardCount: number
-  handCards: UiCard[]
-  graveyardCards: UiCard[]
-  battlefield: UiBattlefieldCard[]
+  handCards: readonly UiCard[]
+  graveyardCards: readonly UiCard[]
+  battlefield: readonly UiBattlefieldCard[]
 }
 
 export interface PlayLandOption {
@@ -153,9 +161,17 @@ export interface GameUiState {
   actorControl: ControllerKind
   canInput: boolean
   pendingLandName: string | null
-  pendingLandPlay: Readonly<{ cardId: string; name: BasicLand; actor: number }> | null
+  pendingLandDisplayName?: string | null
+  pendingLandPlay: Readonly<{
+    cardId: string
+    name: BasicLand
+    serializedKey?: BasicLand
+    displayName?: string
+    actor: number
+  }> | null
   pendingPlainsReuseName: BasicLand | null
-  players: [PlayerUiState, PlayerUiState]
+  pendingPlainsReuseDisplayName?: string | null
+  players: readonly [PlayerUiState, PlayerUiState]
   legal: {
     playLandByCard: Record<string, PlayLandOption[]>
     counterOptions: CounterOption[]

@@ -66,6 +66,7 @@ function responseView(actor = 0): AppViewModel {
   game.actor = actor
   game.phase = 'respond'
   game.pendingLandName = 'Swamp'
+  game.pendingLandDisplayName = 'Memory Vampire'
   game.pendingLandPlay = { cardId: 'pending-swamp', name: 'Swamp', actor: 1 - actor }
   game.players[actor].handCards = [
     { id: 'required-island', name: 'Island' },
@@ -471,12 +472,19 @@ describe('Three native markup and decisions', () => {
     expect(battlefield.battlefield).toBe(true)
     expect(battlefield.options).toHaveLength(2)
     expect(renderThreeHud(view, { ...defaultUi, pendingCardId: 'source' }))
-      .toContain('<p class="three-required-prompt">Choose Mountain target</p>')
+      .toContain('<p class="three-required-prompt">Choose an opposing creature to send to its owner&#39;s discard pile.</p>')
     view.game!.players[0].handCards[0].name = 'Forest'
     view.game!.players[0].graveyardCards = [{ id: 'target-1', name: 'Island' }, { id: 'target-2', name: 'Island' }]
     const targets = threeTargets(view, { ...defaultUi, pendingCardId: 'source' })!
     expect(targets.battlefield).toBe(false)
-    expect(targets.options).toEqual([{ cardName: 'Island', label: 'Island X2', effectTargetId: 'target-1', count: 2 }])
+    expect(targets.options).toEqual([{
+      cardName: 'Island',
+      serializedKey: 'Island',
+      displayName: 'Signal Siren',
+      label: 'Signal Siren X2',
+      effectTargetId: 'target-1',
+      count: 2,
+    }])
   })
 
   it('never widens hidden hand previews and scopes the Swamp reveal to the picker', () => {
@@ -491,7 +499,8 @@ describe('Three native markup and decisions', () => {
     const html = renderThreeInterface(view, defaultUi)
     expect(html).toContain('Private Swamp name')
     expect(html).toContain('data-modal="target"')
-    expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Swamp discard target</p>')
+    expect(renderThreeHud(view, defaultUi))
+      .toContain('<p class="three-required-prompt">Choose a card from your opponent&#39;s hand for them to discard.</p>')
     expect(html).not.toContain('Hidden card')
     expect(html).not.toContain('Preview Private Swamp name')
   })
@@ -504,7 +513,8 @@ describe('Three native markup and decisions', () => {
     const target = threeTargets(view, defaultUi)!
     expect(target.battlefield).toBe(true)
     expect(target.options).toHaveLength(1)
-    expect(renderThreeHud(view, defaultUi)).toContain('<p class="three-required-prompt">Choose Plains reuse target for Mountain</p>')
+    expect(renderThreeHud(view, defaultUi))
+      .toContain('<p class="three-required-prompt">Choose an opposing creature to send to its owner&#39;s discard pile.</p>')
     expect(renderThreeInterface(view, defaultUi)).toContain('data-action="target" data-target-id="target-1"')
     expect(renderThreeInterface(view, { ...defaultUi, phaseDismissed: true })).toContain('data-action="resume-target"')
   })
@@ -523,7 +533,7 @@ describe('Three battlefield primary action', () => {
   it('projects one phase-specific action and removes duplicate lower-panel buttons', () => {
     for (const [view, type, label] of [
       [makeView(), 'end_turn', 'End Turn'],
-      [responseView(), 'pass_response', 'Pass Response'],
+      [responseView(), 'pass_response', 'Let It Through'],
     ] as const) {
       const action = threePrimaryAction(view, defaultUi)
       expect(action).toMatchObject({ type, label, disabled: false, decision: threeDecisionKey(view) })
@@ -607,7 +617,7 @@ describe('Three battlefield primary action', () => {
     view.game!.legal.counterOptions = []
     const h = setup(view)
     const action = h.ui.primaryAction!
-    expect(action.prompt).toContain('Respond to Swamp. No legal counter cards available.')
+    expect(action.prompt).toContain('Respond to Memory Vampire. No legal counter cards available.')
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.controller.submitAction.mockImplementation(() => h.latest({ ...view, game: { ...view.game!, canInput: false } }))
     h.ui.activatePrimaryAction(action)
@@ -900,8 +910,8 @@ describe('Plains-triggered Forest picker', () => {
     expect(game.players[0].handCards).toEqual([])
     expect(h.content.querySelector('[data-modal="target"]')?.open).toBe(true)
     expect(h.content.querySelector('dialog')?.getAttribute('aria-label'))
-      .toBe('Plains reuses Forest: return a graveyard card to your hand')
-    expect(h.content.innerHTML).toContain('Swamp X2')
+      .toBe('Choose a creature in your discard pile to return to your hand.')
+    expect(h.content.innerHTML).toContain('Memory Vampire X2')
     expect(h.ui.targetIds.size).toBe(0)
     expect(h.ui.isBlocked()).toBe(true)
     expect(h.content.querySelector('.three-target-panel')).toBeNull()
@@ -927,7 +937,12 @@ describe('Plains-triggered Forest picker', () => {
     })
     const game = h.realController.getViewModel().game!
     expect(game.phase).toBe('main')
-    expect(game.players[actor].handCards).toEqual([{ id: 'grave-1', name: 'Swamp' }])
+    expect(game.players[actor].handCards).toEqual([{
+      id: 'grave-1',
+      name: 'Swamp',
+      serializedKey: 'Swamp',
+      displayName: 'Memory Vampire',
+    }])
     expect(game.players[actor].graveyardCards.map((card) => card.id)).toEqual(['grave-0', 'grave-2'])
     expect(h.content.querySelector('dialog')).toBeNull()
     expect(h.ui.isBlocked()).toBe(false)
@@ -942,7 +957,12 @@ describe('Plains-triggered Forest picker', () => {
     expect(h.controller.submitAction).toHaveBeenCalledTimes(1)
     expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([])
     h.click('[data-target-id="grave-0"]')
-    expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([{ id: 'grave-0', name: 'Island' }])
+    expect(h.realController.getViewModel().game!.players[0].handCards).toEqual([{
+      id: 'grave-0',
+      name: 'Island',
+      serializedKey: 'Island',
+      displayName: 'Signal Siren',
+    }])
     h.dispose()
   })
 
@@ -1284,7 +1304,7 @@ describe('Three native interface behavior', () => {
     h.update({ ...view, status: 'Updated status' })
     expect(h.content.querySelector('[data-modal="preview"]')).not.toBeNull()
     const next = makeView()
-    next.game!.players[1].battlefield.shift()
+    next.game!.players[1].battlefield = next.game!.players[1].battlefield.slice(1)
     h.update(next)
     expect(h.content.querySelector('dialog')).toBeNull()
     expect(h.ui.isBlocked()).toBe(false)
@@ -1424,15 +1444,25 @@ describe('Three native interface behavior', () => {
 
   describe('Three Island hand responses', () => {
     it('keeps the board response non-modal and exposes distinct native choices in the Cards dialog', () => {
-      const h = setup(responseView())
+      const view = responseView()
+      view.game!.players[0].handCards = view.game!.players[0].handCards.map((card) =>
+        card.id === 'required-island'
+          ? { ...card, serializedKey: 'Island', displayName: 'Localized Signal Siren' }
+          : card)
+      const h = setup(view)
       expect(h.ui.isBlocked()).toBe(false)
       expect(h.content.querySelector('dialog')).toBeNull()
       expect(h.content.querySelector('[data-action="counter_land"]')).toBeNull()
+      expect(h.ui.primaryAction?.prompt).toContain(
+        'The blue frame marks Localized Signal Siren, which is included automatically',
+      )
       h.openCards()
       expect(h.ui.isBlocked()).toBe(true)
       expect(h.content.querySelector('dialog')?.dataset.modal).toBe('cards')
       expect(h.content.querySelectorAll('[data-action="respond-card"]')).toHaveLength(3)
-      expect(h.content.innerHTML).toContain('Island included automatically')
+      expect(h.content.innerHTML).toContain(
+        'Localized Signal Siren is included automatically; choose the other card to discard.',
+      )
       expect(h.content.innerHTML).toContain('aria-live="polite"')
       expect(h.ui.response?.requiredIslandId).toBe('required-island')
       expect(h.ui.targetIds.size).toBe(0)
@@ -1464,7 +1494,11 @@ describe('Three native interface behavior', () => {
 
     it('does not counter or preview required, missing, hidden or ineligible responder cards', () => {
       const view = responseView()
-      view.game!.players[0].handCards.push({ id: 'hidden', name: HIDDEN_HAND_CARD_NAME }, { id: 'ineligible', name: 'Mountain' })
+      view.game!.players[0].handCards = [
+        ...view.game!.players[0].handCards,
+        { id: 'hidden', name: HIDDEN_HAND_CARD_NAME },
+        { id: 'ineligible', name: 'Mountain' },
+      ]
       view.game!.legal.counterOptions.push({
         action: { type: 'counter_land', actor: 0, discardCardId: 'hidden' }, label: 'Hidden',
       })

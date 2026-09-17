@@ -2,6 +2,7 @@ import {
   groupCardTargetOptions,
   resolvePlayLandDrop,
   resolvePlayLandTargetSelectionMode,
+  targetPromptForContext,
   type TargetSelectionContext,
 } from '../../app/action-resolution'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
@@ -87,7 +88,7 @@ export function threeResponse(view: AppViewModel, ui: InterfaceUi): CounterHandO
     ...response,
     choices: response.requiredIslandId === null ? [] : response.choices.filter((choice) =>
       choice.cardName !== HIDDEN_HAND_CARD_NAME && choice.action.actor === game.actor),
-    instruction: `${response.instruction} The first Island (blue frame) is included automatically; pink frames mark your choices.`,
+    instruction: `${response.instruction} The blue frame marks ${response.requiredCardDisplayName}, which is included automatically; pink frames mark your choices.`,
   }
 }
 
@@ -104,8 +105,8 @@ export function threePrimaryAction(view: AppViewModel, ui: InterfaceUi): ThreePr
   }
   const response = threeResponse(view, ui)
   return response ? {
-    type: 'pass_response', label: 'Pass Response', decision, disabled: !response.canPass || ui.cardsOpen,
-    prompt: `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
+    type: 'pass_response', label: response.passLabel, decision, disabled: !response.canPass || ui.cardsOpen,
+    prompt: `Respond to ${game.pendingLandDisplayName ?? game.pendingLandName ?? 'land'}. ${response.choices.length
       ? response.instruction : 'No legal counter cards available.'}`,
   } : null
 }
@@ -114,34 +115,27 @@ export function threeTargets(view: AppViewModel, ui: InterfaceUi): TargetModel |
   const game = view.game
   if (!game || !canThreeInput(view, ui.presentedActor)) return null
   let context: TargetSelectionContext
-  let title: string
   let battlefield: boolean
   let options: Array<{ effectTargetId?: string; label: string }>
   if (game.phase === 'main' && ui.pendingCardId) {
     const resolution = resolvePlayLandDrop(game, ui.pendingCardId)
     if (resolution.kind !== 'needs_target') return null
     context = { kind: 'play_land', cardId: ui.pendingCardId }
-    const name = game.players[game.actor].handCards.find((card) => card.id === ui.pendingCardId)?.name ?? 'land'
-    title = `Choose ${name} target`
     battlefield = resolvePlayLandTargetSelectionMode(game, ui.pendingCardId) === 'battlefield_highlight'
     options = resolution.options
   } else if (game.phase === 'plains_target') {
     context = { kind: 'plains_reuse' }
-    title = game.pendingPlainsReuseName === 'Forest'
-      ? 'Plains reuses Forest: return a graveyard card to your hand'
-      : `Choose Plains reuse target for ${game.pendingPlainsReuseName ?? 'land'}`
     battlefield = game.pendingPlainsReuseName === 'Mountain' || game.pendingPlainsReuseName === 'Plains'
     options = game.legal.plainsReuseOptions.map(({ action, label }) => ({ effectTargetId: action.effectTargetId, label }))
   } else if (game.phase === 'swamp_target') {
     context = { kind: 'swamp_discard' }
-    title = 'Choose Swamp discard target'
     battlefield = false
     options = game.legal.swampDiscardOptions.map(({ action, label }) => ({ effectTargetId: action.effectTargetId, label }))
   } else {
     return null
   }
   return {
-    context, title, battlefield,
+    context, title: targetPromptForContext(game, context), battlefield,
     options: battlefield
       ? options.map((option) => ({
         ...option,
@@ -272,8 +266,11 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
           const choice = owner === game.actor ? responseChoices.get(card.id) : undefined
           if (responding && response) {
             const required = response.requiredIslandId === card.id
-            return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(card.name)}</span>
-              ${required ? '<span>Island included automatically</span>' : choice
+            const cardDisplayName = required
+              ? response.requiredCardDisplayName
+              : choice?.displayName ?? card.displayName ?? card.name
+            return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(cardDisplayName)}</span>
+              ${required ? `<span>${escapeHtml(response.requiredCardHint)}</span>` : choice
                 ? button('respond-card', choice.a11yLabel, false, ` data-card-id="${escapeHtml(card.id)}" data-owner="${owner}"`)
                 : '<span>Not available for this counter</span>'}</div>`
           }

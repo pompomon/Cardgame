@@ -229,7 +229,10 @@ function responseHarness() {
   const game = h.controls.view!.game!
   game.phase = 'respond'
   game.pendingLandName = 'Swamp'
-  game.players[0].handCards.unshift({ id: 'required-island', name: 'Island' })
+  game.players[0].handCards = [
+    { id: 'required-island', name: 'Island' },
+    ...game.players[0].handCards,
+  ]
   game.players[0].handCount = 2
   game.legal.playLandByCard = {}
   game.legal.counterOptions = [{
@@ -370,7 +373,9 @@ describe('ThreeInteraction', () => {
     ['counter removed', (view: AppViewModel) => { view.game!.legal.counterOptions = [] }],
     ['pending land', (view: AppViewModel) => { view.game!.pendingLandName = 'Forest' }],
     ['required Island replaced', (view: AppViewModel) => { view.game!.players[0].handCards[0].id = 'new-island' }],
-    ['hand order', (view: AppViewModel) => { view.game!.players[0].handCards.reverse() }],
+    ['hand order', (view: AppViewModel) => {
+      view.game!.players[0].handCards = [...view.game!.players[0].handCards].reverse()
+    }],
   ] as const)('invalidates a same-phase response gesture on %s', (_name, change) => {
     const h = responseHarness()
     h.start({ pointerType: 'touch' })

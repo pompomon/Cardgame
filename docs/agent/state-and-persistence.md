@@ -129,8 +129,8 @@ for changes to target pickers, response controls, and shared submission paths.
 - **Back-fill on the way out.** If a renderer needs `game.events` and an
   older snapshot might not have it, default to `[]` here so renderers
   never see `undefined`.
-- **Scoped hand reveals.** `projectHandCards` redacts the AI hand to
-  `HIDDEN_HAND_CARD_NAME` in hvai / adventure-hvai modes. The view model
+- **Scoped hand reveals.** `projectHandCards` redacts a non-human opponent's hand
+  to `HIDDEN_HAND_CARD_NAME` in AI and P2P modes. The view model
   may *narrowly* widen visibility for a specific decision (e.g.
   `revealedEnemyHandForSwamp` is populated only while the local human is
   choosing a Swamp discard target, in `swamp_target` or `plains_target`
@@ -142,8 +142,8 @@ for changes to target pickers, response controls, and shared submission paths.
   phase ends. The AI side continues to play Swamp without enemy-hand
   visibility (see `src/game/ai-visibility.ts`); the resulting asymmetry
   is intentional.
-- **Hidden-hand contract.** When a local human opposes an AI,
-  `players[].handCards` for the AI may expose stable card ids and counts,
+- **Hidden-hand contract.** When a local human opposes an AI or remote peer,
+  `players[].handCards` for the opponent may expose stable card ids and counts,
   but every card name must be `HIDDEN_HAND_CARD_NAME`. Do not unredact that
   array for convenience; any intentional reveal must live in a separate,
   narrowly scoped view-model field and disappear when the relevant decision

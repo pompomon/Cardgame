@@ -8,6 +8,7 @@ import {
   resolvePlayLandDrop,
   resolvePlayLandTargetSelectionMode,
   resolveTargetedPlayLandAction,
+  targetPromptForContext,
 } from '../app/action-resolution'
 import { buildViewModel } from '../app/view-model'
 import { createInitialGame } from '../game/engine'
@@ -109,7 +110,16 @@ describe('action-resolution', () => {
     }
 
     const grouped = groupCardTargetOptions(game, { kind: 'play_land', cardId: 'forest-play' }, resolution.options)
-    expect(grouped.map((entry) => entry.label)).toEqual(['Plains X2', 'Swamp'])
+    expect(grouped.map((entry) => entry.label)).toEqual([
+      'Echo Doppelgänger X2',
+      'Memory Vampire',
+    ])
+    expect(grouped.map((entry) => entry.displayName)).toEqual([
+      'Echo Doppelgänger',
+      'Memory Vampire',
+    ])
+    expect(grouped.map((entry) => entry.serializedKey)).toEqual(['Plains', 'Swamp'])
+    expect(grouped.map((entry) => entry.cardName)).toEqual(['Plains', 'Swamp'])
     expect(grouped[0]?.effectTargetId).toBe('g-1')
     expect(grouped[1]?.effectTargetId).toBe('g-3')
   })
@@ -190,8 +200,15 @@ describe('action-resolution', () => {
     })))
     // The popup should surface one entry per distinct revealed card name
     // (with counts), not a single collapsed `"Hidden card X3"` group.
-    expect(grouped.map((entry) => entry.label)).toEqual(['Mountain X2', 'Forest'])
+    expect(grouped.map((entry) => entry.label)).toEqual([
+      'Rooftop Gargoyle X2',
+      'Gravebloom Dryad',
+    ])
     expect(grouped.map((entry) => entry.cardName)).toEqual(['Mountain', 'Forest'])
+    expect(grouped.map((entry) => entry.displayName)).toEqual([
+      'Rooftop Gargoyle',
+      'Gravebloom Dryad',
+    ])
   })
 
   it('resolves swamp discard target selection action', () => {
@@ -224,5 +241,39 @@ describe('action-resolution', () => {
     const vm = buildViewModel(state, false)
     const action = resolvePlainsReuseAction(vm.game!, 'opp-2')
     expect(action).toEqual({ type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'opp-2' })
+  })
+
+  it('returns approved target prompts while routing by stable serialized keys', () => {
+    const state = createState(58)
+    state.game!.players[0].hand = [
+      { id: 'forest', name: 'Forest', type: 'land' },
+      { id: 'mountain', name: 'Mountain', type: 'land' },
+      { id: 'swamp', name: 'Swamp', type: 'land' },
+      { id: 'plains', name: 'Plains', type: 'land' },
+    ]
+    const game = buildViewModel(state, false).game!
+
+    expect(targetPromptForContext(game, {
+      kind: 'play_land',
+      cardId: 'forest',
+    })).toBe('Choose a creature in your discard pile to return to your hand.')
+    expect(targetPromptForContext(game, {
+      kind: 'play_land',
+      cardId: 'mountain',
+    })).toBe("Choose an opposing creature to send to its owner's discard pile.")
+    expect(targetPromptForContext(game, {
+      kind: 'play_land',
+      cardId: 'swamp',
+    })).toBe("Choose a card from your opponent's hand for them to discard.")
+    expect(targetPromptForContext(game, {
+      kind: 'play_land',
+      cardId: 'plains',
+    })).toBe(
+      'Choose one of your other creatures whose ability Echo Doppelgänger should repeat.',
+    )
+    expect(targetPromptForContext(game, {
+      kind: 'play_land',
+      cardId: 'missing',
+    })).toBe("Choose a target for this creature's ability.")
   })
 })

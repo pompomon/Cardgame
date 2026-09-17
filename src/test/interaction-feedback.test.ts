@@ -42,7 +42,12 @@ describe('shared interaction feedback', () => {
     expect(effectFeedbackForDescriptor({
       kind: 'mountain_destroy',
       palette: { primary: '#000000', secondary: '#ff3300', glow: '#ffffff' },
-    })).toEqual({ label: 'Mountain destroyed a land', tint: 0xff3300 })
+    })).toEqual({ label: 'Banished to discard pile', tint: 0xff3300 })
+    expect(effectFeedbackForDescriptor({
+      kind: 'mountain_destroy',
+      caption: 'Catalog caption',
+      palette: { primary: '#000000', secondary: '#ff3300', glow: '#ffffff' },
+    })).toEqual({ label: 'Catalog caption', tint: 0xff3300 })
     expect(effectFeedbackForDescriptor(null)).toEqual({ label: '', tint: 0xffffff })
     expect(effectFeedbackForDescriptor({
       kind: 'future_effect',

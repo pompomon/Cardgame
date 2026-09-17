@@ -95,6 +95,7 @@ describe('buildViewModel', () => {
 
     const vm = buildViewModel(state, false)
     expect(vm.game?.pendingPlainsReuseName).toBe('Forest')
+    expect(vm.game?.pendingPlainsReuseDisplayName).toBe('Gravebloom Dryad')
     expect(vm.game?.legal.plainsReuseOptions.map((entry) => entry.action.effectTargetId)).toEqual(['g-1', 'g-2'])
   })
 
@@ -114,9 +115,10 @@ describe('buildViewModel', () => {
     const vm = buildViewModel(state, false)
 
     expect(vm.game?.pendingLandName).toBe('Swamp')
+    expect(vm.game?.pendingLandDisplayName).toBe('Memory Vampire')
     expect(vm.game?.legal.counterOptions.map((option) => option.label)).toEqual([
-      'Counter with Island (discard Island + Forest)',
-      'Counter with Island (discard Island + Mountain)',
+      'Intercept with Signal Siren (discard Signal Siren + Gravebloom Dryad)',
+      'Intercept with Signal Siren (discard Signal Siren + Rooftop Gargoyle)',
     ])
   })
 
@@ -137,12 +139,20 @@ describe('buildViewModel', () => {
     const play = getLegalActions(state.game!, actor).find((action) => action.type === 'play_land' && action.cardId === 'pending')!
     state.game = applyAction(state.game!, play)
     const snapshot = buildViewModel(state, false)
-    expect(snapshot.game!.pendingLandPlay).toEqual({ cardId: 'pending', name: 'Swamp', actor })
+    expect(snapshot.game!.pendingLandPlay).toEqual({
+      cardId: 'pending',
+      name: 'Swamp',
+      serializedKey: 'Swamp',
+      displayName: 'Memory Vampire',
+      actor,
+    })
     expect(snapshot.game!.pendingLandPlay).not.toBe(state.game.pendingLandPlay)
     expect(Object.isFrozen(snapshot.game!.pendingLandPlay)).toBe(true)
     expectAllCardsHidden(snapshot.game!.players[1].handCards)
     state.game.pendingLandPlay!.card.name = 'Forest'
     expect(snapshot.game!.pendingLandPlay!.name).toBe('Swamp')
+    expect(snapshot.game!.pendingLandPlay!.serializedKey).toBe('Swamp')
+    expect(snapshot.game!.pendingLandPlay!.displayName).toBe('Memory Vampire')
   })
 
   it.each(['counter_land', 'pass_response'] as const)('clears the pending snapshot after %s', (type) => {
@@ -159,6 +169,7 @@ describe('buildViewModel', () => {
     const next = buildViewModel(state, false).game!
     expect(next.pendingLandPlay).toBeNull()
     expect(next.pendingLandName).toBeNull()
+    expect(next.pendingLandDisplayName).toBeNull()
     expect(pending!.cardId).toBe('play')
   })
 
@@ -195,7 +206,25 @@ describe('buildViewModel', () => {
       instanceId: 'bf-1',
       cardId: 'bf-card-1',
       name: 'Mountain',
+      serializedKey: 'Mountain',
+      displayName: 'Rooftop Gargoyle',
     })
+    expect(vm.game?.players[0].handCards[0]).toEqual({
+      id: 'h-1',
+      name: 'Forest',
+      serializedKey: 'Forest',
+      displayName: 'Gravebloom Dryad',
+    })
+    expect(vm.game?.players[0].graveyardCards[0]).toEqual({
+      id: 'g-1',
+      name: 'Swamp',
+      serializedKey: 'Swamp',
+      displayName: 'Memory Vampire',
+    })
+    expect(Object.isFrozen(vm.game?.players)).toBe(true)
+    expect(Object.isFrozen(vm.game?.players[0])).toBe(true)
+    expect(Object.isFrozen(vm.game?.players[0].handCards)).toBe(true)
+    expect(Object.isFrozen(vm.game?.players[0].handCards[0])).toBe(true)
     expect(vm.game?.log).toEqual(state.game!.log)
     expect(vm.game?.log).not.toBe(state.game!.log)
     expect(vm.game?.events).toEqual(state.game!.events)
@@ -233,6 +262,8 @@ describe('buildViewModel hand-redaction', () => {
     expect(vm.game?.players[1].handCount).toBe(3)
     expect(vm.game?.players[1].handCards.map((c) => c.id)).toEqual(['a-1', 'a-2', 'a-3'])
     expectAllCardsHidden(vm.game!.players[1].handCards)
+    expect(vm.game?.players[1].handCards.every((card) =>
+      card.serializedKey === undefined && card.displayName === 'Hidden card')).toBe(true)
   })
 
   it('redacts the AI hand in adventure-hvai too', () => {
@@ -289,8 +320,8 @@ describe('buildViewModel hand-redaction', () => {
 
     const vm = buildViewModel(state, false)
     const labels = vm.game!.legal.swampDiscardOptions.map((o) => o.label).join('|')
-    expect(labels).toMatch(/Discard Mountain/)
-    expect(labels).toMatch(/Discard Forest/)
+    expect(labels).toMatch(/Rooftop Gargoyle/)
+    expect(labels).toMatch(/Gravebloom Dryad/)
     expect(labels).not.toMatch(/hidden card/)
     // The reveal is exposed on the view model so renderers can show the
     // real card art in the target picker.
@@ -324,6 +355,8 @@ describe('buildViewModel hand-redaction', () => {
     expect(labels).not.toContain('Forest')
     expect(serializedProtectedSurfaces).not.toContain('Mountain')
     expect(serializedProtectedSurfaces).not.toContain('Forest')
+    expect(serializedProtectedSurfaces).not.toContain('Rooftop Gargoyle')
+    expect(serializedProtectedSurfaces).not.toContain('Gravebloom Dryad')
   })
 
   it('reveals the AI hand for Swamp targeting in adventure-hvai too', () => {
@@ -336,7 +369,7 @@ describe('buildViewModel hand-redaction', () => {
 
     const vm = buildViewModel(state, false)
     const labels = vm.game!.legal.swampDiscardOptions.map((o) => o.label).join('|')
-    expect(labels).toMatch(/Discard Mountain/)
+    expect(labels).toMatch(/Rooftop Gargoyle/)
     expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain'])
   })
 
@@ -357,8 +390,8 @@ describe('buildViewModel hand-redaction', () => {
 
     const vm = buildViewModel(state, false)
     const labels = vm.game!.legal.plainsReuseOptions.map((o) => o.label).join('|')
-    expect(labels).toMatch(/discard Mountain/)
-    expect(labels).toMatch(/discard Forest/)
+    expect(labels).toMatch(/Rooftop Gargoyle/)
+    expect(labels).toMatch(/Gravebloom Dryad/)
     expect(labels).not.toMatch(/hidden card/)
     expect(vm.game?.revealedEnemyHandForSwamp?.map((c) => c.name)).toEqual(['Mountain', 'Forest'])
     // Outside the play-land label path, the projected enemy hand is still
