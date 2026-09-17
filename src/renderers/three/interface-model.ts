@@ -201,9 +201,7 @@ function renderRecorder(view: AppViewModel): string {
 }
 
 function renderMenu(view: AppViewModel): string {
-  const logControllers = view.replay.active
-    ? view.recording.metadata?.controllers ?? view.controllers
-    : view.controllers
+  const logControllers = view.recording.metadata?.controllers ?? view.controllers
   return modal('menu', 'Game Menu', `<div class="three-actions">${button('cards', 'Cards & keyboard controls', false, ' aria-haspopup="dialog"')}
     ${view.mode === 'adventure-hvai' && !view.replay.active
     ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')

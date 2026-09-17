@@ -475,7 +475,7 @@ describe('Three native markup and decisions', () => {
     { mode: 'p2p-host' as const, controllers: ['human', 'remote'] as const, actor: 1, source: 'legacy' as const },
     { mode: 'p2p-join' as const, controllers: ['remote', 'human'] as const, actor: 0, source: 'structured' as const },
     { mode: 'p2p-join' as const, controllers: ['remote', 'human'] as const, actor: 0, source: 'legacy' as const },
-  ])('uses imported $mode recording visibility for $source Replay Log draws', ({
+  ])('uses imported $mode recording visibility for $source Replay Log draws during and after replay', ({
     mode,
     controllers,
     actor,
@@ -498,11 +498,15 @@ describe('Three native markup and decisions', () => {
       view.game!.log = [`Player ${actor + 1} draws Mountain.`]
     }
 
-    const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+    for (const replayActive of [true, false]) {
+      view.replay.active = replayActive
+      view.game!.isReplay = replayActive
+      const html = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
 
-    expect(html.match(new RegExp(`P${actor + 1} draws a card`, 'g'))).toHaveLength(1)
-    expect(html).not.toContain('Rooftop Gargoyle')
-    expect(html).not.toContain('three-log-art')
+      expect(html.match(new RegExp(`P${actor + 1} draws a card`, 'g'))).toHaveLength(1)
+      expect(html).not.toContain('Rooftop Gargoyle')
+      expect(html).not.toContain('three-log-art')
+    }
   })
 
   it('places menu/status/winner in the HUD and keeps native controls out of document flow', () => {
