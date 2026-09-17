@@ -354,7 +354,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.parent).toBe(h.near)
     expect(h.button.textContent).toBe('End Turn')
     h.act('play_land')
-    expect(h.button.textContent).toBe('Pass Response')
+    expect(h.button.textContent).toBe('Let It Through')
     expect(stats(h.far).textContent).toBe('Hand 4 · Deck 45 · Graveyard 0')
     expect(stats(h.near).getAttribute('aria-label')).toBe('Player 2: Hand 5 · Deck 45 · Graveyard 0')
     expect(h.near.dataset.active).toBe('true')
@@ -658,7 +658,7 @@ describe('constructed Three battlefield controls', () => {
     h.board.endDrag(false)
     expect(prompt.children[0].textContent).toBe(sizes[0].textContent)
     h.act('play_land')
-    expect(prompt.children[0].textContent).toContain('Respond to Island.')
+    expect(prompt.children[0].textContent).toContain('Respond to Signal Siren.')
     expect(sizes.every((entry) => entry.hidden)).toBe(true)
   })
 
@@ -760,18 +760,18 @@ describe('constructed Three battlefield controls', () => {
     expect(prompt.getAttribute('role')).toBe('status')
     expect(prompt.getAttribute('aria-live')).toBe('polite')
     expect(h.button.getAttribute('aria-describedby')).toBe(prompt.id)
-    expect(h.button.textContent).toBe('Pass Response')
+    expect(h.button.textContent).toBe('Let It Through')
     expect(h.button.disabled).toBe(false)
     expect(h.near.all('three-board-stats')[0].getAttribute('aria-label')).toContain(`Player ${actor + 1}:`)
     const expected = canCounter
-      ? 'Respond to Mountain. Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The first Island (blue frame) is included automatically; pink frames mark your choices.'
-      : 'Respond to Mountain. No legal counter cards available.'
+      ? 'Respond to Rooftop Gargoyle. Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The first Island (blue frame) is included automatically; pink frames mark your choices.'
+      : 'Respond to Rooftop Gargoyle. No legal counter cards available.'
     expect(primary.prompt).toBe(expected)
     expect(prompt.children.filter((child) => !child.hidden).map((child) => child.textContent)).toEqual([expected])
     h.act('pass_response')
     expect(h.app.game!.phase).toBe('main')
     expect(prompt.hidden).toBe(true)
-    expect(prompt.children[0].textContent).not.toContain('Respond to Mountain')
+    expect(prompt.children[0].textContent).not.toContain('Respond to Rooftop Gargoyle')
     expect(h.button.textContent).toBe('End Turn')
   })
 

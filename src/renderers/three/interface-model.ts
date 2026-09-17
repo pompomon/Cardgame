@@ -104,8 +104,8 @@ export function threePrimaryAction(view: AppViewModel, ui: InterfaceUi): ThreePr
   }
   const response = threeResponse(view, ui)
   return response ? {
-    type: 'pass_response', label: 'Pass Response', decision, disabled: !response.canPass || ui.cardsOpen,
-    prompt: `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
+    type: 'pass_response', label: response.passLabel, decision, disabled: !response.canPass || ui.cardsOpen,
+    prompt: `Respond to ${game.pendingLandDisplayName ?? game.pendingLandName ?? 'land'}. ${response.choices.length
       ? response.instruction : 'No legal counter cards available.'}`,
   } : null
 }

@@ -66,6 +66,7 @@ function responseView(actor = 0): AppViewModel {
   game.actor = actor
   game.phase = 'respond'
   game.pendingLandName = 'Swamp'
+  game.pendingLandDisplayName = 'Memory Vampire'
   game.pendingLandPlay = { cardId: 'pending-swamp', name: 'Swamp', actor: 1 - actor }
   game.players[actor].handCards = [
     { id: 'required-island', name: 'Island' },
@@ -530,7 +531,7 @@ describe('Three battlefield primary action', () => {
   it('projects one phase-specific action and removes duplicate lower-panel buttons', () => {
     for (const [view, type, label] of [
       [makeView(), 'end_turn', 'End Turn'],
-      [responseView(), 'pass_response', 'Pass Response'],
+      [responseView(), 'pass_response', 'Let It Through'],
     ] as const) {
       const action = threePrimaryAction(view, defaultUi)
       expect(action).toMatchObject({ type, label, disabled: false, decision: threeDecisionKey(view) })
@@ -614,7 +615,7 @@ describe('Three battlefield primary action', () => {
     view.game!.legal.counterOptions = []
     const h = setup(view)
     const action = h.ui.primaryAction!
-    expect(action.prompt).toContain('Respond to Swamp. No legal counter cards available.')
+    expect(action.prompt).toContain('Respond to Memory Vampire. No legal counter cards available.')
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.controller.submitAction.mockImplementation(() => h.latest({ ...view, game: { ...view.game!, canInput: false } }))
     h.ui.activatePrimaryAction(action)

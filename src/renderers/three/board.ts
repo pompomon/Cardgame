@@ -268,7 +268,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.instruction.hidden = !this.canDrop && !response
     for (const size of this.instructionSizes) size.hidden = !this.canDrop
     this.instructionText.textContent = response
-      ? primary?.prompt || `Respond to ${game.pendingLandName ?? 'land'}. ${response.choices.length
+      ? primary?.prompt || `Respond to ${game.pendingLandDisplayName ?? game.pendingLandName ?? 'land'}. ${response.choices.length
         ? response.instruction : 'No legal counter cards available.'}`
       : PLAY_INSTRUCTION
     for (const row of ROWS) {
