@@ -109,19 +109,71 @@ describe('Three.js event presentation', () => {
   it.each([
     { suppressed: true, speed: 'normal' as const },
     { suppressed: false, speed: 'off' as const },
-  ])('announces new effects when visual playback is suppressed ($speed)', ({ suppressed, speed }) => {
+  ])('queues announcements when visual playback is suppressed ($speed)', ({ suppressed, speed }) => {
     const playback = vi.fn()
+    const callbacks: Array<() => void> = []
+    const announce = vi.fn((_effect, done) => {
+      callbacks.push(done)
+      return vi.fn()
+    })
+    const effects = new ThreeEffects(playback, vi.fn(), () => {}, announce)
+    effects.update(view(), false)
+    const events = [play, mountain]
+    effects.update({ ...view(events), animationSpeed: speed }, suppressed)
+    effects.pump()
+    expect(announce).toHaveBeenCalledTimes(1)
+    expect(announce.mock.calls[0][0]).toMatchObject({ kind: 'play_land' })
+    effects.update({ ...view(events), animationSpeed: speed }, suppressed)
+    effects.pump()
+    expect(announce).toHaveBeenCalledTimes(1)
+    callbacks.shift()!()
+    expect(announce).toHaveBeenCalledTimes(2)
+    expect(announce.mock.calls[1][0]).toMatchObject({
+      kind: 'mountain_destroy',
+      targetDisplayName: expect.any(String),
+    })
+    callbacks.shift()!()
+    expect(playback).not.toHaveBeenCalled()
+    effects.dispose()
+  })
+
+  it('does not duplicate announcements during visual playback', () => {
+    const playback = vi.fn((_effect, _duration, done) => {
+      done()
+      return vi.fn()
+    })
     const announce = vi.fn()
     const effects = new ThreeEffects(playback, vi.fn(), () => {}, announce)
     effects.update(view(), false)
-    effects.update({ ...view([mountain]), animationSpeed: speed }, suppressed)
+    effects.update(view([mountain]), false)
     effects.pump()
-    expect(announce).toHaveBeenCalledOnce()
-    expect(announce).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'mountain_destroy',
-      targetDisplayName: expect.any(String),
-    }))
-    expect(playback).not.toHaveBeenCalled()
+    expect(playback).toHaveBeenCalledOnce()
+    expect(announce).not.toHaveBeenCalled()
+  })
+
+  it('preserves pending announcements when visual playback becomes suppressed', () => {
+    const playbackCallbacks: Array<() => void> = []
+    const announceCallbacks: Array<() => void> = []
+    const playback = vi.fn((_effect, _duration, done) => {
+      playbackCallbacks.push(done)
+      return vi.fn(done)
+    })
+    const announce = vi.fn((_effect, done) => {
+      announceCallbacks.push(done)
+      return vi.fn(done)
+    })
+    const effects = new ThreeEffects(playback, vi.fn(), () => {}, announce)
+    const events = [play, mountain]
+    effects.update(view(), false)
+    effects.update(view(events), false)
+    effects.pump()
+    effects.update({ ...view(events), animationSpeed: 'off' }, false)
+    effects.pump()
+    expect(playback).toHaveBeenCalledTimes(1)
+    expect(announce).toHaveBeenCalledTimes(1)
+    expect(announce.mock.calls[0][0]).toMatchObject({ kind: 'mountain_destroy' })
+    playbackCallbacks[0]()
+    announceCallbacks[0]()
     effects.dispose()
   })
 
@@ -165,7 +217,7 @@ describe('Three.js event presentation', () => {
     callbacks[0]()
     expect(reservations).toHaveBeenLastCalledWith(['removed-8', 'removed-9', 'removed-10', 'removed-11'])
     effects.update({ ...view(next), animationSpeed: 'off' }, false)
-    expect(reservations).toHaveBeenLastCalledWith([])
+    expect(reservations).toHaveBeenLastCalledWith(['removed-9', 'removed-10', 'removed-11'])
     expect(cancellations[1]).toHaveBeenCalledOnce()
     callbacks[1]()
     effects.dispose()

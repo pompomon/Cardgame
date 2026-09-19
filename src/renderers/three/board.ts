@@ -49,6 +49,7 @@ const CANCEL_INSTRUCTION = 'Move onto your board · release elsewhere to cancel'
 const RELEASE_INSTRUCTION = 'Release to summon'
 const MAX_INSTRUCTION_WIDTH = 544
 const OVERLAY_GAP = 4
+const EFFECT_ANNOUNCEMENT_MS = 350
 
 function cardIdentity(
   card: { readonly name: string; readonly serializedKey?: BasicLand; readonly displayName?: string },
@@ -515,7 +516,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.invalidate()
   }
 
-  announceEffect(effect: VisualEffectDescriptor): void {
+  private showEffectCaption(effect: VisualEffectDescriptor): void {
     const feedback = effectFeedbackForDescriptor(effect)
     if (this.effectCaption.textContent !== feedback.label) this.effectCaption.textContent = feedback.label
     const announcement = effect.kind === 'mountain_destroy'
@@ -527,8 +528,23 @@ export class ThreeBoard implements ThreeBoardApi {
     this.effectCaption.hidden = false
   }
 
+  announceEffect(effect: VisualEffectDescriptor, done: () => void): () => void {
+    this.showEffectCaption(effect)
+    let completed = false
+    const finish = (): void => {
+      if (completed) return
+      completed = true
+      clearTimeout(timer)
+      this.effectCaption.hidden = true
+      done()
+      this.invalidate()
+    }
+    const timer = setTimeout(finish, EFFECT_ANNOUNCEMENT_MS)
+    return finish
+  }
+
   playEffect(effect: VisualEffectDescriptor, duration: number, done: () => void): () => void {
-    this.announceEffect(effect)
+    this.showEffectCaption(effect)
     if (!this.usable() || !this.quality.motion || !Number.isFinite(duration) || duration <= 0 || !effectRecipe(effect.kind)) {
       done()
       return (): void => {}

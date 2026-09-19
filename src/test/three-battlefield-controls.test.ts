@@ -11,6 +11,7 @@ import { ThreeBoard } from '../renderers/three/board'
 import { boardCardKey } from '../renderers/three/card-registry'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
 import { cardSlotX, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
+import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
   render: vi.fn(), setSize: vi.fn(), setPixelRatio: vi.fn(), dispose: vi.fn(),
@@ -478,6 +479,24 @@ describe('constructed Three battlefield controls', () => {
     expect(caption.hidden).toBe(true)
     expect(done).toHaveBeenCalledOnce()
   })
+
+  it('clears an announcement-only caption after its delivery window', () => withFakeTimers(() => {
+    const h = setup()
+    const done = vi.fn()
+    const cancel = h.board.announceEffect({
+      kind: 'mountain_destroy', actor: 0, targetActor: 1, land: 'Forest', visualStyle: 'classic',
+      palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+      targetDisplayName: 'Signal Siren',
+    }, done)
+    const caption = h.host.all('three-board-effect-caption')[0]
+    expect(caption.hidden).toBe(false)
+    expect(caption.getAttribute('aria-label')).toBe("Banish: Signal Siren goes to its owner's discard pile.")
+    vi.runAllTimers()
+    expect(caption.hidden).toBe(true)
+    expect(done).toHaveBeenCalledOnce()
+    cancel()
+    expect(done).toHaveBeenCalledOnce()
+  }))
 
   it.each([
     { actor: 0, presentedActor: 0, row: 'near' },

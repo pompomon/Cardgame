@@ -7,7 +7,9 @@ import type { LogEvent } from '../../game/types'
 export type EffectPlayback = (
   effect: VisualEffectDescriptor, duration: number, done: () => void,
 ) => () => void
-export type EffectAnnouncement = (effect: VisualEffectDescriptor) => void
+export type EffectAnnouncement = (
+  effect: VisualEffectDescriptor, done: () => void,
+) => () => void
 
 export function presentationBoundary(previous: AppViewModel | null, next: AppViewModel): boolean {
   if (!previous || !previous.game || !next.game) return true
@@ -39,7 +41,7 @@ export class ThreeEffects {
   constructor(
     play: EffectPlayback, onSettled: () => void,
     retainRemovedTargets: (instanceIds: readonly string[]) => void = () => {},
-    announce: EffectAnnouncement = () => {},
+    announce: EffectAnnouncement = () => () => {},
   ) {
     this.play = play
     this.onSettled = onSettled
@@ -50,6 +52,7 @@ export class ThreeEffects {
   update(view: AppViewModel, suppressed: boolean): number {
     const boundary = presentationBoundary(this.view, view)
     this.view = view
+    const wasSuppressed = this.suppressed
     this.suppressed = suppressed || view.animationSpeed === 'off'
     const game = view.game
     if (boundary || !game) {
@@ -57,13 +60,10 @@ export class ThreeEffects {
       this.cursor = game?.events.length ?? 0
       if (boundary) this.presentation.reset(game?.actor ?? null, view.controllers)
     } else {
-      if (this.suppressed) this.clear()
+      if (this.suppressed !== wasSuppressed) this.stopPlaying()
       for (let index = this.cursor; index < game.events.length; index++) {
         const event = game.events[index]
-        const effect = visualEffectForEvent(event, view.cardVisualStyle)
-        if (!effect) continue
-        this.announce(effect)
-        if (!this.suppressed) this.queue.push(event)
+        if (visualEffectForEvent(event, view.cardVisualStyle)) this.queue.push(event)
       }
       this.queue = this.queue.slice(-MAX_QUEUED_EFFECTS)
       this.cursor = game.events.length
@@ -76,7 +76,7 @@ export class ThreeEffects {
 
   pump(): void {
     const view = this.view
-    if (!view?.game || this.playing || this.suppressed) return
+    if (!view?.game || this.playing) return
     const event = this.queue.shift()
     if (!event) {
       this.syncRetainedTargets()
@@ -93,27 +93,34 @@ export class ThreeEffects {
     this.playingTarget = effect.kind === 'mountain_destroy' ? effect.targetInstanceId : undefined
     this.syncRetainedTargets()
     let completed = false
-    const cancel = this.play(effect, durationMsForSpeed(view.animationSpeed), () => {
+    const complete = (): void => {
       if (completed || generation !== this.generation) return
       completed = true
       this.cancelPlaying = null
       this.playing = false
       this.playingTarget = undefined
       this.pump()
-    })
+    }
+    const cancel = this.suppressed
+      ? this.announce(effect, complete)
+      : this.play(effect, durationMsForSpeed(view.animationSpeed), complete)
     if (!completed && generation === this.generation) this.cancelPlaying = cancel
     else if (!completed) cancel()
   }
 
   private clear(): void {
+    this.stopPlaying()
+    this.queue = []
+    this.syncRetainedTargets()
+  }
+
+  private stopPlaying(): void {
     ++this.generation
     const cancel = this.cancelPlaying
     this.cancelPlaying = null
     this.playing = false
     this.playingTarget = undefined
-    this.queue = []
     cancel?.()
-    this.syncRetainedTargets()
   }
 
   private syncRetainedTargets(): void {

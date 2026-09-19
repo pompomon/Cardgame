@@ -135,10 +135,14 @@ describe('Three.js composition', () => {
     renderer.render({ ...snapshot, game: { ...snapshot.game!, events: [{
       kind: 'ability_mountain_destroy', actor: 1, target: 0, cardName: 'Island', targetInstanceId: 'destroyed-island',
     }] } })
-    expect(mocks.board.announceEffect).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'mountain_destroy',
-      targetDisplayName: 'Signal Siren',
-    }))
+    expect(mocks.board.playEffect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'mountain_destroy',
+        targetDisplayName: 'Signal Siren',
+      }),
+      expect.any(Number),
+      expect.any(Function),
+    )
     expect(mocks.board.retainEffectTargets).toHaveBeenCalledWith(['destroyed-island'])
     expect(mocks.board.retainEffectTargets.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.board.render.mock.invocationCallOrder[0])
