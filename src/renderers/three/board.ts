@@ -130,7 +130,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.onPrimaryAction = onPrimaryAction
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'three-board-canvas'
-    this.canvas.setAttribute('aria-label', 'Urban Creatures board. Use the adjacent card controls for keyboard play.')
+    this.canvas.setAttribute('aria-label', 'Urban Creatures board. Use the adjacent card controls for keyboard interaction.')
     this.stage.className = 'three-board-stage'
     this.stage.append(this.canvas)
     try {

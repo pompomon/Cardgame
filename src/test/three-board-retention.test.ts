@@ -193,7 +193,7 @@ describe('retained Three.js card registry', () => {
           y: retained.descriptor.y,
         })?.cardId).toBe(card.id)
       }
-      expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
+      expect(board.instructionText.textContent).toBe(response.instruction)
       expect(registry.get(boardCardKey('other-island', 0))!.descriptor.response).toBe('discard')
       expect(acquire).toHaveBeenCalledTimes(4)
       registry.dispose()
