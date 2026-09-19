@@ -1377,6 +1377,27 @@ describe('Three native interface behavior', () => {
     expect(renderThreeInterface(view, defaultUi)).not.toContain(primary)
   })
 
+  it('retries failed hovered raster art after online recovery', () => {
+    const view = makeView()
+    view.cardVisualStyle = 'hd'
+    const primary = cardArtUrl('Forest', 'hd')
+    const fallback = cardArtFallbackUrl('Forest', 'hd')!
+    const h = setup(view)
+    h.ui.setHover(hit())
+    const hoverContent = h.host.children[2]
+    const image = hoverContent.querySelector('img')
+    expect(image?.getAttribute('src')).toBe(primary)
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    image?.setAttribute('src', 'data:image/svg+xml,fallback')
+    const builds = hoverContent.builds
+
+    window.dispatchEvent(new Event('online'))
+    expect(hoverContent.querySelector('img')?.getAttribute('src')).toBe(primary)
+    expect(hoverContent.builds).toBe(builds + 1)
+    h.ui.dispose()
+  })
+
   it.each(['button', 'Escape'])('closes previews with %s, restoring focus without playing a card', (method) => {
     const h = setup()
     h.openCards()

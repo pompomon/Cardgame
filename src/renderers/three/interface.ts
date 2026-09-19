@@ -96,6 +96,7 @@ export class ThreeInterface {
     if (!resetRasterCardArtLoadFailures()) return
     this.markup = ''
     this.hudMarkup = ''
+    this.hoverMarkup = ''
     this.render()
   }
 
