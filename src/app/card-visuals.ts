@@ -171,8 +171,8 @@ export interface CardArtSource {
   readonly primaryUrl: string
   /**
    * Optional intermediate raster fallback inserted between `primaryUrl` and
-   * `proceduralUrl`. Populated for the `hd` style — the deterministic
-   * deterministic PNG under `public/cards/hd-fallback/<asset-slug>.png` — so when the
+   * `proceduralUrl`. Populated for the `hd` style — the deterministic PNG
+   * under `public/cards/hd-fallback/<asset-slug>.png` — so when the
    * photoreal HD asset fails to load the renderer can fall back to a known
    * good raster before degrading to the procedural pixel icon. `null` for
    * styles without a shipped fallback layer.

@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'v9'
-const RUNTIME_ASSET_VERSION = 'v1'
+const RUNTIME_ASSET_VERSION = 'v2'
 const MANAGED_CACHE_PREFIXES = [
   'cardgame-shell-',
   'cardgame-build-assets-',
@@ -22,9 +22,7 @@ const BUILD_CACHE_VERSION = `${CACHE_VERSION}-${BUILD_ID}`
 const APP_SHELL_CACHE = `cardgame-shell-${BUILD_CACHE_VERSION}`
 const BUILD_ASSET_CACHE = `cardgame-build-assets-${BUILD_CACHE_VERSION}`
 const RUNTIME_ASSET_CACHE = `cardgame-runtime-assets-${RUNTIME_ASSET_VERSION}`
-const LEGACY_RUNTIME_ASSET_CACHES = RUNTIME_ASSET_VERSION === 'v1'
-  ? new Set(['cardgame-assets-v8'])
-  : new Set()
+const LEGACY_RUNTIME_ASSET_CACHES = new Set()
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`

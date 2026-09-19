@@ -85,10 +85,10 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
 - `npm run preview` — preview the production bundle locally.
 - `npm run build:cli` — build only the standalone Node terminal bundle.
 - `npm run cli -- --mode ai-vs-ai` — build and run the terminal game.
-- `npm run generate:card-art` — regenerates `public/cards/hd-fallback/*.png`
-  and `public/cards/monochrome/*.png` from
+- `npm run generate:card-art` — regenerates `public/cards/classic/*.png`,
+  `public/cards/hd-fallback/*.png`, and `public/cards/monochrome/*.png` from
   `scripts/generate-card-art.mjs`. Deterministic and CI-safe (no API
-  keys). **Re-run after any change to that script or its land recipes.**
+  keys). **Re-run after any change to that script or its creature recipes.**
   Commit the regenerated PNGs.
 - `npm run generate:photoreal-card-art` — one-off operator script that
   calls a hosted image-generation API (default `gpt-image-1`) to (re)write

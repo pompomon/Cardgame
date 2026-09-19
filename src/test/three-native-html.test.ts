@@ -18,7 +18,7 @@ describe('Three.js native card tile output', () => {
       displayName: 'Gravebloom Dryad',
       assetSlug: 'gravebloom-dryad',
     }, 'hd')
-    expect(html).toContain('src="/cards/hd/Forest.png"')
+    expect(html).toContain('src="/cards/hd/gravebloom-dryad.png"')
     expect(html).toContain('data-card-art="gravebloom-dryad"')
     expect(html).toContain('Gravebloom Dryad')
     expect(html).not.toContain('>Forest<')
@@ -32,15 +32,15 @@ describe('Three.js native card tile output', () => {
     // (raster→raster swap, classes preserved), then to procedural SVG via a
     // chained second-hop onerror. Both URLs appear in the initial render.
     expect(html).toContain('onerror=')
-    expect(html).toContain('/cards/hd-fallback/Forest.png')
+    expect(html).toContain('/cards/hd-fallback/gravebloom-dryad.png')
     // The chained second-hop handler embeds the procedural URL so it can reach
     // procedural SVG even when the first fallback raster also fails.
     expect(html).toContain('data:image/svg+xml')
   })
 
-  it('renders Monochrome card tiles using the shipped cartoon-cat PNG with overlay (no raster fallback layer)', () => {
+  it('renders Monochrome card tiles using the shipped creature PNG with overlay (no raster fallback layer)', () => {
     const html = renderCardTile('Forest', 'monochrome')
-    expect(html).toContain('src="/cards/monochrome/Forest.png"')
+    expect(html).toContain('src="/cards/monochrome/gravebloom-dryad.png"')
     expect(html).toContain('card-tile-bg')
     expect(html).toContain('card-tile-label')
     expect(html).toContain('card-tile--raster')
@@ -55,7 +55,7 @@ describe('Three.js native card tile output', () => {
 
   it('renders Classic card tiles using the procedural SVG and palette swatch', () => {
     const html = renderCardTile('Mountain', 'classic')
-    expect(html).not.toContain('src="/cards/classic/Mountain.png"')
+    expect(html).not.toContain('src="/cards/classic/rooftop-gargoyle.png"')
     expect(html).toContain('src="data:image/svg+xml')
     expect(html).toContain('--tile-fill:')
     expect(html).not.toContain('card-tile--raster')
@@ -68,16 +68,16 @@ describe('Three.js native card tile output', () => {
   it('keeps the procedural icon for tiny action glyphs even in HD mode', () => {
     const html = renderLandIcon('Island', 'hd', 16, 'action-icon', { forceProcedural: true })
     expect(html).toContain('src="data:image/svg+xml')
-    expect(html).not.toContain('/cards/hd/Island.png')
+    expect(html).not.toContain('/cards/hd/signal-siren.png')
     expect(html).not.toContain('action-icon--raster')
     expect(html).not.toContain('onerror=')
   })
 
   it('uses the HD PNG (with raster class) for normal-sized HD glyphs and chains to the hd-fallback raster first', () => {
     const html = renderLandIcon('Swamp', 'hd', 22, 'card-tile-icon')
-    expect(html).toContain('src="/cards/hd/Swamp.png"')
+    expect(html).toContain('src="/cards/hd/memory-vampire.png"')
     expect(html).toContain('card-tile-icon--raster')
-    expect(html).toContain('/cards/hd-fallback/Swamp.png')
+    expect(html).toContain('/cards/hd-fallback/memory-vampire.png')
     // The chained second-hop handler removes the raster class when the raster
     // fallback also fails; the procedural URL is embedded for that second hop.
     expect(html).toContain("this.classList.remove(&#39;card-tile-icon--raster&#39;)")
@@ -85,28 +85,28 @@ describe('Three.js native card tile output', () => {
   })
 
   it('advances to the geometric hd-fallback raster after the photoreal HD URL has failed in-session', () => {
-    noteRasterCardArtLoadFailure('/cards/hd/Forest.png')
+    noteRasterCardArtLoadFailure('/cards/hd/gravebloom-dryad.png')
     const iconHtml = renderLandIcon('Forest', 'hd', 22, 'card-tile-icon')
     // Now serves the geometric raster fallback directly; onerror drops to
     // procedural SVG and strips raster classes.
-    expect(iconHtml).toContain('src="/cards/hd-fallback/Forest.png"')
+    expect(iconHtml).toContain('src="/cards/hd-fallback/gravebloom-dryad.png"')
     expect(iconHtml).toContain('card-tile-icon--raster')
     expect(iconHtml).toContain('onerror=')
     expect(iconHtml).toContain('data:image/svg+xml')
     expect(iconHtml).toContain("this.classList.remove(&#39;card-tile-icon--raster&#39;)")
 
     const tileHtml = renderCardTile('Forest', 'hd')
-    expect(tileHtml).toContain('src="/cards/hd-fallback/Forest.png"')
+    expect(tileHtml).toContain('src="/cards/hd-fallback/gravebloom-dryad.png"')
     expect(tileHtml).toContain('card-tile--raster')
   })
 
   it('uses procedural art directly after both raster URLs have failed in-session', () => {
-    noteRasterCardArtLoadFailure('/cards/hd/Forest.png')
-    noteRasterCardArtLoadFailure('/cards/hd-fallback/Forest.png')
+    noteRasterCardArtLoadFailure('/cards/hd/gravebloom-dryad.png')
+    noteRasterCardArtLoadFailure('/cards/hd-fallback/gravebloom-dryad.png')
     const iconHtml = renderLandIcon('Forest', 'hd', 22, 'card-tile-icon')
     expect(iconHtml).toContain('src="data:image/svg+xml')
-    expect(iconHtml).not.toContain('/cards/hd/Forest.png')
-    expect(iconHtml).not.toContain('/cards/hd-fallback/Forest.png')
+    expect(iconHtml).not.toContain('/cards/hd/gravebloom-dryad.png')
+    expect(iconHtml).not.toContain('/cards/hd-fallback/gravebloom-dryad.png')
     expect(iconHtml).not.toContain('card-tile-icon--raster')
     expect(iconHtml).not.toContain('onerror=')
 
@@ -120,7 +120,7 @@ describe('Three.js native card tile output', () => {
       name: '__hidden__',
       serializedKey: 'Plains',
       displayName: 'Echo Doppelgänger',
-      assetSlug: 'echo-doppelganger',
+      assetSlug: 'untrusted-override',
     }, 'classic')
     expect(html).toContain('card-tile--hidden')
     expect(html).toContain('aria-label="Hidden card"')
@@ -136,7 +136,7 @@ describe('Three.js native card tile output', () => {
       displayName: 'Echo Doppelgänger <script>',
       assetSlug: 'echo-doppelganger',
     }, 'hd')
-    expect(html).toContain('src="/cards/hd/Plains.png"')
+    expect(html).toContain('src="/cards/hd/echo-doppelganger.png"')
     expect(html).toContain('three-card--plains')
     expect(html).toContain('data-card-art="echo-doppelganger"')
     expect(html).toContain('Echo Doppelgänger &lt;script&gt;')

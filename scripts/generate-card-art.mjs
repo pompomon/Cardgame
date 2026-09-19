@@ -16,7 +16,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OUTPUT_ROOT = resolve(HERE, '..', 'public', 'cards')
 const DEFAULT_SIZE = 1024
-const MINIMUM_SIZE = 64
+const MINIMUM_SIZE = 256
 const MAXIMUM_SIZE = 2048
 const GENERATED_STYLES = ['classic', 'hd-fallback', 'monochrome']
 
