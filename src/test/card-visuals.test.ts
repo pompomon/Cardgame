@@ -88,15 +88,15 @@ describe('card-visuals', () => {
     it('returns the shipped PNG URL for HD and keeps the procedural SVG as fallback', () => {
       const source = cardArtSourceFor('Forest', 'hd', 64)
       expect(source.isRaster).toBe(true)
-      expect(source.primaryUrl).toBe('/cards/hd/Forest.png')
-      expect(source.rasterFallbackUrl).toBe('/cards/hd-fallback/Forest.png')
+      expect(source.primaryUrl).toBe('/cards/hd/gravebloom-dryad.png')
+      expect(source.rasterFallbackUrl).toBe('/cards/hd-fallback/gravebloom-dryad.png')
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })
 
-    it('returns the shipped PNG URL for Monochrome (cartoon cats) and keeps the procedural SVG as fallback', () => {
+    it('returns the shipped creature PNG URL for Monochrome and keeps the procedural SVG as fallback', () => {
       const source = cardArtSourceFor('Forest', 'monochrome', 64)
       expect(source.isRaster).toBe(true)
-      expect(source.primaryUrl).toBe('/cards/monochrome/Forest.png')
+      expect(source.primaryUrl).toBe('/cards/monochrome/gravebloom-dryad.png')
       expect(source.rasterFallbackUrl).toBe(null)
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })

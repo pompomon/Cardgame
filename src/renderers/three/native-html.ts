@@ -18,8 +18,14 @@ export function noteRasterCardArtLoadFailure(url: string): void {
   failedRasterCardArtUrls.add(url)
 }
 
-export function resetRasterCardArtLoadFailuresForTests(): void {
+export function resetRasterCardArtLoadFailures(): boolean {
+  const hadFailures = failedRasterCardArtUrls.size > 0
   failedRasterCardArtUrls.clear()
+  return hadFailures
+}
+
+export function resetRasterCardArtLoadFailuresForTests(): void {
+  resetRasterCardArtLoadFailures()
 }
 
 interface RasterRenderStage {
@@ -167,7 +173,7 @@ export function renderCardTile(card: string | RendererCardIdentity, style: AppVi
   }
 
   const displayName = value.displayName ?? displayCardName(serializedKey)
-  const assetSlug = value.assetSlug ?? cardAssetSlug(serializedKey)
+  const assetSlug = cardAssetSlug(serializedKey)
   const source = cardArtSourceFor(serializedKey, style, 144)
   const palette = cardVisualPaletteFor(serializedKey, style)
   const stage = resolveRasterRenderStage(source)

@@ -68,8 +68,8 @@ describe('card-art base path (production bundle)', () => {
     ).toBe(false)
 
     // The configured base must appear in the bundle so that
-    // `${basePath()}cards/${style}/${land}.png` resolves to e.g.
-    // `/regression-base/cards/hd/Forest.png` at runtime.
+    // `${basePath()}cards/${style}/${assetSlug}.png` resolves beneath the
+    // configured non-root deployment path at runtime.
     expect(
       bundle.includes(TEST_BASE),
       `built bundle should reference the configured base '${TEST_BASE}'`,

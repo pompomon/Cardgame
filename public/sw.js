@@ -1,5 +1,5 @@
-const CACHE_VERSION = 'v9'
-const RUNTIME_ASSET_VERSION = 'v1'
+const CACHE_VERSION = 'v10'
+const RUNTIME_ASSET_VERSION = 'v2'
 const MANAGED_CACHE_PREFIXES = [
   'cardgame-shell-',
   'cardgame-build-assets-',
@@ -22,9 +22,9 @@ const BUILD_CACHE_VERSION = `${CACHE_VERSION}-${BUILD_ID}`
 const APP_SHELL_CACHE = `cardgame-shell-${BUILD_CACHE_VERSION}`
 const BUILD_ASSET_CACHE = `cardgame-build-assets-${BUILD_CACHE_VERSION}`
 const RUNTIME_ASSET_CACHE = `cardgame-runtime-assets-${RUNTIME_ASSET_VERSION}`
-const LEGACY_RUNTIME_ASSET_CACHES = RUNTIME_ASSET_VERSION === 'v1'
-  ? new Set(['cardgame-assets-v8'])
-  : new Set()
+const LEGACY_RUNTIME_ASSET_CACHES = new Map([
+  ['cardgame-runtime-assets-v1', '/boards/'],
+])
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)
 const INDEX_URL = `${BASE_PATH}index.html`
@@ -120,6 +120,7 @@ async function migrateRuntimeAssets(targetCache) {
   let scannedEntries = 0
   for (const sourceName of sourceNames) {
     const sourceCache = await caches.open(sourceName)
+    const compatiblePathPrefix = LEGACY_RUNTIME_ASSET_CACHES.get(sourceName)
     for (const request of await sourceCache.keys()) {
       scannedEntries++
       if (scannedEntries > MAX_MIGRATION_CACHE_ENTRIES) {
@@ -129,13 +130,12 @@ async function migrateRuntimeAssets(targetCache) {
       const relativePath = url.origin === self.location.origin
         ? toBaseRelativePath(url.pathname)
         : null
-      if (!relativePath || !isRuntimeAssetPath(relativePath)) continue
+      if (!relativePath || !relativePath.startsWith(compatiblePathPrefix)) continue
       if (!await targetCache.match(request)) {
         const response = await sourceCache.match(request)
         if (!response) continue
         await targetCache.put(request, response)
       }
-      await sourceCache.delete(request)
     }
   }
 }

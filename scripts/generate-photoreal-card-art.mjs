@@ -1,5 +1,5 @@
-// One-off operator script: generate photoreal HD card art for the 5 basic
-// lands and write the resulting 1024×1024 PNGs to `public/cards/hd/`.
+// One-off operator script: generate photoreal HD card art for the five
+// Urban Creatures and write slugged 1024×1024 PNGs to `public/cards/hd/`.
 //
 // This script is *not* run by CI, `npm run build`, lint, or test. It is
 // invoked manually by a developer with an image-generation API key when
@@ -11,7 +11,8 @@
 // Usage:
 //   IMAGE_GEN_API_KEY=sk-... npm run generate:photoreal-card-art
 //   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --force
-//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --land=Forest
+//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --card=gravebloom-dryad
+//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --card=Forest
 //
 // Environment variables (all optional except the API key):
 //   IMAGE_GEN_API_KEY  Required. Falls back to OPENAI_API_KEY for convenience.
@@ -23,19 +24,20 @@
 //                      asset-file test require square art at least 256×256.
 //
 // CLI flags:
-//   --force            Overwrite existing PNGs (default: skip lands that
+//   --force            Overwrite existing PNGs (default: skip creatures that
 //                      already have an art file on disk).
-//   --land=<Name>      Only (re)generate the named land. Repeatable. Case
-//                      sensitive (PascalCase, matches `BASIC_LANDS`).
+//   --card=<selector>  Only (re)generate the exact catalog slug or legacy
+//                      serialized key. Repeatable and case-sensitive.
 //
-// Output files: `public/cards/hd/<Land>.png`, 1024×1024 (or the requested
-// size), one per land in scope. The file is replaced atomically so a
+// Output files: `public/cards/hd/<asset-slug>.png`, 1024×1024 (or the requested
+// size), one per creature in scope. The file is replaced atomically so a
 // partial write cannot corrupt a previously good asset.
 
 import { Buffer } from 'node:buffer'
 import { mkdirSync, existsSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ORDERED_CARD_VISUAL_RECIPES } from '../src/app/card-visual-recipes.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OUT_ROOT = resolve(HERE, '..', 'public', 'cards', 'hd')
@@ -44,43 +46,55 @@ const DEFAULT_MODEL = 'gpt-image-1'
 const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/images/generations'
 const DEFAULT_SIZE = '1024x1024'
 
-// One painterly-photoreal landscape prompt per basic land. Prompts are
-// intentionally explicit about the *square*, top-down/eye-level framing and
-// the absence of text/UI elements so the resulting PNG drops straight into
-// the card slot without further cropping.
-const LAND_PROMPTS = Object.freeze({
-  Forest:
-    'A lush ancient temperate forest at golden hour, towering moss-covered trees, dappled sunlight streaming through a leafy emerald canopy, ferns and wildflowers on the forest floor, painterly photorealistic landscape, rich saturated greens, square composition, centered framing, no people, no text, no logos, no borders, no UI',
-  Island:
-    'A serene tropical island lagoon seen from a low altitude, crystalline turquoise water, a crescent of white sand beach, palm trees, soft sunlight, scattered cumulus clouds reflecting on the water, painterly photorealistic landscape, vivid blues and aquamarine, square composition, centered framing, no people, no text, no logos, no borders, no UI',
-  Mountain:
-    'A dramatic snow-capped mountain peak under a clear morning sky, sharp granite ridges, drifting clouds halfway up the slope, an alpine valley in the foreground with scree and patches of snow, painterly photorealistic landscape, cool greys and crisp whites with warm sunlit highlights, square composition, centered framing, no people, no text, no logos, no borders, no UI',
-  Plains:
-    'A vast sunlit golden grassland under a tall blue sky, gently rolling hills, scattered wildflowers, a lone distant oak tree, soft warm afternoon light, painterly photorealistic landscape, warm honey and amber tones, square composition, centered framing, no people, no text, no logos, no borders, no UI',
-  Swamp:
-    'A misty haunted swamp at dusk, twisted dead trees draped in spanish moss, dark glassy water reflecting purple-grey clouds, glowing fireflies, lily pads and reeds in the foreground, painterly photorealistic landscape, deep violets and sickly greens, square composition, centered framing, no people, no text, no logos, no borders, no UI',
+const COLOR_DIRECTION = Object.freeze({
+  Forest: 'emerald green and living-vine highlights',
+  Island: 'electric blue and cool radio-signal highlights',
+  Mountain: 'brick red and warm rooftop highlights',
+  Plains: 'ivory, gold, and reflected white light',
+  Swamp: 'black, deep purple, and pale memory-wisp highlights',
 })
 
-const ALL_LANDS = Object.keys(LAND_PROMPTS)
+const CREATURE_PROMPTS = Object.freeze(Object.fromEntries(
+  ORDERED_CARD_VISUAL_RECIPES.map((recipe) => [
+    recipe.serializedKey,
+    [
+      `A painterly photorealistic urban-fantasy portrait of ${recipe.subject}.`,
+      `${recipe.abilityCue}.`,
+      `Use ${COLOR_DIRECTION[recipe.serializedKey]}.`,
+      'One immediately readable centered silhouette, atmospheric modern-city background, square composition, safe crop around the subject, dramatic but high-contrast lighting, no embedded text, no logos, no branded symbols, no border, no UI.',
+    ].join(' '),
+  ]),
+))
+
+const CARD_BY_SELECTOR = new Map()
+for (const recipe of ORDERED_CARD_VISUAL_RECIPES) {
+  CARD_BY_SELECTOR.set(recipe.serializedKey, recipe)
+  CARD_BY_SELECTOR.set(recipe.assetSlug, recipe)
+}
+const EXPECTED_SELECTORS = ORDERED_CARD_VISUAL_RECIPES
+  .flatMap((recipe) => [recipe.serializedKey, recipe.assetSlug])
+  .join(', ')
 
 function parseArgs(argv) {
-  const args = { force: false, lands: [] }
+  const args = { force: false, cards: [] }
   for (const arg of argv.slice(2)) {
     if (arg === '--force') {
       args.force = true
-    } else if (arg.startsWith('--land=')) {
-      const value = arg.slice('--land='.length)
-      if (!ALL_LANDS.includes(value)) {
-        throw new Error(`unknown --land value '${value}'. Expected one of: ${ALL_LANDS.join(', ')}`)
+    } else if (arg.startsWith('--card=')) {
+      const value = arg.slice('--card='.length)
+      const recipe = CARD_BY_SELECTOR.get(value)
+      if (!recipe) {
+        throw new Error(`unknown --card value '${value}'. Expected one of: ${EXPECTED_SELECTORS}`)
       }
-      args.lands.push(value)
+      if (!args.cards.includes(recipe)) args.cards.push(recipe)
     } else if (arg === '--help' || arg === '-h') {
       // eslint-disable-next-line no-console
       console.log(
         [
-          'Usage: node scripts/generate-photoreal-card-art.mjs [--force] [--land=Name ...]',
+          'Usage: node scripts/generate-photoreal-card-art.mjs [--force] [--card=selector ...]',
           '',
-          'Generates photoreal HD card art at public/cards/hd/<Land>.png.',
+          'Generates photoreal HD card art at public/cards/hd/<asset-slug>.png.',
+          `Selectors: ${EXPECTED_SELECTORS}`,
           'Requires IMAGE_GEN_API_KEY (or OPENAI_API_KEY) in the environment.',
         ].join('\n'),
       )
@@ -89,8 +103,8 @@ function parseArgs(argv) {
       throw new Error(`unrecognized argument '${arg}'. Use --help for usage.`)
     }
   }
-  if (args.lands.length === 0) {
-    args.lands = [...ALL_LANDS]
+  if (args.cards.length === 0) {
+    args.cards = [...ORDERED_CARD_VISUAL_RECIPES]
   }
   return args
 }
@@ -111,10 +125,10 @@ function validateSize(size) {
   return { width, height }
 }
 
-async function generateOne({ land, apiKey, model, endpoint, size }) {
-  const prompt = LAND_PROMPTS[land]
+async function generateOne({ recipe, apiKey, model, endpoint, size }) {
+  const prompt = CREATURE_PROMPTS[recipe.serializedKey]
   // eslint-disable-next-line no-console
-  console.log(`[${land}] requesting ${model} @ ${size}…`)
+  console.log(`[${recipe.assetSlug}] requesting ${model} @ ${size}…`)
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -162,6 +176,7 @@ function writeAtomically(path, bytes) {
 }
 
 async function main() {
+  const args = parseArgs(process.argv)
   const apiKey = process.env.IMAGE_GEN_API_KEY ?? process.env.OPENAI_API_KEY
   if (!apiKey) {
     // eslint-disable-next-line no-console
@@ -174,7 +189,6 @@ async function main() {
     )
     process.exit(2)
   }
-  const args = parseArgs(process.argv)
   const model = process.env.IMAGE_GEN_MODEL ?? DEFAULT_MODEL
   const endpoint = process.env.IMAGE_GEN_ENDPOINT ?? DEFAULT_ENDPOINT
   const size = process.env.IMAGE_GEN_SIZE ?? DEFAULT_SIZE
@@ -184,18 +198,18 @@ async function main() {
 
   let written = 0
   let skipped = 0
-  for (const land of args.lands) {
-    const outPath = resolve(OUT_ROOT, `${land}.png`)
+  for (const recipe of args.cards) {
+    const outPath = resolve(OUT_ROOT, `${recipe.assetSlug}.png`)
     if (!args.force && existsSync(outPath)) {
       // eslint-disable-next-line no-console
-      console.log(`[${land}] already exists — skipping (pass --force to overwrite)`)
+      console.log(`[${recipe.assetSlug}] already exists — skipping (pass --force to overwrite)`)
       skipped += 1
       continue
     }
-    const bytes = await generateOne({ land, apiKey, model, endpoint, size })
+    const bytes = await generateOne({ recipe, apiKey, model, endpoint, size })
     writeAtomically(outPath, bytes)
     // eslint-disable-next-line no-console
-    console.log(`[${land}] wrote ${outPath} (${bytes.length} bytes)`)
+    console.log(`[${recipe.assetSlug}] wrote ${outPath} (${bytes.length} bytes)`)
     written += 1
   }
   // eslint-disable-next-line no-console

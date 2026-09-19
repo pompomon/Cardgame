@@ -314,7 +314,9 @@ function setupPlainsForest({
 beforeEach(() => {
   resetRasterCardArtLoadFailuresForTests()
   vi.stubGlobal('navigator', { userAgent: 'node-test', standalone: false })
-  vi.stubGlobal('window', { matchMedia: () => ({ matches: false }), navigator: { standalone: false } })
+  const browserWindow = new EventTarget()
+  Object.assign(browserWindow, { matchMedia: () => ({ matches: false }), navigator: { standalone: false } })
+  vi.stubGlobal('window', browserWindow)
   vi.stubGlobal('Element', ElementStub)
   vi.stubGlobal('HTMLElement', ElementStub)
   vi.stubGlobal('Node', ElementStub)
@@ -1347,6 +1349,52 @@ describe('Three native interface behavior', () => {
     h.ui.activate(hit())
     expect(h.content.querySelector('dialog')?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
     expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it('retries failed native raster art after online recovery and removes the listener on disposal', () => {
+    const view = makeView()
+    view.cardVisualStyle = 'hd'
+    const primary = cardArtUrl('Forest', 'hd')
+    const fallback = cardArtFallbackUrl('Forest', 'hd')!
+    const h = setup(view)
+    h.ui.activate(hit())
+    const image = h.content.querySelector('[data-modal="preview"]')?.querySelector('img')
+    expect(image?.getAttribute('src')).toBe(primary)
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    image?.setAttribute('src', 'data:image/svg+xml,fallback')
+    const builds = h.content.builds
+
+    window.dispatchEvent(new Event('online'))
+    expect(h.content.querySelector('[data-modal="preview"]')?.querySelector('img')?.getAttribute('src')).toBe(primary)
+    expect(h.content.builds).toBe(builds + 1)
+
+    h.ui.dispose()
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    window.dispatchEvent(new Event('online'))
+    expect(renderThreeInterface(view, defaultUi)).not.toContain(primary)
+  })
+
+  it('retries failed hovered raster art after online recovery', () => {
+    const view = makeView()
+    view.cardVisualStyle = 'hd'
+    const primary = cardArtUrl('Forest', 'hd')
+    const fallback = cardArtFallbackUrl('Forest', 'hd')!
+    const h = setup(view)
+    h.ui.setHover(hit())
+    const hoverContent = h.host.children[2]
+    const image = hoverContent.querySelector('img')
+    expect(image?.getAttribute('src')).toBe(primary)
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    image?.setAttribute('src', 'data:image/svg+xml,fallback')
+    const builds = hoverContent.builds
+
+    window.dispatchEvent(new Event('online'))
+    expect(hoverContent.querySelector('img')?.getAttribute('src')).toBe(primary)
+    expect(hoverContent.builds).toBe(builds + 1)
     h.ui.dispose()
   })
 

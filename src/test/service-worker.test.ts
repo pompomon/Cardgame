@@ -287,7 +287,7 @@ describe('service worker lifecycle', () => {
     expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/index.html', { cache: 'reload' })
     expect(harness.cacheAddAllCalls).toEqual([
       {
-        cacheName: 'cardgame-build-assets-v9-index-build123.js',
+        cacheName: 'cardgame-build-assets-v10-index-build123.js',
         paths: [
           '/Cardgame/assets/index-abc123.js',
           '/Cardgame/assets/index-def456.css',
@@ -296,7 +296,7 @@ describe('service worker lifecycle', () => {
         ],
       },
     ])
-    expect([...harness.cacheEntries.get('cardgame-shell-v9-index-build123.js')!.keys()]).toEqual([
+    expect([...harness.cacheEntries.get('cardgame-shell-v10-index-build123.js')!.keys()]).toEqual([
       '/Cardgame/',
       '/Cardgame/index.html',
       '/Cardgame/icons.svg',
@@ -355,21 +355,17 @@ describe('service worker lifecycle', () => {
     expect(harness.skipWaiting).not.toHaveBeenCalled()
   })
 
-  it('moves cached card and board assets before deleting obsolete build caches', async () => {
-    const cardUrl = `${ORIGIN}${BASE_PATH}cards/hd/Forest.png`
+  it('preserves compatible board assets while retiring obsolete runtime assets', async () => {
+    const cardUrl = `${ORIGIN}${BASE_PATH}cards/hd/gravebloom-dryad.png`
     const boardUrl = `${ORIGIN}${BASE_PATH}boards/classic/background-hd.png`
-    const spriteUrl = `${ORIGIN}${BASE_PATH}sprites/board-ui-atlas.png`
-    const chunkUrl = `${ORIGIN}${BASE_PATH}assets/phaser-retired.js`
     const card = makeResponse('cached card')
     const board = makeResponse('cached board')
     const harness = loadServiceWorkerLifecycle(
-      ['cardgame-assets-v8'],
+      ['cardgame-assets-v8', 'cardgame-runtime-assets-v1'],
       {
-        'cardgame-assets-v8': [
+        'cardgame-runtime-assets-v1': [
           [cardUrl, card],
           [boardUrl, board],
-          [spriteUrl, makeResponse('retired sprite')],
-          [chunkUrl, makeResponse('retired chunk')],
         ],
       },
     )
@@ -380,19 +376,17 @@ describe('service worker lifecycle', () => {
 
     await dispatchLifecycle(harness.installListener)
 
-    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v1')
-    expect(currentAssets?.get(cardUrl)).toBe(card)
+    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v2')
     expect(currentAssets?.get(boardUrl)).toBe(board)
-    expect(currentAssets?.has(spriteUrl)).toBe(false)
-    expect(currentAssets?.has(chunkUrl)).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-assets-v8')?.has(cardUrl)).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-assets-v8')?.has(boardUrl)).toBe(false)
+    expect(currentAssets?.has(cardUrl)).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(card)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(boardUrl)).toBe(board)
 
     await dispatchLifecycle(harness.activateListener)
 
     expect(harness.cacheEntries.has('cardgame-assets-v8')).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(card)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(boardUrl)).toBe(board)
+    expect(harness.cacheEntries.has('cardgame-runtime-assets-v1')).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v2')?.get(boardUrl)).toBe(board)
   })
 
   it('deletes only obsolete Cardgame caches during activation', async () => {
@@ -402,9 +396,10 @@ describe('service worker lifecycle', () => {
       'cardgame-shell-v9-index-previous.js',
       'cardgame-build-assets-v9-index-previous.js',
       'cardgame-runtime-assets-v0',
-      'cardgame-shell-v9-index-build123.js',
-      'cardgame-build-assets-v9-index-build123.js',
+      'cardgame-shell-v10-index-build123.js',
+      'cardgame-build-assets-v10-index-build123.js',
       'cardgame-runtime-assets-v1',
+      'cardgame-runtime-assets-v2',
       'another-pages-app-v3',
     ])
 
@@ -416,6 +411,7 @@ describe('service worker lifecycle', () => {
       'cardgame-shell-v9-index-previous.js',
       'cardgame-build-assets-v9-index-previous.js',
       'cardgame-runtime-assets-v0',
+      'cardgame-runtime-assets-v1',
     ])
   })
 })
@@ -458,7 +454,7 @@ describe('service worker fetch handling', () => {
   describe('unhashed public asset network-first caching', () => {
     it('uses the network response when a cached card also exists', async () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/cards/hd/Forest.png')
+      const request = makeRequest('/Cardgame/cards/hd/gravebloom-dryad.png')
       const cached = makeResponse('cached card')
       const network = makeResponse('network card')
       const networkClone = makeResponse('network card clone')
@@ -478,7 +474,7 @@ describe('service worker fetch handling', () => {
 
     it('caches successful network card responses', async () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/cards/monochrome/Island.png')
+      const request = makeRequest('/Cardgame/cards/monochrome/signal-siren.png')
       const network = makeResponse('network card')
       const networkClone = makeResponse('network card clone')
       const clone = vi.spyOn(network, 'clone').mockReturnValue(networkClone)
@@ -509,7 +505,7 @@ describe('service worker fetch handling', () => {
 
     it('falls back to the cached card when the network rejects', async () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/cards/hd/Swamp.png')
+      const request = makeRequest('/Cardgame/cards/hd/memory-vampire.png')
       const cached = makeResponse('cached card')
       harness.cachedResponses.set(request.url, cached)
       harness.fetchMock.mockRejectedValue(new Error('offline'))
@@ -523,7 +519,7 @@ describe('service worker fetch handling', () => {
 
     it('returns Response.error() when network and cached card both miss', async () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/cards/hd/Plains.png')
+      const request = makeRequest('/Cardgame/cards/hd/echo-doppelganger.png')
       harness.fetchMock.mockRejectedValue(new Error('offline'))
 
       const response = await dispatchFetch(harness, request)
@@ -668,7 +664,7 @@ describe('service worker fetch handling', () => {
   describe('routing guards', () => {
     it('ignores non-GET requests', () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Cardgame/cards/hd/Forest.png', { method: 'POST' })
+      const request = makeRequest('/Cardgame/cards/hd/gravebloom-dryad.png', { method: 'POST' })
 
       expect(dispatchFetch(harness, request)).toBeNull()
       expect(harness.fetchMock).not.toHaveBeenCalled()
@@ -676,7 +672,7 @@ describe('service worker fetch handling', () => {
 
     it('ignores cross-origin requests', () => {
       const harness = loadServiceWorker()
-      const request = new Request('https://cdn.example.test/Cardgame/cards/hd/Forest.png')
+      const request = new Request('https://cdn.example.test/Cardgame/cards/hd/gravebloom-dryad.png')
 
       expect(dispatchFetch(harness, request)).toBeNull()
       expect(harness.fetchMock).not.toHaveBeenCalled()
@@ -684,7 +680,7 @@ describe('service worker fetch handling', () => {
 
     it('ignores same-origin requests outside the configured base path', () => {
       const harness = loadServiceWorker()
-      const request = makeRequest('/Other/cards/hd/Forest.png')
+      const request = makeRequest('/Other/cards/hd/gravebloom-dryad.png')
 
       expect(dispatchFetch(harness, request)).toBeNull()
       expect(harness.fetchMock).not.toHaveBeenCalled()

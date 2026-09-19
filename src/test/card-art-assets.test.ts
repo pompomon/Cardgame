@@ -3,13 +3,17 @@
 // (`node:fs` / `node:path`), `__dirname`, and `Buffer` are declared as
 // ambient modules in `src/test/node-shims.d.ts` to satisfy `tsc --noEmit`.
 
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ALL_CARD_ART } from '../app/card-art'
+import { cardAssetSlug } from '../app/card-catalog'
+import { BASIC_LANDS } from '../game/types'
 
 const PUBLIC_ROOT = resolve(__dirname, '..', '..', 'public')
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const ART_STYLES = ['classic', 'hd', 'hd-fallback', 'monochrome'] as const
+const EXPECTED_CREATURE_FILES = BASIC_LANDS.map((land) => `${cardAssetSlug(land)}.png`).sort()
 
 function publicPathFor(url: string): string {
   // cardArtUrl uses BASE_URL of '/' under vitest, so URL is '/cards/...'.
@@ -45,7 +49,16 @@ function readImageSize(path: string): { width: number; height: number } {
 }
 
 describe('card art asset files', () => {
-  it('ships a PNG for every (style, land) entry registered in ALL_CARD_ART', () => {
+  it('ships exactly the five catalog-slugged creature PNGs in every art directory', () => {
+    for (const style of ART_STYLES) {
+      const files = readdirSync(resolve(PUBLIC_ROOT, 'cards', style))
+        .filter((name) => name.endsWith('.png'))
+        .sort()
+      expect(files, `public/cards/${style}`).toEqual(EXPECTED_CREATURE_FILES)
+    }
+  })
+
+  it('ships a PNG for every (style, card) entry registered in ALL_CARD_ART', () => {
     for (const entry of ALL_CARD_ART) {
       const path = publicPathFor(entry.url)
       // Existence + non-empty.

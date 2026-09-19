@@ -14,7 +14,7 @@ describe('runtime-asset-version unhashed-asset change warning', () => {
   })
 
   it.each([
-    'public/cards/hd/Forest.png',
+    'public/cards/hd/gravebloom-dryad.png',
     'public/boards/classic/background-hd.png',
   ])('warns when %s changes without a runtime asset version bump', (changedPath) => {
     const result = evaluateCacheVersionCheck({
@@ -36,7 +36,7 @@ describe('runtime-asset-version unhashed-asset change warning', () => {
     expect(
       evaluateCacheVersionCheck({
         baseRuntimeAssetVersion: 'v7',
-        changedPaths: ['public/cards/monochrome/Island.png'],
+        changedPaths: ['public/cards/monochrome/signal-siren.png'],
         currentRuntimeAssetVersion: 'v8',
       }),
     ).toEqual({ kind: 'ok' })
@@ -56,7 +56,7 @@ describe('runtime-asset-version unhashed-asset change warning', () => {
     expect(
       evaluateCacheVersionCheck({
         baseRuntimeAssetVersion: null,
-        changedPaths: ['public/cards/hd/Mountain.png'],
+        changedPaths: ['public/cards/hd/rooftop-gargoyle.png'],
         currentRuntimeAssetVersion: 'v7',
       }),
     ).toMatchObject({ kind: 'skipped' })

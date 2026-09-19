@@ -1,4 +1,5 @@
 import { CARD_VISUAL_STYLE_OPTIONS } from './card-visual-styles'
+import { cardAssetSlug } from './card-catalog'
 import type { CardVisualStyle } from './types'
 import { BASIC_LANDS, type BasicLand } from '../game/types'
 
@@ -17,18 +18,18 @@ function basePath(): string {
 }
 
 export function cardArtKey(land: BasicLand, style: CardVisualStyle): string {
-  return `card-art:${style}:${land}`
+  return `card-art:${style}:${cardAssetSlug(land)}`
 }
 
 export function cardArtUrl(land: BasicLand, style: CardVisualStyle): string {
-  return `${basePath()}cards/${style}/${land}.png`
+  return `${basePath()}cards/${style}/${cardAssetSlug(land)}.png`
 }
 
 /**
  * Texture key for the geometric HD-fallback raster shipped under
- * `public/cards/hd-fallback/<Land>.png`. Preloaded alongside the primary
+ * `public/cards/hd-fallback/<asset-slug>.png`. Preloaded alongside the primary
  * `hd` image so the Three.js native interface can fall back to deterministic
- * geometric art when the photoreal asset is missing.
+ * creature art when the primary asset is missing.
  *
  * Only `'hd'` is accepted because it is the sole style that ships a backed
  * raster fallback layer. Use {@link cardArtFallbackUrl} (which returns
@@ -36,14 +37,14 @@ export function cardArtUrl(land: BasicLand, style: CardVisualStyle): string {
  * constructing a key.
  */
 export function cardArtFallbackKey(land: BasicLand, style: 'hd'): string {
-  return `card-art:${style}-fallback:${land}`
+  return `card-art:${style}-fallback:${cardAssetSlug(land)}`
 }
 
 /**
  * Returns the URL of the runtime raster fallback for `(land, style)`, or
  * `null` when no fallback is shipped. Currently only the `hd` style ships a
- * fallback — the deterministic geometric PNGs at
- * `public/cards/hd-fallback/<Land>.png` produced by
+ * fallback — the deterministic creature PNGs at
+ * `public/cards/hd-fallback/<asset-slug>.png` produced by
  * `scripts/generate-card-art.mjs` — to back-stop the photoreal HD art.
  */
 export function cardArtFallbackUrl(
@@ -53,7 +54,7 @@ export function cardArtFallbackUrl(
   if (style !== 'hd') {
     return null
   }
-  return `${basePath()}cards/hd-fallback/${land}.png`
+  return `${basePath()}cards/hd-fallback/${cardAssetSlug(land)}.png`
 }
 
 export const CARD_BACK_KEY = 'card-art:back'

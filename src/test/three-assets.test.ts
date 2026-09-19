@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LinearFilter, NearestFilter } from 'three'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
-import { ThreeAssets, boardAssetCandidates, boardTextureDimensions, cardAssetCandidates, parseAmbienceFrame } from '../renderers/three/assets'
+import { ThreeAssets, boardAssetCandidates, boardTextureDimensions, cardAssetCandidates, cardTextureIdentity, parseAmbienceFrame } from '../renderers/three/assets'
 import { installFakeTimerHooks } from './helpers/timers'
 
 class FakeImage {
@@ -66,13 +66,18 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('uses shared base-path helpers and HD → geometric → procedural routing', () => {
-    expect(cardAssetCandidates('Forest', 'hd')).toEqual(['/cards/hd/Forest.png', '/cards/hd-fallback/Forest.png'])
+    expect(cardAssetCandidates('Forest', 'hd')).toEqual(['/cards/hd/gravebloom-dryad.png', '/cards/hd-fallback/gravebloom-dryad.png'])
     expect(cardAssetCandidates({
       name: 'Echo Doppelgänger',
       serializedKey: 'Plains',
       displayName: 'Echo Doppelgänger',
-      assetSlug: 'echo-doppelganger',
-    }, 'hd')).toEqual(['/cards/hd/Plains.png', '/cards/hd-fallback/Plains.png'])
+      assetSlug: 'untrusted-override',
+    }, 'hd')).toEqual(['/cards/hd/echo-doppelganger.png', '/cards/hd-fallback/echo-doppelganger.png'])
+    expect(cardTextureIdentity({
+      name: 'Echo Doppelgänger',
+      serializedKey: 'Plains',
+      assetSlug: 'untrusted-override',
+    })).toBe('echo-doppelganger')
     expect(cardAssetCandidates('Forest', 'classic')).toEqual([])
     expect(cardAssetCandidates('unknown', 'hd')).toEqual([])
     expect(boardAssetCandidates('verdant', 'balanced')).toEqual([
@@ -92,7 +97,7 @@ describe('Three.js shared HD texture leases', () => {
     const first = FakeImage.images[0]
     const lateSuccess = first.onload!
     first.onerror!()
-    expect(FakeImage.images[1].src).toBe('/cards/hd-fallback/Forest.png')
+    expect(FakeImage.images[1].src).toBe('/cards/hd-fallback/gravebloom-dryad.png')
     lateSuccess()
     expect(lease.texture.version).toBe(version)
     FakeImage.images[1].onload!()
@@ -296,7 +301,7 @@ describe('Three.js shared HD texture leases', () => {
     expect(FakeImage.images).toHaveLength(2)
     online.dispatchEvent(new Event('online'))
     expect(FakeImage.images).toHaveLength(3)
-    expect(FakeImage.images[2].src).toBe('/cards/hd/Forest.png')
+    expect(FakeImage.images[2].src).toBe('/cards/hd/gravebloom-dryad.png')
     again.release()
   })
 
@@ -306,7 +311,7 @@ describe('Three.js shared HD texture leases', () => {
     FakeImage.images[1].onload!()
     expect(lease.ready).toBe(true)
     online.dispatchEvent(new Event('online'))
-    expect(FakeImage.images[2].src).toBe('/cards/hd/Plains.png')
+    expect(FakeImage.images[2].src).toBe('/cards/hd/echo-doppelganger.png')
     expect(lease.ready).toBe(true)
     FakeImage.images[2].onload!()
     online.dispatchEvent(new Event('online'))
