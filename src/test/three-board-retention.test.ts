@@ -176,7 +176,7 @@ describe('retained Three.js card registry', () => {
       board.present()
       expect(board.canDrop).toBe(false)
       expect(board.instruction.hidden).toBe(false)
-      expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
+      expect(board.instructionText.textContent).toBe(response.instruction)
       const island = registry.get(boardCardKey('island', 0))!
       const firstForest = registry.get(boardCardKey('forest-1', 0))!
       const forest = registry.get(boardCardKey('forest-2', 0))!
@@ -193,7 +193,7 @@ describe('retained Three.js card registry', () => {
           y: retained.descriptor.y,
         })?.cardId).toBe(card.id)
       }
-      expect(board.instructionText.textContent).toBe(`Respond to Swamp. ${response.instruction}`)
+      expect(board.instructionText.textContent).toBe(response.instruction)
       expect(registry.get(boardCardKey('other-island', 0))!.descriptor.response).toBe('discard')
       expect(acquire).toHaveBeenCalledTimes(4)
       registry.dispose()

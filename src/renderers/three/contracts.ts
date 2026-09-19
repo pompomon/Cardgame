@@ -1,13 +1,20 @@
 import type { AppViewModel } from '../../app/types'
 import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
+import type { BasicLand } from '../../game/types'
 import type { ThreePrimaryAction } from './interface-model'
 
-export interface BoardHit {
+export interface RendererCardIdentity {
+  readonly name: string
+  readonly serializedKey?: BasicLand
+  readonly displayName?: string
+  readonly assetSlug?: string
+}
+
+export interface BoardHit extends RendererCardIdentity {
   readonly key: string
   readonly cardId: string
   readonly instanceId?: string
-  readonly name: string
   readonly owner: number
   readonly zone: 'hand' | 'battlefield'
   readonly playable: boolean

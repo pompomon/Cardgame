@@ -3,11 +3,13 @@ import {
   MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, SRGBColorSpace, WebGLRenderer,
 } from 'three'
 import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
+import { cardAssetSlug, displayCardName } from '../../app/card-catalog'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../../app/card-visual-styles'
 import { durationMsForSpeed, MAX_QUEUED_EFFECTS } from '../../app/animation-settings'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../../app/types'
 import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
+import { isBasicLand, type BasicLand } from '../../game/types'
 import { effectFeedbackForDescriptor } from '../shared/interaction-feedback'
 import { ThreeAssets } from './assets'
 import { ThreeBackground } from './background'
@@ -42,10 +44,26 @@ interface TargetLabel {
 }
 
 const ROWS: readonly BoardRow[] = ['far', 'near', 'hand']
-const PLAY_INSTRUCTION = 'Drag a highlighted card into your battlefield'
-const CANCEL_INSTRUCTION = 'Move into your battlefield · release elsewhere to cancel'
+const SUMMON_INSTRUCTION = 'Drag a highlighted creature onto your board to summon it'
+const CANCEL_INSTRUCTION = 'Move onto your board · release elsewhere to cancel'
+const RELEASE_INSTRUCTION = 'Release to summon'
 const MAX_INSTRUCTION_WIDTH = 544
 const OVERLAY_GAP = 4
+const EFFECT_ANNOUNCEMENT_MS = 350
+
+function cardIdentity(
+  card: { readonly name: string; readonly serializedKey?: BasicLand; readonly displayName?: string },
+): Pick<BoardHit, 'serializedKey' | 'displayName' | 'assetSlug'> {
+  if (card.name === HIDDEN_HAND_CARD_NAME) return {}
+  const serializedKey = card.serializedKey ?? (isBasicLand(card.name) ? card.name : null)
+  return serializedKey
+    ? {
+        serializedKey,
+        displayName: card.displayName ?? displayCardName(serializedKey),
+        assetSlug: cardAssetSlug(serializedKey),
+      }
+    : {}
+}
 
 export class ThreeBoard implements ThreeBoardApi {
   readonly canvas: HTMLCanvasElement
@@ -113,7 +131,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.onPrimaryAction = onPrimaryAction
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'three-board-canvas'
-    this.canvas.setAttribute('aria-label', 'Cardgame tabletop. Use the adjacent card controls for keyboard play.')
+    this.canvas.setAttribute('aria-label', 'Urban Creatures board. Use the adjacent card controls for keyboard interaction.')
     this.stage.className = 'three-board-stage'
     this.stage.append(this.canvas)
     try {
@@ -169,7 +187,7 @@ export class ThreeBoard implements ThreeBoardApi {
       this.instruction.append(this.instructionText)
       // Reserve every drag prompt's wrapped height so feedback does not make
       // the overlay jump during a gesture.
-      for (const text of [PLAY_INSTRUCTION, CANCEL_INSTRUCTION]) {
+      for (const text of [SUMMON_INSTRUCTION, CANCEL_INSTRUCTION, RELEASE_INSTRUCTION]) {
         const size = document.createElement('span')
         size.className = 'three-board-instruction-size'
         size.setAttribute('aria-hidden', 'true')
@@ -268,23 +286,24 @@ export class ThreeBoard implements ThreeBoardApi {
     this.instruction.hidden = !this.canDrop && !response
     for (const size of this.instructionSizes) size.hidden = !this.canDrop
     this.instructionText.textContent = response
-      ? primary?.prompt || `Respond to ${game.pendingLandDisplayName ?? game.pendingLandName ?? 'land'}. ${response.choices.length
-        ? response.instruction : 'No legal counter cards available.'}`
-      : PLAY_INSTRUCTION
+      ? primary?.prompt || (response.choices.length
+        ? response.instruction
+        : `No legal card combination can intercept the summon of ${game.pendingLandDisplayName ?? 'this creature'}. Choose Let It Through.`)
+      : SUMMON_INSTRUCTION
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
       const chrome = this.chrome.get(row)!
-      const label = row === 'hand' ? `Player ${owner + 1} · hand` : `Player ${owner + 1} · battlefield`
+      const label = row === 'hand' ? `Player ${owner + 1} · Hand` : `Player ${owner + 1} · Board`
       chrome.label.textContent = `${label}${game.actor === owner ? ' · ACTIVE' : ''}`
       chrome.header.dataset.active = String(game.actor === owner)
       if (row !== 'hand') {
-        const counts = `Hand ${player.handCount} · Deck ${player.deckCount} · Graveyard ${player.graveyardCount}`
+        const counts = `Hand ${player.handCount} · Deck ${player.deckCount} · Discard pile ${player.graveyardCount}`
         chrome.stats.textContent = counts
         chrome.stats.setAttribute('aria-label', `Player ${owner + 1}: ${counts}`)
         for (const [index, stack] of chrome.stacks.entries()) {
           const count = index === 0 ? player.deckCount : player.graveyardCount
-          stack.textContent = `${index === 0 ? 'Deck' : 'GY'} ${count}`
+          stack.textContent = `${index === 0 ? 'Deck' : 'Discard'} ${count}`
           stack.dataset.empty = String(count === 0)
         }
       }
@@ -301,6 +320,7 @@ export class ThreeBoard implements ThreeBoardApi {
         const hit: BoardHit = {
           key: boardCardKey(cardId, owner, instanceId),
           cardId, instanceId, name: card.name, owner, zone: row === 'hand' ? 'hand' : 'battlefield',
+          ...cardIdentity(card),
           playable: row === 'hand' && input && game.phase === 'main' && card.name !== HIDDEN_HAND_CARD_NAME
             && (game.legal.playLandByCard[cardId]?.length ?? 0) > 0,
         }
@@ -352,6 +372,7 @@ export class ThreeBoard implements ThreeBoardApi {
       ...rect, hit: {
         key: boardCardKey(pending.cardId, pending.actor), cardId: pending.cardId,
         name: pending.name, owner: pending.actor, zone: 'battlefield', playable: false,
+        ...cardIdentity(pending),
       },
       style: this.view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
       visible: true, target: false, shadows: this.quality.shadows, lifted: true,
@@ -361,7 +382,7 @@ export class ThreeBoard implements ThreeBoardApi {
     else this.pendingCard = this.cards.createPresentation(descriptor)
     this.pendingCard.group.name = 'pending-land-play'
     this.pendingCaption.hidden = false
-    this.pendingCaption.textContent = `${pending.name} · awaiting response`
+    this.pendingCaption.textContent = `${pending.displayName ?? displayCardName(pending.name)} · awaiting interception`
     this.pendingCaption.style.left = `${this.layout.width / 2 + rect.x}px`
     this.pendingCaption.style.top = `${this.layout.height / 2 - rect.y - rect.height / 2 + 4}px`
     this.pendingCaption.style.width = `${rect.width - 8}px`
@@ -472,7 +493,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const allowed = inside && this.canDrop && pointInRect(this.point, this.layout.drop)
     this.dropMaterial.color.set(allowed ? '#94ffc9' : '#e5667d')
     this.dropMaterial.opacity = allowed ? 0.2 : 0.08
-    this.instructionText.textContent = allowed ? 'Release to play' : CANCEL_INSTRUCTION
+    this.instructionText.textContent = allowed ? RELEASE_INSTRUCTION : CANCEL_INSTRUCTION
     this.invalidate()
   }
 
@@ -491,19 +512,44 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     this.dropMaterial.color.set('#70e7b1')
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
-    this.instructionText.textContent = PLAY_INSTRUCTION
+    this.instructionText.textContent = SUMMON_INSTRUCTION
     this.invalidate()
   }
 
+  private showEffectCaption(effect: VisualEffectDescriptor): void {
+    const feedback = effectFeedbackForDescriptor(effect)
+    if (this.effectCaption.textContent !== feedback.label) this.effectCaption.textContent = feedback.label
+    const announcement = effect.kind === 'mountain_destroy'
+      ? `Banish: ${effect.targetDisplayName ?? 'the creature'} goes to its owner's discard pile.`
+      : feedback.label
+    if (this.effectCaption.getAttribute('aria-label') !== announcement) {
+      this.effectCaption.setAttribute('aria-label', announcement)
+    }
+    this.effectCaption.hidden = false
+  }
+
+  announceEffect(effect: VisualEffectDescriptor, done: () => void): () => void {
+    this.showEffectCaption(effect)
+    let completed = false
+    const finish = (): void => {
+      if (completed) return
+      completed = true
+      clearTimeout(timer)
+      this.effectCaption.hidden = true
+      done()
+      this.invalidate()
+    }
+    const timer = setTimeout(finish, EFFECT_ANNOUNCEMENT_MS)
+    return finish
+  }
+
   playEffect(effect: VisualEffectDescriptor, duration: number, done: () => void): () => void {
+    this.showEffectCaption(effect)
     if (!this.usable() || !this.quality.motion || !Number.isFinite(duration) || duration <= 0 || !effectRecipe(effect.kind)) {
       done()
       return (): void => {}
     }
     if (this.effects.size >= MAX_QUEUED_EFFECTS) this.effects.values().next().value!.cancel()
-    const feedback = effectFeedbackForDescriptor(effect)
-    this.effectCaption.textContent = feedback.label
-    this.effectCaption.hidden = false
     const source = this.cards?.anchorFor(effect.sourceInstanceId) ?? this.actorAnchor(effect.actor)
     const target = this.effectTargetAnchor(effect)
     const counterCards = this.createCounterCards(effect, source)
@@ -528,6 +574,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const sequence = ++this.effectCardSequence
     return effect.counterCards.map((name, index) => {
       const cardId = `counter-cost-${sequence}-${index}`
+      const identity = cardIdentity({ name, serializedKey: name, displayName: displayCardName(name) })
       const card = this.cards!.createPresentation({
         x: anchor.x,
         y: anchor.y,
@@ -537,6 +584,7 @@ export class ThreeBoard implements ThreeBoardApi {
           key: boardCardKey(cardId, effect.actor),
           cardId,
           name,
+          ...identity,
           owner: effect.actor,
           zone: 'battlefield',
           playable: false,

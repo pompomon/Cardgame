@@ -82,7 +82,7 @@ export function getInstallUiState(): InstallUiState {
   const statusText = isStandalone
     ? 'Installed app mode active.'
     : canPromptInstall
-      ? 'Install Cardgame for faster home-screen access and standalone launch.'
+      ? 'Install Urban Creatures for faster home-screen access and standalone launch.'
       : showIosInstallHint
         ? 'Install on iOS: Share → Add to Home Screen.'
         : 'Install unavailable in this browser right now.'

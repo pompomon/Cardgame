@@ -34,6 +34,7 @@ describe('Three.js shared HD texture leases', () => {
     drawImage: ReturnType<typeof vi.fn>
     fillText: ReturnType<typeof vi.fn>
     fillRect: ReturnType<typeof vi.fn>
+    measureText: ReturnType<typeof vi.fn>
     imageSmoothingEnabled: boolean
   }>
   let invalidate: ReturnType<typeof vi.fn>
@@ -47,6 +48,7 @@ describe('Three.js shared HD texture leases', () => {
       createElement: () => {
         const context = {
           drawImage: vi.fn(), fillText: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(), clearRect: vi.fn(),
+          measureText: vi.fn((text: string) => ({ width: Array.from(text).length * 30 })),
           imageSmoothingEnabled: true,
           createRadialGradient: () => ({ addColorStop: vi.fn() }),
         }
@@ -65,14 +67,28 @@ describe('Three.js shared HD texture leases', () => {
 
   it('uses shared base-path helpers and HD → geometric → procedural routing', () => {
     expect(cardAssetCandidates('Forest', 'hd')).toEqual(['/cards/hd/Forest.png', '/cards/hd-fallback/Forest.png'])
+    expect(cardAssetCandidates({
+      name: 'Echo Doppelgänger',
+      serializedKey: 'Plains',
+      displayName: 'Echo Doppelgänger',
+      assetSlug: 'echo-doppelganger',
+    }, 'hd')).toEqual(['/cards/hd/Plains.png', '/cards/hd-fallback/Plains.png'])
     expect(cardAssetCandidates('Forest', 'classic')).toEqual([])
     expect(cardAssetCandidates('unknown', 'hd')).toEqual([])
     expect(boardAssetCandidates('verdant', 'balanced')).toEqual([
       '/boards/verdant/background-balanced.png', '/boards/verdant/background-low.png', '/boards/verdant/background-fallback.png',
     ])
-    const lease = assets.acquireCard('Forest', 'hd')
+    const lease = assets.acquireCard({
+      name: 'Forest',
+      serializedKey: 'Forest',
+      displayName: 'Gravebloom Dryad',
+      assetSlug: 'gravebloom-dryad',
+    }, 'hd')
     const version = lease.texture.version
-    expect(contexts[0].fillText).toHaveBeenCalledWith('Forest', 256, 664, 456)
+    expect(contexts[0].fillText.mock.calls).toEqual([
+      ['Gravebloom', 256, 619],
+      ['Dryad', 256, 669],
+    ])
     const first = FakeImage.images[0]
     const lateSuccess = first.onload!
     first.onerror!()
@@ -95,8 +111,8 @@ describe('Three.js shared HD texture leases', () => {
     expect(call).toHaveLength(9)
     expect(call.slice(5)).toEqual([16, 16, 480, 672])
     expect(call[3] / call[4]).toBeCloseTo(480 / 672)
-    expect(contexts[0].fillRect).toHaveBeenCalledWith(16, 588, 480, 100)
-    expect(contexts[0].fillText.mock.calls.every(([text]) => text === 'Island')).toBe(true)
+    expect(contexts[0].fillRect).toHaveBeenCalledWith(16, 570, 480, 118)
+    expect(contexts[0].fillText.mock.calls.every(([text]) => text === 'Signal Siren')).toBe(true)
     expect(lease.texture.minFilter).toBe(LinearFilter)
     expect(lease.texture.magFilter).toBe(LinearFilter)
     expect(contexts[0].imageSmoothingEnabled).toBe(true)
@@ -125,7 +141,7 @@ describe('Three.js shared HD texture leases', () => {
     expect(forest.ready).toBe(false)
     expect(forest.failed).toBe(true)
     expect(forest.texture.magFilter).toBe(NearestFilter)
-    expect(contexts[0].fillText).toHaveBeenLastCalledWith('Forest', 256, 664, 456)
+    expect(contexts[0].fillText).toHaveBeenLastCalledWith('Dryad', 256, 669)
   })
 
   it.each([
@@ -323,9 +339,13 @@ describe('Three.js shared HD texture leases', () => {
     })
   })
 
-  it('shares cached name/style text and holds a texture until the final reference releases', () => {
-    const first = assets.acquireCard('Plains', 'classic')
-    const second = assets.acquireCard('Plains', 'classic')
+  it('shares catalog-slug/style textures and holds a texture until the final reference releases', () => {
+    const first = assets.acquireCard({
+      name: 'Plains', serializedKey: 'Plains', displayName: 'Echo Doppelgänger', assetSlug: 'echo-doppelganger',
+    }, 'classic')
+    const second = assets.acquireCard({
+      name: 'Plains', serializedKey: 'Plains', displayName: 'Echo Doppelgänger', assetSlug: 'echo-doppelganger',
+    }, 'classic')
     const dispose = vi.spyOn(first.texture, 'dispose')
     expect(first.texture).toBe(second.texture)
     expect(contexts).toHaveLength(1)
@@ -341,10 +361,16 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('renders hidden card backs without leaking a land name', () => {
-    assets.acquireCard(HIDDEN_HAND_CARD_NAME, 'hd')
+    assets.acquireCard({
+      name: HIDDEN_HAND_CARD_NAME,
+      serializedKey: 'Forest',
+      displayName: 'Gravebloom Dryad',
+      assetSlug: 'gravebloom-dryad',
+    }, 'hd')
     expect(FakeImage.images[0].src).toBe('/cards/card-back.png')
-    expect(contexts[0].fillText).toHaveBeenCalledWith('CARDGAME', 256, 368, 420)
+    expect(contexts[0].fillText).toHaveBeenCalledWith('URBAN CREATURES', 256, 368, 440)
     expect(contexts[0].fillText).not.toHaveBeenCalledWith(HIDDEN_HAND_CARD_NAME, expect.anything(), expect.anything(), expect.anything())
+    expect(contexts[0].fillText).not.toHaveBeenCalledWith('Gravebloom Dryad', expect.anything(), expect.anything())
   })
 
   it('timeouts remain bounded and fall back without a new render subscription', () => {

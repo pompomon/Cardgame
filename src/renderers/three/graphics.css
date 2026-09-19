@@ -45,14 +45,14 @@
   color: #dbe3f1;
   text-align: center;
   font-weight: 650;
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
 }
 .three-board-label p { margin: 0; }
 .three-board-label > div {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   overflow-wrap: anywhere;
 }
 .three-board-stats {
@@ -73,6 +73,8 @@
   background: #164d3d;
   color: #fff;
   font: 700 1rem/1.2 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+  white-space: normal;
   cursor: pointer;
   touch-action: manipulation;
   pointer-events: auto;
@@ -132,6 +134,7 @@
   align-items: center;
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 .three-board-stack::before {
   content: '';
@@ -180,6 +183,7 @@
   background: #081623f2;
   color: #f8fcff;
   text-align: center;
+  overflow-wrap: anywhere;
   pointer-events: none;
 }
 .three-board-stage[data-layout="compact"] .three-board-label {

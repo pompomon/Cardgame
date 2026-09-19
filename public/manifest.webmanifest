@@ -1,7 +1,7 @@
 {
-  "name": "Cardgame",
-  "short_name": "Cardgame",
-  "description": "Land-only 2-player card game with local AI and optional P2P mode.",
+  "name": "Urban Creatures",
+  "short_name": "Urban Creatures",
+  "description": "Urban-fantasy 2-player card game with local AI and optional P2P mode.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

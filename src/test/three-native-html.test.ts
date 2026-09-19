@@ -12,8 +12,16 @@ describe('Three.js native card tile output', () => {
   })
 
   it('renders HD card tiles using the shipped PNG as a full-bleed background with an overlaid label', () => {
-    const html = renderCardTile('Forest', 'hd')
+    const html = renderCardTile({
+      name: 'Forest',
+      serializedKey: 'Forest',
+      displayName: 'Gravebloom Dryad',
+      assetSlug: 'gravebloom-dryad',
+    }, 'hd')
     expect(html).toContain('src="/cards/hd/Forest.png"')
+    expect(html).toContain('data-card-art="gravebloom-dryad"')
+    expect(html).toContain('Gravebloom Dryad')
+    expect(html).not.toContain('>Forest<')
     // HD tile uses a dedicated background-image structure (not the small
     // `card-tile-icon` glyph) so the PNG can fill the entire tile.
     expect(html).toContain('card-tile-bg')
@@ -53,6 +61,8 @@ describe('Three.js native card tile output', () => {
     expect(html).not.toContain('card-tile--raster')
     expect(html).not.toContain('card-tile-icon--raster')
     expect(html).not.toContain('onerror=')
+    expect(html).toContain('Rooftop Gargoyle')
+    expect(html).toContain('data-card-art="rooftop-gargoyle"')
   })
 
   it('keeps the procedural icon for tiny action glyphs even in HD mode', () => {
@@ -106,10 +116,30 @@ describe('Three.js native card tile output', () => {
   })
 
   it('renders a face-down placeholder tile for the hidden-hand sentinel name', () => {
-    const html = renderCardTile('__hidden__', 'classic')
+    const html = renderCardTile({
+      name: '__hidden__',
+      serializedKey: 'Plains',
+      displayName: 'Echo Doppelgänger',
+      assetSlug: 'echo-doppelganger',
+    }, 'classic')
     expect(html).toContain('card-tile--hidden')
     expect(html).toContain('aria-label="Hidden card"')
     // Must not leak any land name into the rendered tile.
     expect(html).not.toMatch(/Forest|Island|Mountain|Plains|Swamp/)
+    expect(html).not.toMatch(/Echo|Doppelgänger|echo-doppelganger|data-card-art/)
+  })
+
+  it('keeps Unicode display copy separate from stable palette and legacy art identity', () => {
+    const html = renderCardTile({
+      name: 'untrusted legacy text',
+      serializedKey: 'Plains',
+      displayName: 'Echo Doppelgänger <script>',
+      assetSlug: 'echo-doppelganger',
+    }, 'hd')
+    expect(html).toContain('src="/cards/hd/Plains.png"')
+    expect(html).toContain('three-card--plains')
+    expect(html).toContain('data-card-art="echo-doppelganger"')
+    expect(html).toContain('Echo Doppelgänger &lt;script&gt;')
+    expect(html).not.toContain('<script>')
   })
 })

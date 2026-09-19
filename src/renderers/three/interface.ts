@@ -23,7 +23,7 @@ import {
   renderThreeHud,
   renderThreeInterface,
   threeDecisionKey,
-  threePreviewName,
+  threePreviewCard,
   threePrimaryAction,
   threeResponse,
   threeSessionKey,
@@ -271,7 +271,7 @@ export class ThreeInterface {
       this.respondWithCard(hit.cardId, hit.owner)
       return
     }
-    if (hit.zone === 'battlefield' && hit.instanceId && threePreviewName(view.game, hit) !== null) {
+    if (hit.zone === 'battlefield' && hit.instanceId && threePreviewCard(view.game, hit) !== null) {
       const targets = threeTargets(view, this.ui())
       if (targets?.battlefield && targets.options.some((option) => option.effectTargetId === hit.instanceId)) {
         this.chooseTarget(hit.instanceId)
@@ -293,7 +293,7 @@ export class ThreeInterface {
     if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.preview) return
     if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) return
     if (!canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })) return
-    if (threePreviewName(view.game, hit) === null) return
+    if (threePreviewCard(view.game, hit) === null) return
     this.previewReturnToCards = this.cardsOpen
     this.previewReturnFocus = this.captureFocus()
     this.cardsOpen = false
