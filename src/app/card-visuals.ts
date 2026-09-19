@@ -1,4 +1,5 @@
 import { cardArtFallbackUrl, cardArtUrl } from './card-art'
+import { CARD_VISUAL_GRID_SIZE, cardVisualRecipe } from './card-visual-recipes'
 import { isRasterCardVisualStyle } from './card-visual-styles'
 import type { CardVisualStyle } from './types'
 import type { BasicLand } from '../game/types'
@@ -23,106 +24,6 @@ export interface PixelRect {
   y: number
   size: number
   tone: PixelTone
-}
-
-const GRID_SIZE = 16
-const TEMPLATE_FOREST = [
-  '................',
-  '.......#........',
-  '......###.......',
-  '.....#####......',
-  '....#######.....',
-  '....#######.....',
-  '.....#####......',
-  '......###.......',
-  '.......#........',
-  '.......#........',
-  '.......#........',
-  '......+#+.......',
-  '......+#+.......',
-  '......+#+.......',
-  '................',
-  '................',
-]
-const TEMPLATE_ISLAND = [
-  '................',
-  '................',
-  '.....######.....',
-  '...##++++++##...',
-  '..##++++++++##..',
-  '..##++++++++##..',
-  '.##++++++++++##.',
-  '.##++++++++++##.',
-  '..##++++++++##..',
-  '..##++++++++##..',
-  '...##++++++##...',
-  '.....######.....',
-  '.......##.......',
-  '......####......',
-  '................',
-  '................',
-]
-const TEMPLATE_MOUNTAIN = [
-  '................',
-  '................',
-  '.......##.......',
-  '......####......',
-  '.....######.....',
-  '....########....',
-  '...####++####...',
-  '..####++++####..',
-  '.####++++++####.',
-  '####++++++++####',
-  '################',
-  '..##++++++++##..',
-  '..##++++++++##..',
-  '..############..',
-  '................',
-  '................',
-]
-const TEMPLATE_PLAINS = [
-  '................',
-  '................',
-  '................',
-  '.......##.......',
-  '.......##.......',
-  '....########....',
-  '....##++++##....',
-  '..############..',
-  '..##++++++++##..',
-  '################',
-  '..##++++++++##..',
-  '....##++++##....',
-  '....########....',
-  '.......##.......',
-  '................',
-  '................',
-]
-const TEMPLATE_SWAMP = [
-  '................',
-  '................',
-  '.....######.....',
-  '...##++++++##...',
-  '..##++++++++##..',
-  '..##++++++++##..',
-  '..##++++++++##..',
-  '...##++++++##...',
-  '.....######.....',
-  '.......##.......',
-  '......####......',
-  '....##+##+##....',
-  '....##+##+##....',
-  '.....######.....',
-  '................',
-  '................',
-]
-
-const PIXEL_TEMPLATES: Record<BasicLand, ReadonlyArray<string>> = {
-  Forest: TEMPLATE_FOREST,
-  Island: TEMPLATE_ISLAND,
-  Mountain: TEMPLATE_MOUNTAIN,
-  Plains: TEMPLATE_PLAINS,
-  Swamp: TEMPLATE_SWAMP,
 }
 
 const paletteByStyleAndLand: Record<CardVisualStyle, Record<BasicLand, CardVisualPalette>> = {
@@ -166,21 +67,21 @@ function encodeSvg(svg: string): string {
 }
 
 function templateRects(land: BasicLand, targetSize: number): ReadonlyArray<PixelRect> {
-  const size = Math.max(bucketSize(targetSize), GRID_SIZE)
+  const size = Math.max(bucketSize(targetSize), CARD_VISUAL_GRID_SIZE)
   const cacheKey = `${land}:${size}`
   const cached = rectCache.get(cacheKey)
   if (cached) {
     return cached
   }
 
-  const template = PIXEL_TEMPLATES[land]
-  const pixelSize = Math.max(1, Math.floor(size / GRID_SIZE))
-  const iconWidth = pixelSize * GRID_SIZE
+  const template = cardVisualRecipe(land).silhouette
+  const pixelSize = Math.max(1, Math.floor(size / CARD_VISUAL_GRID_SIZE))
+  const iconWidth = pixelSize * CARD_VISUAL_GRID_SIZE
   const offset = Math.floor((size - iconWidth) / 2)
   const rects: PixelRect[] = []
-  for (let row = 0; row < GRID_SIZE; row += 1) {
+  for (let row = 0; row < CARD_VISUAL_GRID_SIZE; row += 1) {
     const line = template[row] ?? ''
-    for (let col = 0; col < GRID_SIZE; col += 1) {
+    for (let col = 0; col < CARD_VISUAL_GRID_SIZE; col += 1) {
       const symbol = line[col]
       if (symbol !== '#' && symbol !== '+') {
         continue
@@ -215,7 +116,7 @@ export function landIconDataUrl(land: BasicLand, style: CardVisualStyle, targetS
   const palette = cardVisualPaletteFor(land, style)
   // Keep a minimum internal coordinate space so the fixed GRID_SIZE-based icon
   // template remains fully visible even when the rendered output is smaller.
-  const internalSize = Math.max(size, GRID_SIZE)
+  const internalSize = Math.max(size, CARD_VISUAL_GRID_SIZE)
   const rects = landPixelRects(land, internalSize)
   const body = rects.map((rect) => {
     const fill = rect.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
@@ -238,7 +139,7 @@ export function stylePreviewDataUrl(style: CardVisualStyle, targetSize: number):
   // Use a large internal coordinate space so icons remain centered and fully
   // visible inside their lanes regardless of the rendered display size; SVG
   // scales the viewBox to the requested width/height.
-  const internalSize = Math.max(size, GRID_SIZE * lands.length * 2)
+  const internalSize = Math.max(size, CARD_VISUAL_GRID_SIZE * lands.length * 2)
   const parts: string[] = []
   lands.forEach((land, index) => {
     const palette = cardVisualPaletteFor(land, style)
@@ -246,7 +147,7 @@ export function stylePreviewDataUrl(style: CardVisualStyle, targetSize: number):
     const laneEnd = Math.floor(((index + 1) * internalSize) / lands.length)
     const laneWidth = laneEnd - laneStart
     parts.push(`<rect x="${laneStart}" y="0" width="${laneWidth}" height="${internalSize}" fill="${palette.cardFill}" />`)
-    const iconSize = bucketSize(Math.max(GRID_SIZE, Math.floor(Math.min(laneWidth, internalSize) * 0.8)))
+    const iconSize = bucketSize(Math.max(CARD_VISUAL_GRID_SIZE, Math.floor(Math.min(laneWidth, internalSize) * 0.8)))
     const iconRects = landPixelRects(land, iconSize)
     const xOffset = laneStart + Math.floor((laneWidth - iconSize) / 2)
     const yOffset = Math.floor((internalSize - iconSize) / 2)
@@ -264,14 +165,14 @@ export function stylePreviewDataUrl(style: CardVisualStyle, targetSize: number):
 export interface CardArtSource {
   /**
    * Preferred image URL for `(land, style)`. For raster styles this is the
-   * shipped PNG under `public/cards/<style>/<Land>.png`; for procedural styles
+   * shipped PNG under `public/cards/<style>/<asset-slug>.png`; for procedural styles
    * it is the same SVG data URL as `proceduralUrl`.
    */
   readonly primaryUrl: string
   /**
    * Optional intermediate raster fallback inserted between `primaryUrl` and
    * `proceduralUrl`. Populated for the `hd` style — the deterministic
-   * geometric PNG under `public/cards/hd-fallback/<Land>.png` — so when the
+   * deterministic PNG under `public/cards/hd-fallback/<asset-slug>.png` — so when the
    * photoreal HD asset fails to load the renderer can fall back to a known
    * good raster before degrading to the procedural pixel icon. `null` for
    * styles without a shipped fallback layer.

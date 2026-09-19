@@ -4,7 +4,7 @@ import {
 } from 'three'
 import type { CardVisualStyle } from '../../app/card-visual-styles'
 import { MAX_EFFECT_MS, MAX_QUEUED_EFFECTS } from '../../app/animation-settings'
-import { ThreeAssets, type TextureLease } from './assets'
+import { cardTextureIdentity, ThreeAssets, type TextureLease } from './assets'
 import type { BoardHit } from './contracts'
 import { pointInRect, type BoardRect, type Point } from './layout'
 
@@ -77,7 +77,7 @@ export class RetainedCard {
     const previous = this.descriptor
     const from = this.anchor()
     this.descriptor = descriptor
-    const signature = `${descriptor.style}:${descriptor.hit.assetSlug ?? descriptor.hit.serializedKey ?? descriptor.hit.name}`
+    const signature = `${descriptor.style}:${cardTextureIdentity(descriptor.hit)}`
     if (signature !== this.signature) {
       const next = this.assets.acquireCard(descriptor.hit, descriptor.style)
       this.lease?.release()

@@ -130,16 +130,18 @@ function resolveCardIdentity(card: string | RendererCardIdentity): ResolvedCardI
     hidden: false,
     serializedKey,
     displayName: value.displayName ?? displayCardName(serializedKey),
-    assetSlug: value.assetSlug ?? cardAssetSlug(serializedKey),
+    assetSlug: cardAssetSlug(serializedKey),
   }
+}
+
+export function cardTextureIdentity(card: string | RendererCardIdentity): string {
+  return resolveCardIdentity(card).assetSlug
 }
 
 export function cardAssetCandidates(card: string | RendererCardIdentity, style: CardVisualStyle): readonly string[] {
   const identity = resolveCardIdentity(card)
   if (identity.hidden) return [cardBackUrl()]
   if (!identity.serializedKey) return []
-  // Phase 3 keeps the shipped legacy filenames; the slug is already the cache
-  // identity and becomes the URL identity when Phase 4 migrates card-art.ts.
   const source = cardArtSourceFor(identity.serializedKey, style, 464)
   return source.isRaster
     ? [source.primaryUrl, ...(source.rasterFallbackUrl ? [source.rasterFallbackUrl] : [])]
@@ -197,7 +199,7 @@ export class ThreeAssets {
 
   acquireCard(card: string | RendererCardIdentity, style: CardVisualStyle): TextureLease {
     const identity = resolveCardIdentity(card)
-    return this.acquire(`card:${style}:${identity.assetSlug}`, 512, 704, cardAssetCandidates(card, style), (ctx, image) => {
+    return this.acquire(`card:${style}:${cardTextureIdentity(card)}`, 512, 704, cardAssetCandidates(card, style), (ctx, image) => {
       const palette = identity.serializedKey ? cardVisualPaletteFor(identity.serializedKey, style) : null
       ctx.fillStyle = palette?.cardFill ?? '#17283f'
       ctx.fillRect(0, 0, 512, 704)
