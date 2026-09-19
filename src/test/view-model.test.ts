@@ -234,8 +234,42 @@ describe('buildViewModel', () => {
     expect(vm.adventure).not.toBe(state.adventure)
     expect(vm.adventure.opponentLineup).not.toBe(state.adventure.opponentLineup)
     expect(vm.adventure.opponentLineup[0]).not.toBe(state.adventure.opponentLineup[0])
+    expect(vm.adventure.opponentLineup[0].label).toBe(
+      'Duo: Gravebloom Dryad + Memory Vampire',
+    )
+    expect(vm.adventure.opponentLineup[0].label).not.toBe(
+      state.adventure.opponentLineup[0].label,
+    )
     expect(vm.adventure.opponentLineup[0].lands).toEqual(['Forest', 'Swamp'])
     expect(vm.adventure.opponentLineup[0].lands).not.toBe(state.adventure.opponentLineup[0].lands)
+  })
+
+  it('never exposes pre-migration Adventure opponent labels', () => {
+    const state = createState(58)
+    state.adventure.opponentLineup = [
+      {
+        id: 'legacy-standard',
+        label: 'Standard Deck (10 of each land)',
+        kind: 'standard',
+        lands: ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'],
+        deck: [],
+      },
+      {
+        id: 'legacy-boss',
+        label: 'Boss: Mono Forest Deck',
+        kind: 'mono',
+        lands: ['Forest'],
+        deck: [],
+      },
+    ]
+
+    const lineup = buildViewModel(state, false).adventure.opponentLineup
+
+    expect(lineup.map((entry) => entry.label)).toEqual([
+      'Balanced roster (10 of each creature)',
+      'Boss: Gravebloom Dryad specialist',
+    ])
+    expect(JSON.stringify(lineup)).not.toMatch(/Standard Deck|Mono Forest|each land/)
   })
 })
 

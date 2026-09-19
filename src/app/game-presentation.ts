@@ -7,6 +7,7 @@ import type {
   GameState,
   PlayerState,
 } from '../game/types'
+import type { AdventureOpponentKind } from './adventure'
 import { cardCatalogEntry, displayCardName } from './card-catalog'
 import type { ControllerKind, UiBattlefieldCard, UiCard } from './types'
 import { HIDDEN_HAND_CARD_NAME } from './types'
@@ -24,6 +25,28 @@ export interface PlayerPresentationSummary {
 export interface LabeledGameAction {
   readonly action: GameAction
   readonly label: string
+}
+
+export function displayAdventureOpponentLabel(
+  kind: AdventureOpponentKind,
+  lands: readonly BasicLand[],
+): string {
+  switch (kind) {
+    case 'standard':
+      return 'Balanced roster (10 of each creature)'
+    case 'dual':
+      return lands.length >= 2
+        ? `Duo: ${displayCardName(lands[0])} + ${displayCardName(lands[1])}`
+        : 'Duo roster'
+    case 'mono':
+      return lands.length >= 1
+        ? `Boss: ${displayCardName(lands[0])} specialist`
+        : 'Boss specialist'
+    case 'random':
+      return 'Mystery roster'
+    default:
+      return 'Mystery roster'
+  }
 }
 
 export function displayGamePhase(phase: GamePhase): string {
