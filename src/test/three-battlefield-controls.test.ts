@@ -30,7 +30,8 @@ vi.mock('three', async (importOriginal) => ({
   },
 }))
 
-vi.mock('../renderers/three/assets', () => ({
+vi.mock('../renderers/three/assets', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../renderers/three/assets')>(),
   ThreeAssets: class {
     acquireCard = gpu.acquireCard
     acquireBoard() { return { texture: new CanvasTexture({} as HTMLCanvasElement), release: gpu.release } }
