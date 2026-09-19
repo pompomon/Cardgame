@@ -515,18 +515,25 @@ export class ThreeBoard implements ThreeBoardApi {
     this.invalidate()
   }
 
+  announceEffect(effect: VisualEffectDescriptor): void {
+    const feedback = effectFeedbackForDescriptor(effect)
+    if (this.effectCaption.textContent !== feedback.label) this.effectCaption.textContent = feedback.label
+    const announcement = effect.kind === 'mountain_destroy'
+      ? `Banish: ${effect.targetDisplayName ?? 'the creature'} goes to its owner's discard pile.`
+      : feedback.label
+    if (this.effectCaption.getAttribute('aria-label') !== announcement) {
+      this.effectCaption.setAttribute('aria-label', announcement)
+    }
+    this.effectCaption.hidden = false
+  }
+
   playEffect(effect: VisualEffectDescriptor, duration: number, done: () => void): () => void {
+    this.announceEffect(effect)
     if (!this.usable() || !this.quality.motion || !Number.isFinite(duration) || duration <= 0 || !effectRecipe(effect.kind)) {
       done()
       return (): void => {}
     }
     if (this.effects.size >= MAX_QUEUED_EFFECTS) this.effects.values().next().value!.cancel()
-    const feedback = effectFeedbackForDescriptor(effect)
-    this.effectCaption.textContent = feedback.label
-    this.effectCaption.setAttribute('aria-label', effect.kind === 'mountain_destroy'
-      ? `Banish: ${effect.targetDisplayName ?? 'the creature'} goes to its owner's discard pile.`
-      : feedback.label)
-    this.effectCaption.hidden = false
     const source = this.cards?.anchorFor(effect.sourceInstanceId) ?? this.actorAnchor(effect.actor)
     const target = this.effectTargetAnchor(effect)
     const counterCards = this.createCounterCards(effect, source)

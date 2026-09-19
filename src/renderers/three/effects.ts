@@ -7,6 +7,7 @@ import type { LogEvent } from '../../game/types'
 export type EffectPlayback = (
   effect: VisualEffectDescriptor, duration: number, done: () => void,
 ) => () => void
+export type EffectAnnouncement = (effect: VisualEffectDescriptor) => void
 
 export function presentationBoundary(previous: AppViewModel | null, next: AppViewModel): boolean {
   if (!previous || !previous.game || !next.game) return true
@@ -24,6 +25,7 @@ export class ThreeEffects {
   private readonly play: EffectPlayback
   private readonly onSettled: () => void
   private readonly retainRemovedTargets: (instanceIds: readonly string[]) => void
+  private readonly announce: EffectAnnouncement
   private readonly presentation = new BoardPresentationCoordinator()
   private view: AppViewModel | null = null
   private queue: LogEvent[] = []
@@ -37,10 +39,12 @@ export class ThreeEffects {
   constructor(
     play: EffectPlayback, onSettled: () => void,
     retainRemovedTargets: (instanceIds: readonly string[]) => void = () => {},
+    announce: EffectAnnouncement = () => {},
   ) {
     this.play = play
     this.onSettled = onSettled
     this.retainRemovedTargets = retainRemovedTargets
+    this.announce = announce
   }
 
   update(view: AppViewModel, suppressed: boolean): number {
@@ -48,14 +52,18 @@ export class ThreeEffects {
     this.view = view
     this.suppressed = suppressed || view.animationSpeed === 'off'
     const game = view.game
-    if (boundary || this.suppressed || !game) {
+    if (boundary || !game) {
       this.clear()
       this.cursor = game?.events.length ?? 0
       if (boundary) this.presentation.reset(game?.actor ?? null, view.controllers)
     } else {
+      if (this.suppressed) this.clear()
       for (let index = this.cursor; index < game.events.length; index++) {
         const event = game.events[index]
-        if (visualEffectForEvent(event, view.cardVisualStyle)) this.queue.push(event)
+        const effect = visualEffectForEvent(event, view.cardVisualStyle)
+        if (!effect) continue
+        this.announce(effect)
+        if (!this.suppressed) this.queue.push(event)
       }
       this.queue = this.queue.slice(-MAX_QUEUED_EFFECTS)
       this.cursor = game.events.length

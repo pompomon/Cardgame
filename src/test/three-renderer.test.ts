@@ -9,7 +9,7 @@ import { createInitialGame } from '../game/engine'
 import { threePrimaryAction, threeResponse, threeTargets, type ThreePrimaryAction } from '../renderers/three/interface-model'
 
 const mocks = vi.hoisted(() => ({
-  board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
+  board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
   ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
     response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn() },
   boardConstruct: vi.fn(),
@@ -135,6 +135,10 @@ describe('Three.js composition', () => {
     renderer.render({ ...snapshot, game: { ...snapshot.game!, events: [{
       kind: 'ability_mountain_destroy', actor: 1, target: 0, cardName: 'Island', targetInstanceId: 'destroyed-island',
     }] } })
+    expect(mocks.board.announceEffect).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'mountain_destroy',
+      targetDisplayName: 'Signal Siren',
+    }))
     expect(mocks.board.retainEffectTargets).toHaveBeenCalledWith(['destroyed-island'])
     expect(mocks.board.retainEffectTargets.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.board.render.mock.invocationCallOrder[0])

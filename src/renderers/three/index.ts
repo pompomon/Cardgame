@@ -55,6 +55,7 @@ export class ThreeRenderer implements AppRenderer {
         (effect, duration, done) => this.board!.playEffect(effect, duration, done),
         this.refresh,
         (ids) => this.board?.retainEffectTargets(ids),
+        (effect) => this.board?.announceEffect(effect),
       )
       document.addEventListener('visibilitychange', this.refresh)
       this.motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null

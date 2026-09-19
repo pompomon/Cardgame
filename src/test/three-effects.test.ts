@@ -106,6 +106,25 @@ describe('Three.js event presentation', () => {
     effects.dispose()
   })
 
+  it.each([
+    { suppressed: true, speed: 'normal' as const },
+    { suppressed: false, speed: 'off' as const },
+  ])('announces new effects when visual playback is suppressed ($speed)', ({ suppressed, speed }) => {
+    const playback = vi.fn()
+    const announce = vi.fn()
+    const effects = new ThreeEffects(playback, vi.fn(), () => {}, announce)
+    effects.update(view(), false)
+    effects.update({ ...view([mountain]), animationSpeed: speed }, suppressed)
+    effects.pump()
+    expect(announce).toHaveBeenCalledOnce()
+    expect(announce).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'mountain_destroy',
+      targetDisplayName: expect.any(String),
+    }))
+    expect(playback).not.toHaveBeenCalled()
+    effects.dispose()
+  })
+
   it('resets on replay rewind, same-seed replacement, and lobby transitions', () => {
     const prior = view([play])
     expect(presentationBoundary(prior, { ...prior, game: null })).toBe(true)
