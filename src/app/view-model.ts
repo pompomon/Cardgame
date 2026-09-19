@@ -2,6 +2,7 @@ import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
 import {
+  displayAdventureOpponentLabel,
   labelGameAction,
   projectPlayersForPresentation,
   revealedEnemyHandForSwamp,
@@ -28,7 +29,7 @@ function projectAdventureUiState(state: AppState): AdventureUiState {
     totalCardsPlayed: adventure.totalCardsPlayed,
     opponentLineup: Object.freeze(adventure.opponentLineup.map((entry) => Object.freeze({
       id: entry.id,
-      label: entry.label,
+      label: displayAdventureOpponentLabel(entry.kind, entry.lands),
       kind: entry.kind,
       lands: Object.freeze([...entry.lands]),
     }))),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  displayAdventureOpponentLabel,
   labelGameAction,
   labelGameActions,
   projectPlayersForPresentation,
@@ -12,6 +13,39 @@ import type { GameAction } from '../game/types'
 const HUMAN_VS_AI: [ControllerKind, ControllerKind] = ['human', 'ai']
 
 describe('shared game presentation', () => {
+  it('derives Adventure opponent labels from stable card identities', () => {
+    expect(displayAdventureOpponentLabel('standard', [
+      'Forest',
+      'Island',
+      'Mountain',
+      'Plains',
+      'Swamp',
+    ])).toBe('Balanced roster (10 of each creature)')
+    expect(displayAdventureOpponentLabel('dual', ['Forest', 'Island']))
+      .toBe('Duo: Gravebloom Dryad + Signal Siren')
+    expect(displayAdventureOpponentLabel('random', [
+      'Forest',
+      'Island',
+      'Mountain',
+      'Plains',
+      'Swamp',
+    ])).toBe('Mystery roster')
+    expect(displayAdventureOpponentLabel('mono', ['Forest']))
+      .toBe('Boss: Gravebloom Dryad specialist')
+  })
+
+  it('uses safe Adventure labels for irregular or unknown lineup data', () => {
+    expect(displayAdventureOpponentLabel('dual', [])).toBe('Duo roster')
+    expect(displayAdventureOpponentLabel('dual', ['Forest'])).toBe('Duo roster')
+    expect(displayAdventureOpponentLabel('dual', ['Forest', 'Island', 'Swamp']))
+      .toBe('Duo: Gravebloom Dryad + Signal Siren')
+    expect(displayAdventureOpponentLabel('mono', [])).toBe('Boss specialist')
+    expect(displayAdventureOpponentLabel('mono', ['Forest', 'Island']))
+      .toBe('Boss: Gravebloom Dryad specialist')
+    expect(displayAdventureOpponentLabel('future' as never, ['Forest']))
+      .toBe('Mystery roster')
+  })
+
   it('labels every game action variant and safely handles an unknown action', () => {
     const state = createInitialGame(1)
     state.players[0].hand = [

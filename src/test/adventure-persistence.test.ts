@@ -13,7 +13,7 @@ import {
   readStoredAdventureRun,
 } from '../app/adventure-persistence'
 import { createInitialGame } from '../game/engine'
-import type { LogEvent } from '../game/types'
+import { BASIC_LANDS, type LogEvent } from '../game/types'
 
 interface MemoryStore {
   data: Map<string, string>
@@ -167,6 +167,30 @@ describe('adventure run persistence', () => {
 
     expect(persistAdventureRun(run)).toBe(true)
     expect(readStoredAdventureRun()).toEqual(run)
+  })
+
+  it('loads pre-migration opponent labels without rewriting the stored fields', () => {
+    const run = createAdventureRun(123)
+    run.opponentLineup[0] = {
+      ...run.opponentLineup[0],
+      label: 'Standard Deck (10 of each land)',
+      kind: 'standard',
+      lands: [...BASIC_LANDS],
+    }
+    run.opponentLineup[6] = {
+      ...run.opponentLineup[6],
+      label: 'Boss: Mono Forest Deck',
+      kind: 'mono',
+      lands: ['Forest'],
+    }
+    const serialized = JSON.stringify(run)
+    store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
+
+    const restored = readStoredAdventureRun()
+
+    expect(restored?.opponentLineup[0].label).toBe('Standard Deck (10 of each land)')
+    expect(restored?.opponentLineup[6].label).toBe('Boss: Mono Forest Deck')
+    expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
   })
 
   it('returns null when storage is unavailable on read', () => {

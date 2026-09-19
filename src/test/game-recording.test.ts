@@ -8,6 +8,8 @@ import {
   serializeGameRecord,
   snapshotFromRecord,
 } from '../app/game-recording'
+import { displayCardName } from '../app/card-catalog'
+import { projectVisibleCard } from '../app/game-presentation'
 import type { LogEvent } from '../game/types'
 
 function payloadForValidRecord(seed = 2026): Record<string, unknown> {
@@ -87,6 +89,41 @@ describe('game-recording', () => {
       expect(snapshotFromRecord(parsed.record, 1).currentPlayer).toBe(1)
     }
   })
+
+  it.each([1, 2])(
+    'presents imported v%s recordings through the catalog without changing mechanical state',
+    (version) => {
+      const payload = payloadForRecordWithTimeline(2028 + version)
+      payload.version = version
+      const expectedInitialState = structuredClone(initialStateOf(payload))
+      const expectedTimeline = structuredClone(payload.timeline)
+
+      const parsed = parsePayload(payload)
+
+      expect(parsed.ok).toBe(true)
+      if (!parsed.ok) {
+        return
+      }
+      const legacyCard = parsed.record.initialState.players[0].hand[0]
+      const presented = projectVisibleCard(legacyCard)
+      expect(presented).toEqual({
+        id: legacyCard.id,
+        name: legacyCard.name,
+        serializedKey: legacyCard.name,
+        displayName: displayCardName(legacyCard.name),
+      })
+      expect(presented.displayName).not.toBe(legacyCard.name)
+
+      const reserialized = serializeGameRecord(parsed.record)
+      const reserializedPayload = JSON.parse(reserialized) as Record<string, unknown>
+      expect(reserializedPayload.version).toBe(2)
+      expect(reserializedPayload.initialState).toEqual(expectedInitialState)
+      expect(reserializedPayload.timeline).toEqual(expectedTimeline)
+      expect(reserialized).not.toContain('"displayName"')
+      expect(reserialized).not.toContain('"assetSlug"')
+      expect(reserialized).not.toContain(presented.displayName)
+    },
+  )
 
   it('back-fills missing events array when loading legacy recordings', () => {
     const initial = createInitialGame(42)
