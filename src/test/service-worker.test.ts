@@ -380,7 +380,7 @@ describe('service worker lifecycle', () => {
     expect(currentAssets?.get(boardUrl)).toBe(board)
     expect(currentAssets?.has(cardUrl)).toBe(false)
     expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(card)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.has(boardUrl)).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(boardUrl)).toBe(board)
 
     await dispatchLifecycle(harness.activateListener)
 

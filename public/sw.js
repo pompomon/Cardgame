@@ -136,7 +136,6 @@ async function migrateRuntimeAssets(targetCache) {
         if (!response) continue
         await targetCache.put(request, response)
       }
-      await sourceCache.delete(request)
     }
   }
 }
