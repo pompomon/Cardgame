@@ -93,7 +93,10 @@ export class ThreeInterface {
   private readonly onChange: () => void
   private readonly onBlock: () => void
   private readonly handleOnline = (): void => {
-    if (resetRasterCardArtLoadFailures()) this.render()
+    if (!resetRasterCardArtLoadFailures()) return
+    this.markup = ''
+    this.hudMarkup = ''
+    this.render()
   }
 
   constructor(

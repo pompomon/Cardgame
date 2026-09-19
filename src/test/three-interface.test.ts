@@ -1357,14 +1357,18 @@ describe('Three native interface behavior', () => {
     view.cardVisualStyle = 'hd'
     const primary = cardArtUrl('Forest', 'hd')
     const fallback = cardArtFallbackUrl('Forest', 'hd')!
-    noteRasterCardArtLoadFailure(primary)
-    noteRasterCardArtLoadFailure(fallback)
     const h = setup(view)
     h.ui.activate(hit())
-    expect(h.content.querySelector('[data-modal="preview"]')?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+    const image = h.content.querySelector('[data-modal="preview"]')?.querySelector('img')
+    expect(image?.getAttribute('src')).toBe(primary)
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    image?.setAttribute('src', 'data:image/svg+xml,fallback')
+    const builds = h.content.builds
 
     window.dispatchEvent(new Event('online'))
     expect(h.content.querySelector('[data-modal="preview"]')?.querySelector('img')?.getAttribute('src')).toBe(primary)
+    expect(h.content.builds).toBe(builds + 1)
 
     h.ui.dispose()
     noteRasterCardArtLoadFailure(primary)
