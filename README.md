@@ -12,8 +12,10 @@ non-trivial changes; they capture recurring review findings.
 
 ## Creatures
 
-The Three.js board and native interface, tutorial, Replay Log, terminal CLI, and
-card art use one shared creature catalog:
+The Three.js board and native interface, terminal CLI, and card art use one
+shared creature catalog. Tutorial sentences and Replay Log event framing still
+embed some creature and ability wording; keep those explicit exceptions in sync
+with the catalog:
 
 | Creature | Ability | Rules |
 | --- | --- | --- |

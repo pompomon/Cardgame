@@ -50,6 +50,9 @@ review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
    shared app presentation helpers for labels. Preserve `BasicLand`,
    `BASIC_LANDS` order, engine/action/event fields, saves, recordings, and P2P
    payloads. Never parse or serialize display names or slugs as identity.
+   Until their copy is migrated, `src/app/tutorial.ts` and event framing in
+   `src/app/log-presentation.ts` are explicit exceptions whose embedded
+   creature and ability wording must be kept in sync with the catalog.
 3. **No string-to-enum casts on untrusted input.** Validate with the
    `isXxx` guards (`isAiLevel`, `isCardVisualStyle`, …) before assigning.
 4. **Sanitize and cap every array from `localStorage` or imported JSON.**
