@@ -34,6 +34,8 @@
   background: #172d3c;
   padding: 10px 14px;
   max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .three-interface button,
@@ -97,6 +99,8 @@
 .three-interface h4,
 .three-interface p {
   margin: 8px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .three-interface .three-header h2 {
@@ -116,7 +120,9 @@
 
 .three-interface .three-native-card > span {
   flex-basis: 100%;
+  min-width: 0;
   font-weight: bold;
+  overflow-wrap: anywhere;
 }
 
 .three-interface .three-native-card[data-response="required"] {
@@ -285,6 +291,8 @@
   font-weight: 800;
   text-align: center;
   text-shadow: 0 1px 2px rgb(0 0 0 / 75%);
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .three-interface .three-card__back {

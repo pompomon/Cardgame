@@ -226,7 +226,7 @@ describe('constructed Three battlefield controls', () => {
     expect(h.app.game!.players[owner].hand.some((card) => card.id === cardId)).toBe(false)
     expect(h.host.all('three-board-pagination')).toHaveLength(0)
     const caption = h.host.all('three-board-pending-caption')[0]
-    expect(caption.textContent).toBe('Island · awaiting response')
+    expect(caption.textContent).toBe('Signal Siren · awaiting interception')
     expect(caption.hidden).toBe(false)
     expect(caption.getAttribute('aria-live')).toBe('polite')
     const bounds = h.board.canvas.getBoundingClientRect()
@@ -348,22 +348,23 @@ describe('constructed Three battlefield controls', () => {
   it('renders both summaries outside the lower controls and updates after plays, counters and draws', () => {
     const h = setup()
     const stats = (header: ElementStub) => header.all('three-board-stats')[0]
-    expect(stats(h.near).textContent).toBe('Hand 5 · Deck 45 · Graveyard 0')
-    expect(stats(h.far).getAttribute('aria-label')).toBe('Player 2: Hand 5 · Deck 45 · Graveyard 0')
+    expect(stats(h.near).textContent).toBe('Hand 5 · Deck 45 · Discard pile 0')
+    expect(stats(h.far).getAttribute('aria-label')).toBe('Player 2: Hand 5 · Deck 45 · Discard pile 0')
+    expect(h.near.children[0].children[0].textContent).toContain('Player 1 · Board')
     expect(h.host.all('three-board-primary')).toHaveLength(1)
     expect(h.button.parent).toBe(h.near)
     expect(h.button.textContent).toBe('End Turn')
     h.act('play_land')
     expect(h.button.textContent).toBe('Let It Through')
-    expect(stats(h.far).textContent).toBe('Hand 4 · Deck 45 · Graveyard 0')
-    expect(stats(h.near).getAttribute('aria-label')).toBe('Player 2: Hand 5 · Deck 45 · Graveyard 0')
+    expect(stats(h.far).textContent).toBe('Hand 4 · Deck 45 · Discard pile 0')
+    expect(stats(h.near).getAttribute('aria-label')).toBe('Player 2: Hand 5 · Deck 45 · Discard pile 0')
     expect(h.near.dataset.active).toBe('true')
     h.act('counter_land')
-    expect(stats(h.near).textContent).toBe('Hand 4 · Deck 45 · Graveyard 1')
-    expect(stats(h.far).textContent).toBe('Hand 3 · Deck 45 · Graveyard 2')
+    expect(stats(h.near).textContent).toBe('Hand 4 · Deck 45 · Discard pile 1')
+    expect(stats(h.far).textContent).toBe('Hand 3 · Deck 45 · Discard pile 2')
     h.act('end_turn')
-    expect(stats(h.near).textContent).toBe('Hand 4 · Deck 44 · Graveyard 2')
-    expect(stats(h.far).getAttribute('aria-label')).toBe('Player 1: Hand 4 · Deck 45 · Graveyard 1')
+    expect(stats(h.near).textContent).toBe('Hand 4 · Deck 44 · Discard pile 2')
+    expect(stats(h.far).getAttribute('aria-label')).toBe('Player 1: Hand 4 · Deck 45 · Discard pile 1')
   })
 
   it('retains the canvas, button, meshes and textures across count and phase updates', () => {
@@ -389,14 +390,14 @@ describe('constructed Three battlefield controls', () => {
   it('keeps stack silhouettes accurate without duplicating their accessible count labels', () => {
     const h = setup()
     const stacks = h.near.all('three-board-stack')
-    expect(stacks.map((stack) => stack.textContent)).toEqual(['Deck 45', 'GY 0'])
+    expect(stacks.map((stack) => stack.textContent)).toEqual(['Deck 45', 'Discard 0'])
     expect(stacks[0].dataset.empty).toBe('false')
     expect(stacks[1].dataset.empty).toBe('true')
     expect(h.near.all('three-board-stacks')[0].getAttribute('aria-hidden')).toBe('true')
     h.app.game!.players[0].graveyard.push({ id: 'discard', name: 'Forest', type: 'land' })
     h.present()
     expect(h.near.all('three-board-stack')).toEqual(stacks)
-    expect(stacks[1].textContent).toBe('GY 1')
+    expect(stacks[1].textContent).toBe('Discard 1')
     expect(stacks[1].dataset.empty).toBe('false')
   })
 
@@ -458,12 +459,16 @@ describe('constructed Three battlefield controls', () => {
     const cancel = h.board.playEffect({
       kind, actor: 0, targetActor: 1, land: 'Forest', visualStyle: 'classic',
       palette: { primary: '#123456', secondary: '#abcdef', glow: '#ffffff' },
+      ...(kind === 'mountain_destroy' ? { targetDisplayName: 'Signal Siren' } : {}),
     }, 150, done)
     const caption = h.host.all('three-board-effect-caption')[0]
     const prompt = h.host.all('three-board-instruction')[0]
     expect(caption.textContent).toBe(label)
     expect(caption.hidden).toBe(false)
     expect(caption.getAttribute('aria-live')).toBe('polite')
+    expect(caption.getAttribute('aria-label')).toBe(kind === 'mountain_destroy'
+      ? "Banish: Signal Siren goes to its owner's discard pile."
+      : label)
     expect(prompt.hidden).toBe(false)
     const promptBottom = Number.parseFloat(prompt.style.top) + prompt.offsetHeight
     expect(Number.parseFloat(caption.style.top)).toBeGreaterThanOrEqual(promptBottom + 4)
@@ -489,7 +494,14 @@ describe('constructed Three battlefield controls', () => {
     const cancel = h.board.playEffect(counterEffect(actor), 350, done)
     const pair = h.cards.children.filter((entry) => entry.name.startsWith('counter-cost-'))
     expect(pair.map((entry) => entry.name)).toEqual(['counter-cost-island', 'counter-cost-discard'])
-    expect(gpu.acquireCard.mock.calls.slice(acquisitionCount).map(([name]) => name)).toEqual(['Island', 'Mountain'])
+    expect(gpu.acquireCard.mock.calls.slice(acquisitionCount).map(([card]) => card)).toEqual([
+      expect.objectContaining({
+        name: 'Island', serializedKey: 'Island', displayName: 'Signal Siren', assetSlug: 'signal-siren',
+      }),
+      expect.objectContaining({
+        name: 'Mountain', serializedKey: 'Mountain', displayName: 'Rooftop Gargoyle', assetSlug: 'rooftop-gargoyle',
+      }),
+    ])
 
     let layout = (h.board as unknown as { layout: ThreeLayout }).layout
     const expectedCenter = cardSlotX(0, 1, layout)
@@ -610,7 +622,7 @@ describe('constructed Three battlefield controls', () => {
     h.act('end_turn')
     expect(h.app.game!.phase).toBe('gameOver')
     expect(h.button.hidden).toBe(true)
-    expect(h.near.all('three-board-stats')[0].textContent).toBe('Hand 0 · Deck 0 · Graveyard 0')
+    expect(h.near.all('three-board-stats')[0].textContent).toBe('Hand 0 · Deck 0 · Discard pile 0')
     h.app.game = createInitialGame(53)
     h.present({}, true)
     expect(h.button.hidden).toBe(true)
@@ -641,8 +653,9 @@ describe('constructed Three battlefield controls', () => {
     expect(prompt.parent).toBe(stage)
     expect(prompt.parent).not.toBe(h.near)
     expect(sizes.map((entry) => entry.textContent)).toEqual([
-      'Drag a highlighted card into your battlefield',
-      'Move into your battlefield · release elsewhere to cancel',
+      'Drag a highlighted creature onto your board to summon it',
+      'Move onto your board · release elsewhere to cancel',
+      'Release to summon',
     ])
     for (const size of sizes) {
       expect(size.getAttribute('aria-hidden')).toBe('true')
@@ -654,11 +667,13 @@ describe('constructed Three battlefield controls', () => {
     })
     h.board.moveDrag(0, 0, false)
     expect(prompt.children[0].textContent).toBe(sizes[1].textContent)
+    h.board.moveDrag(195, 380, false)
+    expect(prompt.children[0].textContent).toBe(sizes[2].textContent)
     expect(h.host.all('three-board-instruction-size')).toEqual(sizes)
     h.board.endDrag(false)
     expect(prompt.children[0].textContent).toBe(sizes[0].textContent)
     h.act('play_land')
-    expect(prompt.children[0].textContent).toContain('Respond to Signal Siren.')
+    expect(prompt.children[0].textContent).toContain('Intercept the summon of Signal Siren?')
     expect(sizes.every((entry) => entry.hidden)).toBe(true)
   })
 
@@ -764,14 +779,14 @@ describe('constructed Three battlefield controls', () => {
     expect(h.button.disabled).toBe(false)
     expect(h.near.all('three-board-stats')[0].getAttribute('aria-label')).toContain(`Player ${actor + 1}:`)
     const expected = canCounter
-      ? 'Respond to Rooftop Gargoyle. Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The blue frame marks Signal Siren, which is included automatically; pink frames mark your choices.'
-      : 'Respond to Rooftop Gargoyle. No legal counter cards available.'
+      ? 'Intercept the summon of Rooftop Gargoyle? Discard Signal Siren and one other highlighted card, or choose Let It Through. The blue frame marks Signal Siren, which is included automatically; pink frames mark your choices.'
+      : 'No legal card combination can intercept the summon of Rooftop Gargoyle. Choose Let It Through.'
     expect(primary.prompt).toBe(expected)
     expect(prompt.children.filter((child) => !child.hidden).map((child) => child.textContent)).toEqual([expected])
     h.act('pass_response')
     expect(h.app.game!.phase).toBe('main')
     expect(prompt.hidden).toBe(true)
-    expect(prompt.children[0].textContent).not.toContain('Respond to Rooftop Gargoyle')
+    expect(prompt.children[0].textContent).not.toContain('Rooftop Gargoyle')
     expect(h.button.textContent).toBe('End Turn')
   })
 

@@ -77,9 +77,9 @@ export class RetainedCard {
     const previous = this.descriptor
     const from = this.anchor()
     this.descriptor = descriptor
-    const signature = `${descriptor.style}:${descriptor.hit.name}`
+    const signature = `${descriptor.style}:${descriptor.hit.assetSlug ?? descriptor.hit.serializedKey ?? descriptor.hit.name}`
     if (signature !== this.signature) {
-      const next = this.assets.acquireCard(descriptor.hit.name, descriptor.style)
+      const next = this.assets.acquireCard(descriptor.hit, descriptor.style)
       this.lease?.release()
       this.lease = next
       this.faceMaterial.map = next.texture

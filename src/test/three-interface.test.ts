@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController, type ControllerApi } from '../app/controller'
+import { cardAssetSlug, displayCardName } from '../app/card-catalog'
 import { createGameRecord } from '../app/game-recording'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
 import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
@@ -332,6 +333,8 @@ describe('Three native markup and decisions', () => {
       expect(isThreeMode(mode)).toBe(true)
     }
     expect(html).toContain('Install')
+    expect(html).toContain('>Urban Creatures<')
+    expect(html).toContain('Urban-fantasy 2-player card game with local AI and optional P2P mode.')
     expect(html).toContain('data-action="lobby-settings"')
     expect(html).toContain('data-action="lobby-recording"')
     expect(html).not.toContain('dom-cardgame__lobby')
@@ -513,7 +516,7 @@ describe('Three native markup and decisions', () => {
     const view = responseView()
     view.game!.winnerText = 'Winner announcement'
     const hud = renderThreeHud(view, defaultUi)
-    for (const text of ['☰ Menu', 'Turn 1', 'Player 1', 'Ready', 'Winner announcement']) expect(hud).toContain(text)
+    for (const text of ['☰ Menu', 'Turn 1 · Interception window', 'Player 1', 'Ready', 'Winner announcement']) expect(hud).toContain(text)
     expect(hud).not.toContain('Cards &amp; keyboard controls')
     const controls = renderThreeInterface(view, defaultUi, false)
     expect(controls).not.toContain('data-modal="cards"')
@@ -530,10 +533,10 @@ describe('Three native markup and decisions', () => {
     for (const status of ['Local Human vs AI game started.', 'Storage unavailable.']) {
       view.status = status
       for (const html of [renderThreeHud(view, defaultUi), renderThreeInterface(view, defaultUi)]) {
-        expect(html).not.toContain('Respond to Mountain')
+        expect(html).not.toContain('Intercept the summon of Rooftop Gargoyle')
         expect(html).not.toContain('class="three-required-prompt"')
         expect(html).toContain(`<p role="status" aria-live="polite">${status}</p>`)
-        for (const text of ['☰ Menu', 'Turn 1 · respond', 'Player 1']) expect(html).toContain(text)
+        for (const text of ['☰ Menu', 'Turn 1 · Interception window', 'Player 1']) expect(html).toContain(text)
       }
     }
   })
@@ -553,6 +556,7 @@ describe('Three native markup and decisions', () => {
       cardName: 'Island',
       serializedKey: 'Island',
       displayName: 'Signal Siren',
+      assetSlug: 'signal-siren',
       label: 'Signal Siren X2',
       effectTargetId: 'target-1',
       count: 2,
@@ -689,7 +693,7 @@ describe('Three battlefield primary action', () => {
     view.game!.legal.counterOptions = []
     const h = setup(view)
     const action = h.ui.primaryAction!
-    expect(action.prompt).toContain('Respond to Memory Vampire. No legal counter cards available.')
+    expect(action.prompt).toContain('No legal card combination can intercept the summon of Memory Vampire. Choose Let It Through.')
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.controller.submitAction.mockImplementation(() => h.latest({ ...view, game: { ...view.game!, canInput: false } }))
     h.ui.activatePrimaryAction(action)
@@ -953,9 +957,9 @@ describe('Three non-modal hover previews', () => {
     h.ui.setHover(hit({ zone: 'hand', cardId: 'secret', name: 'Secret Forest' }))
     expect(h.host.children[2].innerHTML).toBe('')
     h.ui.setHover(hit())
-    expect(h.host.children[2].innerHTML).toContain('Forest')
+    expect(h.host.children[2].innerHTML).toContain('Gravebloom Dryad')
     h.update({ ...view, status: 'Saved' })
-    expect(h.host.children[2].innerHTML).toContain('Forest')
+    expect(h.host.children[2].innerHTML).toContain('Gravebloom Dryad')
     h.update({ ...view, game: { ...view.game!, players: [
       view.game!.players[0], { ...view.game!.players[1], battlefield: [] },
     ] } })
@@ -1286,7 +1290,7 @@ describe('Three native interface behavior', () => {
     expect(h.ui.isBlocked()).toBe(false)
     h.ui.activate(hit({ name: '<script>wrong</script>' }))
     expect(h.ui.isBlocked()).toBe(true)
-    expect(h.content.innerHTML).toContain('Forest card preview')
+    expect(h.content.innerHTML).toContain('Gravebloom Dryad card preview')
     expect(h.content.innerHTML).not.toContain('wrong')
     h.ui.playCard('source')
     expect(h.controller.submitAction).not.toHaveBeenCalled()
@@ -1302,8 +1306,10 @@ describe('Three native interface behavior', () => {
       h.ui.activate(hit())
       const dialog = h.content.querySelector('[data-modal="preview"]')!
       expect(dialog.open).toBe(true)
-      expect(dialog.getAttribute('aria-label')).toBe(`${name} card preview`)
+      expect(dialog.getAttribute('aria-label')).toBe(`${displayCardName(name)} card preview`)
       expect(dialog.querySelector('.three-card__name')).not.toBeNull()
+      expect(h.content.innerHTML).toContain(displayCardName(name))
+      expect(h.content.innerHTML).toContain(`data-card-art="${cardAssetSlug(name)}"`)
       const image = dialog.querySelector('.three-card__art-frame')!.querySelector('img')!
       if (isRasterCardVisualStyle(style)) {
         expect(image.getAttribute('src')).toBe(cardArtUrl(name, style))
@@ -1673,7 +1679,9 @@ describe('Three native interface behavior', () => {
       view.game!.legal.counterOptions = []
       h.update(view)
       expect(h.ui.response?.choices).toEqual([])
-      expect(h.ui.primaryAction?.prompt).toContain('No legal counter cards available.')
+      expect(h.ui.primaryAction?.prompt).toContain(
+        'No legal card combination can intercept the summon of Memory Vampire. Choose Let It Through.',
+      )
       expect(h.ui.primaryAction).toMatchObject({ type: 'pass_response', disabled: false })
       view.game!.legal.canPassResponse = false
       h.update(view)
@@ -1710,11 +1718,11 @@ describe('Three native interface behavior', () => {
       const h = setup(view)
       if (mode === 'actor-transition') h.update(view, 1)
       h.ui.activate(responseHit())
-      expect(h.content.innerHTML).toContain('Forest card preview')
+      expect(h.content.innerHTML).toContain('Gravebloom Dryad card preview')
       h.click('[data-action="close"]')
       h.openCards()
       h.click('[data-action="preview"][data-zone="hand"][data-card-id="required-island"]')
-      expect(h.content.innerHTML).toContain('Island card preview')
+      expect(h.content.innerHTML).toContain('Signal Siren card preview')
       expect(h.controller.submitAction).not.toHaveBeenCalled()
       h.ui.dispose()
     })

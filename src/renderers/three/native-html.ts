@@ -1,8 +1,10 @@
 import { getInstallUiState } from '../../app/install-support'
+import { cardAssetSlug, displayCardName } from '../../app/card-catalog'
 import type { AppViewModel } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../../app/card-visuals'
 import { isBasicLand, type BasicLand } from '../../game/types'
+import type { RendererCardIdentity } from './contracts'
 
 const failedRasterCardArtUrls = new Set<string>()
 
@@ -154,28 +156,33 @@ export function renderLandIcon(
   return `<img class="${finalClassName}" src="${stage.src}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
 }
 
-export function renderCardTile(name: string, style: AppViewModel['cardVisualStyle']): string {
-  if (name === HIDDEN_HAND_CARD_NAME) {
+export function renderCardTile(card: string | RendererCardIdentity, style: AppViewModel['cardVisualStyle']): string {
+  const value: RendererCardIdentity = typeof card === 'string' ? { name: card } : card
+  if (value.name === HIDDEN_HAND_CARD_NAME) {
     return '<span class="card-tile card-tile--hidden three-card three-card--hidden" aria-label="Hidden card" title="Hidden card"><span class="three-card__back">?</span><span class="three-card__name">Hidden card</span></span>'
   }
-  if (!isBasicLand(name)) {
-    return `<span class="card-tile three-card three-card--text"><span class="three-card__name">${escapeHtml(name)}</span></span>`
+  const serializedKey = value.serializedKey ?? (isBasicLand(value.name) ? value.name : null)
+  if (!serializedKey) {
+    return `<span class="card-tile three-card three-card--text"><span class="three-card__name">${escapeHtml(value.displayName ?? value.name)}</span></span>`
   }
 
-  const source = cardArtSourceFor(name, style, 144)
-  const palette = cardVisualPaletteFor(name, style)
+  const displayName = value.displayName ?? displayCardName(serializedKey)
+  const assetSlug = value.assetSlug ?? cardAssetSlug(serializedKey)
+  const source = cardArtSourceFor(serializedKey, style, 144)
+  const palette = cardVisualPaletteFor(serializedKey, style)
   const stage = resolveRasterRenderStage(source)
   const raster = isRasterCardVisualStyle(style) && stage.isRaster
-  const safeName = escapeHtml(name)
-  const landClass = `three-card--${name.toLowerCase()}`
+  const safeName = escapeHtml(displayName)
+  const landClass = `three-card--${serializedKey.toLowerCase()}`
   const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
+  const assetIdentity = ` data-card-art="${escapeHtml(assetSlug)}"`
 
   if (raster) {
     const onError = rasterOnErrorHandler(stage, 'card-tile-bg', 'card-tile--raster')
-    return `<span class="card-tile card-tile--raster three-card three-card--raster ${landClass}"${tileStyleAttr}><span class="three-card__art-frame"><img class="card-tile-bg three-card__art" src="${stage.src}" alt="" role="presentation"${onError} /></span><span class="card-tile-label three-card__name">${safeName}</span></span>`
+    return `<span class="card-tile card-tile--raster three-card three-card--raster ${landClass}"${assetIdentity}${tileStyleAttr}><span class="three-card__art-frame"><img class="card-tile-bg three-card__art" src="${stage.src}" alt="" role="presentation"${onError} /></span><span class="card-tile-label three-card__name">${safeName}</span></span>`
   }
 
-  return `<span class="card-tile three-card three-card--procedural ${landClass}"${tileStyleAttr}><span class="three-card__art-frame">${renderLandIcon(name, style, 64, 'card-tile-icon')}</span><span class="three-card__name">${safeName}</span></span>`
+  return `<span class="card-tile three-card three-card--procedural ${landClass}"${assetIdentity}${tileStyleAttr}><span class="three-card__art-frame">${renderLandIcon(serializedKey, style, 64, 'card-tile-icon')}</span><span class="three-card__name">${safeName}</span></span>`
 }
 
 if (typeof window !== 'undefined') {

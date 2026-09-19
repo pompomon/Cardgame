@@ -2,12 +2,14 @@ import { CanvasTexture, LinearFilter, NearestFilter, SRGBColorSpace } from 'thre
 import { boardAmbienceAtlasLocation, boardBackgroundAssetLocation, type BoardAtlasAssetLocation, type BoardBackgroundVariant } from '../../app/board-assets'
 import type { BoardTheme } from '../../app/board-theme'
 import { cardBackUrl } from '../../app/card-art'
+import { cardAssetSlug, displayCardName } from '../../app/card-catalog'
 import { cardArtSourceFor, cardVisualPaletteFor, landPixelRects } from '../../app/card-visuals'
 import type { CardVisualStyle } from '../../app/card-visual-styles'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { isIntegerInRange, isRecordObject } from '../../app/validators'
-import { isBasicLand } from '../../game/types'
+import { isBasicLand, type BasicLand } from '../../game/types'
 import { computeCoverFitCrop } from '../shared/image-fit'
+import type { RendererCardIdentity } from './contracts'
 
 const FAILED_URL_LIMIT = 128
 const ATLAS_METADATA_LIMIT = 16384
@@ -108,13 +110,59 @@ function coverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: n
   ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
 }
 
-export function cardAssetCandidates(name: string, style: CardVisualStyle): readonly string[] {
-  if (name === HIDDEN_HAND_CARD_NAME) return [cardBackUrl()]
-  if (!isBasicLand(name)) return []
-  const source = cardArtSourceFor(name, style, 464)
+interface ResolvedCardIdentity {
+  readonly hidden: boolean
+  readonly serializedKey: BasicLand | null
+  readonly displayName: string
+  readonly assetSlug: string
+}
+
+function resolveCardIdentity(card: string | RendererCardIdentity): ResolvedCardIdentity {
+  const value: RendererCardIdentity = typeof card === 'string' ? { name: card } : card
+  if (value.name === HIDDEN_HAND_CARD_NAME) {
+    return { hidden: true, serializedKey: null, displayName: 'Hidden card', assetSlug: 'card-back' }
+  }
+  const serializedKey = value.serializedKey ?? (isBasicLand(value.name) ? value.name : null)
+  if (!serializedKey) {
+    return { hidden: false, serializedKey: null, displayName: 'Unknown card', assetSlug: 'unknown-card' }
+  }
+  return {
+    hidden: false,
+    serializedKey,
+    displayName: value.displayName ?? displayCardName(serializedKey),
+    assetSlug: value.assetSlug ?? cardAssetSlug(serializedKey),
+  }
+}
+
+export function cardAssetCandidates(card: string | RendererCardIdentity, style: CardVisualStyle): readonly string[] {
+  const identity = resolveCardIdentity(card)
+  if (identity.hidden) return [cardBackUrl()]
+  if (!identity.serializedKey) return []
+  // Phase 3 keeps the shipped legacy filenames; the slug is already the cache
+  // identity and becomes the URL identity when Phase 4 migrates card-art.ts.
+  const source = cardArtSourceFor(identity.serializedKey, style, 464)
   return source.isRaster
     ? [source.primaryUrl, ...(source.rasterFallbackUrl ? [source.rasterFallbackUrl] : [])]
     : []
+}
+
+function cardLabelLines(context: CanvasRenderingContext2D, label: string): readonly string[] {
+  const words = label.trim().split(/\s+/)
+  if (words.length < 2) return [label]
+  const widthOf = (value: string): number => typeof context.measureText === 'function'
+    ? context.measureText(value).width
+    : Array.from(value).length * 26
+  if (Array.from(label).length <= 14 && widthOf(label) <= 440) return [label]
+  let split = 1
+  let bestDifference = Number.POSITIVE_INFINITY
+  for (let index = 1; index < words.length; index++) {
+    const difference = Math.abs(widthOf(words.slice(0, index).join(' ')) - widthOf(words.slice(index).join(' ')))
+    if (difference < bestDifference) {
+      bestDifference = difference
+      split = index
+    }
+  }
+  return [words.slice(0, split).join(' '), words.slice(split).join(' ')]
 }
 
 export function boardAssetCandidates(theme: BoardTheme, variant: BoardBackgroundVariant): readonly string[] {
@@ -147,16 +195,16 @@ export class ThreeAssets {
     window.addEventListener('online', this.onOnline)
   }
 
-  acquireCard(name: string, style: CardVisualStyle): TextureLease {
-    const safeName = isBasicLand(name) || name === HIDDEN_HAND_CARD_NAME ? name : 'Unknown card'
-    return this.acquire(`card:${style}:${safeName}`, 512, 704, cardAssetCandidates(safeName, style), (ctx, image) => {
-      const palette = isBasicLand(safeName) ? cardVisualPaletteFor(safeName, style) : null
+  acquireCard(card: string | RendererCardIdentity, style: CardVisualStyle): TextureLease {
+    const identity = resolveCardIdentity(card)
+    return this.acquire(`card:${style}:${identity.assetSlug}`, 512, 704, cardAssetCandidates(card, style), (ctx, image) => {
+      const palette = identity.serializedKey ? cardVisualPaletteFor(identity.serializedKey, style) : null
       ctx.fillStyle = palette?.cardFill ?? '#17283f'
       ctx.fillRect(0, 0, 512, 704)
       ctx.strokeStyle = palette?.cardStroke ?? '#b7c5df'
       ctx.lineWidth = 10
       ctx.strokeRect(8, 8, 496, 688)
-      if (safeName === HIDDEN_HAND_CARD_NAME) {
+      if (identity.hidden) {
         if (image) {
           coverImage(ctx, image, 20, 20, 472, 664)
         } else {
@@ -165,25 +213,27 @@ export class ThreeAssets {
             ctx.strokeRect(inset, inset, 512 - inset * 2, 704 - inset * 2)
           }
           ctx.fillStyle = '#e3eaff'
-          ctx.font = 'bold 46px system-ui, sans-serif'
+          ctx.font = 'bold 40px system-ui, sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillText('CARDGAME', 256, 368, 420)
+          ctx.fillText('URBAN CREATURES', 256, 368, 440)
         }
         return
       }
       if (image) coverImage(ctx, image, 16, 16, 480, 672)
-      else if (palette && isBasicLand(safeName)) {
-        for (const pixel of landPixelRects(safeName, 464)) {
+      else if (palette && identity.serializedKey) {
+        for (const pixel of landPixelRects(identity.serializedKey, 464)) {
           ctx.fillStyle = pixel.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
           ctx.fillRect(24 + pixel.x, 80 + pixel.y, pixel.size, pixel.size)
         }
       }
       ctx.fillStyle = 'rgba(8, 18, 30, 0.88)'
-      ctx.fillRect(16, 588, 480, 100)
+      ctx.fillRect(16, 570, 480, 118)
       ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 72px system-ui, sans-serif'
+      ctx.font = 'bold 46px system-ui, sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(safeName, 256, 664, 456)
+      const lines = cardLabelLines(ctx, identity.displayName)
+      const firstBaseline = lines.length === 1 ? 648 : 619
+      lines.forEach((line, index) => ctx.fillText(line, 256, firstBaseline + index * 50))
     })
   }
 

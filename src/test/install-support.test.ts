@@ -153,6 +153,7 @@ describe('install-support', () => {
     expect(preventDefault).toHaveBeenCalled()
     expect(listener).toHaveBeenCalledTimes(1)
     expect(mod.getInstallUiState().canPromptInstall).toBe(true)
+    expect(mod.getInstallUiState().statusText).toContain('Install Urban Creatures')
   })
 
   it('promptInstall returns false when no deferred prompt is available', async () => {

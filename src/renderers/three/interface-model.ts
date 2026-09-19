@@ -8,13 +8,16 @@ import {
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
+import { cardAssetSlug, displayCardName } from '../../app/card-catalog'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
+import { displayGamePhase } from '../../app/game-presentation'
 import { hasSavedAdventureRun, isAdventureResumable, LOBBY_MODE_OPTIONS } from '../../app/lobby-presentation'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
 import { buildCounterHandOptions, type CounterHandOptions } from '../../app/response-options'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel, type GameUiState, type Mode } from '../../app/types'
+import { isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
-import type { BoardHit } from './contracts'
+import type { BoardHit, RendererCardIdentity } from './contracts'
 import { renderThreeLog } from './interface-log'
 import { escapeHtml, renderCardTile, renderInstallControls, renderP2P } from './native-html'
 
@@ -37,7 +40,18 @@ export interface TargetModel {
   readonly context: TargetSelectionContext
   readonly title: string
   readonly battlefield: boolean
-  readonly options: ReadonlyArray<{ effectTargetId?: string; label: string; cardName: string }>
+  readonly options: ReadonlyArray<{
+    effectTargetId?: string
+    label: string
+    cardName: string
+    serializedKey?: BasicLand
+    displayName: string
+    assetSlug?: string
+  }>
+}
+
+export interface ThreeCardPresentation extends RendererCardIdentity {
+  readonly displayName: string
 }
 
 export interface ThreePrimaryAction {
@@ -104,10 +118,12 @@ export function threePrimaryAction(view: AppViewModel, ui: InterfaceUi): ThreePr
     }
   }
   const response = threeResponse(view, ui)
+  const pendingDisplayName = game.pendingLandDisplayName ?? 'this creature'
   return response ? {
     type: 'pass_response', label: response.passLabel, decision, disabled: !response.canPass || ui.cardsOpen,
-    prompt: `Respond to ${game.pendingLandDisplayName ?? game.pendingLandName ?? 'land'}. ${response.choices.length
-      ? response.instruction : 'No legal counter cards available.'}`,
+    prompt: response.choices.length
+      ? response.instruction
+      : `No legal card combination can intercept the summon of ${pendingDisplayName}. Choose Let It Through.`,
   } : null
 }
 
@@ -137,22 +153,46 @@ export function threeTargets(view: AppViewModel, ui: InterfaceUi): TargetModel |
   return {
     context, title: targetPromptForContext(game, context), battlefield,
     options: battlefield
-      ? options.map((option) => ({
+      ? options.map((option) => {
+        const card = game.players.flatMap((player) => player.battlefield)
+          .find((entry) => entry.instanceId === option.effectTargetId)
+        const presentation = cardPresentation(card)
+        return {
+          ...option,
+          cardName: presentation?.name ?? option.label,
+          displayName: presentation?.displayName ?? option.label,
+          ...(presentation?.serializedKey ? { serializedKey: presentation.serializedKey } : {}),
+          ...(presentation?.assetSlug ? { assetSlug: presentation.assetSlug } : {}),
+        }
+      })
+      : groupCardTargetOptions(game, context, options).map((option) => ({
         ...option,
-        cardName: game.players.flatMap((player) => player.battlefield)
-          .find((card) => card.instanceId === option.effectTargetId)?.name ?? option.label,
-      }))
-      : groupCardTargetOptions(game, context, options),
+        ...(option.serializedKey ? { assetSlug: cardAssetSlug(option.serializedKey) } : {}),
+      })),
   }
 }
 
-export function threePreviewName(game: GameUiState, hit: BoardHit): string | null {
+function cardPresentation(
+  card: { readonly name: string; readonly serializedKey?: BasicLand; readonly displayName?: string } | undefined,
+): ThreeCardPresentation | null {
+  if (!card || card.name === HIDDEN_HAND_CARD_NAME) return null
+  const serializedKey = card.serializedKey ?? (isBasicLand(card.name) ? card.name : null)
+  return {
+    name: card.name,
+    displayName: card.displayName ?? (serializedKey ? displayCardName(serializedKey) : card.name),
+    ...(serializedKey
+      ? { serializedKey, assetSlug: cardAssetSlug(serializedKey) }
+      : {}),
+  }
+}
+
+export function threePreviewCard(game: GameUiState, hit: BoardHit): ThreeCardPresentation | null {
   const player = game.players[hit.owner]
   if (!player) return null
   const card = hit.zone === 'hand'
     ? player.handCards.find((entry) => entry.id === hit.cardId)
     : player.battlefield.find((entry) => entry.instanceId === hit.instanceId && entry.cardId === hit.cardId)
-  return card && card.name !== HIDDEN_HAND_CARD_NAME ? card.name : null
+  return cardPresentation(card)
 }
 
 function button(action: string, label: string, disabled = false, attrs = ''): string {
@@ -228,8 +268,8 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
       ${hasSavedAdventureRun(adventure) ? button('abandon-adventure', 'Reset Adventure Run') : ''}</section>
     ${renderInstallControls()}`
   return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
-    <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Basic Land Game${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
-      ${page === 'root' ? '<p>Land-only 2-player game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>
+    <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Urban Creatures${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
+      ${page === 'root' ? '<p>Urban-fantasy 2-player card game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>
     ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
     ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
   </section>`
@@ -240,11 +280,16 @@ function renderTargets(view: AppViewModel, ui: InterfaceUi, target: TargetModel)
     return `<section aria-label="Pending target selection"><p>${escapeHtml(target.title)}</p>${button('resume-target', 'Choose Target')}</section>`
   }
   const options = `<div class="three-targets" data-scroll-key="targets">${target.options.map((option) =>
-    `<button type="button" data-action="target"${option.effectTargetId === undefined ? '' : ` data-target-id="${escapeHtml(option.effectTargetId)}"`}>${renderCardTile(option.cardName, view.cardVisualStyle)}<span>${escapeHtml(option.label)}</span></button>`,
+    `<button type="button" data-action="target"${option.effectTargetId === undefined ? '' : ` data-target-id="${escapeHtml(option.effectTargetId)}"`}>${renderCardTile({
+      name: option.cardName,
+      displayName: option.displayName,
+      ...(option.serializedKey ? { serializedKey: option.serializedKey } : {}),
+      ...(option.assetSlug ? { assetSlug: option.assetSlug } : {}),
+    }, view.cardVisualStyle)}<span>${escapeHtml(option.label)}</span></button>`,
   ).join('') || '<p>No legal targets available.</p>'}</div>`
   return target.battlefield
     ? `<section class="three-target-panel" role="region" aria-label="${escapeHtml(target.title)}"><h3>${escapeHtml(target.title)}</h3>
-      <p>Select a highlighted battlefield card, or use a target button below.</p>${options}${button('close', ui.pendingCardId ? 'Cancel Target Selection' : 'Close Target Selection')}</section>`
+      <p>Select a highlighted creature on the board, or use a target button below.</p>${options}${button('close', ui.pendingCardId ? 'Cancel Target Selection' : 'Close Target Selection')}</section>`
     : modal('target', target.title, options)
 }
 
@@ -254,13 +299,15 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
   const owners = ui.presentedActor === 1 ? [1, 0] : [0, 1]
   return modal('cards', 'Cards & keyboard controls',
-    `<p>Play, respond, or preview using the hand-card controls, or interact with the 3D board.</p>
+    `<p>Summon, intercept, or preview using the hand-card controls, or interact with the 3D board.</p>
     ${owners.map((owner) => {
       const player = game.players[owner]
       return `<section aria-label="Player ${owner + 1} cards"><h3>Player ${owner + 1} (${escapeHtml(view.controllers[owner])})${game.actor === owner ? ' · Active' : ''}</h3>
-        <p>Hand ${player.handCount} · Deck ${player.deckCount} · Graveyard ${player.graveyardCount}</p>
+        <p>Hand ${player.handCount} · Deck ${player.deckCount} · Discard pile ${player.graveyardCount}</p>
         <h4>Hand</h4><div class="three-native-cards" data-scroll-key="hand-${owner}">${player.handCards.map((card) => {
           if (card.name === HIDDEN_HAND_CARD_NAME) return '<span class="three-hidden-card">Hidden card</span>'
+          const presentation = cardPresentation(card)!
+          const displayName = presentation.displayName
           const playable = !blocked && canThreeInput(view, ui.presentedActor) && owner === game.actor
             && game.phase === 'main' && (game.legal.playLandByCard[card.id]?.length ?? 0) > 0
           const responding = response !== null && owner === game.actor
@@ -269,19 +316,26 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
             const required = response.requiredIslandId === card.id
             const cardDisplayName = required
               ? response.requiredCardDisplayName
-              : choice?.displayName ?? card.displayName ?? card.name
+              : choice?.displayName ?? presentation.displayName
             return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(cardDisplayName)}</span>
               ${required ? `<span>${escapeHtml(response.requiredCardHint)}</span>` : choice
                 ? button('respond-card', choice.a11yLabel, false, ` data-card-id="${escapeHtml(card.id)}" data-owner="${owner}"`)
-                : '<span>Not available for this counter</span>'}</div>`
+                : '<span>Not available for Intercept</span>'}</div>`
           }
-          return `<div class="three-native-card"><span>${escapeHtml(card.name)}</span>
-            ${button('play', `Play ${card.name}`, !playable, ` data-card-id="${escapeHtml(card.id)}"`)}
-            ${button('preview', `Preview ${card.name}`, !previewAllowed || responding, ` data-zone="hand" data-owner="${owner}" data-card-id="${escapeHtml(card.id)}"`)}</div>`
-        }).join('') || '<p>No cards.</p>'}</div>
-        <h4>Battlefield</h4><div class="three-native-cards" data-scroll-key="battlefield-${owner}">${player.battlefield.map((card) =>
-          button('preview', `Preview ${card.name}`, !previewAllowed, ` data-zone="battlefield" data-owner="${owner}" data-card-id="${escapeHtml(card.cardId)}" data-instance-id="${escapeHtml(card.instanceId)}"`),
-        ).join('') || '<p>No lands.</p>'}</div></section>`
+          return `<div class="three-native-card"><span>${escapeHtml(displayName)}</span>
+            ${button('play', `Summon ${displayName}`, !playable, ` data-card-id="${escapeHtml(card.id)}"`)}
+            ${button('preview', `Preview ${displayName}`, !previewAllowed || responding, ` data-zone="hand" data-owner="${owner}" data-card-id="${escapeHtml(card.id)}"`)}</div>`
+        }).join('') || '<p>No cards in hand.</p>'}</div>
+        <h4>Board</h4><div class="three-native-cards" data-scroll-key="battlefield-${owner}">${player.battlefield.map((card) => {
+          const presentation = cardPresentation(card)!
+          return `<div class="three-native-card"><span>${escapeHtml(presentation.displayName)}</span>${button(
+            'preview',
+            `Preview ${presentation.displayName}`,
+            !previewAllowed,
+            ` data-zone="battlefield" data-owner="${owner}" data-card-id="${escapeHtml(card.cardId)}" data-instance-id="${escapeHtml(card.instanceId)}"`,
+          )}</div>`
+        }).join('') || '<p>No creatures on the board.</p>'}</div>
+        ${player.graveyardCount === 0 ? '<p>Discard pile empty.</p>' : ''}</section>`
     }).join('')}`,
     'cards-back', 'Back to Game Menu')
 }
@@ -292,7 +346,7 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
   const targets = threeTargets(view, ui)
   return `<section class="three-hud" aria-label="Game controls">
     <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
-      <h2>Turn ${game.turn} · ${escapeHtml(game.phase)}</h2><span>Player ${game.actor + 1}</span></header>
+      <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))}</h2><span>Player ${game.actor + 1}</span></header>
     <p role="status" aria-live="polite">${escapeHtml(view.status)}</p>
     ${game.winnerText ? `<p class="three-winner">${escapeHtml(game.winnerText)}</p>` : ''}
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? 'Keep playing to continue the tutorial.')}</aside>` : ''}
@@ -303,8 +357,8 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
 }
 
 export function renderThreeHover(view: AppViewModel, hit: BoardHit | null): string {
-  const name = view.game && hit ? threePreviewName(view.game, hit) : null
-  return name ? `<aside class="three-hover-preview" aria-hidden="true">${renderCardTile(name, view.cardVisualStyle)}</aside>` : ''
+  const card = view.game && hit ? threePreviewCard(view.game, hit) : null
+  return card ? `<aside class="three-hover-preview" aria-hidden="true">${renderCardTile(card, view.cardVisualStyle)}</aside>` : ''
 }
 
 export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includeHud = true): string {
@@ -323,12 +377,12 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includ
   const targets = threeTargets(view, ui)
   const response = threeResponse(view, ui)
   const nativeBlocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
-  const previewName = ui.preview ? threePreviewName(game, ui.preview) : null
+  const previewCard = ui.preview ? threePreviewCard(game, ui.preview) : null
   return `${includeHud ? renderThreeHud(view, ui) : ''}<section class="three-secondary-controls" aria-label="Additional game controls">
     ${targets && !ui.menuOpen && !ui.cardsOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${ui.menuOpen ? renderMenu(view) : ''}
     ${ui.cardsOpen ? renderNativeCards(view, ui, nativeBlocked, response) : ''}
-    ${previewName ? modal('preview', `${previewName} card preview`, renderCardTile(previewName, view.cardVisualStyle),
+    ${previewCard ? modal('preview', `${previewCard.displayName} card preview`, renderCardTile(previewCard, view.cardVisualStyle),
     'close', ui.previewReturnToCards ? 'Back to Cards' : 'Close') : ''}
     </section>`
 }

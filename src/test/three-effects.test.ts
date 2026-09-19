@@ -379,7 +379,10 @@ describe('distinct Three effect recipes', () => {
     const geometry = new EffectGeometry()
     const done = vi.fn()
     const visual = new EffectVisual(geometry, descriptor, source, target, 400, 4, null, done, cards)
-    expect(acquire.mock.calls.map(([name]) => name)).toEqual(['Island', 'Swamp'])
+    expect(acquire.mock.calls.map(([card]) => card)).toEqual([
+      expect.objectContaining({ name: 'Island' }),
+      expect.objectContaining({ name: 'Swamp' }),
+    ])
     expect(registry.size).toBe(0)
     expect(cards[0].group.position.x).toBeLessThan(source.x)
     expect(cards[1].group.position.x).toBeGreaterThan(source.x)
