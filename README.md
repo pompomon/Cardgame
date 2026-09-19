@@ -10,28 +10,28 @@ validation/build, state and persistence, Three.js renderer and native interface,
 service worker and PWA, testing, PR workflow). Read those before making
 non-trivial changes; they capture recurring review findings.
 
-## Terminology migration status
+## Creatures
 
-The tutorial, Replay Log, and terminal CLI use the shared creature catalog:
+The Three.js board and native interface, tutorial, Replay Log, terminal CLI, and
+card art use one shared creature catalog:
 
-| Stable internal key | Player-facing creature | Ability |
+| Creature | Ability | Rules |
 | --- | --- | --- |
-| `Forest` | Gravebloom Dryad | Reclaim |
-| `Island` | Signal Siren | Listen In / Intercept |
-| `Mountain` | Rooftop Gargoyle | Banish |
-| `Plains` | Echo Doppelgänger | Mimic |
-| `Swamp` | Memory Vampire | Drain Memory |
+| Gravebloom Dryad | Reclaim | Return one creature from your discard pile to your hand. |
+| Signal Siren | Listen In / Intercept | Draw one card. Discard Signal Siren and one other card to cancel an opponent's summon. |
+| Rooftop Gargoyle | Banish | Choose an opposing creature on the Board and send it to its owner's discard pile. |
+| Echo Doppelgänger | Mimic | Repeat the ability of one of your other creatures. |
+| Memory Vampire | Drain Memory | Choose a card from your opponent's hand for them to discard. |
 
-This is a phased presentation migration. General Three.js battlefield/native
-controls and browser metadata are updated in the next phase, while replacement
-creature artwork lands separately. Until then, those surfaces and fallback art
-may still show legacy land terminology.
+### Contributor compatibility note
 
 The engine and compatibility formats intentionally retain `BasicLand`, the
 `Forest`/`Island`/`Mountain`/`Plains`/`Swamp` keys, `Card.type: 'land'`, phase and
-action discriminants, and fields such as `battlefield` and `graveyard`. Saved
-games, recordings, and P2P packets continue to use those stable identifiers;
-player-facing code maps them through `src/app/card-catalog.ts`.
+action discriminants, and fields such as `battlefield` and `graveyard`. Those are
+internal or serialized names, not player-facing copy. Saved games, Adventure
+runs, recordings, and P2P packets continue to use them unchanged.
+`src/app/card-catalog.ts` maps those stable keys to display names, ability copy,
+and ASCII asset slugs; display copy is never parsed or serialized as identity.
 
 ## Browser rendering
 
@@ -51,11 +51,11 @@ query parameters and the hash, then discards the old stored renderer preference.
 - The lobby groups options into **Settings** and **Recording** submenus.
   During a match, the HUD above the table keeps Menu, turn/phase, status, and
   decision prompts available without opening the native card controls.
-- Drag a playable hand card onto your battlefield. Touch and pen movement must
+- Drag a playable hand card onto your Board. Touch and pen movement must
   cross a threshold; tapping opens a preview. Multiple legal targets are selected
   before committing the action.
-- Both battlefield headers show Hand, Deck, and Graveyard counts. **End Turn**
-  or **Let It Through** appears in the near-player battlefield header when
+- Both Board headers show Hand, Deck, and Discard pile counts. **End Turn**
+  or **Let It Through** appears in the near-player Board header when
   appropriate; neither is available during replay or after game over.
 - When responding with Signal Siren, click or tap an eligible card in your hand
   to intercept immediately, discarding that card plus the first mechanical
@@ -64,7 +64,7 @@ query parameters and the hash, then discards the old stored renderer preference.
   the additional discard. The hand overlaps cards as needed while keeping every
   choice on the table. Use **Let It Through** to decline. With animations
   enabled, a resolved interception briefly shows both discarded cards over the
-  intercepting player's battlefield; the animation-speed
+  intercepting player's Board; the animation-speed
   setting controls the display duration, and **Off** skips it.
 - **Game Menu → Cards & keyboard controls** opens the viewport-bounded native
   controls. Native play and target buttons provide the same actions without
@@ -82,11 +82,11 @@ query parameters and the hash, then discards the old stored renderer preference.
   Opponent draw names and art remain hidden. Scrolling back stops automatic
   following; **Follow latest** resumes it.
 - Card rows remain centered and overlap cards as needed so the entire hand and
-  both battlefields stay visible without pagination. Short landscape layouts
+  both Board rows stay visible without pagination. Short landscape layouts
   place player information beside the cards. Active gameplay fits the viewport
-  without document or battlefield scrolling; dialogs scroll internally when
+  without document or card-row scrolling; dialogs scroll internally when
   space or enlarged text requires it. The camera stays fixed during dragging,
-  and deck/graveyard stacks distinguish empty piles.
+  and Deck/Discard pile stacks distinguish empty piles.
 - Card Style, Board Theme, Render Quality, and Animations use their existing
   preferences. Startup does not force HD over a saved artwork style.
   Backgrounds use aspect-correct cropping and keep the previous theme visible
@@ -107,10 +107,17 @@ query parameters and the hash, then discards the old stored renderer preference.
   - **HD**
   - **Monochrome**
 - Style selection is a client-side presentation preference persisted in browser local storage.
-- Three.js uses static PNG card art for each style in `ALL_CARD_ART`; until the
-  separate creature-art phase lands, its native interface still falls back to
-  legacy-identity procedural icons when an image cannot load.
-- Core implementation lives in `src/app/card-visuals.ts` and style options in `src/app/card-visual-styles.ts`.
+- Creature filenames use the exact ASCII slugs from `src/app/card-catalog.ts`;
+  display names are never transformed into paths.
+- Classic uses cached procedural creature art and ships matching deterministic
+  PNG inventory. HD tries `hd/<slug>.png`, then `hd-fallback/<slug>.png`, then a
+  procedural fallback. Monochrome tries `monochrome/<slug>.png`, then a
+  procedural fallback.
+- Three.js and its native interface share the same source policy, suppress
+  repeatedly failed raster URLs for the session, and retry after online
+  recovery. See [`public/cards/README.md`](public/cards/README.md).
+- Core implementation lives in `src/app/card-visuals.ts`; style options live in
+  `src/app/card-visual-styles.ts`.
 
 ## AI levels
 

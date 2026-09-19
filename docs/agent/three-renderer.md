@@ -1,8 +1,13 @@
 # Three.js renderer
 
 The sole browser renderer lives in `src/renderers/three/`. It combines a WebGL2
-battlefield with a native HTML lobby, HUD, menus, dialogs, P2P controls,
+Board with a native HTML lobby, HUD, menus, dialogs, P2P controls,
 recording controls, card lists, and accessibility actions.
+
+Code and contributor documentation may use `battlefield` for the stable
+`GameState` field, renderer row geometry, hit-test zone, or DOM data value. That
+is an internal compatibility term; every player-facing label for the zone is
+**Board**.
 
 ## Composition and host lifecycle
 
@@ -73,7 +78,7 @@ Never use `structuredClone(GameState)` in render or AI hot paths.
 ## Interaction
 
 `ThreeBoard` captures visual intent; `ThreeInterface` owns submission state.
-Battlefield primary actions must route through
+Primary actions originating from an internal `battlefield` hit must route through
 `ThreeInterface.activatePrimaryAction()` so current blocking state, decision
 keys, and legality are revalidated immediately before submission.
 
@@ -99,7 +104,7 @@ from `src/renderers/shared/image-fit.ts`.
 Keep action instructions and effect captions as stage-level overlays rather
 than row content. Changing a wrapped prompt during an active drag can trigger
 header measurement and invalidate the gesture. Anchor instructions at the near
-battlefield row and place effect captions below the measured instruction
+internal `battlefield` row and place effect captions below the measured instruction
 height.
 
 Use explicit viewport culling for large native lists and avoid per-frame DOM
@@ -137,7 +142,7 @@ formatting in `src/app/log-presentation.ts`; drawing belongs here.
 The HTML interface is part of this renderer. Its detailed markup, focus,
 escaping, CSS, raster fallback, and responsive rules are documented in
 [`three-interface.md`](three-interface.md). It remains available when the
-battlefield stage is hidden for lobby and modal flows, but it is not a WebGL
+WebGL Board stage is hidden for lobby and modal flows, but it is not a WebGL
 gameplay fallback.
 
 ## Tests

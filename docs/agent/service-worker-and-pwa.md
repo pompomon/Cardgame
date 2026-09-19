@@ -40,10 +40,35 @@ chunks, sprite responses, and other obsolete entries are deliberately not
 migrated. Activation then deletes only older managed Cardgame caches; never
 delete unrelated origin-wide Cache Storage entries.
 
+## Catalog-slugged card art
+
+Public card filenames come exclusively from the ASCII `assetSlug` stored in
+`src/app/card-catalog.ts`. Never derive a URL from a Unicode display name or the
+legacy serialized `BasicLand` key. Keep literal `import.meta.env.BASE_URL`
+access in the shared card-art URL helper so every candidate remains below the
+configured project path.
+
+Runtime source selection is shared by the WebGL Board and native HTML cards:
+
+- Classic uses the cached procedural creature source.
+- HD tries `hd/<slug>.png`, then `hd-fallback/<slug>.png`, then the procedural
+  source.
+- Monochrome tries `monochrome/<slug>.png`, then the procedural source.
+
+Raster consumers must remove a failed image immediately, remember failed URLs
+for the session, and skip them on subsequent renders. Online recovery may reset
+that suppression and try the shared candidate chain again. The service worker
+keeps every `/cards/*` request network-first with runtime-cache fallback; it
+must not turn these stable public paths into cache-first resources.
+
+See [`../../public/cards/README.md`](../../public/cards/README.md) for the exact
+five-file inventory, deterministic generation, and artwork review workflow.
+
 ## Versioning
 
 - Bump `RUNTIME_ASSET_VERSION` when replacing same-path card/board images or
-  intentionally invalidating their offline copies.
+  intentionally invalidating their offline copies. A documentation-only change
+  or a new hashed application build does not require this bump.
 - Bump `CACHE_VERSION` when changing the worker's cache schema or migration
   behavior.
 - Normal deployments rotate shell/build caches automatically using the hashed

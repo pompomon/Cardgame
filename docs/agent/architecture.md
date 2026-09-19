@@ -21,6 +21,8 @@ src/
 │   ├── action-resolution.ts    Shared legal-action presentation
 │   ├── game-recording.ts       Versioned recording import/export
 │   ├── adventure*.ts           Adventure state and persistence
+│   ├── card-catalog.ts         Stable keys to player copy and asset slugs
+│   ├── game-presentation.ts    Shared card, action, phase, and roster labels
 │   ├── log-presentation.ts     Structured event labels and visual-log cap
 │   ├── lobby-presentation.ts   Lobby mode options and predicates
 │   ├── renderer-migration.ts   One-way cleanup of obsolete renderer choices
@@ -80,9 +82,32 @@ cli/             ──→ app/ ──→ game/
 - Shared presentation semantics belong in `src/app/`; framework and DOM
   mechanics belong in `src/renderers/`.
 
+## Card identity and presentation boundary
+
+`src/game/` and all compatibility formats retain the legacy mechanical
+`BasicLand` keys, canonical `BASIC_LANDS` order, `Card.type: 'land'`, action and
+event discriminants, and persisted field names. Saves, Adventure snapshots,
+recordings, and P2P packets must continue to use those stable values.
+
+`src/app/card-catalog.ts` is the canonical mapping from a stable key to the
+player-facing creature name, ability copy, ASCII asset slug, and visual role.
+`src/app/game-presentation.ts` and the other app presentation helpers project
+catalog-backed names and shared labels for renderers and the CLI. The engine
+must not import the catalog.
+
+Display names and asset slugs are presentation data, never identifiers. Do not
+parse them back into keys, use them as object keys, or place them in engine,
+storage, recording, or wire payloads. Iterate identity-sensitive code through
+the canonical `BASIC_LANDS` tuple rather than display-name sorting or catalog
+object-key order.
+
+Contributor documentation and implementation names may say `battlefield` when
+referring to the stable state field, renderer row geometry, or DOM data value.
+The corresponding player-facing zone label is always **Board**.
+
 ## Browser renderer contract
 
-Three.js is the only browser renderer. Its WebGL battlefield and native HTML
+Three.js is the only browser renderer. Its WebGL Board and native HTML
 lobby, dialogs, settings, P2P controls, recording controls, and accessibility
 surface are one renderer. “Native HTML” does not mean a fallback renderer.
 
@@ -137,7 +162,7 @@ follow the
 | --- | --- |
 | Rules, legality, deterministic transitions | `src/game/` |
 | AI policy | `src/game/ai-policies/` |
-| Shared labels, lobby options, event formatting | `src/app/` |
+| Card catalog, shared labels, lobby options, event formatting | `src/app/` |
 | Persisted settings and their guards | `src/app/` |
 | Pointer state or generic render math | `src/renderers/shared/` |
 | GPU resources, picking, effects, layout | `src/renderers/three/` |

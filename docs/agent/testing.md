@@ -93,6 +93,33 @@ invokes `vite build`. See `src/test/card-art-base-path.test.ts`:
 
 These tests are slower but catch failures that source-level checks miss.
 
+## Creature catalog and terminology release matrix
+
+The player-facing creature migration intentionally leaves legacy mechanical
+identifiers in engine and compatibility code. Do not add a repository-wide
+assertion that legacy words never occur. For a release audit, classify each
+match as player-facing (must use approved copy), compatibility/internal (must
+remain stable), or historical (leave under `docs/history/`, with context when
+linked or quoted).
+
+| Surface | Focused coverage | Release invariant |
+| --- | --- | --- |
+| Catalog and deterministic identity | `card-catalog.test.ts`, `game-types.test.ts`, `cards.test.ts` | Exact names, rules, slugs, frozen entries, and `Forest, Island, Mountain, Plains, Swamp` order |
+| Shared projection and browser copy | `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts` | Catalog names and approved actions/zones; immutable snapshots; Banish names the owner's discard pile; hidden hands stay redacted |
+| Logs and CLI | `log-presentation.test.ts`, `three-native-html.test.ts`, `cli-session.test.ts` | Structured and known legacy logs use the same viewer-aware copy; CLI uses Creature, Summon, Board, Discard pile, Action phase, and Interception window |
+| Browser metadata and art | `browser-metadata.test.ts`, `card-art.test.ts`, `card-art-assets.test.ts`, `card-art-base-path.test.ts`, `card-art-generator.test.ts`, `service-worker.test.ts` | Approved title/description, exact ASCII-slug inventory, non-root URLs, fallback order, and network-first public art |
+| Persistence and P2P | `game-recording.test.ts`, `adventure-persistence.test.ts`, `view-model.test.ts`, `action-validation.test.ts`, `p2p-compatibility.test.ts` | Existing saves and v1/v2 recordings load unchanged; persisted Adventure labels are not rendered; packets contain no display copy |
+
+When a compact visual label is necessary, its accessible name must retain the
+full term: **Action phase**, **Interception window**, or **Discard pile**.
+Verify Gravebloom Dryad and Echo Doppelgänger, plus long Intercept and Banish
+instructions, at narrow portrait, short landscape, and 200% browser text. Text
+must wrap without clipping, controls remain at least 44 CSS pixels, and
+stage-level prompts must not resize card rows or cancel an active drag.
+`css-image-rendering.test.ts`, Three.js layout/interface tests, and mocked GPU
+tests guard the underlying contracts; only a production-browser check can
+establish actual zoom, font, and viewport behavior.
+
 ## Asset tests
 
 `src/test/card-art-assets.test.ts` validates the shipped PNGs:
