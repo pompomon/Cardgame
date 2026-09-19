@@ -314,7 +314,9 @@ function setupPlainsForest({
 beforeEach(() => {
   resetRasterCardArtLoadFailuresForTests()
   vi.stubGlobal('navigator', { userAgent: 'node-test', standalone: false })
-  vi.stubGlobal('window', { matchMedia: () => ({ matches: false }), navigator: { standalone: false } })
+  const browserWindow = new EventTarget()
+  Object.assign(browserWindow, { matchMedia: () => ({ matches: false }), navigator: { standalone: false } })
+  vi.stubGlobal('window', browserWindow)
   vi.stubGlobal('Element', ElementStub)
   vi.stubGlobal('HTMLElement', ElementStub)
   vi.stubGlobal('Node', ElementStub)
@@ -1348,6 +1350,27 @@ describe('Three native interface behavior', () => {
     expect(h.content.querySelector('dialog')?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
     expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.ui.dispose()
+  })
+
+  it('retries failed native raster art after online recovery and removes the listener on disposal', () => {
+    const view = makeView()
+    view.cardVisualStyle = 'hd'
+    const primary = cardArtUrl('Forest', 'hd')
+    const fallback = cardArtFallbackUrl('Forest', 'hd')!
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    const h = setup(view)
+    h.ui.activate(hit())
+    expect(h.content.querySelector('[data-modal="preview"]')?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+
+    window.dispatchEvent(new Event('online'))
+    expect(h.content.querySelector('[data-modal="preview"]')?.querySelector('img')?.getAttribute('src')).toBe(primary)
+
+    h.ui.dispose()
+    noteRasterCardArtLoadFailure(primary)
+    noteRasterCardArtLoadFailure(fallback)
+    window.dispatchEvent(new Event('online'))
+    expect(renderThreeInterface(view, defaultUi)).not.toContain(primary)
   })
 
   it.each(['button', 'Escape'])('closes previews with %s, restoring focus without playing a card', (method) => {

@@ -18,8 +18,14 @@ export function noteRasterCardArtLoadFailure(url: string): void {
   failedRasterCardArtUrls.add(url)
 }
 
-export function resetRasterCardArtLoadFailuresForTests(): void {
+export function resetRasterCardArtLoadFailures(): boolean {
+  const hadFailures = failedRasterCardArtUrls.size > 0
   failedRasterCardArtUrls.clear()
+  return hadFailures
+}
+
+export function resetRasterCardArtLoadFailuresForTests(): void {
+  resetRasterCardArtLoadFailures()
 }
 
 interface RasterRenderStage {

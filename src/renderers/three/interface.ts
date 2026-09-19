@@ -15,6 +15,7 @@ import type { AppViewModel } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { BoardHit } from './contracts'
+import { resetRasterCardArtLoadFailures } from './native-html'
 import {
   canThreeInput,
   isThreeInGame,
@@ -91,6 +92,9 @@ export class ThreeInterface {
   private readonly controller: ControllerApi
   private readonly onChange: () => void
   private readonly onBlock: () => void
+  private readonly handleOnline = (): void => {
+    if (resetRasterCardArtLoadFailures()) this.render()
+  }
 
   constructor(
     host: HTMLElement,
@@ -126,6 +130,7 @@ export class ThreeInterface {
     this.document.addEventListener('focusin', this.handleFocusIn)
     this.document.addEventListener('visibilitychange', this.handleVisibility)
     this.fileInput.addEventListener('change', this.handleFile)
+    window.addEventListener?.('online', this.handleOnline)
   }
 
   private ui(): InterfaceUi {
@@ -734,6 +739,7 @@ export class ThreeInterface {
     this.document.removeEventListener('focusin', this.handleFocusIn)
     this.document.removeEventListener('visibilitychange', this.handleVisibility)
     this.fileInput.removeEventListener('change', this.handleFile)
+    window.removeEventListener?.('online', this.handleOnline)
     for (const [url, timer] of this.downloadTimers) {
       clearTimeout(timer)
       URL.revokeObjectURL(url)
