@@ -109,6 +109,15 @@ describe('controller recording and replay', () => {
     installMemoryStorage()
   })
 
+  it('uses the approved tutorial-start status', () => {
+    const controller = new AppController()
+    controller.startGame('tutorial')
+
+    expect(controller.getViewModel().status).toBe(
+      'Tutorial started. Follow the hint panel to learn each creature ability.',
+    )
+  })
+
   it('records local and AI actions in timeline', () => {
     withFakeTimers(() => {
       const controller = new AppController()

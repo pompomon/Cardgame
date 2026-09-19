@@ -21,7 +21,7 @@ function canPlayMainLand(game: GameState): boolean {
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'play-island-first',
-    hint: 'Play Island. Your opponent has an Island and will counter your first play — this demonstrates the counter mechanic.',
+    hint: 'Summon Signal Siren. Your opponent has a Signal Siren and will intercept your first summon.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Island')
       && game.players[0].battlefield.length === 0
@@ -29,12 +29,12 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'island-countered',
-    hint: 'Your opponent can counter your Island now. If they do, they discard Island plus one other card, and your Island goes to your graveyard.',
+    hint: 'Your opponent may intercept now by discarding Signal Siren and one other card. If they do, your Signal Siren goes to your discard pile.',
     condition: (game) => game.phase === 'respond',
   },
   {
     id: 'play-forest',
-    hint: 'Your Island is in your graveyard. Play Forest to return it to your hand.',
+    hint: 'Summon Gravebloom Dryad to reclaim Signal Siren from your discard pile.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Forest')
       && game.players[0].graveyard.length > 0
@@ -42,7 +42,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-island-draw',
-    hint: "You retrieved Island. Play it now to draw an extra card with Island's ability.",
+    hint: 'Summon Signal Siren again. Listen In draws one card.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Island')
       && battlefieldHas(game, 0, 'Forest')
@@ -50,7 +50,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-mountain',
-    hint: "Play Mountain to destroy one of your opponent's battlefield lands.",
+    hint: "Summon Rooftop Gargoyle, then choose an opposing creature to banish to its owner's discard pile.",
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Mountain')
       && game.players[1].battlefield.length > 0
@@ -58,7 +58,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-swamp',
-    hint: "Play Swamp to make your opponent discard a card from hand.",
+    hint: "Summon Memory Vampire, then choose one card from your opponent's hand for them to discard.",
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Swamp')
       && game.players[1].hand.length > 0
@@ -67,12 +67,12 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'swamp-target',
-    hint: 'Choose the opponent card to discard.',
+    hint: "Choose a card from your opponent's hand for them to discard.",
     condition: (game) => game.phase === 'swamp_target',
   },
   {
     id: 'play-plains',
-    hint: 'Play Plains to reuse one of your battlefield land abilities. You will pick the target land.',
+    hint: 'Summon Echo Doppelgänger, then choose one of your other creatures whose ability it should mimic.',
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Plains')
       && battlefieldHas(game, 0, 'Swamp')
@@ -80,12 +80,12 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'plains-target',
-    hint: 'Choose which land ability Plains should reuse. Try Island for card draw or Mountain for removal.',
+    hint: 'Choose one of your other creatures whose ability Echo Doppelgänger should repeat.',
     condition: (game) => game.phase === 'plains_target',
   },
   {
     id: 'win',
-    hint: 'You won by placing 5 different land types on your battlefield. Tutorial complete!',
+    hint: 'You won by summoning all five creature types to your board. Tutorial complete!',
     condition: (game) => game.phase === 'gameOver' && game.winner === 0,
   },
 ]

@@ -871,7 +871,7 @@ export class AppController implements ControllerApi {
     } else if (mode === 'tutorial') {
       this.state.controllers = ['human', 'ai']
       if (adventurePersisted) {
-        this.state.status = 'Tutorial started. Follow the hint panel to learn each land ability.'
+        this.state.status = 'Tutorial started. Follow the hint panel to learn each creature ability.'
       }
       this.state.offer = ''
       this.state.answer = ''
