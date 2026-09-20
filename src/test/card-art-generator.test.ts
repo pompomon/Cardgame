@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync, rmSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterAll, describe, expect, it } from 'vitest'
 import { cardAssetSlug } from '../app/card-catalog'
@@ -11,18 +10,19 @@ const GENERATOR = resolve(REPO_ROOT, 'scripts', 'generate-card-art.mjs')
 const PHOTOREAL_GENERATOR = resolve(REPO_ROOT, 'scripts', 'generate-photoreal-card-art.mjs')
 const GENERATED_STYLES = ['classic', 'hd-fallback', 'monochrome'] as const
 const EXPECTED_FILES = BASIC_LANDS.map((land) => `${cardAssetSlug(land)}.png`).sort()
+const SHIPPING_SIZE = 1024
 const temporaryDirectories: string[] = []
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), 'card-art-generator-'))
+  const directory = mkdtempSync(resolve(REPO_ROOT, '.card-art-generator-'))
   temporaryDirectories.push(directory)
   return directory
 }
 
-function runGenerator(output: string): void {
+function runGenerator(output: string, size = 256): void {
   const result = spawnSync(
     process.execPath,
-    [GENERATOR, '--output', output, '--size', '256'],
+    [GENERATOR, '--output', output, '--size', String(size)],
     { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120_000 },
   )
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
@@ -54,6 +54,23 @@ describe('card art generators', () => {
           readFileSync(resolve(first, style, filename)),
           readFileSync(resolve(second, style, filename)),
         ), `${style}/${filename} should be byte-identical`).toBe(true)
+      }
+    }
+  }, 120_000)
+
+  it('matches committed deterministic assets at the shipping 1024-pixel size', () => {
+    const output = temporaryDirectory()
+    runGenerator(output, SHIPPING_SIZE)
+
+    for (const style of GENERATED_STYLES) {
+      const committed = resolve(REPO_ROOT, 'public', 'cards', style)
+      expect(readdirSync(resolve(output, style)).sort()).toEqual(EXPECTED_FILES)
+      expect(readdirSync(committed).sort()).toEqual(EXPECTED_FILES)
+      for (const filename of EXPECTED_FILES) {
+        expect(bytesEqual(
+          readFileSync(resolve(output, style, filename)),
+          readFileSync(resolve(committed, filename)),
+        ), `${style}/${filename} should match the committed ${SHIPPING_SIZE}-pixel asset`).toBe(true)
       }
     }
   }, 120_000)

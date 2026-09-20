@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import {
   formatLogEventText,
   formatLogEventTile,
@@ -8,7 +9,7 @@ import {
   presentLogEvent,
 } from '../app/log-presentation'
 import type { ControllerKind } from '../app/types'
-import type { LogEvent } from '../game/types'
+import { BASIC_LANDS, type LogEvent } from '../game/types'
 
 const HUMAN_VS_AI: [ControllerKind, ControllerKind] = ['human', 'ai']
 const HUMAN_VS_HUMAN: [ControllerKind, ControllerKind] = ['human', 'human']
@@ -242,6 +243,49 @@ describe('log presentation', () => {
     expect(hiddenDraw.text).toBe('P2 draws a card')
     expect(hiddenDraw.card).toBeNull()
     expect(JSON.stringify(hiddenDraw)).not.toMatch(/Mountain|Rooftop Gargoyle/)
+  })
+
+  it.each(BASIC_LANDS)('keeps structured and legacy source copy in catalog parity for %s', (key) => {
+    const viewer = { controllers: HUMAN_VS_HUMAN }
+    const target = cardCatalogEntry(key)
+    const reuse = `${displayCardName('Plains')} mimics ${target.displayName} — ${target.primaryAbility.name}`
+    expect(presentLogEvent({
+      kind: 'ability_plains_reuse', actor: 0, reusedName: key,
+    }, viewer).text).toBe(`P1's ${reuse}`)
+    expect(presentLegacyLogLine(`Plains reuses ${key}.`, viewer).text).toBe(reuse)
+    expect(presentLegacyLogLine(`Forest returns ${key} from graveyard to hand.`, viewer).text)
+      .toBe(`${displayCardName('Forest')} reclaims ${target.displayName} from the discard pile`)
+    expect(presentLegacyLogLine(`Swamp makes Player 2 discard ${key}.`, viewer).text)
+      .toBe(`${displayCardName('Swamp')} drains a memory; P2 discards ${target.displayName}`)
+    expect(presentLegacyLogLine(`Mountain destroys Player 2's ${key}.`, viewer).text)
+      .toBe(`${displayCardName('Mountain')} banishes P2's ${target.displayName} to its owner's discard pile`)
+    expect(presentLogEvent({
+      kind: 'counter_resolved', actor: 0, cardName: key, discardCardName: key,
+    }, viewer).text).toBe(
+      `P1 intercepts ${target.displayName} by discarding ${displayCardName('Island')} and ${target.displayName}`,
+    )
+    expect(presentLegacyLogLine(`Player 1 counters ${key}.`, viewer).text)
+      .toBe(`P1 intercepts ${target.displayName} by discarding ${displayCardName('Island')} and another card`)
+  })
+
+  it('does not expand legacy parsing to display names or near-matching templates', () => {
+    const viewer = { controllers: HUMAN_VS_AI }
+    for (const line of [
+      `Player 2 draws ${displayCardName('Mountain')}.`,
+      `${displayCardName('Forest')} returns Island from graveyard to hand.`,
+      `Plains reuses ${displayCardName('Forest')}.`,
+      'Player 2 draws Mountain',
+      'Player 2 draws Mountain. Extra text.',
+      ' Player 2 draws Mountain.',
+      'Player 3 draws Mountain.',
+    ]) {
+      expect(presentLegacyLogLine(line, viewer)).toMatchObject({
+        label: line,
+        text: line,
+        card: null,
+        translated: false,
+      })
+    }
   })
 
   it('preserves unknown legacy text and safely handles unknown events', () => {

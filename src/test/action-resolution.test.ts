@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { cardCatalogEntry } from '../app/card-catalog'
+import { targetPromptForCard } from '../app/game-presentation'
 import {
   groupCardTargetOptions,
   resolvePlainsReuseAction,
@@ -269,11 +271,27 @@ describe('action-resolution', () => {
       kind: 'play_land',
       cardId: 'plains',
     })).toBe(
-      'Choose one of your other creatures whose ability Echo Doppelgänger should repeat.',
+      `Choose one of your creatures other than ${cardCatalogEntry('Plains').displayName} for ${cardCatalogEntry('Plains').primaryAbility.name}.`,
     )
     expect(targetPromptForContext(game, {
       kind: 'play_land',
       cardId: 'missing',
     })).toBe("Choose a target for this creature's ability.")
   })
+
+  it.each(['Forest', 'Mountain', 'Swamp'] as const)(
+    'uses the selected %s ability prompt instead of selecting another creature for Mimic',
+    (reusedName) => {
+      const state = createState(59)
+      state.game!.phase = 'plains_target'
+      state.game!.pendingPlainsReuse = {
+        actor: 0,
+        reusedInstanceId: 'selected-creature',
+        reusedCardName: reusedName,
+      }
+      const game = buildViewModel(state, false).game!
+      expect(targetPromptForContext(game, { kind: 'plains_reuse' }))
+        .toBe(targetPromptForCard(reusedName))
+    },
+  )
 })

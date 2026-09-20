@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController, type ControllerApi } from '../app/controller'
-import { cardAssetSlug, displayCardName } from '../app/card-catalog'
+import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import { createGameRecord } from '../app/game-recording'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
 import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
 import { createInitialGame } from '../game/engine'
 import { BASIC_LANDS, type BasicLand } from '../game/types'
-import { noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
+import { escapeHtml, noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
 import { ThreeInterface } from '../renderers/three/interface'
 import {
   canThreeInput,
@@ -327,6 +327,57 @@ beforeEach(() => {
 afterEach(() => { resetRasterCardArtLoadFailuresForTests(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Three native markup and decisions', () => {
+  it('offers read-only discard contents and catalog rules alongside Hand and Board controls', () => {
+    const view = makeView()
+    view.game!.players[0].graveyardCards = [
+      { id: 'discard-a', name: 'Plains' }, { id: 'discard-b', name: 'Plains' },
+    ]
+    view.game!.players[0].graveyardCount = 2
+    const html = renderThreeInterface(view, { ...defaultUi, cardsOpen: true })
+    expect(html).toContain('aria-label="Player 1 discard pile"')
+    expect(html).toContain('aria-label="Player 2 discard pile"')
+    expect(html).toContain('Discard pile empty.')
+    expect(html.match(/data-card-art="echo-doppelganger"/g)).toHaveLength(2)
+    for (const key of ['Forest', 'Island', 'Mountain', 'Plains'] as const) {
+      expect(html).toContain(escapeHtml(cardCatalogEntry(key).primaryAbility.rulesText))
+    }
+    expect(html).toContain(escapeHtml(cardCatalogEntry('Island').responseAbility!.rulesText))
+    expect(html).not.toMatch(/data-card-id="discard-[ab]"/)
+  })
+
+  it('never exposes hidden hand abilities, copy or art in the Cards dialog', () => {
+    const view = makeView()
+    view.game!.players[1].handCards = [{
+      id: 'secret', name: HIDDEN_HAND_CARD_NAME,
+      serializedKey: 'Swamp', displayName: 'Memory Vampire',
+    }]
+    view.game!.players[1].handCount = 1
+    const html = renderThreeInterface(view, { ...defaultUi, cardsOpen: true })
+    expect(html).toContain('Hidden card')
+    expect(html).not.toMatch(/Memory Vampire|Drain Memory|memory-vampire|data-card-id="secret"/)
+  })
+
+  it('shows ability rules in previews and during interception without changing action choices', () => {
+    const view = responseView()
+    const html = renderThreeInterface(view, { ...defaultUi, cardsOpen: true })
+    expect(html).toContain(escapeHtml(cardCatalogEntry('Island').responseAbility!.rulesText))
+    expect(html.match(/data-action="respond-card"/g)).toHaveLength(3)
+    expect(html).not.toContain('data-action="play"')
+    const preview = renderThreeInterface(makeView(), {
+      ...defaultUi, preview: hit({ zone: 'hand', owner: 0, cardId: 'source' }),
+    })
+    expect(preview).toContain('data-modal="preview"')
+    expect(preview).toContain(escapeHtml(cardCatalogEntry('Mountain').primaryAbility.rulesText))
+  })
+
+  it('describes the Adventure counter as both players’ attempted summons', () => {
+    const view = { ...makeView(), game: null }
+    view.adventure = { ...view.adventure, totalCardsPlayed: 7 }
+    const html = renderThreeInterface(view, defaultUi)
+    expect(html).toContain('Summons attempted (both players): 7')
+    expect(html).not.toContain('Cards Played')
+  })
+
   it('uses native lobby root, Settings and Recording subviews without duplicating controls', () => {
     const view = { ...makeView(), game: null }
     const html = renderThreeInterface(view, defaultUi)
@@ -763,6 +814,31 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
     expect(h.content.querySelector('dialog')).toBeNull()
     expect(h.document.activeElement).toBe(h.hud!.querySelector('[data-action="menu"]'))
+    h.ui.dispose()
+  })
+
+  it('preserves discard scroll and updates read-only contents across notifications and preview return', () => {
+    const view = makeView()
+    view.game!.players[0].graveyardCards = [{ id: 'discard', name: 'Plains' }]
+    view.game!.players[0].graveyardCount = 1
+    const h = setup(view)
+    h.openCards()
+    const discard = h.content.querySelector('[data-scroll-key="discard-0"]')!
+    discard.scrollTop = 29
+    const selector = '[data-action="preview"][data-zone="hand"][data-card-id="source"]'
+    h.click(selector)
+    expect(h.content.innerHTML).toContain('Banish')
+    h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
+    expect(h.content.querySelector('[data-scroll-key="discard-0"]')!.scrollTop).toBe(29)
+    expect(h.document.activeElement).toBe(h.content.querySelector(selector))
+    h.update({ ...view, status: 'Saved', cardVisualStyle: 'hd' })
+    expect(h.content.innerHTML).toContain('data-card-art="echo-doppelganger"')
+    const next = structuredClone(view)
+    next.game!.players[0].graveyardCards = []
+    next.game!.players[0].graveyardCount = 0
+    h.update(next)
+    expect(h.content.innerHTML).not.toContain('Echo Doppelgänger')
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
     h.ui.dispose()
   })
 

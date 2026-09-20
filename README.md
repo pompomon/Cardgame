@@ -12,17 +12,15 @@ non-trivial changes; they capture recurring review findings.
 
 ## Creatures
 
-The Three.js board and native interface, terminal CLI, and card art use one
-shared creature catalog. Tutorial sentences and Replay Log event framing still
-embed some creature and ability wording; keep those explicit exceptions in sync
-with the catalog:
+The Three.js board and native interface, terminal CLI, tutorial, Replay Log,
+and card art use one shared creature catalog:
 
 | Creature | Ability | Rules |
 | --- | --- | --- |
 | Gravebloom Dryad | Reclaim | Return one creature from your discard pile to your hand. |
 | Signal Siren | Listen In / Intercept | Draw one card. Discard Signal Siren and one other card to cancel an opponent's summon. |
 | Rooftop Gargoyle | Banish | Choose an opposing creature on the board and send it to its owner's discard pile. |
-| Echo Doppelgänger | Mimic | Repeat the ability of one of your other creatures. |
+| Echo Doppelgänger | Mimic | Repeat the ability of one of your creatures other than Echo Doppelgänger. |
 | Memory Vampire | Drain Memory | Choose one card from your opponent's hand for them to discard. |
 
 ### Contributor compatibility note
@@ -34,6 +32,9 @@ internal or serialized names, not player-facing copy. Saved games, Adventure
 runs, recordings, and P2P packets continue to use them unchanged.
 `src/app/card-catalog.ts` maps those stable keys to display names, ability copy,
 and ASCII asset slugs; display copy is never parsed or serialized as identity.
+Presentation-only grouping and resource-cache keys may use display metadata.
+Intercept automatically includes the first mechanical `Island` in hand as its
+Signal Siren cost; the selected additional discard must be a different card.
 
 ## Browser rendering
 
@@ -53,15 +54,15 @@ query parameters and the hash, then discards the old stored renderer preference.
 - The lobby groups options into **Settings** and **Recording** submenus.
   During a match, the HUD above the table keeps Menu, turn/phase, status, and
   decision prompts available without opening the native card controls.
-- Drag a playable hand card onto your Board. Touch and pen movement must
-  cross a threshold; tapping opens a preview. Multiple legal targets are selected
-  before committing the action.
+- Drag a creature you can summon from your hand onto your Board. Touch and pen
+  movement must cross a threshold; tapping opens a preview. Multiple legal
+  targets are selected before committing the action.
 - Both Board headers show Hand, Deck, and Discard pile counts. **End Turn**
   or **Let It Through** appears in the near-player Board header when
   appropriate; neither is available during replay or after game over.
-- When responding with Signal Siren, click or tap an eligible card in your hand
-  to intercept immediately, discarding that card plus the first mechanical
-  `Island` automatically. Pink rings mark eligible discards; the blue-ringed
+- During an Interception window, click or tap an eligible card in your hand
+  to intercept immediately, discarding that card plus Signal Siren
+  automatically. Pink rings mark eligible discards; the blue-ringed
   Signal Siren is included, not a separate choice. Another Signal Siren can be
   the additional discard. The hand overlaps cards as needed while keeping every
   choice on the table. Use **Let It Through** to decline. With animations
@@ -69,14 +70,17 @@ query parameters and the hash, then discards the old stored renderer preference.
   intercepting player's Board; the animation-speed
   setting controls the display duration, and **Off** skips it.
 - **Game Menu → Cards & keyboard controls** opens the viewport-bounded native
-  controls. Native play and target buttons provide the same actions without
-  dragging. During a response, each eligible native hand-card control names the
-  full discard cost and supports keyboard activation instead of opening a
-  preview. Escape or **Back** returns to Game Menu; previews return to the Cards
-  dialog, with focus and internal scroll positions preserved.
+  controls. Visible creatures in **Hand**, **Board**, and **Discard pile** show
+  their abilities and rules inline; previews include the full rules, including
+  Signal Siren's Intercept cost. Native summon and target buttons provide the
+  same actions without dragging. During an Interception window, each eligible
+  native hand-card control names the full discard cost and supports keyboard
+  activation instead of opening a preview. Escape or **Back** returns to Game
+  Menu; previews return to the Cards dialog, with focus and internal scroll
+  positions preserved.
 - Mouse hover shows a non-modal preview without taking focus; click, tap, or
   native keyboard controls still open the explicit preview. Hover is suppressed
-  while dragging, choosing responses/targets, or using a menu.
+  while dragging, choosing interceptions/targets, or using a menu.
 - The game menu contains a collapsible **Replay Log** with the latest 200
   structured events. It uses creature names and Summon, Reclaim, Banish, Drain
   Memory, Mimic, and Intercept wording. Known legacy text entries are translated
@@ -100,6 +104,9 @@ query parameters and the hash, then discards the old stored renderer preference.
   API is required.
 - Real-device performance varies. Lower Render Quality if interaction is slow;
   mobile Safari/Android hardware testing is recommended before wider rollout.
+- Adventure progress shows **Summons attempted (both players)**, replacing
+  “Cards Played.” It counts both players' submitted summons, including those
+  intercepted before reaching the Board, not only successful summons.
 
 ## Card visual styles
 
@@ -115,6 +122,9 @@ query parameters and the hash, then discards the old stored renderer preference.
   PNG inventory. HD tries `hd/<slug>.png`, then `hd-fallback/<slug>.png`, then a
   procedural fallback. Monochrome tries `monochrome/<slug>.png`, then a
   procedural fallback.
+- Classic's procedural rendering is intentional. Final HD artwork must be
+  photoreal; the current deterministic HD placeholders do not satisfy that
+  requirement. Photoreal replacement and browser visual acceptance remain pending.
 - Three.js and its native interface share the same source policy, suppress
   repeatedly failed raster URLs for the session, and retry after online
   recovery. See [`public/cards/README.md`](public/cards/README.md).
@@ -180,6 +190,8 @@ node dist-cli/cardgame-cli.mjs --mode ai-vs-ai --seed 42 --delay-ms 0
 The generated `dist-cli/cardgame-cli.mjs` uses the same engine and AI policies
 as the SPA. It intentionally excludes networking, Human vs Human, adventure,
 tutorial, browser persistence, recording/replay, and browser presentation.
+Inline rules, full card previews, and browsable Discard pile contents are
+browser-only; this follow-up adds no CLI commands or inspection access.
 
 ## Game recording and replay
 

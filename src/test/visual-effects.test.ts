@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { visualEffectForEvent } from '../app/visual-effects'
+import { visualEffectCaption, visualEffectForEvent } from '../app/visual-effects'
+import { effectFeedbackForDescriptor } from '../renderers/shared/interaction-feedback'
 import type { LogEvent } from '../game/types'
 
 describe('visual effect descriptors', () => {
@@ -35,6 +36,8 @@ describe('visual effect descriptors', () => {
 
   it('returns null for events without a visual recipe', () => {
     expect(visualEffectForEvent({ kind: 'turn_start', turn: 2, actor: 1 }, 'hd')).toBeNull()
+    expect(visualEffectForEvent({ kind: 'future_event' } as never, 'hd')).toBeNull()
+    expect(visualEffectCaption('future_effect' as never)).toBe('Action resolved')
   })
 
   it('uses the played land palette for land-entry effects', () => {
@@ -96,5 +99,12 @@ describe('visual effect descriptors', () => {
 
     expect(events.map(([event]) => visualEffectForEvent(event, 'classic')?.caption))
       .toEqual(events.map(([, caption]) => caption))
+    for (const [event, caption] of events) {
+      const effect = visualEffectForEvent(event, 'classic')!
+      expect(visualEffectCaption(effect.kind)).toBe(caption)
+      expect(effectFeedbackForDescriptor(effect).label).toBe(caption)
+      expect(effectFeedbackForDescriptor({ ...effect, caption: undefined }).label).toBe(caption)
+      expect(effectFeedbackForDescriptor({ ...effect, caption: '' }).label).toBe(caption)
+    }
   })
 })

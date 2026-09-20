@@ -1,4 +1,6 @@
 import type { GameState } from '../game/types'
+import { cardCatalogEntry } from './card-catalog'
+import { targetPromptForCard } from './game-presentation'
 
 export interface TutorialStep {
   id: string
@@ -18,10 +20,16 @@ function canPlayMainLand(game: GameState): boolean {
   return game.phase === 'main' && game.currentPlayer === 0 && game.players[0].landsPlayedThisTurn < 1
 }
 
+const dryad = cardCatalogEntry('Forest')
+const siren = cardCatalogEntry('Island')
+const gargoyle = cardCatalogEntry('Mountain')
+const echo = cardCatalogEntry('Plains')
+const vampire = cardCatalogEntry('Swamp')
+
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'play-island-first',
-    hint: 'Summon Signal Siren. Your opponent has a Signal Siren and will intercept your first summon.',
+    hint: `Summon ${siren.displayName}. Your opponent has a ${siren.displayName} and will use ${siren.responseAbility!.name} on your first summon.`,
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Island')
       && game.players[0].battlefield.length === 0
@@ -29,12 +37,12 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'island-countered',
-    hint: 'Your opponent may intercept now by discarding Signal Siren and one other card. If they do, your Signal Siren goes to your discard pile.',
+    hint: `Your opponent may use ${siren.responseAbility!.name} now by discarding ${siren.displayName} and one other card. If they do, your ${siren.displayName} goes to your discard pile.`,
     condition: (game) => game.phase === 'respond',
   },
   {
     id: 'play-forest',
-    hint: 'Summon Gravebloom Dryad to reclaim Signal Siren from your discard pile.',
+    hint: `Summon ${dryad.displayName}. ${dryad.primaryAbility.name} returns ${siren.displayName} from your discard pile to your hand.`,
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Forest')
       && game.players[0].graveyard.length > 0
@@ -42,7 +50,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-island-draw',
-    hint: 'Summon Signal Siren again. Listen In draws one card.',
+    hint: `Summon ${siren.displayName} again. ${siren.primaryAbility.name} draws one card.`,
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Island')
       && battlefieldHas(game, 0, 'Forest')
@@ -50,7 +58,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-mountain',
-    hint: "Summon Rooftop Gargoyle, then choose an opposing creature to banish to its owner's discard pile.",
+    hint: `Choose an opposing creature for ${gargoyle.primaryAbility.name}, then summon ${gargoyle.displayName} to send it to its owner's discard pile.`,
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Mountain')
       && game.players[1].battlefield.length > 0
@@ -58,7 +66,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'play-swamp',
-    hint: "Summon Memory Vampire, then choose one card from your opponent's hand for them to discard.",
+    hint: `Summon ${vampire.displayName}, then use ${vampire.primaryAbility.name} to choose one card from your opponent's hand for them to discard.`,
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Swamp')
       && game.players[1].hand.length > 0
@@ -67,12 +75,12 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'swamp-target',
-    hint: "Choose a card from your opponent's hand for them to discard.",
+    hint: `${vampire.primaryAbility.name}: ${targetPromptForCard('Swamp')}`,
     condition: (game) => game.phase === 'swamp_target',
   },
   {
     id: 'play-plains',
-    hint: 'Summon Echo Doppelgänger, then choose one of your other creatures whose ability it should mimic.',
+    hint: `Choose one of your creatures other than ${echo.displayName} for ${echo.primaryAbility.name}, then summon ${echo.displayName} to repeat its ability.`,
     condition: (game) => canPlayMainLand(game)
       && handHas(game, 0, 'Plains')
       && battlefieldHas(game, 0, 'Swamp')
@@ -80,7 +88,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
   {
     id: 'plains-target',
-    hint: 'Choose one of your other creatures whose ability Echo Doppelgänger should repeat.',
+    hint: `${echo.primaryAbility.name}: Choose a target for the repeated ability.`,
     condition: (game) => game.phase === 'plains_target',
   },
   {
@@ -93,6 +101,15 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 export function getCurrentTutorialStep(game: GameState): TutorialStep | null {
   for (const step of TUTORIAL_STEPS) {
     if (step.condition(game)) {
+      if (step.id === 'plains-target') {
+        const reusedName = game.pendingPlainsReuse?.reusedCardName
+        if (reusedName === 'Forest' || reusedName === 'Mountain' || reusedName === 'Swamp') {
+          return {
+            ...step,
+            hint: `${echo.primaryAbility.name} — ${cardCatalogEntry(reusedName).primaryAbility.name}: ${targetPromptForCard(reusedName)}`,
+          }
+        }
+      }
       return step
     }
   }

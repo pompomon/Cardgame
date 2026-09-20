@@ -117,6 +117,30 @@ describe('terminal game session', () => {
     expect(output).not.toMatch(/Rooftop Gargoyle|Echo Doppelgänger/)
   })
 
+  it('keeps full rules and discard inspection browser-only', async () => {
+    const state = createInitialGame(7)
+    for (const player of state.players) {
+      player.hand = []
+      player.battlefield = []
+      player.graveyard = [{ id: `discard-${player.id}`, name: 'Plains', type: 'land' }]
+    }
+    const formatted = formatTerminalGameState(state, ['human', 'ai'], 0).join('\n')
+    expect(formatted.match(/Discard pile: 1/g)).toHaveLength(2)
+    expect(formatted).not.toMatch(/Echo Doppelgänger|discard-[01]|Mimic|Rules/)
+
+    const context = makeIo(['rules', 'discard', 'q'])
+    const result = await runGameSession({
+      mode: 'human-vs-ai', aiLevel: 'basic', seed: 7, delayMs: 0,
+    }, context.io)
+    expect(result.status).toBe('quit')
+    expect(result.actions).toEqual([])
+    expect(context.errors).toEqual([
+      expect.stringContaining('Invalid selection'),
+      expect.stringContaining('Invalid selection'),
+    ])
+    expect(context.output.join('\n')).not.toMatch(/Full rules|Show rules|Inspect discard|View discard/)
+  })
+
   it('reprompts invalid input, covers response/target phases, and applies only legal actions', async () => {
     const context = makeIo(['invalid', ...Array.from({ length: 500 }, () => '1')])
     const result = await runGameSession({
@@ -171,22 +195,58 @@ describe('terminal game session', () => {
     expect(eofResult.actions).toHaveLength(0)
   })
 
-  it('runs deterministic AI vs AI games to completion with one shared level', async () => {
-    const firstIo = makeIo([], false)
-    const secondIo = makeIo([], false)
-    const config = {
-      mode: 'ai-vs-ai' as const,
-      aiLevel: 'advanced' as const,
-      seed: 77,
-      delayMs: 0,
-    }
+  it.each(['basic', 'advanced', 'hard'] as const)(
+    'matches the fixed synthetic %s AI transcript and outcome characterization',
+    async (aiLevel) => {
+      const context = makeIo([], false)
+      const config = {
+        mode: 'ai-vs-ai' as const,
+        aiLevel,
+        seed: 77,
+        delayMs: 0,
+      }
+      const result = await runGameSession(config, context.io)
+      expect(result.status).toBe('completed')
+      expect(result.state.phase).toBe('gameOver')
+      let replayed = createInitialGame(config.seed)
+      for (const action of result.actions) {
+        expect(isLegalActionForState(replayed, action)).toBe(true)
+        replayed = applyAction(replayed, action)
+      }
+      expect(replayed).toEqual(result.state)
 
-    const first = await runGameSession(config, firstIo.io)
-    const second = await runGameSession(config, secondIo.io)
-
-    expect(first.status).toBe('completed')
-    expect(first.state.phase).toBe('gameOver')
-    expect(first.actions).toEqual(second.actions)
-    expect(first.state).toEqual(second.state)
-  })
+      // No captured historical fixture was present in the inspected pre-migration
+      // revision. These are new characterizations, not historical recordings.
+      // git ls-tree verified that the entire src/game tree (engine, cards, types,
+      // AI policies/visibility/evaluation) is byte-identical at both revisions.
+      await expect(JSON.stringify({
+        provenance: {
+          kind: 'synthetic-current-engine-characterization',
+          capturedRevision: '71bb4c4',
+          comparedPreMigrationRevision: '0e4ed7cb16379dc219b2be95e45849cc92f9706a',
+          identicalGameTree: '3a958ee4034d23aa7e7890dc24754bb5a9bacf89',
+        },
+        config,
+        status: result.status,
+        actions: result.actions,
+        outcome: {
+          winner: result.state.winner,
+          turn: result.state.turn,
+          phase: result.state.phase,
+          currentPlayer: result.state.currentPlayer,
+          nextInstanceId: result.state.nextInstanceId,
+          players: result.state.players.map((player) => ({
+            id: player.id,
+            deck: player.deck.map((card) => card.id),
+            hand: player.hand.map((card) => card.id),
+            battlefield: player.battlefield.map(({ instanceId, card }) => ({
+              instanceId, cardId: card.id, name: card.name,
+            })),
+            graveyard: player.graveyard.map((card) => card.id),
+            landsPlayedThisTurn: player.landsPlayedThisTurn,
+          })),
+        },
+      }, null, 2)).toMatchFileSnapshot(`./fixtures/ai-${aiLevel}-seed-77.characterization.json`)
+    },
+  )
 })

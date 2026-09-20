@@ -1,5 +1,5 @@
 import { getInstallUiState } from '../../app/install-support'
-import { cardAssetSlug, displayCardName } from '../../app/card-catalog'
+import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../../app/card-catalog'
 import type { AppViewModel } from '../../app/types'
 import { HIDDEN_HAND_CARD_NAME } from '../../app/types'
 import { cardArtSourceFor, cardVisualPaletteFor, isRasterCardVisualStyle } from '../../app/card-visuals'
@@ -189,6 +189,17 @@ export function renderCardTile(card: string | RendererCardIdentity, style: AppVi
   }
 
   return `<span class="card-tile three-card three-card--procedural ${landClass}"${assetIdentity}${tileStyleAttr}><span class="three-card__art-frame">${renderLandIcon(serializedKey, style, 64, 'card-tile-icon')}</span><span class="three-card__name">${safeName}</span></span>`
+}
+
+export function renderCardRules(card: RendererCardIdentity): string {
+  if (card.name === HIDDEN_HAND_CARD_NAME) return ''
+  const key = card.serializedKey ?? (isBasicLand(card.name) ? card.name : null)
+  if (!key) return ''
+  const entry = cardCatalogEntry(key)
+  const abilities = [entry.primaryAbility, ...(entry.responseAbility ? [entry.responseAbility] : [])]
+  return `<dl class="three-card-rules" aria-label="${escapeHtml(entry.displayName)} abilities">${abilities.map((ability) =>
+    `<dt>${escapeHtml(ability.name)}</dt><dd>${escapeHtml(ability.rulesText)}</dd>`,
+  ).join('')}</dl>`
 }
 
 if (typeof window !== 'undefined') {

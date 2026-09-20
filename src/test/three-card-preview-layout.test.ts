@@ -66,6 +66,8 @@ describe('Three.js native card and preview layout', () => {
     expect(rule).toContain('--three-card-radius: 12px;')
     expect(rule).toContain('width: min(160px, 100%);')
     expect(rule).toContain('min-height: 0;')
+    expect(ruleBody('.three-interface .three-native-card > span:not(.card-tile)')).toContain('font-weight: bold;')
+    expect(css).not.toContain('.three-interface .three-native-card > span {')
     expect(ruleBody(`${preview} > .card-tile`)).not.toMatch(/display:\s*(?:inline-)?flex/)
   })
 

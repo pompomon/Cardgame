@@ -90,11 +90,21 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
   `scripts/generate-card-art.mjs`. Deterministic and CI-safe (no API
   keys). **Re-run after any change to that script or its creature recipes.**
   Commit the regenerated PNGs.
+- `npm run test -- src/test/card-art-generator.test.ts` — checks 256×256
+  repeatability and byte-for-byte parity with all committed deterministic assets
+  at the shipping 1024×1024 size, without changing tracked PNGs.
 - `npm run generate:photoreal-card-art` — one-off operator script that
   calls a hosted image-generation API (default `gpt-image-1`) to (re)write
   the photoreal HD PNGs at `public/cards/hd/*.png`. Requires an
   `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`). **Not** invoked by CI, lint,
-  test, or build. See `public/cards/README.md` for flags and env vars.
+  test, or build. Existing PNGs are skipped, so replacing all current HD
+  placeholders requires the operator's explicit
+  `npm run generate:photoreal-card-art -- --force`. See
+  [`public/cards/README.md`](../../public/cards/README.md#hd-artwork) for
+  credentials, flags, and the photoreal review gate. The operator script is
+  supported; unavailable credentials block generation. Do not accept
+  seed/fallback images as final HD. Record actual browser visual acceptance
+  separately, after the text-first checkpoint and evidence procedure.
 
 ## What "good" looks like
 
@@ -158,8 +168,11 @@ A well-validated application change has all of:
    recovery exists, stop that operation, mark the affected check **blocked**,
    and request maintainer help. Continue independent checks when possible.
    Never weaken tests, alter game logic or deployment cleanup, or expand network
-   permissions merely to address an unexplained runtime error. Firewall warnings
-   need a demonstrated connection to the failing operation, not an assumption.
+   permissions or speculatively edit Actions YAML merely to address an
+   unexplained runtime error. Improve investigation/checkpoint instructions
+   instead when the evidence concerns the managed agent, not a repository
+   workflow. Firewall warnings need a demonstrated connection to the failing
+   operation, not an assumption.
 4. **Preserve and resume deliberately.** Scan changes for secrets before a
    checkpoint commit and retain textual results in the PR/progress record.
    On resume, inspect branch commits, the working tree, completed changes, and
@@ -173,6 +186,17 @@ A well-validated application change has all of:
    signed download URLs, browser profiles, or unrelated log contents.
 
 ### Reference incident and recovery walkthroughs
+
+[Run 35496207389](https://github.com/pompomon/Cardgame/actions/runs/35496207389)
+failed in the managed Copilot **Processing Request (Linux)** step at
+**2026-09-20 07:14:27Z**, after image-view operations, with `CAPIError: 400
+Error while downloading file. Upstream status code: 404.` The missing URL and
+underlying cause were not disclosed. This is an upstream agent-service failure,
+not evidence of a Pages deployment defect. Preserve a text-first checkpoint of
+code and observed validation, then handle image inspection/attachment separately.
+Allow at most one safe, supported retry; otherwise leave image-dependent
+acceptance blocked for maintainer follow-up. Do not infer a causal link from
+image views alone or make speculative workflow-configuration edits.
 
 [Run 34038894955](https://github.com/pompomon/Cardgame/actions/runs/34038894955/job/101501919606)
 attempt 1 at head commit `ca69e6a14ba790b5cb3d1290a051dfefeef4e02b`

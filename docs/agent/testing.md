@@ -104,11 +104,16 @@ linked or quoted).
 
 | Surface | Focused coverage | Release invariant |
 | --- | --- | --- |
-| Catalog and deterministic identity | `card-catalog.test.ts`, `game-types.test.ts`, `cards.test.ts` | Exact names, rules, slugs, frozen entries, and `Forest, Island, Mountain, Plains, Swamp` order |
-| Shared projection and browser copy | `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts` | Catalog names and approved actions/zones; immutable snapshots; Banish names the owner's discard pile; hidden hands stay redacted |
-| Logs and CLI | `log-presentation.test.ts`, `three-native-html.test.ts`, `cli-session.test.ts` | Structured and known legacy logs use the same viewer-aware copy; CLI uses Creature, Summon, Board, Discard pile, Action phase, and Interception window |
+| Catalog and deterministic identity | `card-catalog.test.ts`, `game-types.test.ts`, `cards.test.ts` | Exact names, rules, slugs, frozen entries, and `Forest, Island, Mountain, Plains, Swamp` order; Mimic excludes Echo Doppelgänger, not merely the current instance |
+| Shared projection and browser copy | `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `tutorial.test.ts` | Catalog-backed tutorial and nested Mimic prompts; immutable snapshots; inline rules for visible Hand/Board/Discard pile and full preview rules including Intercept; Banish names the owner's discard pile; hidden hands stay redacted |
+| Logs and CLI | `log-presentation.test.ts`, `three-native-html.test.ts`, `cli-session.test.ts` | Structured and known legacy logs use the same viewer-aware catalog copy; generic draws do not claim a Listen In source; CLI vocabulary remains aligned without adding rule/Discard pile inspection |
 | Browser metadata and art | `browser-metadata.test.ts`, `card-art.test.ts`, `card-art-assets.test.ts`, `card-art-base-path.test.ts`, `card-art-generator.test.ts`, `service-worker.test.ts` | Approved title/description, exact ASCII-slug inventory, non-root URLs, fallback order, and network-first public art |
 | Persistence and P2P | `game-recording.test.ts`, `adventure-persistence.test.ts`, `view-model.test.ts`, `action-validation.test.ts`, `p2p-compatibility.test.ts` | Existing saves and v1/v2 recordings load unchanged; persisted Adventure labels are not rendered; packets contain no display copy |
+
+The browser Adventure label **Summons attempted (both players)** must preserve
+the existing `totalCardsPlayed` count, including intercepted submissions.
+Presentation-grouping or resource-cache keys may use display metadata; tests
+must forbid display-based mechanical identity, not all display-keyed objects.
 
 When a compact visual label is necessary, its accessible name must retain the
 full term: **Action phase**, **Interception window**, or **Discard pile**.
@@ -130,6 +135,26 @@ establish actual zoom, font, and viewport behavior.
 
 Replacement assets must satisfy those constraints; the
 `public/cards/README.md` docs match the test expectations.
+
+`src/test/card-art-generator.test.ts` keeps the fast 256×256 two-run
+repeatability check and separately generates at the shipping 1024×1024 size.
+It compares all five generated slugs byte-for-byte with the committed
+`classic`, `hd-fallback`, and `monochrome` inventories. Output is isolated in
+project-local scratch directories and removed after the suite; tracked PNGs
+are never overwritten by this check:
+
+```bash
+npm run test -- src/test/card-art-generator.test.ts
+```
+
+Classic intentionally renders procedural art. Deterministic PNG parity,
+dimensions, or a working HD fallback cannot establish photoreal HD quality.
+Use `cmp`, file metadata, or hashes to report duplicate HD/fallback assets
+without image inspection. Final HD acceptance requires reviewed photoreal
+replacements and the browser evidence below. Missing credentials block
+replacement through the supported operator script; deterministic placeholders
+cannot waive that gate. Record actual browser visual verification separately,
+following the checkpoint and image-evidence procedure below.
 
 ## Three.js tests
 

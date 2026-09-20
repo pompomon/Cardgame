@@ -116,9 +116,27 @@
   padding: 8px;
   border: 1px solid #476478;
   border-radius: 8px;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 240px;
 }
 
-.three-interface .three-native-card > span {
+.three-interface .three-card-rules {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.three-interface .three-card-rules dt {
+  font-weight: bold;
+}
+
+.three-interface .three-card-rules dd {
+  margin: 0 0 8px;
+}
+
+.three-interface .three-native-card > span:not(.card-tile) {
   flex-basis: 100%;
   min-width: 0;
   font-weight: bold;

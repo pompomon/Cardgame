@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { isGameAction } from '../app/action-validation'
-import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
-import type { GameAction } from '../game/types'
+import { isGameAction, isLegalActionForState } from '../app/action-validation'
+import { applyAction } from '../game/engine'
 import { P2PLink } from '../net/p2p'
+import { compatibilityTimeline } from './fixtures/compatibility-scenario'
 
 class FakeDataChannel {
   readyState: RTCDataChannelState = 'open'
@@ -47,62 +47,55 @@ afterEach(() => {
 })
 
 describe('P2P compatibility', () => {
-  it('serializes legacy-only action packets that both peers apply deterministically', async () => {
-    const peer = new FakePeerConnection()
+  it('exchanges every legal action family using legacy-only packets and identical peer states', async () => {
+    const peers: FakePeerConnection[] = []
     vi.stubGlobal('RTCPeerConnection', class {
       constructor() {
+        const peer = new FakePeerConnection()
+        peers.push(peer)
         return peer
       }
     })
-    const receivedPackets: Array<{ type: string; payload: unknown }> = []
-    const link = new P2PLink((packet) => {
-      receivedPackets.push(packet)
-    })
-    await link.createOffer()
+    const { initial, steps } = compatibilityTimeline()
+    const states = [structuredClone(initial), structuredClone(initial)]
+    const receivedCounts = [0, 0]
+    const links = states.map((_state, receiver) => new P2PLink((packet) => {
+      expect(packet.type).toBe('action')
+      if (!isGameAction(packet.payload)) throw new Error('Expected legacy action packet.')
+      expect(isLegalActionForState(states[receiver], packet.payload)).toBe(true)
+      states[receiver] = applyAction(states[receiver], packet.payload)
+      receivedCounts[receiver] += 1
+    }))
+    await links[0].createOffer()
+    await links[1].createOffer()
 
-    const actions = [
-      { type: 'play_land', actor: 0, cardId: 'legacy-card', effectTargetId: 'legacy-target' },
-      { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'legacy-target' },
-      { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 'legacy-card' },
-      { type: 'counter_land', actor: 1, discardCardId: 'legacy-discard' },
-      { type: 'pass_response', actor: 1 },
-      { type: 'end_turn', actor: 0 },
-    ] satisfies GameAction[]
-
-    for (const action of actions) {
-      expect(link.send('action', action)).toBe(true)
-      expect(peer.channel.sent.at(-1)).toBe(JSON.stringify({
-        type: 'action',
-        payload: action,
-      }))
+    try {
+      for (const { action, before, state } of steps) {
+        const sender = action.actor
+        const receiver = sender === 0 ? 1 : 0
+        expect(states[sender]).toEqual(before)
+        expect(isLegalActionForState(states[sender], action)).toBe(true)
+        expect(links[sender].send('action', action)).toBe(true)
+        const wirePacket = peers[sender].channel.sent.at(-1)!
+        expect(wirePacket).toBe(JSON.stringify({ type: 'action', payload: action }))
+        expect(wirePacket).not.toMatch(
+          /displayName|assetSlug|Gravebloom|Siren|Gargoyle|Doppelgänger|Vampire/,
+        )
+        states[sender] = applyAction(states[sender], action)
+        peers[receiver].channel.onmessage?.({ data: wirePacket } as MessageEvent)
+        expect(states[receiver]).toEqual(states[sender])
+        expect(states[receiver]).toEqual(state)
+      }
+      expect(new Set(steps.map(({ action }) => action.type))).toEqual(new Set([
+        'play_land', 'resolve_plains_reuse', 'resolve_swamp_discard',
+        'counter_land', 'pass_response', 'end_turn',
+      ]))
+      expect(receivedCounts[0]).toBeGreaterThan(0)
+      expect(receivedCounts[1]).toBeGreaterThan(0)
+      expect(receivedCounts[0] + receivedCounts[1]).toBe(steps.length)
+      expect(states[0]).toMatchObject({ phase: 'gameOver', winner: 0, turn: 15 })
+    } finally {
+      links.forEach((link) => link.close())
     }
-    expect(peer.channel.sent.join('')).not.toMatch(
-      /displayName|assetSlug|Gravebloom|Siren|Gargoyle|Doppelgänger|Vampire/,
-    )
-
-    const initial = createInitialGame(4242)
-    initial.players[0].hand = [
-      { id: 'legacy-forest', name: 'Forest', type: 'land' },
-    ]
-    initial.players[1].hand = []
-    const legalAction = getLegalActions(initial, 0).find(
-      (action) => action.type === 'play_land' && action.cardId === 'legacy-forest',
-    )
-    expect(legalAction).toBeDefined()
-    expect(link.send('action', legalAction)).toBe(true)
-    const wirePacket = peer.channel.sent.at(-1)!
-    peer.channel.onmessage?.({ data: wirePacket } as MessageEvent)
-    const receivedPacket = receivedPackets[0]
-
-    expect(receivedPacket).toEqual({
-      type: 'action',
-      payload: { type: 'play_land', actor: 0, cardId: 'legacy-forest' },
-    })
-    if (!receivedPacket || !isGameAction(receivedPacket.payload)) {
-      throw new Error('Expected a legacy-compatible action packet.')
-    }
-    const hostState = applyAction(structuredClone(initial), legalAction!)
-    const peerState = applyAction(structuredClone(initial), receivedPacket.payload)
-    expect(peerState).toEqual(hostState)
   })
 })

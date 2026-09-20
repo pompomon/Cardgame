@@ -11,7 +11,14 @@ import {
   serializeGameRecord,
 } from '../app/game-recording'
 import type { GameRecordFile } from '../app/game-recording'
-import { createInitialGame } from '../game/engine'
+import { isLegalActionForState } from '../app/action-validation'
+import * as ai from '../game/ai'
+import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
+import {
+  compatibilityDecisions,
+  compatibilitySeed,
+  compatibilityTimeline,
+} from './fixtures/compatibility-scenario'
 import { withFakeTimers } from './helpers/timers'
 
 interface StorageLike {
@@ -161,94 +168,16 @@ describe('controller recording and replay', () => {
     expect(controller.getViewModel().replay.active).toBe(false)
   })
 
-  it('restores legacy-identity target states throughout replay without revealing hidden cards', () => {
-    const initial = createInitialGame(1700)
-    initial.players[0].graveyard = [
-      { id: 'grave-target', name: 'Island', type: 'land' },
-    ]
-    initial.players[0].battlefield = [{
-      instanceId: 'self-swamp',
-      card: { id: 'self-swamp-card', name: 'Swamp', type: 'land' },
-    }]
-    initial.players[1].hand = [
-      { id: 'enemy-hand', name: 'Forest', type: 'land' },
-    ]
-    initial.players[1].battlefield = [{
-      instanceId: 'enemy-board',
-      card: { id: 'enemy-board-card', name: 'Island', type: 'land' },
-    }]
-
-    const pendingReclaim = structuredClone(initial)
-    pendingReclaim.phase = 'respond'
-    pendingReclaim.pendingLandPlay = {
-      actor: 0,
-      card: { id: 'reclaim-play', name: 'Forest', type: 'land' },
-      effectTargetId: 'grave-target',
-    }
-
-    const pendingBanish = structuredClone(initial)
-    pendingBanish.phase = 'respond'
-    pendingBanish.pendingLandPlay = {
-      actor: 0,
-      card: { id: 'banish-play', name: 'Mountain', type: 'land' },
-      effectTargetId: 'enemy-board',
-    }
-
-    const pendingDrainMemory = structuredClone(initial)
-    pendingDrainMemory.phase = 'swamp_target'
-    pendingDrainMemory.pendingSwampDiscard = { actor: 0 }
-
-    const pendingMimic = structuredClone(initial)
-    pendingMimic.phase = 'plains_target'
-    pendingMimic.pendingPlainsReuse = {
-      actor: 0,
-      reusedInstanceId: 'self-swamp',
-      reusedCardName: 'Swamp',
-    }
-
-    const gameOver = structuredClone(initial)
-    gameOver.phase = 'gameOver'
-    gameOver.winner = 0
-
+  it('replays every state of a continuous legal game without revealing hidden targets', () => {
+    const { initial, steps } = compatibilityTimeline()
     let record = createGameRecord(
-      1700,
-      'local-hvai',
-      ['human', 'ai'],
-      'basic',
-      initial,
-      1000,
+      compatibilitySeed, 'local-hvai', ['human', 'ai'], 'basic', initial, 1000,
     )
-    record = appendGameRecordStep(record, {
-      type: 'play_land',
-      actor: 0,
-      cardId: 'reclaim-play',
-      effectTargetId: 'grave-target',
-    }, pendingReclaim, 'human', 1100)
-    record = appendGameRecordStep(record, {
-      type: 'play_land',
-      actor: 0,
-      cardId: 'banish-play',
-      effectTargetId: 'enemy-board',
-    }, pendingBanish, 'human', 1200)
-    record = appendGameRecordStep(
-      record,
-      { type: 'pass_response', actor: 1 },
-      pendingDrainMemory,
-      'ai',
-      1300,
-    )
-    record = appendGameRecordStep(record, {
-      type: 'play_land',
-      actor: 0,
-      cardId: 'mimic-play',
-      effectTargetId: 'self-swamp',
-    }, pendingMimic, 'human', 1400)
-    record = appendGameRecordStep(record, {
-      type: 'resolve_plains_reuse',
-      actor: 0,
-      effectTargetId: 'enemy-hand',
-    }, gameOver, 'human', 1500)
-
+    for (const [index, step] of steps.entries()) {
+      record = appendGameRecordStep(
+        record, step.action, step.state, step.action.actor === 0 ? 'human' : 'ai', 1100 + index,
+      )
+    }
     const controller = new AppController()
     controller.importRecordingJson(serializeGameRecord(record))
     const currentGame = () => (
@@ -256,50 +185,44 @@ describe('controller recording and replay', () => {
     ).state.game
 
     expect(controller.getViewModel().replay.step).toBe(0)
-    expect(controller.getViewModel().game?.phase).toBe('main')
-
-    controller.stepReplay(1)
-    expect(controller.getViewModel().game).toMatchObject({
-      phase: 'respond',
-      pendingLandDisplayName: 'Gravebloom Dryad',
-    })
-    expect(currentGame().pendingLandPlay?.effectTargetId).toBe('grave-target')
-
-    controller.stepReplay(1)
-    expect(controller.getViewModel().game).toMatchObject({
-      phase: 'respond',
-      pendingLandDisplayName: 'Rooftop Gargoyle',
-    })
-    expect(currentGame().pendingLandPlay?.effectTargetId).toBe('enemy-board')
-
-    controller.stepReplay(1)
-    let view = controller.getViewModel()
-    expect(view.game?.phase).toBe('swamp_target')
-    expect(view.game?.revealedEnemyHandForSwamp).toBeNull()
-    expect(JSON.stringify(view.game?.legal.swampDiscardOptions)).not.toMatch(
-      /Forest|Gravebloom Dryad/,
-    )
-
-    controller.stepReplay(1)
-    view = controller.getViewModel()
-    expect(view.game).toMatchObject({
-      phase: 'plains_target',
-      pendingPlainsReuseName: 'Swamp',
-      pendingPlainsReuseDisplayName: 'Memory Vampire',
-    })
-    expect(view.game?.revealedEnemyHandForSwamp).toBeNull()
-    expect(currentGame().pendingPlainsReuse).toEqual({
-      actor: 0,
-      reusedInstanceId: 'self-swamp',
-      reusedCardName: 'Swamp',
-    })
-
-    controller.stepReplay(1)
+    expect(currentGame()).toEqual(initial)
+    const names = {
+      Forest: 'Gravebloom Dryad',
+      Island: 'Signal Siren',
+      Mountain: 'Rooftop Gargoyle',
+      Plains: 'Echo Doppelgänger',
+      Swamp: 'Memory Vampire',
+    }
+    for (const [index, step] of steps.entries()) {
+      expect(isLegalActionForState(currentGame(), step.action)).toBe(true)
+      expect(applyAction(currentGame(), step.action)).toEqual(step.state)
+      controller.stepReplay(1)
+      expect(controller.getViewModel().replay.step).toBe(index + 1)
+      expect(currentGame()).toEqual(step.state)
+      const view = controller.getViewModel()
+      expect(view.game?.phase).toBe(step.state.phase)
+      if (step.state.pendingLandPlay) {
+        expect(view.game?.pendingLandDisplayName).toBe(names[step.state.pendingLandPlay.card.name])
+      }
+      if (step.state.pendingPlainsReuse) {
+        expect(view.game?.pendingPlainsReuseDisplayName).toBe(names[step.state.pendingPlainsReuse.reusedCardName])
+        expect(view.game?.pendingPlainsReuseName).toBe(step.state.pendingPlainsReuse.reusedCardName)
+      }
+      expect(view.game?.revealedEnemyHandForSwamp).toBeNull()
+      expect(JSON.stringify(view.game?.legal.swampDiscardOptions)).not.toMatch(
+        /Forest|Mountain|Plains|Island|Swamp|Gravebloom|Gargoyle|Doppelgänger|Siren|Vampire/,
+      )
+      controller.stepReplay(-1)
+      expect(currentGame()).toEqual(step.before)
+      controller.stepReplay(1)
+      expect(currentGame()).toEqual(step.state)
+    }
     expect(controller.getViewModel().game).toMatchObject({
       phase: 'gameOver',
       winnerText: 'Winner: Player 1',
     })
     expect(controller.getViewModel().replay.isPlaying).toBe(false)
+    expect(parseExported(controller)).toEqual(record)
   })
 
   it('records remote-source actions through controller remote path', () => {
@@ -1094,6 +1017,69 @@ describe('controller recording and replay', () => {
     expect(internals.state.game?.players[0].battlefield.length).toBe(battlefieldBefore)
     // Snapshot is consumed on resume; storage should be cleared.
     expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
+  })
+
+  it.each(compatibilityDecisions.filter(({ finishesGame }) => !finishesGame))('pauses, reloads, and completes the legal adventure decision $label', ({ index }) => {
+    withFakeTimers(() => {
+      const { steps } = compatibilityTimeline()
+      const pending = steps[index].before
+      const original = new AppController()
+      original.startAdventure()
+      // Inject only the scenario's legally reached starting point; persistence,
+      // reload, human submission, and AI scheduling use the real controller.
+      ;(original as unknown as {
+        state: { game: typeof pending }
+      }).state.game = structuredClone(pending)
+      original.pauseAdventure()
+      const stored = localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)
+      expect(JSON.parse(stored!)).toEqual(pending)
+      expect(stored).not.toMatch(/"displayName"|"assetSlug"|Gravebloom|Doppelgänger|Vampire/)
+      expect(original.getViewModel().mode).toBeNull()
+
+      const reloaded = new AppController()
+      expect(reloaded.getViewModel().adventure.status).toBe('paused')
+      expect(reloaded.getViewModel().adventure.hasSavedRun).toBe(true)
+      reloaded.resumeAdventure()
+      const currentGame = () => (
+        reloaded as unknown as { state: { game: typeof pending } }
+      ).state.game
+      expect(reloaded.getViewModel().mode).toBe('adventure-hvai')
+      expect(reloaded.getViewModel().adventure.status).toBe('active')
+      expect(currentGame()).toEqual(pending)
+      expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
+
+      const aiAction = vi.spyOn(ai, 'chooseAiAction')
+      try {
+        for (const step of steps.slice(index)) {
+          expect(currentGame()).toEqual(step.before)
+          expect(getLegalActions(currentGame(), step.action.actor)).toEqual(
+            getLegalActions(step.before, step.action.actor),
+          )
+          expect(isLegalActionForState(currentGame(), step.action)).toBe(true)
+          if (step.action.actor === 0) {
+            reloaded.submitAction(step.action)
+          } else {
+            aiAction.mockReturnValueOnce(step.action)
+            vi.advanceTimersToNextTimer()
+            expect(aiAction).toHaveBeenLastCalledWith(step.before, 1, { level: 'basic' })
+          }
+          expect(currentGame()).toEqual(step.state)
+          if (currentGame().phase === 'main') break
+        }
+        expect(currentGame()).toMatchObject({
+          phase: 'main',
+          pendingLandPlay: null,
+          pendingPlainsReuse: null,
+          pendingSwampDiscard: null,
+        })
+        const resumedRecord = parseExported(reloaded)
+        expect(resumedRecord.initialState).toEqual(pending)
+        expect(resumedRecord.timeline.at(-1)?.state).toEqual(currentGame())
+      } finally {
+        aiAction.mockRestore()
+        reloaded.backToLobby()
+      }
+    })
   })
 
   it('clears stored adventure snapshot when pause-run persistence fails', () => {

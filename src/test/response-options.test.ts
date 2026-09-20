@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest'
+import { cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import { buildCounterHandOptions } from '../app/response-options'
 
 describe('response options', () => {
+  it('derives the response instruction and missing-card fallback from the catalog', () => {
+    const options = buildCounterHandOptions({
+      actor: 0,
+      pendingLandName: 'Plains',
+      players: [{ handCards: [] }, { handCards: [] }],
+      legal: { counterOptions: [], canPassResponse: true },
+    })
+    const siren = cardCatalogEntry('Island')
+    expect(options.requiredIslandId).toBeNull()
+    expect(options.requiredCardDisplayName).toBe(siren.displayName)
+    expect(options.instruction).toBe(
+      `${siren.responseAbility!.name} the summon of ${displayCardName('Plains')}? Discard ${siren.displayName} and one other highlighted card, or choose Let It Through.`,
+    )
+    expect(options.requiredCardHint).toBe(
+      `${siren.displayName} is included automatically; choose the other card to discard.`,
+    )
+  })
+
   it('keeps the first mechanical Island as the required Signal Siren', () => {
     const options = buildCounterHandOptions({
       actor: 0,
