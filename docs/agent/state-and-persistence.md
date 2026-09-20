@@ -71,8 +71,9 @@ contracts:
   recordings, and peer state.
 - `src/app/card-catalog.ts` maps those keys to player-facing names, abilities,
   rules text, visual roles, and ASCII asset slugs. Display names and slugs must
-  never replace a key in trusted state, parser input, storage, recording JSON,
-  or P2P payloads.
+  never replace a key in trusted state, mechanical parser input, storage,
+  recording JSON, or P2P payloads. Presentation-only grouping and resource-cache
+  keys may use display metadata; they must not drive mechanical identity or legality.
 - `src/app/game-presentation.ts`, `log-presentation.ts`, and `view-model.ts`
   derive immutable display snapshots. Renderers and the CLI consume those
   projections instead of maintaining another key-to-copy map.
@@ -80,9 +81,10 @@ contracts:
   preserve it on load, but derive the visible opponent label from validated
   `kind` and `lands`; never render persisted label text verbatim.
 - Recording versions 1 and 2 continue to import without schema churn.
-  Structured event identities and ability lookups are formatted through the
-  catalog, while `log-presentation.ts` temporarily hardcodes some event framing
-  for Echo Doppelgänger and Signal Siren and must stay synchronized with it.
+  Structured event identities, ability lookups, and creature/ability wording in
+  event framing are formatted through the catalog; there are no hardcoded
+  tutorial/log exceptions. A generic `draw` event carries no ability-source
+  field, so its display must not attribute the draw to Listen In.
   Known legacy text-log templates may be translated conservatively for display,
   but neither the recording nor its stored `log` array is rewritten; unknown
   text remains escaped and unchanged.
@@ -93,6 +95,12 @@ contracts:
   Opponent card identities remain redacted everywhere except the existing,
   actor-scoped legal target projection described below; catalog lookup must
   never widen that visibility.
+- Browser-only inline rules and full previews for visible Hand, Board, and
+  Discard pile creatures use projected data, not extra controller access or
+  schema changes. They add no CLI inspection access.
+- Adventure's **Summons attempted (both players)** label retains the serialized
+  `totalCardsPlayed` counter and its existing semantics: both players' submitted
+  summons count, even if intercepted. It is not a count of resolved summons.
 
 ## Controller hygiene
 

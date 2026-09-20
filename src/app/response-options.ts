@@ -1,5 +1,5 @@
 import { isBasicLand, type BasicLand } from '../game/types'
-import { displayCardName } from './card-catalog'
+import { cardCatalogEntry, displayCardName } from './card-catalog'
 import type { CounterOption, GameUiState, UiCard } from './types'
 
 interface ResponseHandGame {
@@ -66,7 +66,7 @@ export function buildCounterHandOptions(game: ResponseHandGame): CounterHandOpti
   return {
     requiredIslandId,
     requiredCardDisplayName,
-    instruction: `Intercept the summon of ${targetName}? Discard ${requiredCardDisplayName} and one other highlighted card, or choose Let It Through.`,
+    instruction: `${cardCatalogEntry('Island').responseAbility!.name} the summon of ${targetName}? Discard ${requiredCardDisplayName} and one other highlighted card, or choose Let It Through.`,
     requiredCardHint: `${requiredCardDisplayName} is included automatically; choose the other card to discard.`,
     choices,
     canPass: game.legal.canPassResponse,

@@ -10,7 +10,9 @@ import {
 } from '../app/game-recording'
 import { displayCardName } from '../app/card-catalog'
 import { projectVisibleCard } from '../app/game-presentation'
+import { isLegalActionForState } from '../app/action-validation'
 import type { LogEvent } from '../game/types'
+import { compatibilitySeed, compatibilityTimeline } from './fixtures/compatibility-scenario'
 
 function payloadForValidRecord(seed = 2026): Record<string, unknown> {
   const initial = createInitialGame(seed)
@@ -91,7 +93,7 @@ describe('game-recording', () => {
   })
 
   it.each([1, 2])(
-    'presents imported v%s recordings through the catalog without changing mechanical state',
+    'presents synthetic v%s schema fixtures through the catalog without changing mechanical state',
     (version) => {
       const payload = payloadForRecordWithTimeline(2028 + version)
       payload.version = version
@@ -124,6 +126,49 @@ describe('game-recording', () => {
       expect(reserialized).not.toContain(presented.displayName)
     },
   )
+
+  it.each([1, 2])('round-trips a continuous legal game in synthetic v%s format', (version) => {
+    const { initial, steps } = compatibilityTimeline()
+    let record = createGameRecord(
+      compatibilitySeed, 'local-hvai', ['human', 'ai'], 'basic', initial, 1000,
+    )
+    for (const [index, step] of steps.entries()) {
+      record = appendGameRecordStep(
+        record, step.action, step.state, step.action.actor === 0 ? 'human' : 'ai', 1100 + index,
+      )
+    }
+    // Schema compatibility only: changing a version flag does not make this a
+    // historical recording. No captured pre-migration recording was available.
+    const payload = { ...record, version }
+    const parsed = parseGameRecordJson(JSON.stringify(payload))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) throw new Error(parsed.error)
+
+    expect(parsed.record.timeline).toHaveLength(steps.length)
+    expect(parsed.record.metadata.completed).toBe(true)
+    let replayed = snapshotFromRecord(parsed.record, 0)
+    expect(replayed).toEqual(initial)
+    const pendingKinds = new Set<string>()
+    for (const [index, step] of parsed.record.timeline.entries()) {
+      expect(isLegalActionForState(replayed, step.action)).toBe(true)
+      replayed = applyAction(replayed, step.action)
+      expect(step.state).toEqual(replayed)
+      expect(snapshotFromRecord(parsed.record, index + 1)).toEqual(replayed)
+      if (replayed.phase === 'plains_target') {
+        pendingKinds.add(`plains_target:${replayed.pendingPlainsReuse?.reusedCardName}`)
+      } else {
+        pendingKinds.add(replayed.phase)
+      }
+    }
+    expect(pendingKinds).toEqual(new Set([
+      'main', 'respond', 'swamp_target',
+      'plains_target:Forest', 'plains_target:Mountain', 'plains_target:Swamp', 'gameOver',
+    ]))
+    expect(replayed).toMatchObject({ phase: 'gameOver', winner: 0, turn: 15 })
+    const serialized = serializeGameRecord(parsed.record)
+    expect(serialized).not.toMatch(/"displayName"|"assetSlug"|Gravebloom|Doppelgänger|Vampire/)
+    expect(parseGameRecordJson(serialized)).toEqual(parsed)
+  })
 
   it('back-fills missing events array when loading legacy recordings', () => {
     const initial = createInitialGame(42)

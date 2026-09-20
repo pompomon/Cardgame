@@ -7,8 +7,9 @@
 
 ## Status and approved decisions
 
-This is an implementation plan only. It does not change game behavior, persisted
-data, card artwork, or player-facing copy by itself.
+This plan records implementation requirements, approved follow-up decisions, and
+outstanding acceptance gates. A requirement or unchecked audit item is not
+evidence that implementation or browser verification has completed.
 
 The following decisions are approved and are requirements for implementation:
 
@@ -20,6 +21,49 @@ The following decisions are approved and are requirements for implementation:
    reviewable phase and PR.
 5. The app title is **Urban Creatures** and its subtitle/description is
    **“Urban-fantasy 2-player card game with local AI and optional P2P mode.”**
+6. **2026-09-20 follow-up:** final HD assets must be photoreal. Deterministic
+   seeds/fallback copies are not acceptable final HD artwork. Classic's
+   procedural rendering is intentional.
+7. Rules and Discard pile contents must be discoverable in the browser's native
+   Hand/Board/Discard pile lists and full card previews. This follow-up adds no
+   CLI commands or inspection access and does not change hidden-hand visibility.
+8. Mimic's exact rule is **“Repeat the ability of one of your creatures other
+   than Echo Doppelgänger.”** This excludes the creature type, not only the
+   current card instance, and does not alter engine legality.
+9. Tutorial, log framing, and nested Mimic prompts consume catalog-backed
+   creature/ability copy; the former hardcoded tutorial/log exceptions are
+   removed. Generic draw events cannot claim Listen In as their cause.
+10. Replace the Adventure label “Cards Played” with **“Summons attempted (both
+    players)”**, preserving its count of submitted summons, including intercepted
+    summons, and the serialized `totalCardsPlayed` field.
+11. Improve agent investigation/checkpoint/recovery guidance for the observed
+    managed Copilot failure; do not speculate about Pages or edit Actions YAML.
+
+### Follow-up acceptance status
+
+- [x] Text-only asset inspection at revision
+      `71bb4c492485c08b70f514a454ab845eb24fdcc1`: all five HD/fallback pairs
+      match by `cmp` (each exit 0) and SHA-256; file headers report 1024×1024.
+- [ ] Photoreal HD replacement: blocked in this session by unavailable
+      generation credentials. The existing operator script is supported;
+      no photoreal generation was attempted and no assets were changed.
+- [ ] Human art review and production-browser visual acceptance: pending
+      maintainer verification, not established by deterministic tests or hashes.
+- [x] Mechanical-source comparison: pre-migration revision
+      `0e4ed7cb16379dc219b2be95e45849cc92f9706a` and baseline
+      `71bb4c492485c08b70f514a454ab845eb24fdcc1` have the same `src/game`
+      tree SHA, `3a958ee4034d23aa7e7890dc24754bb5a9bacf89`.
+- [ ] Historical recording acceptance still needs a maintainer-provided captured
+      fixture. No captured historical recording fixtures were found at that
+      pre-migration revision. The new checked-in AI goldens and continuous legal
+      replay scenarios are synthetic characterization, not historical captures;
+      they do not complete historical or manual acceptance gates.
+
+See the [operator replacement gate](../../public/cards/README.md#hd-artwork).
+Existing HD files require an explicit `--force` run after credentials are
+available; a successful skip-only run is not delivery. No images were viewed
+for the text-only asset audit. Later checkpointed browser inspection remains
+a separate visual acceptance step.
 
 ## Goals
 
@@ -65,7 +109,7 @@ not player-facing after the migration.
 | `Island` | **Signal Siren** | `signal-siren` | **Listen In** | Draw one card. | **Intercept** — Discard Signal Siren and one other card to cancel an opponent's summon. |
 | `Mountain` | **Rooftop Gargoyle** | `rooftop-gargoyle` | **Banish** | Choose an opposing creature on the board and send it to its owner's discard pile. | — |
 | `Swamp` | **Memory Vampire** | `memory-vampire` | **Drain Memory** | Choose one card from your opponent's hand for them to discard. | — |
-| `Plains` | **Echo Doppelgänger** | `echo-doppelganger` | **Mimic** | Repeat the ability of one of your other creatures. | — |
+| `Plains` | **Echo Doppelgänger** | `echo-doppelganger` | **Mimic** | Repeat the ability of one of your creatures other than Echo Doppelgänger. | — |
 
 `Echo Doppelgänger` deliberately uses Unicode in display copy. File names, URLs,
 texture keys derived from file names, and generator arguments use the ASCII slug
@@ -93,6 +137,7 @@ catalog display names.
 | Deck | **Deck** (unchanged) |
 | Hand | **Hand** (unchanged) |
 | Draw | **Draw** (unchanged) |
+| Cards Played | Summons attempted (both players) — includes intercepted submissions |
 
 Internal identifiers may continue to contain `land`, `battlefield`, `graveyard`,
 `counter`, `response`, `plains`, and `swamp`. New player-facing strings must not.
@@ -117,6 +162,8 @@ compatibility boundary, but should pair it with the new display term.
   Version 1 upgrades and version 2 recordings must continue to import.
 - Add display metadata only at the app/presentation boundary. Never serialize
   display names or asset slugs in place of the legacy mechanical key.
+  Display metadata may be used for presentation grouping and resource-cache
+  keys, but never for mechanical identity, legality, or serialized values.
 - Preserve hidden-hand behavior. `players[].handCards` must remain redacted with
   `HIDDEN_HAND_CARD_NAME`; only the existing narrowly scoped Drain Memory
   decision projection may reveal the opponent's real hand.
@@ -235,13 +282,15 @@ surfaces.
    banish to its owner's discard pile.”
 6. **Drain Memory:** “Summon Memory Vampire, then choose one card from your
    opponent's hand for them to discard.”
-7. **Mimic:** “Summon Echo Doppelgänger, then choose one of your other creatures
-   whose ability it should mimic.”
+7. **Mimic:** “Summon Echo Doppelgänger, then choose one of your creatures other
+   than Echo Doppelgänger whose ability it should mimic.”
 8. **Win:** “You won by summoning all five creature types to your board.
    Tutorial complete!”
 
 The tutorial conditions and deterministic tutorial decks in
 `src/app/tutorial.ts` and `src/game/cards.ts` remain keyed by legacy identities.
+Build these sentences with catalog-backed names and abilities; they are not an
+exception allowing duplicated creature copy.
 
 ### Actions and response instructions
 
@@ -262,15 +311,19 @@ The tutorial conditions and deterministic tutorial decks in
 - Reclaim: “Choose a creature in your discard pile to return to your hand.”
 - Banish: “Choose an opposing creature to send to its owner's discard pile.”
 - Drain Memory: “Choose a card from your opponent's hand for them to discard.”
-- Mimic: “Choose one of your other creatures whose ability Echo Doppelgänger
-  should repeat.”
+- Mimic: “Choose one of your creatures other than Echo Doppelgänger whose ability
+  it should repeat.”
 - Generic summon target: “Choose a target for this creature's ability.”
+
+For nested Mimic choices, retain the selected source creature and use its
+catalog-backed ability and target instructions. Do not substitute static
+Reclaim/Banish/Drain Memory hints that can drift from the catalog.
 
 ### Logs and effect feedback
 
 - `P1 summons Gravebloom Dryad`
 - `P1 reclaims Signal Siren from their discard pile`
-- `P1 listens in and draws a card`
+- `P1 draws a card`
 - `P1 drains a memory; P2 discards Memory Vampire`
 - `P1 banishes P2's Signal Siren to its owner's discard pile`
 - `P1's Echo Doppelgänger mimics Rooftop Gargoyle — Banish`
@@ -283,6 +336,9 @@ The tutorial conditions and deterministic tutorial decks in
 Never use “destroyed” as a shortened Banish message. The visible text or
 adjacent accessible description must say that the creature goes to its owner's
 discard pile.
+The generic `draw` event has no ability-source field; it cannot distinguish a
+turn draw from Listen In or a mimicked draw. Do not invent causal Listen In
+framing or change the event schema to support a presentation-only claim.
 
 ### Zone and phase labels
 
@@ -461,21 +517,23 @@ phase; only projected display copy differs.
 ### Phase 2 — Shared copy, tutorial, logs, and CLI
 
 - **`src/app/tutorial.ts`:** replace every hint with the suggested creature
-  wording while leaving condition IDs, phases, keys, and tutorial sequencing
-  stable.
+  wording built from catalog copy, while leaving condition IDs, phases, keys,
+  and tutorial sequencing stable.
 - **`src/app/controller.ts`:** replace the tutorial-start status with the
   approved creature wording while leaving game setup, persistence, and packets
   unchanged.
 - **`src/app/log-presentation.ts`:** format structured events with catalog
   display names and approved verbs, but omit an opponent's hidden draw name and
-  card art. Keep the defensive unknown-event fallback.
+  card art. Remove hardcoded creature/ability exceptions, keep generic draws
+  causal-neutral, and retain the defensive unknown-event fallback.
 - **`src/renderers/three/interface-log.ts`:** display new labels/art in the
   Replay Log through the shared viewer-aware formatter/adapter while retaining
   bounded structured-log and legacy-text fallback behavior.
 - **`src/cli/session.ts`:** render `Board`, `Discard pile`, and `Action phase`/
   `Interception window`; use catalog names in Hand/Board/target lists and shared
   action labels. Preserve hidden AI-hand redaction and the narrowly scoped
-  Drain Memory reveal.
+  Drain Memory reveal. The browser-only rules/Discard pile follow-up does not
+  add CLI commands or inspection access.
 - **`README.md`:** update the game description, controls, examples, card-style
   documentation, CLI text, and renderer guidance after behavior lands. Explain
   legacy identifiers only in contributor-facing compatibility notes.
@@ -494,7 +552,10 @@ fallback, and terminal output all use one catalog and agree on exact names.
   lanes or cancel active drags.
 - **`src/renderers/three/interface-model.ts`:** update lobby description,
   approved app title, primary action, target dialogs, native card actions,
-  response explanation, empty states, and compact labels.
+  interception explanation, empty states, and compact labels. Include inline
+  catalog ability/rules text for visible Hand/Board/Discard pile creatures and
+  full rules in previews, including Intercept. Replace “Cards Played” with
+  “Summons attempted (both players)” without changing counter semantics.
 - **`src/renderers/three/interface.ts`:** retain revalidation, decision keys,
   focus restoration, cancellation, and duplicate-submission safeguards while
   consuming the new model copy.
@@ -538,7 +599,8 @@ public/cards/
   but replace the per-land `TEMPLATE_*` procedural pixel icons with
   creature-appropriate fallbacks. Retain raster-failure suppression and cached
   data URLs; retain `DEFAULT_CARD_VISUAL_STYLE` in
-  `src/app/card-visual-styles.ts`.
+  `src/app/card-visual-styles.ts`. Classic intentionally uses procedural art;
+  loading its deterministic PNGs at runtime is not a missing requirement.
 - **`src/renderers/three/assets.ts` and
   `src/renderers/three/native-html.ts`:** preload or resolve slugged assets
   through shared helpers; attempt each failed URL at most once and end on a
@@ -548,10 +610,14 @@ public/cards/
   the approved slugs. The `classic` PNGs and procedural classic fallback must
   use the same creature-specific visual recipes rather than the existing
   palette swatches. Keep output byte-stable and execution Node-stdlib-only.
+  Preserve 256×256 repeatability coverage and compare generated output at the
+  shipping 1024×1024 size against all 15 committed deterministic PNGs.
 - **`scripts/generate-photoreal-card-art.mjs`:** replace land prompts and
   `--land` selection with catalog-aligned creature subjects and a slug/key
   selector; continue atomic writes and manual credential use. Never commit API
-  keys or generated temporary files.
+  keys or generated temporary files. Require photoreal output for final HD;
+  deterministic seeds are not an acceptable substitute. Existing HD slots are
+  skipped without `--force`, so replacement requires that explicit operator gate.
 - **`public/cards/README.md`:** document the new layout, exact slugs, dimensions,
   generation commands, review workflow, and fallback order.
 - Retain legacy-named PNGs only while a tested fallback or rollback path needs
@@ -565,6 +631,10 @@ Artwork acceptance includes human review for readable silhouettes, urban-fantasy
 cohesion, absence of embedded text/logos, correct creature-to-ability mapping,
 color-role continuity, square crop safety, and contrast in all three selectable
 styles plus the internal `hd-fallback` assets.
+It also requires photoreal HD, not merely valid PNG headers, matching slugs, or
+working fallbacks. Missing generation credentials block replacement through the
+supported operator script. Track subsequent art review and actual browser
+visual acceptance separately; do not claim this phase complete without them.
 
 ### Phase 5 — Persistence, recording, P2P, and compatibility verification
 
@@ -613,13 +683,13 @@ styles plus the internal `hd-fallback` assets.
 | Area | Relevant tests | Required additions/checks |
 | --- | --- | --- |
 | Stable identity and determinism | `src/test/game-types.test.ts`, `cards.test.ts`, `engine.test.ts`, `ai.test.ts`, `ai-perf.bench.ts`, `tutorial.test.ts` | Exact `BASIC_LANDS` order; unchanged seeded deck/action snapshots; unchanged legal actions and tutorial conditions |
-| Catalog and presentation | `card-catalog.test.ts`, `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `action-validation.test.ts` | Exact names/rules/slugs; record, entries, and nested abilities frozen; immutable snapshots; no display names in action payloads; Banish destination wording; hidden-hand redaction |
-| Engine events and logs | `engine-log-events.test.ts`, `log-presentation.test.ts`, `visual-effects.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts` | Stable event discriminants and payload keys; new structured copy; safe unknown events; conservative legacy-text rendering; viewer-aware redaction of opponent draw names and art for structured and legacy logs |
+| Catalog and presentation | `card-catalog.test.ts`, `game-presentation.test.ts`, `view-model.test.ts`, `action-resolution.test.ts`, `action-validation.test.ts`, `tutorial.test.ts` | Exact names/rules/slugs, including Mimic's type exclusion; frozen nested copy; catalog-backed tutorial and nested target hints; immutable snapshots; no display names in action payloads; Banish destination; hidden-hand redaction |
+| Engine events and logs | `engine-log-events.test.ts`, `log-presentation.test.ts`, `visual-effects.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts` | Stable event discriminants and payload keys; catalog-backed framing; generic draws do not attribute Listen In; safe unknown events; conservative legacy-text rendering; viewer-aware redaction of opponent draw names and art |
 | Response/interception | `controller.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-renderer.test.ts` | Signal Siren remains the mechanical Island cost; another card is required; Let It Through parity; rejection/retry and duplicate activation |
-| Three.js browser renderer | `three-assets.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Approved app title/subtitle, catalog names, slug/fallback order, escaped copy, no stale raster retry, overlay wrapping, native controls, focus/retry/cancellation, compact labels, and resource cleanup |
-| CLI | `cli-session.test.ts` | Creature names and zones; Action/Interception phases; hidden hand remains hidden except during Drain Memory |
+| Three.js browser renderer | `three-assets.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Inline visible Hand/Board/Discard pile rules; full preview including Intercept; Summons attempted counter includes interceptions; approved title/copy; escaped markup; fallback order; wrapping; focus/retry/cancellation and resource cleanup |
+| CLI | `cli-session.test.ts` | Existing creature/zone/phase terms; hidden hand remains hidden except during Drain Memory; no new commands or rule/Discard pile inspection |
 | Saves and replay | `game-recording.test.ts`, `adventure-persistence.test.ts`, `adventure.test.ts`, `view-model.test.ts`, `controller.test.ts` | Existing fixtures load unchanged; legacy Adventure labels are not rendered verbatim; pending target states resume; v1/v2 recording compatibility; no schema/version churn |
-| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory in four directories; deterministic classic/HD-fallback/monochrome generation; square/dimension checks; non-root base URLs; fallback order; network-first cards; required cache bump |
+| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; photoreal HD still requires separate visual review |
 | P2P | controller/action-validation/P2P-related tests | Legacy action JSON remains accepted and emitted; mixed-version peers stay deterministic; no display copy enters packets |
 
 Final validation follows `AGENTS.md` and `docs/agent/validation-and-build.md`:
@@ -647,6 +717,9 @@ benchmark result, tested revision, and any skipped/blocked checks separately.
   approved app title and subtitle/description.
 - Keyboard-only and screen-reader traversal of Hand, Board, Discard pile,
   summon actions, all four target flows, Intercept, Let It Through, and End Turn.
+- Discover inline creature rules in native Hand/Board/Discard pile lists and
+  open full previews, including Signal Siren's Intercept cost. Confirm hidden
+  cards expose no catalog details and dialog focus/scroll is restored.
 - Human-vs-AI hidden hand before, during, and after Drain Memory, including a
   Mimic of Drain Memory; verify names are revealed only during the legal choice.
 - Tutorial from first summon through completion.
@@ -725,6 +798,11 @@ designed, versioned migration. Do not combine them with these PRs.
   decision.
 - Each approved slug exists under `classic`, `hd`, `hd-fallback`, and
   `monochrome`; missing/failed art reaches a playable fallback.
+- Classic remains intentionally procedural. Every final HD image is reviewed
+  photoreal artwork; deterministic placeholders cannot satisfy this criterion.
+- Browser-only rules/Discard pile discovery and full previews are usable without
+  adding CLI access. The Adventure label accurately includes both players'
+  intercepted summons.
 - Artwork is delivered in a separate reviewable PR and the service-worker cache
   version is bumped with the asset change.
 - All automated and manual checks above are recorded with actual outcomes.
@@ -744,7 +822,13 @@ context)**.
       Intercept, Interception window, Let It Through, Reclaim, Drain Memory,
       Mimic, and Action phase.
 - [ ] CLI state, phase, zone, action, target, and transcript output use the same
-      terms.
+      terms without adding browser-only inspection commands.
+- [ ] Native Hand/Board/Discard pile lists expose visible creature rules and full
+      previews include Intercept; hidden cards remain redacted.
+- [ ] Tutorial/log copy and nested Mimic hints come from the catalog; generic
+      draws do not imply a Listen In source.
+- [ ] “Summons attempted (both players)” includes intercepted submissions and
+      retains the serialized `totalCardsPlayed` field and count.
 - [ ] README and current contributor docs describe the shipped UI accurately.
 - [ ] “Destroy” has no player-facing occurrence; each Banish description names
       the owner's discard pile destination.
@@ -758,15 +842,22 @@ context)**.
       their current values.
 - [ ] `BASIC_LANDS` remains in its original order everywhere that order affects
       deck construction or fixtures.
-- [ ] No display name is used as an identifier, parser input, object key, file
-      name, URL segment, or wire value.
+- [ ] No display name or slug is used as mechanical identity, mechanical parser
+      input, or serialized/wire identity. Presentation grouping and resource-cache
+      keys are allowed; asset filenames/URLs use approved catalog slugs.
 - [ ] Every asset path uses an approved ASCII slug and works under a non-root
       `BASE_URL`.
 - [ ] All four asset directories contain exactly one current file per catalog
       entry, with documented fallback behavior and no accidental runtime
       references to obsolete names.
+- [ ] Shipping-size deterministic output matches committed assets; final HD is
+      reviewed photoreal art rather than seed/fallback copies. Keep this gate
+      open while generation or visual review is blocked.
 - [ ] Hidden-hand tests prove no catalog lookup or target label unredacts an
       opponent's hand outside Drain Memory.
 - [ ] Existing-save, Adventure, recording/replay, P2P, deterministic-seed,
       service-worker, renderer, accessibility, mobile-layout, CLI, and build
       checks pass.
+- [ ] Browser interaction, capture, inspection, and reviewer-accessible
+      attachment have separate actual outcomes. Blocked visual verification
+      remains pending maintainer review, regardless of automated test results.

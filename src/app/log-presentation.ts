@@ -109,7 +109,7 @@ export function presentLogEvent(
       )
     case 'ability_plains_reuse': {
       const reused = cardCatalogEntry(event.reusedName)
-      const label = `Echo Doppelgänger mimics ${reused.displayName} — ${reused.primaryAbility.name}`
+      const label = `${displayCardName('Plains')} mimics ${reused.displayName} — ${reused.primaryAbility.name}`
       return presentedLogEntry(
         event.actor,
         label,
@@ -129,8 +129,8 @@ export function presentLogEvent(
     }
     case 'counter_resolved': {
       const cost = event.discardCardName
-        ? `Signal Siren and ${displayCardName(event.discardCardName)}`
-        : 'Signal Siren and another card'
+        ? `${displayCardName('Island')} and ${displayCardName(event.discardCardName)}`
+        : `${displayCardName('Island')} and another card`
       return presentedLogEntry(
         event.actor,
         `intercepts ${displayCardName(event.cardName)} by discarding ${cost}`,
@@ -207,7 +207,7 @@ export function presentLegacyLogLine(
   if (card) {
     return presentedLogEntry(
       null,
-      `Gravebloom Dryad reclaims ${displayCardName(card)} from the discard pile`,
+      `${displayCardName('Forest')} reclaims ${displayCardName(card)} from the discard pile`,
       presentedLogCard(card),
       '↩',
     )
@@ -219,7 +219,7 @@ export function presentLegacyLogLine(
   if (target !== null && card) {
     return presentedLogEntry(
       null,
-      `Memory Vampire drains a memory; P${target + 1} discards ${displayCardName(card)}`,
+      `${displayCardName('Swamp')} drains a memory; P${target + 1} discards ${displayCardName(card)}`,
       presentedLogCard(card),
       '✖',
     )
@@ -231,7 +231,7 @@ export function presentLegacyLogLine(
   if (owner !== null && card) {
     return presentedLogEntry(
       null,
-      `Rooftop Gargoyle banishes P${owner + 1}'s ${displayCardName(card)} to its owner's discard pile`,
+      `${displayCardName('Mountain')} banishes P${owner + 1}'s ${displayCardName(card)} to its owner's discard pile`,
       presentedLogCard(card),
       '✖',
     )
@@ -243,7 +243,7 @@ export function presentLegacyLogLine(
     const reused = cardCatalogEntry(card)
     return presentedLogEntry(
       null,
-      `Echo Doppelgänger mimics ${reused.displayName} — ${reused.primaryAbility.name}`,
+      `${displayCardName('Plains')} mimics ${reused.displayName} — ${reused.primaryAbility.name}`,
       presentedLogCard(card),
       '↺',
     )

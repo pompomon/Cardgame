@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import {
   displayAdventureOpponentLabel,
   labelGameAction,
   labelGameActions,
   projectPlayersForPresentation,
   revealedEnemyHandForSwamp,
+  targetPromptForCard,
 } from '../app/game-presentation'
 import { HIDDEN_HAND_CARD_NAME, type ControllerKind } from '../app/types'
-import { createInitialGame } from '../game/engine'
+import { createInitialGame, getLegalActions } from '../game/engine'
 import type { GameAction } from '../game/types'
 
 const HUMAN_VS_AI: [ControllerKind, ControllerKind] = ['human', 'ai']
@@ -143,6 +145,95 @@ describe('shared game presentation', () => {
       'End Turn',
     ])
     expect(labeled.map((entry) => entry.action)).toEqual(actions)
+  })
+
+  it.each(['Forest', 'Island', 'Mountain', 'Swamp'] as const)(
+    'uses catalog copy for Mimic of %s and never offers another Echo Doppelgänger',
+    (reusedName) => {
+      const state = createInitialGame(5)
+      state.players[0].hand = [{ id: 'echo', name: 'Plains', type: 'land' }]
+      state.players[0].battlefield = [
+        { instanceId: 'reused', card: { id: 'reused-card', name: reusedName, type: 'land' } },
+        { instanceId: 'echo-a', card: { id: 'echo-card-a', name: 'Plains', type: 'land' } },
+        { instanceId: 'echo-b', card: { id: 'echo-card-b', name: 'Plains', type: 'land' } },
+      ]
+      const actions = getLegalActions(state, 0).filter((action) => action.type === 'play_land')
+      const echo = cardCatalogEntry('Plains')
+      const reused = cardCatalogEntry(reusedName)
+      expect(actions).toEqual([{
+        type: 'play_land',
+        actor: 0,
+        cardId: 'echo',
+        effectTargetId: 'reused',
+      }])
+      expect(labelGameAction(state, actions[0], HUMAN_VS_AI)).toBe(
+        `Summon ${echo.displayName} (${echo.primaryAbility.name} ${reused.displayName} — ${reused.primaryAbility.name})`,
+      )
+      expect(targetPromptForCard('Plains')).toBe(
+        `Choose one of your creatures other than ${echo.displayName} for ${echo.primaryAbility.name}.`,
+      )
+    },
+  )
+
+  it.each(['Forest', 'Mountain', 'Swamp'] as const)(
+    'uses catalog ability and card names for nested %s choices without leaking hidden hands',
+    (reusedName) => {
+      const state = createInitialGame(6)
+      state.phase = 'plains_target'
+      state.pendingPlainsReuse = {
+        actor: 0,
+        reusedInstanceId: 'reused',
+        reusedCardName: reusedName,
+      }
+      state.players[0].graveyard = [{ id: 'grave', name: 'Island', type: 'land' }]
+      state.players[1].battlefield = [{
+        instanceId: 'enemy-board',
+        card: { id: 'enemy-card', name: 'Island', type: 'land' },
+      }]
+      state.players[1].hand = [{ id: 'enemy-hand', name: 'Island', type: 'land' }]
+      const reused = cardCatalogEntry(reusedName)
+      const ability = reused.primaryAbility.name
+      const prefix = `${cardCatalogEntry('Plains').primaryAbility.name} ${reused.displayName} — ${ability}`
+      const suffix = {
+        Forest: `${ability} ${displayCardName('Island')} from your discard pile`,
+        Mountain: `${ability} ${displayCardName('Island')} to its owner's discard pile`,
+        Swamp: `${ability} — choose ${displayCardName('Island')} for your opponent to discard`,
+      }[reusedName]
+      const [action] = getLegalActions(state, 0)
+      expect(action.type).toBe('resolve_plains_reuse')
+      expect(labelGameAction(state, action, HUMAN_VS_AI, true)).toBe(`${prefix} (${suffix})`)
+      expect(labelGameAction(state, action, HUMAN_VS_AI)).toBe(
+        reusedName === 'Swamp'
+          ? `${prefix} (${ability} — choose a hidden card for your opponent to discard)`
+          : `${prefix} (${suffix})`,
+      )
+    },
+  )
+
+  it('derives Intercept costs and fallback ability labels from the catalog', () => {
+    const state = createInitialGame(7)
+    state.players[0].hand = [
+      { id: 'siren', name: 'Island', type: 'land' },
+      { id: 'extra', name: 'Plains', type: 'land' },
+    ]
+    const siren = cardCatalogEntry('Island')
+    const prefix = `${siren.responseAbility!.name} with ${siren.displayName} (discard ${siren.displayName}`
+    expect(labelGameAction(state, {
+      type: 'counter_land', actor: 0, discardCardId: 'extra',
+    }, HUMAN_VS_AI)).toBe(`${prefix} + ${displayCardName('Plains')})`)
+    expect(labelGameAction(state, {
+      type: 'counter_land', actor: 0,
+    }, HUMAN_VS_AI)).toBe(`${prefix} + one other card)`)
+    expect(labelGameAction(state, {
+      type: 'resolve_plains_reuse', actor: 0,
+    }, HUMAN_VS_AI)).toBe(`Resolve ${cardCatalogEntry('Plains').primaryAbility.name} ability`)
+    expect(labelGameAction(state, {
+      type: 'resolve_swamp_discard', actor: 0,
+    }, HUMAN_VS_AI)).toBe(
+      `${cardCatalogEntry('Swamp').primaryAbility.name} — choose a card for your opponent to discard`,
+    )
+    expect(targetPromptForCard(null)).toBe("Choose a target for this creature's ability.")
+    expect(targetPromptForCard('future' as never)).toBe("Choose a target for this creature's ability.")
   })
 
   it('redacts the AI hand and reveals it only for a human Swamp target decision', () => {

@@ -19,7 +19,7 @@ import { isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { BoardHit, RendererCardIdentity } from './contracts'
 import { renderThreeLog } from './interface-log'
-import { escapeHtml, renderCardTile, renderInstallControls, renderP2P } from './native-html'
+import { escapeHtml, renderCardRules, renderCardTile, renderInstallControls, renderP2P } from './native-html'
 
 export type ThreeLobbyPage = 'root' | 'settings' | 'recording'
 
@@ -263,7 +263,7 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
     <section aria-label="Adventure"><h2>Adventure</h2>
       <p>High Score: ${adventure.highScore} · Status: ${escapeHtml(adventure.status)}</p>
       <p>Round: ${adventure.currentRound}/7 · Chances: ${adventure.remainingChances} · Win Streak: ${adventure.winStreak}</p>
-      <p>Total Rounds: ${adventure.totalRoundsPlayed} · Cards Played: ${adventure.totalCardsPlayed}</p>
+      <p>Total Rounds: ${adventure.totalRoundsPlayed} · Summons attempted (both players): ${adventure.totalCardsPlayed}</p>
       <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
       ${hasSavedAdventureRun(adventure) ? button('abandon-adventure', 'Reset Adventure Run') : ''}</section>
     ${renderInstallControls()}`
@@ -299,7 +299,7 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
   const responseChoices = new Map(response?.choices.map((choice) => [choice.cardId, choice]) ?? [])
   const owners = ui.presentedActor === 1 ? [1, 0] : [0, 1]
   return modal('cards', 'Cards & keyboard controls',
-    `<p>Summon, intercept, or preview using the hand-card controls, or interact with the 3D board.</p>
+    `<p>Summon, intercept, or preview using the hand-card controls, or interact with the 3D board. Read creature abilities and inspect each player's discard pile below.</p>
     ${owners.map((owner) => {
       const player = game.players[owner]
       return `<section aria-label="Player ${owner + 1} cards"><h3>Player ${owner + 1} (${escapeHtml(view.controllers[owner])})${game.actor === owner ? ' · Active' : ''}</h3>
@@ -320,11 +320,11 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
             return `<div class="three-native-card" data-response="${required ? 'required' : choice ? 'discard' : 'unavailable'}"><span>${escapeHtml(cardDisplayName)}</span>
               ${required ? `<span>${escapeHtml(response.requiredCardHint)}</span>` : choice
                 ? button('respond-card', choice.a11yLabel, false, ` data-card-id="${escapeHtml(card.id)}" data-owner="${owner}"`)
-                : '<span>Not available for Intercept</span>'}</div>`
+                : '<span>Not available for Intercept</span>'}${renderCardRules(presentation)}</div>`
           }
           return `<div class="three-native-card"><span>${escapeHtml(displayName)}</span>
             ${button('play', `Summon ${displayName}`, !playable, ` data-card-id="${escapeHtml(card.id)}"`)}
-            ${button('preview', `Preview ${displayName}`, !previewAllowed || responding, ` data-zone="hand" data-owner="${owner}" data-card-id="${escapeHtml(card.id)}"`)}</div>`
+            ${button('preview', `Preview ${displayName}`, !previewAllowed || responding, ` data-zone="hand" data-owner="${owner}" data-card-id="${escapeHtml(card.id)}"`)}${renderCardRules(presentation)}</div>`
         }).join('') || '<p>No cards in hand.</p>'}</div>
         <h4>Board</h4><div class="three-native-cards" data-scroll-key="battlefield-${owner}">${player.battlefield.map((card) => {
           const presentation = cardPresentation(card)!
@@ -333,9 +333,15 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
             `Preview ${presentation.displayName}`,
             !previewAllowed,
             ` data-zone="battlefield" data-owner="${owner}" data-card-id="${escapeHtml(card.cardId)}" data-instance-id="${escapeHtml(card.instanceId)}"`,
-          )}</div>`
+          )}${renderCardRules(presentation)}</div>`
         }).join('') || '<p>No creatures on the board.</p>'}</div>
-        ${player.graveyardCount === 0 ? '<p>Discard pile empty.</p>' : ''}</section>`
+        <section aria-label="Player ${owner + 1} discard pile"><h4>Discard pile</h4>
+          <div class="three-native-cards" data-scroll-key="discard-${owner}">${player.graveyardCards.map((card) => {
+            const presentation = cardPresentation(card)
+            return presentation
+              ? `<div class="three-native-card">${renderCardTile(presentation, view.cardVisualStyle)}${renderCardRules(presentation)}</div>`
+              : ''
+          }).join('') || '<p>Discard pile empty.</p>'}</div></section></section>`
     }).join('')}`,
     'cards-back', 'Back to Game Menu')
 }
@@ -382,7 +388,7 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includ
     ${targets && !ui.menuOpen && !ui.cardsOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${ui.menuOpen ? renderMenu(view) : ''}
     ${ui.cardsOpen ? renderNativeCards(view, ui, nativeBlocked, response) : ''}
-    ${previewCard ? modal('preview', `${previewCard.displayName} card preview`, renderCardTile(previewCard, view.cardVisualStyle),
+    ${previewCard ? modal('preview', `${previewCard.displayName} card preview`, renderCardTile(previewCard, view.cardVisualStyle) + renderCardRules(previewCard),
     'close', ui.previewReturnToCards ? 'Back to Cards' : 'Close') : ''}
     </section>`
 }

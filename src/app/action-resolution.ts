@@ -1,6 +1,7 @@
 import type { GameAction } from '../game/types'
 import { isBasicLand, type BasicLand } from '../game/types'
 import { displayCardName } from './card-catalog'
+import { targetPromptForCard } from './game-presentation'
 import type { GameUiState } from './types'
 import { HIDDEN_HAND_CARD_NAME } from './types'
 
@@ -192,18 +193,7 @@ export function targetPromptForContext(
   game: GameUiState,
   context: TargetSelectionContext,
 ): string {
-  switch (sourceCardKeyForContext(game, context)) {
-    case 'Forest':
-      return 'Choose a creature in your discard pile to return to your hand.'
-    case 'Mountain':
-      return "Choose an opposing creature to send to its owner's discard pile."
-    case 'Swamp':
-      return "Choose a card from your opponent's hand for them to discard."
-    case 'Plains':
-      return 'Choose one of your other creatures whose ability Echo Doppelgänger should repeat.'
-    default:
-      return "Choose a target for this creature's ability."
-  }
+  return targetPromptForCard(sourceCardKeyForContext(game, context))
 }
 
 export function groupCardTargetOptions(

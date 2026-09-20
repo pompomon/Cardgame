@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { cardCatalogEntry } from '../app/card-catalog'
+import { BASIC_LANDS } from '../game/types'
 import {
+  escapeHtml,
   noteRasterCardArtLoadFailure,
+  renderCardRules,
   renderCardTile,
   renderLandIcon,
   resetRasterCardArtLoadFailuresForTests,
@@ -9,6 +13,27 @@ import {
 describe('Three.js native card tile output', () => {
   beforeEach(() => {
     resetRasterCardArtLoadFailuresForTests()
+  })
+
+  it.each(BASIC_LANDS)('renders catalog-backed primary and response rules for %s', (name) => {
+    const entry = cardCatalogEntry(name)
+    const html = renderCardRules({ name })
+    expect(html).toContain(`aria-label="${escapeHtml(entry.displayName)} abilities"`)
+    expect(html).toContain(`<dt>${escapeHtml(entry.primaryAbility.name)}</dt>`)
+    expect(html).toContain(`<dd>${escapeHtml(entry.primaryAbility.rulesText)}</dd>`)
+    if (entry.responseAbility) {
+      expect(html).toContain(`<dt>${escapeHtml(entry.responseAbility.name)}</dt>`)
+      expect(html).toContain(`<dd>${escapeHtml(entry.responseAbility.rulesText)}</dd>`)
+    }
+    expect(html.match(/<dt>/g)).toHaveLength(entry.responseAbility ? 2 : 1)
+  })
+
+  it('does not derive rules from hidden or unknown card names', () => {
+    expect(renderCardRules({
+      name: '__hidden__', serializedKey: 'Island', displayName: 'Signal Siren',
+    })).toBe('')
+    expect(renderCardRules({ name: '<script>untrusted</script>' })).toBe('')
+    expect(renderCardRules({ name: 'Signal Siren' })).toBe('')
   })
 
   it('renders HD card tiles using the shipped PNG as a full-bleed background with an overlaid label', () => {

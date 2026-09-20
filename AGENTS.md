@@ -37,8 +37,11 @@ Dependency updates, docs-only exceptions, and the exact sequence are covered in
 first meaningful error; distinguish code failures from browser, artifact, and
 agent-service failures. Use the [bounded recovery procedure](docs/agent/validation-and-build.md#failure-triage-and-recovery),
 not speculative code fixes or permission changes. Checkpoint verified work
-before image handling; blocked visual verification stays pending maintainer
-review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
+and textual results before separate image handling; never infer a Pages defect
+from an upstream agent image-download error or edit workflow configuration
+without evidence. Allow at most one safe, supported retry; blocked visual
+verification stays pending maintainer review under the
+[evidence procedure](docs/agent/pr-workflow.md#screenshots).
 
 ## Hard rules (non-negotiables)
 
@@ -49,10 +52,10 @@ review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
    abilities, rules text, and asset slugs from `src/app/card-catalog.ts`; use
    shared app presentation helpers for labels. Preserve `BasicLand`,
    `BASIC_LANDS` order, engine/action/event fields, saves, recordings, and P2P
-   payloads. Never parse or serialize display names or slugs as identity.
-   Until their copy is migrated, `src/app/tutorial.ts` and event framing in
-   `src/app/log-presentation.ts` are explicit exceptions whose embedded
-   creature and ability wording must be kept in sync with the catalog.
+   payloads. Never parse or serialize display names or slugs as mechanical
+   identity; presentation grouping and resource-cache keys are allowed.
+   Tutorial, logs, and nested Mimic prompts also consume catalog copy.
+   Generic draw events have no ability source: do not claim Listen In caused them.
 3. **No string-to-enum casts on untrusted input.** Validate with the
    `isXxx` guards (`isAiLevel`, `isCardVisualStyle`, …) before assigning.
 4. **Sanitize and cap every array from `localStorage` or imported JSON.**
@@ -75,6 +78,12 @@ review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
 10. **Status-message ordering.** A later unconditional status assignment can
    hide a storage-unavailable warning. Set warnings last or guard success
    messages when persistence may have failed.
+11. **Artwork acceptance.** Classic is intentionally procedural. HD requires
+   reviewed photoreal art, not deterministic seed/fallback copies. Missing
+   generation credentials block replacement through the supported operator
+   script; record visual verification separately. Passing asset tests is not
+   visual acceptance. See
+   [`public/cards/README.md`](public/cards/README.md#hd-artwork).
 
 ## Topic index (`docs/agent/`)
 

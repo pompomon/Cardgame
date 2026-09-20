@@ -64,6 +64,21 @@ export function displayGamePhase(phase: GamePhase): string {
   }
 }
 
+export function targetPromptForCard(key: BasicLand | null): string {
+  switch (key) {
+    case 'Forest':
+      return 'Choose a creature in your discard pile to return to your hand.'
+    case 'Mountain':
+      return "Choose an opposing creature to send to its owner's discard pile."
+    case 'Swamp':
+      return "Choose a card from your opponent's hand for them to discard."
+    case 'Plains':
+      return `Choose one of your creatures other than ${displayCardName('Plains')} for ${cardCatalogEntry('Plains').primaryAbility.name}.`
+    default:
+      return "Choose a target for this creature's ability."
+  }
+}
+
 export type VisibleUiCard = Readonly<UiCard & {
   serializedKey: BasicLand
   displayName: string
@@ -198,13 +213,13 @@ function nestedTargetLabel(
   if (serializedKey === 'Forest') {
     const target = me.graveyard.find((entry) => entry.id === effectTargetId)
     return target
-      ? `Reclaim ${displayCardName(target.name)} from your discard pile`
+      ? `${cardCatalogEntry('Forest').primaryAbility.name} ${displayCardName(target.name)} from your discard pile`
       : null
   }
   if (serializedKey === 'Mountain') {
     const target = enemy.battlefield.find((entry) => entry.instanceId === effectTargetId)
     return target
-      ? `Banish ${displayCardName(target.card.name)} to its owner's discard pile`
+      ? `${cardCatalogEntry('Mountain').primaryAbility.name} ${displayCardName(target.card.name)} to its owner's discard pile`
       : null
   }
   const target = enemy.hand.find((entry) => entry.id === effectTargetId)
@@ -212,7 +227,7 @@ function nestedTargetLabel(
     return null
   }
   const hideName = shouldHideHandFromViewer(controllers, enemyIndex) && !revealEnemyHand
-  return `Drain Memory — choose ${hideName ? 'a hidden card' : displayCardName(target.name)} for your opponent to discard`
+  return `${cardCatalogEntry('Swamp').primaryAbility.name} — choose ${hideName ? 'a hidden card' : displayCardName(target.name)} for your opponent to discard`
 }
 
 function playLandLabelFor(
@@ -249,7 +264,7 @@ function playLandLabelFor(
     const target = me.battlefield.find((entry) => entry.instanceId === action.effectTargetId)
     if (target) {
       const targetEntry = cardCatalogEntry(target.card.name)
-      label += ` (Mimic ${targetEntry.displayName} — ${targetEntry.primaryAbility.name})`
+      label += ` (${cardCatalogEntry('Plains').primaryAbility.name} ${targetEntry.displayName} — ${targetEntry.primaryAbility.name})`
     }
   }
   return label
@@ -264,10 +279,10 @@ function plainsReuseLabelFor(
 ): string {
   const reusedName = game.pendingPlainsReuse?.reusedCardName
   if (!reusedName) {
-    return 'Resolve Mimic ability'
+    return `Resolve ${cardCatalogEntry('Plains').primaryAbility.name} ability`
   }
   const reused = cardCatalogEntry(reusedName)
-  const label = `Mimic ${reused.displayName} — ${reused.primaryAbility.name}`
+  const label = `${cardCatalogEntry('Plains').primaryAbility.name} ${reused.displayName} — ${reused.primaryAbility.name}`
   if (reusedName === 'Forest' || reusedName === 'Mountain' || reusedName === 'Swamp') {
     const suffix = nestedTargetLabel(
       game,
@@ -292,7 +307,8 @@ function counterLabelFor(
     ? me.hand.find((card) => card.id === action.discardCardId)
     : undefined
   const suffix = discard ? ` + ${displayCardName(discard.name)}` : ' + one other card'
-  return `Intercept with Signal Siren (discard Signal Siren${suffix})`
+  const source = cardCatalogEntry('Island')
+  return `${source.responseAbility!.name} with ${source.displayName} (discard ${source.displayName}${suffix})`
 }
 
 export function labelGameAction(
@@ -313,8 +329,8 @@ export function labelGameAction(
         : undefined
       const hideName = shouldHideHandFromViewer(controllers, enemy) && !revealEnemyHand
       return target
-        ? `Drain Memory — choose ${hideName ? 'a hidden card' : displayCardName(target.name)} for your opponent to discard`
-        : 'Drain Memory — choose a card for your opponent to discard'
+        ? `${cardCatalogEntry('Swamp').primaryAbility.name} — choose ${hideName ? 'a hidden card' : displayCardName(target.name)} for your opponent to discard`
+        : `${cardCatalogEntry('Swamp').primaryAbility.name} — choose a card for your opponent to discard`
     }
     case 'counter_land':
       return counterLabelFor(game, action.actor, action)

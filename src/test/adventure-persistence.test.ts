@@ -4,6 +4,7 @@ import {
   ADVENTURE_GAME_STORAGE_KEY,
   createAdventureRun,
   isAdventureRunState,
+  persistAdventureGameSnapshot,
   readStoredAdventureGameSnapshot,
 } from '../app/adventure'
 import {
@@ -12,8 +13,10 @@ import {
   persistAdventureRun,
   readStoredAdventureRun,
 } from '../app/adventure-persistence'
-import { createInitialGame } from '../game/engine'
+import { isLegalActionForState } from '../app/action-validation'
+import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import { BASIC_LANDS, type LogEvent } from '../game/types'
+import { compatibilityDecisions, compatibilityTimeline } from './fixtures/compatibility-scenario'
 
 interface MemoryStore {
   data: Map<string, string>
@@ -167,6 +170,32 @@ describe('adventure run persistence', () => {
 
     expect(persistAdventureRun(run)).toBe(true)
     expect(readStoredAdventureRun()).toEqual(run)
+  })
+
+  it.each(compatibilityDecisions)('preserves pending identities and legal targets for $label', ({ index }) => {
+    const { steps } = compatibilityTimeline()
+    const pending = steps[index].before
+    persistAdventureGameSnapshot(pending)
+    const serialized = store.data.get(ADVENTURE_GAME_STORAGE_KEY)
+    expect(serialized).toBeTruthy()
+    expect(serialized).not.toMatch(/"displayName"|"assetSlug"|Gravebloom|Doppelgänger|Vampire/)
+
+    let restored = readStoredAdventureGameSnapshot()
+    expect(restored).toEqual(pending)
+    if (!restored) throw new Error('Expected pending adventure snapshot.')
+    for (const step of steps.slice(index)) {
+      expect(getLegalActions(restored, step.action.actor)).toEqual(
+        getLegalActions(step.before, step.action.actor),
+      )
+      expect(isLegalActionForState(restored, step.action)).toBe(true)
+      restored = applyAction(restored, step.action)
+      expect(restored).toEqual(step.state)
+      if (restored.phase === 'main' || restored.phase === 'gameOver') break
+    }
+    expect(restored.pendingLandPlay).toBeNull()
+    expect(restored.pendingPlainsReuse).toBeNull()
+    expect(restored.pendingSwampDiscard).toBeNull()
+    expect(store.data.get(ADVENTURE_GAME_STORAGE_KEY)).toBe(serialized)
   })
 
   it('loads pre-migration opponent labels without rewriting the stored fields', () => {

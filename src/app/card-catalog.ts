@@ -65,7 +65,7 @@ export const CARD_CATALOG = Object.freeze({
     assetSlug: 'echo-doppelganger',
     primaryAbility: {
       name: 'Mimic',
-      rulesText: 'Repeat the ability of one of your other creatures.',
+      rulesText: 'Repeat the ability of one of your creatures other than Echo Doppelgänger.',
     },
     visualRole: 'white',
   }),

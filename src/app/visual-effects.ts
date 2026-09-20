@@ -43,6 +43,25 @@ function paletteFor(land: BasicLand, visualStyle: CardVisualStyle): VisualEffect
   }
 }
 
+export function visualEffectCaption(kind: VisualEffectKind): string {
+  switch (kind) {
+    case 'play_land':
+      return 'Summoned'
+    case 'forest_return':
+      return 'Reclaimed'
+    case 'swamp_discard':
+      return 'Memory drained'
+    case 'mountain_destroy':
+      return 'Banished to discard pile'
+    case 'plains_reuse':
+      return 'Ability mimicked'
+    case 'counter_resolved':
+      return 'Intercepted'
+    default:
+      return 'Action resolved'
+  }
+}
+
 function descriptor(
   kind: VisualEffectKind,
   actor: number,
@@ -54,35 +73,12 @@ function descriptor(
       | 'targetDisplayName' | 'counterCards'
   >> = {},
 ): VisualEffectDescriptor {
-  let caption: string
-  switch (kind) {
-    case 'play_land':
-      caption = 'Summoned'
-      break
-    case 'forest_return':
-      caption = 'Reclaimed'
-      break
-    case 'swamp_discard':
-      caption = 'Memory drained'
-      break
-    case 'mountain_destroy':
-      caption = 'Banished to discard pile'
-      break
-    case 'plains_reuse':
-      caption = 'Ability mimicked'
-      break
-    case 'counter_resolved':
-      caption = 'Intercepted'
-      break
-    default:
-      caption = 'Action resolved'
-  }
   return {
     kind,
     actor,
     land,
     sourceDisplayName: displayCardName(land),
-    caption,
+    caption: visualEffectCaption(kind),
     visualStyle,
     palette: paletteFor(land, visualStyle),
     ...details,

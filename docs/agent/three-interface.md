@@ -33,6 +33,16 @@ not introduce a second generic markup renderer.
   only when the accessible name keeps the full approved term.
 - Never put a hidden card's catalog name, slug, image URL, or ability copy in
   markup, accessible text, data attributes, or preview state.
+- The native Cards dialog exposes visible **Hand**, **Board**, and **Discard
+  pile** creatures with inline ability/rules text. Full previews include primary
+  and response rules, especially Signal Siren's entire Intercept cost. Keep this
+  discoverability browser-only: no new CLI command or hidden-card access.
+- Mimic's exact rule is “Repeat the ability of one of your creatures other than
+  Echo Doppelgänger.” Nested target prompts must retain the chosen source and
+  use its catalog-backed ability, not a hardcoded Reclaim/Banish/Drain Memory hint.
+- Adventure uses **Summons attempted (both players)** instead of “Cards Played.”
+  It displays the existing counter, including intercepted submissions, rather
+  than counting only creatures that reach the Board.
 
 ## Stable interaction state
 
@@ -101,6 +111,8 @@ cost, and the Rooftop Gargoyle Banish destination at normal and 200% text.
 Names, instructions, and controls must wrap instead of truncating; touch targets
 remain at least 44 CSS pixels. Keep action prompts in stage-level overlays so a
 wrapped copy change cannot resize measured card rows and cancel a drag.
+Include inline Hand/Board/Discard pile rules and full preview text in this
+check; automated HTML assertions alone do not prove readable browser layout.
 
 Safe-area values need plain fallbacks for engines that reject `env()`. Bottom
 actions must remain reachable above browser chrome and display cutouts.
@@ -112,3 +124,6 @@ evidence for lobby, game board, menu/dialog flow, narrow portrait, short
 landscape, and the WebGL2 failure screen. Follow
 [`pr-workflow.md`](pr-workflow.md#screenshots): interaction, capture,
 inspection, and reviewer-accessible attachment are separate completion steps.
+If these stages are unavailable, preserve textual results and leave visual
+acceptance blocked for maintainer verification; do not infer a pass from mocks
+or asset hashes.

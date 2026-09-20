@@ -95,15 +95,27 @@ player-facing creature name, ability copy, ASCII asset slug, and visual role.
 catalog-backed names and shared labels for renderers and the CLI. The engine
 must not import the catalog.
 
+Tutorial sentences, log framing, and direct or nested Mimic target prompts
+must use those shared catalog-backed names and abilities too, not maintain
+hardcoded exceptions. A generic `draw` event does not identify its source
+ability, so its formatter must not imply that Listen In caused it.
+
 Display names and asset slugs are presentation data, never game or serialization
-identifiers. Do not parse them back into keys or place them in engine, storage,
-recording, or wire payloads. They may be used as presentation-grouping or
+identifiers. Do not parse them as mechanical keys or place them in engine,
+storage, recording, or wire payloads. They may be used as presentation-grouping or
 resource-cache keys. Iterate identity-sensitive code through the canonical
 `BASIC_LANDS` tuple rather than display-name sorting or catalog object-key order.
 
 Contributor documentation and implementation names may say `battlefield` when
 referring to the stable state field, renderer row geometry, or DOM data value.
 The corresponding player-facing zone label is always **Board**.
+
+The browser's native Cards dialog makes visible Hand, Board, and Discard pile
+creature rules discoverable, with full rules in card previews. This is a
+browser-only presentation surface; it does not add CLI commands or change
+visibility, legal actions, or serialized fields. The Adventure label
+**Summons attempted (both players)** projects the existing `totalCardsPlayed`
+counter, including intercepted summons; do not rename the persisted field.
 
 ## Browser renderer contract
 
