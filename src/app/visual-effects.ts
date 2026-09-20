@@ -1,5 +1,5 @@
 import { cardVisualPaletteFor } from './card-visuals'
-import { displayCardName } from './card-catalog'
+import { cardCatalogEntry, displayCardName } from './card-catalog'
 import type { CardVisualStyle } from './types'
 import type { BasicLand, LogEvent } from '../game/types'
 
@@ -48,15 +48,15 @@ export function visualEffectCaption(kind: VisualEffectKind): string {
     case 'play_land':
       return 'Summoned'
     case 'forest_return':
-      return 'Reclaimed'
+      return cardCatalogEntry('Forest').primaryAbility.effectCaption
     case 'swamp_discard':
-      return 'Memory drained'
+      return cardCatalogEntry('Swamp').primaryAbility.effectCaption
     case 'mountain_destroy':
-      return 'Banished to discard pile'
+      return cardCatalogEntry('Mountain').primaryAbility.effectCaption
     case 'plains_reuse':
-      return 'Ability mimicked'
+      return cardCatalogEntry('Plains').primaryAbility.effectCaption
     case 'counter_resolved':
-      return 'Intercepted'
+      return cardCatalogEntry('Island').responseAbility!.effectCaption
     default:
       return 'Action resolved'
   }

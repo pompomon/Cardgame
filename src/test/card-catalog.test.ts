@@ -24,6 +24,7 @@ describe('card catalog', () => {
         primaryAbility: {
           name: 'Reclaim',
           rulesText: 'Return one creature from your discard pile to your hand.',
+          effectCaption: 'Reclaimed',
         },
         visualRole: 'green',
       },
@@ -34,10 +35,12 @@ describe('card catalog', () => {
         primaryAbility: {
           name: 'Listen In',
           rulesText: 'Draw one card.',
+          effectCaption: 'Listened in',
         },
         responseAbility: {
           name: 'Intercept',
           rulesText: "Discard Signal Siren and one other card to cancel an opponent's summon.",
+          effectCaption: 'Intercepted',
         },
         visualRole: 'blue',
       },
@@ -48,6 +51,7 @@ describe('card catalog', () => {
         primaryAbility: {
           name: 'Banish',
           rulesText: "Choose an opposing creature on the board and send it to its owner's discard pile.",
+          effectCaption: 'Banished to discard pile',
         },
         visualRole: 'red',
       },
@@ -58,6 +62,7 @@ describe('card catalog', () => {
         primaryAbility: {
           name: 'Mimic',
           rulesText: 'Repeat the ability of one of your creatures other than Echo Doppelgänger.',
+          effectCaption: 'Ability mimicked',
         },
         visualRole: 'white',
       },
@@ -68,6 +73,7 @@ describe('card catalog', () => {
         primaryAbility: {
           name: 'Drain Memory',
           rulesText: "Choose one card from your opponent's hand for them to discard.",
+          effectCaption: 'Memory drained',
         },
         visualRole: 'black',
       },

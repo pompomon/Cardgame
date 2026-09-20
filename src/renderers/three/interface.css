@@ -136,7 +136,7 @@
   margin: 0 0 8px;
 }
 
-.three-interface .three-native-card > span {
+.three-interface .three-native-card > span:not(.card-tile) {
   flex-basis: 100%;
   min-width: 0;
   font-weight: bold;

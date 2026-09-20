@@ -3,6 +3,7 @@ import type { BasicLand } from '../game/types'
 export interface CardAbilityCopy {
   readonly name: string
   readonly rulesText: string
+  readonly effectCaption: string
 }
 
 export interface CardCatalogEntry {
@@ -32,6 +33,7 @@ export const CARD_CATALOG = Object.freeze({
     primaryAbility: {
       name: 'Reclaim',
       rulesText: 'Return one creature from your discard pile to your hand.',
+      effectCaption: 'Reclaimed',
     },
     visualRole: 'green',
   }),
@@ -42,10 +44,12 @@ export const CARD_CATALOG = Object.freeze({
     primaryAbility: {
       name: 'Listen In',
       rulesText: 'Draw one card.',
+      effectCaption: 'Listened in',
     },
     responseAbility: {
       name: 'Intercept',
       rulesText: "Discard Signal Siren and one other card to cancel an opponent's summon.",
+      effectCaption: 'Intercepted',
     },
     visualRole: 'blue',
   }),
@@ -56,6 +60,7 @@ export const CARD_CATALOG = Object.freeze({
     primaryAbility: {
       name: 'Banish',
       rulesText: "Choose an opposing creature on the board and send it to its owner's discard pile.",
+      effectCaption: 'Banished to discard pile',
     },
     visualRole: 'red',
   }),
@@ -66,6 +71,7 @@ export const CARD_CATALOG = Object.freeze({
     primaryAbility: {
       name: 'Mimic',
       rulesText: 'Repeat the ability of one of your creatures other than Echo Doppelgänger.',
+      effectCaption: 'Ability mimicked',
     },
     visualRole: 'white',
   }),
@@ -76,6 +82,7 @@ export const CARD_CATALOG = Object.freeze({
     primaryAbility: {
       name: 'Drain Memory',
       rulesText: "Choose one card from your opponent's hand for them to discard.",
+      effectCaption: 'Memory drained',
     },
     visualRole: 'black',
   }),
