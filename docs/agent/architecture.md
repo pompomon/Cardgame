@@ -95,11 +95,11 @@ player-facing creature name, ability copy, ASCII asset slug, and visual role.
 catalog-backed names and shared labels for renderers and the CLI. The engine
 must not import the catalog.
 
-Display names and asset slugs are presentation data, never identifiers. Do not
-parse them back into keys, use them as object keys, or place them in engine,
-storage, recording, or wire payloads. Iterate identity-sensitive code through
-the canonical `BASIC_LANDS` tuple rather than display-name sorting or catalog
-object-key order.
+Display names and asset slugs are presentation data, never game or serialization
+identifiers. Do not parse them back into keys or place them in engine, storage,
+recording, or wire payloads. They may be used as presentation-grouping or
+resource-cache keys. Iterate identity-sensitive code through the canonical
+`BASIC_LANDS` tuple rather than display-name sorting or catalog object-key order.
 
 Contributor documentation and implementation names may say `battlefield` when
 referring to the stable state field, renderer row geometry, or DOM data value.

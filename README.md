@@ -21,9 +21,9 @@ with the catalog:
 | --- | --- | --- |
 | Gravebloom Dryad | Reclaim | Return one creature from your discard pile to your hand. |
 | Signal Siren | Listen In / Intercept | Draw one card. Discard Signal Siren and one other card to cancel an opponent's summon. |
-| Rooftop Gargoyle | Banish | Choose an opposing creature on the Board and send it to its owner's discard pile. |
+| Rooftop Gargoyle | Banish | Choose an opposing creature on the board and send it to its owner's discard pile. |
 | Echo Doppelgänger | Mimic | Repeat the ability of one of your other creatures. |
-| Memory Vampire | Drain Memory | Choose a card from your opponent's hand for them to discard. |
+| Memory Vampire | Drain Memory | Choose one card from your opponent's hand for them to discard. |
 
 ### Contributor compatibility note
 

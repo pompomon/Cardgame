@@ -55,11 +55,12 @@ Runtime source selection is shared by the WebGL Board and native HTML cards:
   source.
 - Monochrome tries `monochrome/<slug>.png`, then the procedural source.
 
-Raster consumers must remove a failed image immediately, remember failed URLs
-for the session, and skip them on subsequent renders. Online recovery may reset
-that suppression and try the shared candidate chain again. The service worker
-keeps every `/cards/*` request network-first with runtime-cache fallback; it
-must not turn these stable public paths into cache-first resources.
+Raster consumers must abandon a failed URL immediately, remember failed URLs for
+the session, and skip them on subsequent renders while continuing through the
+fallback chain. Online recovery may reset that suppression and try the shared
+candidate chain again. The service worker keeps every `/cards/*` request
+network-first with runtime-cache fallback; it must not turn these stable public
+paths into cache-first resources.
 
 See [`../../public/cards/README.md`](../../public/cards/README.md) for the exact
 five-file inventory, deterministic generation, and artwork review workflow.

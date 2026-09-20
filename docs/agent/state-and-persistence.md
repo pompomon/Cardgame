@@ -80,10 +80,12 @@ contracts:
   preserve it on load, but derive the visible opponent label from validated
   `kind` and `lands`; never render persisted label text verbatim.
 - Recording versions 1 and 2 continue to import without schema churn.
-  Structured events are formatted through the catalog. Known legacy text-log
-  templates may be translated conservatively for display, but neither the
-  recording nor its stored `log` array is rewritten; unknown text remains
-  escaped and unchanged.
+  Structured event identities and ability lookups are formatted through the
+  catalog, while `log-presentation.ts` temporarily hardcodes some event framing
+  for Echo Doppelgänger and Signal Siren and must stay synchronized with it.
+  Known legacy text-log templates may be translated conservatively for display,
+  but neither the recording nor its stored `log` array is rewritten; unknown
+  text remains escaped and unchanged.
 - P2P `action` packets retain only legacy action discriminants and mechanical
   fields. Display names, ability copy, and asset slugs must not enter the wire
   format, so old-copy and new-copy peers apply the same deterministic action.
