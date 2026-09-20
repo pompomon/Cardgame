@@ -45,26 +45,34 @@ review under the [evidence procedure](docs/agent/pr-workflow.md#screenshots).
 1. **Vite base URL.** Always access `import.meta.env.BASE_URL` as a literal
    member expression. Aliasing defeats Vite's static replacement and breaks
    `/cards/*` and `/boards/*` on non-root deployments.
-2. **No string-to-enum casts on untrusted input.** Validate with the
+2. **Catalog presentation boundary.** Source player-facing creature names,
+   abilities, rules text, and asset slugs from `src/app/card-catalog.ts`; use
+   shared app presentation helpers for labels. Preserve `BasicLand`,
+   `BASIC_LANDS` order, engine/action/event fields, saves, recordings, and P2P
+   payloads. Never parse or serialize display names or slugs as identity.
+   Until their copy is migrated, `src/app/tutorial.ts` and event framing in
+   `src/app/log-presentation.ts` are explicit exceptions whose embedded
+   creature and ability wording must be kept in sync with the catalog.
+3. **No string-to-enum casts on untrusted input.** Validate with the
    `isXxx` guards (`isAiLevel`, `isCardVisualStyle`, …) before assigning.
-3. **Sanitize and cap every array from `localStorage` or imported JSON.**
+4. **Sanitize and cap every array from `localStorage` or imported JSON.**
    Reject `Infinity`, `NaN`, negatives, fractions, and unknown discriminants.
    Keep the most recent tail when capping logs/events.
-4. **Every exhaustive `switch` over a discriminated union needs a `default:`.**
+5. **Every exhaustive `switch` over a discriminated union needs a `default:`.**
    Unknown values must return the contract's safe placeholder or documented
    sentinel, never accidental `undefined`.
-5. **View-model projects immutable snapshots.** Never leak internal controller
+6. **View-model projects immutable snapshots.** Never leak internal controller
    state (`state.adventure`, `state.game`, …) by reference.
-6. **WebGL2 failure is explicit.** Route load, initialization, render, and
+7. **WebGL2 failure is explicit.** Route load, initialization, render, and
    context-loss failures through `RendererHost`'s accessible recovery screen.
    Runtime failures preserve controller state for in-page retry; failed dynamic
    imports require reload. Do not add a hidden renderer fallback.
-7. **No `structuredClone(GameState)` in hot loops.** AI evaluation and render
+8. **No `structuredClone(GameState)` in hot loops.** AI evaluation and render
    paths must not deep-clone the full game state per candidate action.
-8. **Reuse shared helpers and constants.** Use `DEFAULT_CARD_VISUAL_STYLE`,
+9. **Reuse shared helpers and constants.** Use `DEFAULT_CARD_VISUAL_STYLE`,
    `src/renderers/shared/math.ts`, `src/renderers/shared/image-fit.ts`,
    `isBasicLand`, and the canonical app option lists.
-9. **Status-message ordering.** A later unconditional status assignment can
+10. **Status-message ordering.** A later unconditional status assignment can
    hide a storage-unavailable warning. Set warnings last or guard success
    messages when persistence may have failed.
 

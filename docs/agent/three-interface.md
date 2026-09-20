@@ -17,6 +17,23 @@ recording metadata, card names, and error text.
 Prefer element creation and `textContent` for host-level or incremental UI. Do
 not introduce a second generic markup renderer.
 
+## Creature copy and accessible labels
+
+- Source card names, ability/rules copy, and asset slugs from
+  `src/app/card-catalog.ts`, and consume shared action/phase labels from the app
+  presentation layer. Do not add renderer-local identity maps or derive a slug
+  from display text.
+- The visible zone name is **Board**. Internal state fields, DOM data values,
+  and renderer geometry may retain `battlefield` for compatibility.
+- Use **Creature**, **Summon**, **Discard pile**, **Banish**, **Intercept**,
+  **Interception window**, **Let It Through**, and **Action phase** consistently.
+  Every Banish explanation must say that the creature goes to its owner's
+  discard pile.
+- Compact visual labels such as `Action`, `Intercept`, and `Discard` are allowed
+  only when the accessible name keeps the full approved term.
+- Never put a hidden card's catalog name, slug, image URL, or ability copy in
+  markup, accessible text, data attributes, or preview state.
+
 ## Stable interaction state
 
 An interface update can happen synchronously inside a controller submission.
@@ -78,6 +95,12 @@ Test narrow portrait, short landscape, and coarse-pointer layouts. Native chrome
 must not hide the canvas, cover required game actions, or create inaccessible
 off-screen dialogs. Keep long labels and imported text wrappable, and give
 scrolling panels an explicit size boundary.
+
+Exercise Gravebloom Dryad, Echo Doppelgänger, the full Signal Siren Intercept
+cost, and the Rooftop Gargoyle Banish destination at normal and 200% text.
+Names, instructions, and controls must wrap instead of truncating; touch targets
+remain at least 44 CSS pixels. Keep action prompts in stage-level overlays so a
+wrapped copy change cannot resize measured card rows and cancel a drag.
 
 Safe-area values need plain fallbacks for engines that reject `env()`. Bottom
 actions must remain reachable above browser chrome and display cutouts.

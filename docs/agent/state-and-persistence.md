@@ -59,6 +59,41 @@ documented contract — never an accidental `undefined` fall-through.
   must still be present so unknown discriminants take the safe path
   explicitly.
 
+## Serialized identity versus display copy
+
+The creature terminology is a presentation layer over stable compatibility
+contracts:
+
+- Engine cards, actions, events, saves, and network packets retain
+  `BasicLand`, the `Forest`/`Island`/`Mountain`/`Plains`/`Swamp` values,
+  `Card.type: 'land'`, and existing discriminants and field names. Preserve the
+  canonical `BASIC_LANDS` order because it affects deterministic decks,
+  recordings, and peer state.
+- `src/app/card-catalog.ts` maps those keys to player-facing names, abilities,
+  rules text, visual roles, and ASCII asset slugs. Display names and slugs must
+  never replace a key in trusted state, parser input, storage, recording JSON,
+  or P2P payloads.
+- `src/app/game-presentation.ts`, `log-presentation.ts`, and `view-model.ts`
+  derive immutable display snapshots. Renderers and the CLI consume those
+  projections instead of maintaining another key-to-copy map.
+- `AdventureOpponentDeck.label` remains a legacy serialized field. Accept and
+  preserve it on load, but derive the visible opponent label from validated
+  `kind` and `lands`; never render persisted label text verbatim.
+- Recording versions 1 and 2 continue to import without schema churn.
+  Structured event identities and ability lookups are formatted through the
+  catalog, while `log-presentation.ts` temporarily hardcodes some event framing
+  for Echo Doppelgänger and Signal Siren and must stay synchronized with it.
+  Known legacy text-log templates may be translated conservatively for display,
+  but neither the recording nor its stored `log` array is rewritten; unknown
+  text remains escaped and unchanged.
+- P2P `action` packets retain only legacy action discriminants and mechanical
+  fields. Display names, ability copy, and asset slugs must not enter the wire
+  format, so old-copy and new-copy peers apply the same deterministic action.
+- Player-facing **Drain Memory** still uses the legacy Swamp target fields.
+  Opponent card identities remain redacted everywhere except the existing,
+  actor-scoped legal target projection described below; catalog lookup must
+  never widen that visibility.
+
 ## Controller hygiene
 
 These patterns come up repeatedly:
@@ -131,7 +166,7 @@ for changes to target pickers, response controls, and shared submission paths.
   never see `undefined`.
 - **Scoped hand reveals.** `projectHandCards` redacts a non-human opponent's hand
   to `HIDDEN_HAND_CARD_NAME` in AI and P2P modes. The view model
-  may *narrowly* widen visibility for a specific decision (e.g.
+  may *narrowly* widen visibility for the Drain Memory decision (internally,
   `revealedEnemyHandForSwamp` is populated only while the local human is
   choosing a Swamp discard target, in `swamp_target` or `plains_target`
   phase).
