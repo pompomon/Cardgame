@@ -122,9 +122,12 @@ query parameters and the hash, then discards the old stored renderer preference.
   PNG inventory. HD tries `hd/<slug>.png`, then `hd-fallback/<slug>.png`, then a
   procedural fallback. Monochrome tries `monochrome/<slug>.png`, then a
   procedural fallback.
-- Classic's procedural rendering is intentional. Final HD artwork must be
-  photoreal; the current deterministic HD placeholders do not satisfy that
-  requirement. Photoreal replacement and browser visual acceptance remain pending.
+- Classic's procedural rendering is intentional. The primary HD files restore
+  independent pre-migration artwork from revision
+  `98dea673ceb7858c67ab126a8fcb0f26251e2250` under the current catalog slugs.
+  Automated checks prove that they differ from the deterministic fallbacks, not
+  that they satisfy the photoreal-quality gate; human browser visual acceptance
+  remains separate.
 - Three.js and its native interface share the same source policy, suppress
   repeatedly failed raster URLs for the session, and retry after online
   recovery. See [`public/cards/README.md`](public/cards/README.md).

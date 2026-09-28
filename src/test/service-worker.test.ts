@@ -287,7 +287,7 @@ describe('service worker lifecycle', () => {
     expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/index.html', { cache: 'reload' })
     expect(harness.cacheAddAllCalls).toEqual([
       {
-        cacheName: 'cardgame-build-assets-v10-index-build123.js',
+        cacheName: 'cardgame-build-assets-v11-index-build123.js',
         paths: [
           '/Cardgame/assets/index-abc123.js',
           '/Cardgame/assets/index-def456.css',
@@ -296,7 +296,7 @@ describe('service worker lifecycle', () => {
         ],
       },
     ])
-    expect([...harness.cacheEntries.get('cardgame-shell-v10-index-build123.js')!.keys()]).toEqual([
+    expect([...harness.cacheEntries.get('cardgame-shell-v11-index-build123.js')!.keys()]).toEqual([
       '/Cardgame/',
       '/Cardgame/index.html',
       '/Cardgame/icons.svg',
@@ -355,17 +355,26 @@ describe('service worker lifecycle', () => {
     expect(harness.skipWaiting).not.toHaveBeenCalled()
   })
 
-  it('preserves compatible board assets while retiring obsolete runtime assets', async () => {
+  it('preserves v1/v2 board assets while retiring stale card art', async () => {
     const cardUrl = `${ORIGIN}${BASE_PATH}cards/hd/gravebloom-dryad.png`
     const boardUrl = `${ORIGIN}${BASE_PATH}boards/classic/background-hd.png`
-    const card = makeResponse('cached card')
-    const board = makeResponse('cached board')
+    const legacyBoardUrl = `${ORIGIN}${BASE_PATH}boards/moonlit/background-hd.png`
+    const v1Card = makeResponse('v1 cached card')
+    const v2Card = makeResponse('v2 cached card')
+    const v1Board = makeResponse('v1 cached board')
+    const v2Board = makeResponse('v2 cached board')
+    const legacyBoard = makeResponse('v1-only cached board')
     const harness = loadServiceWorkerLifecycle(
-      ['cardgame-assets-v8', 'cardgame-runtime-assets-v1'],
+      ['cardgame-assets-v8', 'cardgame-runtime-assets-v1', 'cardgame-runtime-assets-v2'],
       {
         'cardgame-runtime-assets-v1': [
-          [cardUrl, card],
-          [boardUrl, board],
+          [cardUrl, v1Card],
+          [boardUrl, v1Board],
+          [legacyBoardUrl, legacyBoard],
+        ],
+        'cardgame-runtime-assets-v2': [
+          [cardUrl, v2Card],
+          [boardUrl, v2Board],
         ],
       },
     )
@@ -376,17 +385,20 @@ describe('service worker lifecycle', () => {
 
     await dispatchLifecycle(harness.installListener)
 
-    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v2')
-    expect(currentAssets?.get(boardUrl)).toBe(board)
+    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v3')
+    expect(currentAssets?.get(boardUrl)).toBe(v2Board)
+    expect(currentAssets?.get(legacyBoardUrl)).toBe(legacyBoard)
     expect(currentAssets?.has(cardUrl)).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(card)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(boardUrl)).toBe(board)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(v1Card)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v2')?.get(cardUrl)).toBe(v2Card)
 
     await dispatchLifecycle(harness.activateListener)
 
     expect(harness.cacheEntries.has('cardgame-assets-v8')).toBe(false)
     expect(harness.cacheEntries.has('cardgame-runtime-assets-v1')).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v2')?.get(boardUrl)).toBe(board)
+    expect(harness.cacheEntries.has('cardgame-runtime-assets-v2')).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v3')?.get(boardUrl)).toBe(v2Board)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v3')?.get(legacyBoardUrl)).toBe(legacyBoard)
   })
 
   it('deletes only obsolete Cardgame caches during activation', async () => {
@@ -395,11 +407,14 @@ describe('service worker lifecycle', () => {
       'cardgame-assets-v8',
       'cardgame-shell-v9-index-previous.js',
       'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-shell-v10-index-previous.js',
+      'cardgame-build-assets-v10-index-previous.js',
       'cardgame-runtime-assets-v0',
-      'cardgame-shell-v10-index-build123.js',
-      'cardgame-build-assets-v10-index-build123.js',
+      'cardgame-shell-v11-index-build123.js',
+      'cardgame-build-assets-v11-index-build123.js',
       'cardgame-runtime-assets-v1',
       'cardgame-runtime-assets-v2',
+      'cardgame-runtime-assets-v3',
       'another-pages-app-v3',
     ])
 
@@ -410,8 +425,11 @@ describe('service worker lifecycle', () => {
       'cardgame-assets-v8',
       'cardgame-shell-v9-index-previous.js',
       'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-shell-v10-index-previous.js',
+      'cardgame-build-assets-v10-index-previous.js',
       'cardgame-runtime-assets-v0',
       'cardgame-runtime-assets-v1',
+      'cardgame-runtime-assets-v2',
     ])
   })
 })

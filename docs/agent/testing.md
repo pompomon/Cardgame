@@ -131,7 +131,9 @@ establish actual zoom, font, and viewport behavior.
 
 - Strictly square (`width === height`).
 - ≥ 256×256.
-- HD art is typically 1024×1024 but not required by the test.
+- Every primary HD file differs byte-for-byte from its deterministic HD fallback.
+- The current restored HD art is 1254×1254, but that exact size is not required
+  by the test.
 
 Replacement assets must satisfy those constraints; the
 `public/cards/README.md` docs match the test expectations.
@@ -148,13 +150,14 @@ npm run test -- src/test/card-art-generator.test.ts
 ```
 
 Classic intentionally renders procedural art. Deterministic PNG parity,
-dimensions, or a working HD fallback cannot establish photoreal HD quality.
-Use `cmp`, file metadata, or hashes to report duplicate HD/fallback assets
-without image inspection. Final HD acceptance requires reviewed photoreal
-replacements and the browser evidence below. Missing credentials block
-replacement through the supported operator script; deterministic placeholders
-cannot waive that gate. Record actual browser visual verification separately,
-following the checkpoint and image-evidence procedure below.
+dimensions, provenance hashes, primary/fallback inequality, or a working HD
+fallback cannot establish photoreal HD quality. Use `cmp`, file metadata, or
+hashes to report asset identity without claiming image inspection. The restored
+historical HD files still require human review and the browser evidence below.
+Hosted-generation credentials matter only if an operator deliberately generates
+new replacements; they are not required to restore verified repository objects.
+Record actual browser visual verification separately, following the checkpoint
+and image-evidence procedure below.
 
 ## Three.js tests
 
