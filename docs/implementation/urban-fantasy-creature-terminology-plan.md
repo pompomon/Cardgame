@@ -41,14 +41,17 @@ The following decisions are approved and are requirements for implementation:
 
 ### Follow-up acceptance status
 
-- [x] Text-only asset inspection at revision
-      `71bb4c492485c08b70f514a454ab845eb24fdcc1`: all five HD/fallback pairs
-      match by `cmp` (each exit 0) and SHA-256; file headers report 1024×1024.
-- [ ] Photoreal HD replacement: blocked in this session by unavailable
-      generation credentials. The existing operator script is supported;
-      no photoreal generation was attempted and no assets were changed.
+- [x] Historical provenance: the independent 1254×1254 HD files introduced by
+      `ace5d53921dcb7eab992fe94e083865334d10217` were recovered from
+      `98dea673ceb7858c67ab126a8fcb0f26251e2250`, the last revision before the
+      slugged migration, and restored byte-for-byte under current catalog slugs.
+      [`public/cards/README.md`](../../public/cards/README.md#hd-artwork) records
+      the stable identity mapping and SHA-256 hashes.
+- [x] Automated HD separation: every primary HD file is required to differ
+      byte-for-byte from its deterministic HD fallback.
 - [ ] Human art review and production-browser visual acceptance: pending
-      maintainer verification, not established by deterministic tests or hashes.
+      maintainer verification, not established by provenance, hashes, dimensions,
+      or the primary/fallback inequality test.
 - [x] Mechanical-source comparison: pre-migration revision
       `0e4ed7cb16379dc219b2be95e45849cc92f9706a` and baseline
       `71bb4c492485c08b70f514a454ab845eb24fdcc1` have the same `src/game`
@@ -59,11 +62,11 @@ The following decisions are approved and are requirements for implementation:
       replay scenarios are synthetic characterization, not historical captures;
       they do not complete historical or manual acceptance gates.
 
-See the [operator replacement gate](../../public/cards/README.md#hd-artwork).
-Existing HD files require an explicit `--force` run after credentials are
-available; a successful skip-only run is not delivery. No images were viewed
-for the text-only asset audit. Later checkpointed browser inspection remains
-a separate visual acceptance step.
+See the [HD provenance and operator replacement gate](../../public/cards/README.md#hd-artwork).
+The restored files do not require hosted generation. A future generated
+replacement requires explicit `--force` and generation credentials, but neither
+condition substitutes for checkpointed browser inspection and human visual
+acceptance.
 
 ## Goals
 
@@ -615,9 +618,10 @@ public/cards/
 - **`scripts/generate-photoreal-card-art.mjs`:** replace land prompts and
   `--land` selection with catalog-aligned creature subjects and a slug/key
   selector; continue atomic writes and manual credential use. Never commit API
-  keys or generated temporary files. Require photoreal output for final HD;
-  deterministic seeds are not an acceptable substitute. Existing HD slots are
-  skipped without `--force`, so replacement requires that explicit operator gate.
+  keys or generated temporary files. Keep this as an optional future replacement
+  path; the current HD files are restored repository objects rather than newly
+  generated output. Existing HD slots are skipped without `--force`, so any
+  deliberate generated replacement requires that explicit operator gate.
 - **`public/cards/README.md`:** document the new layout, exact slugs, dimensions,
   generation commands, review workflow, and fallback order.
 - Retain legacy-named PNGs only while a tested fallback or rollback path needs
@@ -632,9 +636,9 @@ cohesion, absence of embedded text/logos, correct creature-to-ability mapping,
 color-role continuity, square crop safety, and contrast in all three selectable
 styles plus the internal `hd-fallback` assets.
 It also requires photoreal HD, not merely valid PNG headers, matching slugs, or
-working fallbacks. Missing generation credentials block replacement through the
-supported operator script. Track subsequent art review and actual browser
-visual acceptance separately; do not claim this phase complete without them.
+working fallbacks. Historical provenance and primary/fallback inequality do not
+establish visual quality. Track art review and actual browser visual acceptance
+separately; do not claim this phase complete without them.
 
 ### Phase 5 — Persistence, recording, P2P, and compatibility verification
 
@@ -689,7 +693,7 @@ visual acceptance separately; do not claim this phase complete without them.
 | Three.js browser renderer | `three-assets.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Inline visible Hand/Board/Discard pile rules; full preview including Intercept; Summons attempted counter includes interceptions; approved title/copy; escaped markup; fallback order; wrapping; focus/retry/cancellation and resource cleanup |
 | CLI | `cli-session.test.ts` | Existing creature/zone/phase terms; hidden hand remains hidden except during Drain Memory; no new commands or rule/Discard pile inspection |
 | Saves and replay | `game-recording.test.ts`, `adventure-persistence.test.ts`, `adventure.test.ts`, `view-model.test.ts`, `controller.test.ts` | Existing fixtures load unchanged; legacy Adventure labels are not rendered verbatim; pending target states resume; v1/v2 recording compatibility; no schema/version churn |
-| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; photoreal HD still requires separate visual review |
+| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; restored HD provenance and primary/fallback inequality; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; photoreal HD still requires separate visual review |
 | P2P | controller/action-validation/P2P-related tests | Legacy action JSON remains accepted and emitted; mixed-version peers stay deterministic; no display copy enters packets |
 
 Final validation follows `AGENTS.md` and `docs/agent/validation-and-build.md`:
@@ -799,7 +803,8 @@ designed, versioned migration. Do not combine them with these PRs.
 - Each approved slug exists under `classic`, `hd`, `hd-fallback`, and
   `monochrome`; missing/failed art reaches a playable fallback.
 - Classic remains intentionally procedural. Every final HD image is reviewed
-  photoreal artwork; deterministic placeholders cannot satisfy this criterion.
+  photoreal artwork; automated provenance or fallback-separation checks cannot
+  satisfy this criterion.
 - Browser-only rules/Discard pile discovery and full previews are usable without
   adding CLI access. The Adventure label accurately includes both players'
   intercepted summons.
@@ -852,7 +857,7 @@ context)**.
       references to obsolete names.
 - [ ] Shipping-size deterministic output matches committed assets; final HD is
       reviewed photoreal art rather than seed/fallback copies. Keep this gate
-      open while generation or visual review is blocked.
+      open while visual review is pending.
 - [ ] Hidden-hand tests prove no catalog lookup or target label unredacts an
       opponent's hand outside Drain Memory.
 - [ ] Existing-save, Adventure, recording/replay, P2P, deterministic-seed,

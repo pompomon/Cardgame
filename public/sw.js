@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'v10'
-const RUNTIME_ASSET_VERSION = 'v2'
+const RUNTIME_ASSET_VERSION = 'v3'
 const MANAGED_CACHE_PREFIXES = [
   'cardgame-shell-',
   'cardgame-build-assets-',
@@ -24,6 +24,7 @@ const BUILD_ASSET_CACHE = `cardgame-build-assets-${BUILD_CACHE_VERSION}`
 const RUNTIME_ASSET_CACHE = `cardgame-runtime-assets-${RUNTIME_ASSET_VERSION}`
 const LEGACY_RUNTIME_ASSET_CACHES = new Map([
   ['cardgame-runtime-assets-v1', '/boards/'],
+  ['cardgame-runtime-assets-v2', '/boards/'],
 ])
 const BASE_PATH = normalizeBasePath(workerUrl.searchParams.get('base') ?? '/')
 const BASE_PATH_NO_TRAILING = BASE_PATH === '/' ? '/' : BASE_PATH.slice(0, -1)

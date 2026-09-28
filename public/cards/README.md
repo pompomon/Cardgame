@@ -30,10 +30,9 @@ public/cards/
 - Art must be square and at least 256×256.
 - `classic/` contains deterministic 1024×1024 pixel-art counterparts to the
   procedural Classic fallback.
-- `hd/` is reserved for primary 1024×1024 **photoreal** creature artwork.
-  Current deterministic HD-fallback copies are placeholders, not acceptable
-  final HD assets. Their presence or successful loading does not complete
-  artwork delivery.
+- `hd/` contains restored 1254×1254 primary creature artwork from the last
+  pre-migration revision. Human review must independently confirm that these
+  files meet the **photoreal** quality gate.
 - `hd-fallback/` contains deterministic 1024×1024 geometric creature artwork.
 - `monochrome/` contains deterministic 1024×1024 monochrome creature artwork.
 - The canonical key-to-slug mapping is in `src/app/card-catalog.ts`; never
@@ -87,15 +86,34 @@ project-local scratch directories and is removed afterward.
 
 ## HD artwork
 
-Final HD images must be photoreal, generated manually by an authorized operator
-using the hosted image-generation script. CI, lint, tests, and builds never
-invoke it. Configure `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`) securely in the
-environment, never in committed files or logs.
+The current HD files are restored byte-for-byte from
+`98dea673ceb7858c67ab126a8fcb0f26251e2250`, the last revision before the
+slugged creature-art migration removed the legacy paths. They were introduced
+in `ace5d53921dcb7eab992fe94e083865334d10217` and are reused under the current
+catalog slugs according to the stable serialized identity:
+
+| Serialized identity | Current file | SHA-256 |
+| --- | --- | --- |
+| `Forest` | `gravebloom-dryad.png` | `b1bfa46f3ccebd04112e1e7e8ae1df9446922429f7b7fc399f4c0ec109546b72` |
+| `Island` | `signal-siren.png` | `50f856df06fc53b2f713ac8e1a7cf6f1fe6aeee28ab0bfcb9af4403a2aeb0b64` |
+| `Mountain` | `rooftop-gargoyle.png` | `37c1d2f610d78b11a12428a4680d1a93e1b34cffa02400dcb1b7107e7c9fd05f` |
+| `Plains` | `echo-doppelganger.png` | `86a595aeaf25c16e867c9219d18bf3fab6f5a549703d99aa21f045dc18918a61` |
+| `Swamp` | `memory-vampire.png` | `97b17ba1c075476673f59a2bb87c8ac22843eb150efc796aa60b5b2399d5e926` |
+
+`src/test/card-art-assets.test.ts` verifies that each primary HD file differs
+from its deterministic fallback. The hashes, dimensions, and inequality check
+establish provenance and independence only; they do not establish photoreal
+quality or visual acceptance.
+
+### Optional future generation
+
+An authorized operator can deliberately generate future replacements with the
+hosted image-generation script. CI, lint, tests, and builds never invoke it.
+Configure `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`) securely in the environment,
+never in committed files or logs.
 
 **Operator replacement gate:** existing PNGs are skipped unless `--force` is
-supplied. All five HD slots currently exist, so a run without that flag does not
-replace the placeholders. The existing operator script is supported; after
-generation credentials are available, deliberately replace them with:
+supplied. To replace the current restored files intentionally, run:
 
 ```bash
 npm run generate:photoreal-card-art -- --force
@@ -111,22 +129,14 @@ Optional configuration includes `IMAGE_GEN_MODEL`, `IMAGE_GEN_ENDPOINT`, and
 `IMAGE_GEN_SIZE`. Generation is non-deterministic. Never commit an API key,
 temporary output, or an unreviewed image.
 
-### Current acceptance blocker
+### Acceptance status
 
-On 2026-09-20 at revision `71bb4c492485c08b70f514a454ab845eb24fdcc1`,
-`cmp` returned exit 0 for each of the five `hd/<slug>.png` and
-`hd-fallback/<slug>.png` pairs; their SHA-256 hashes also matched. File headers
-reported 1024×1024 PNGs for all ten files. This text-only check establishes that
-the HD slots contain fallback copies, not independent photoreal artwork.
-
-Photoreal replacement is **blocked by unavailable generation credentials** in
-the follow-up session, not by an unsupported operator script. No photoreal
-generation was attempted and no assets were changed. No images were viewed for
-this text-only asset audit; later checkpointed browser inspection follows the
+Historical restoration and the automated primary/fallback separation check are
+complete. Human art review and production-browser visual acceptance remain
+separate requirements under the
 [browser evidence procedure](../../docs/agent/testing.md#browser-verification-and-evidence).
-Human art review and actual production-browser visual acceptance remain separate,
-pending verification. Passing deterministic or dimension tests does not close
-these gates.
+Passing provenance, hash, inventory, dimension, or fallback tests does not close
+those visual gates.
 
 ## Review and replacement workflow
 

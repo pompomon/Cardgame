@@ -79,10 +79,11 @@ verification stays pending maintainer review under the
    hide a storage-unavailable warning. Set warnings last or guard success
    messages when persistence may have failed.
 11. **Artwork acceptance.** Classic is intentionally procedural. HD requires
-   reviewed photoreal art, not deterministic seed/fallback copies. Missing
-   generation credentials block replacement through the supported operator
-   script; record visual verification separately. Passing asset tests is not
-   visual acceptance. See
+   reviewed photoreal art, not deterministic seed/fallback copies. Historical
+   provenance, dimensions, hashes, and primary/fallback inequality are automated
+   checks, not visual acceptance. Hosted-generation credentials are required only
+   when deliberately generating new replacements; record visual verification
+   separately. See
    [`public/cards/README.md`](public/cards/README.md#hd-artwork).
 
 ## Topic index (`docs/agent/`)

@@ -90,6 +90,15 @@ describe('card art asset files', () => {
     }
   })
 
+  it('ships primary HD artwork that differs from every deterministic HD fallback', () => {
+    for (const land of BASIC_LANDS) {
+      const filename = `${cardAssetSlug(land)}.png`
+      const primary = readFileSync(resolve(PUBLIC_ROOT, 'cards', 'hd', filename))
+      const fallback = readFileSync(resolve(PUBLIC_ROOT, 'cards', 'hd-fallback', filename))
+      expect(bytesEqual(primary, fallback), filename).toBe(false)
+    }
+  })
+
   it('ships a shared card-back PNG at the documented path', () => {
     const path = publicPathFor('/cards/card-back.png')
     const { width, height } = readImageSize(path)

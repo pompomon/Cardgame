@@ -34,11 +34,13 @@ the same transaction. If any current asset cannot be cached,
 installation fails and the previous worker and cache set remain active.
 The active worker may return newer network HTML for a navigation, but it never
 stores that unverified response over its manifest-validated offline shell.
-Before activation, cached `/cards/*` and `/boards/*` responses are moved from
-the compatible legacy cache into the runtime-asset cache. Removed renderer
-chunks, sprite responses, and other obsolete entries are deliberately not
-migrated. Activation then deletes only older managed Cardgame caches; never
-delete unrelated origin-wide Cache Storage entries.
+Before activation, only explicitly compatible response prefixes are moved from
+legacy caches into the runtime-asset cache. Runtime cache v3 preserves
+`/boards/*` responses from v1/v2 but deliberately does not migrate `/cards/*`,
+because the primary HD files were replaced at the same paths. Removed card art,
+renderer chunks, sprite responses, and other obsolete entries are not migrated.
+Activation then deletes only older managed Cardgame caches; never delete
+unrelated origin-wide Cache Storage entries.
 
 ## Catalog-slugged card art
 

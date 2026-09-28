@@ -97,14 +97,16 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
   calls a hosted image-generation API (default `gpt-image-1`) to (re)write
   the photoreal HD PNGs at `public/cards/hd/*.png`. Requires an
   `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`). **Not** invoked by CI, lint,
-  test, or build. Existing PNGs are skipped, so replacing all current HD
-  placeholders requires the operator's explicit
+  test, or build. Existing PNGs are skipped, so any intentional replacement
+  requires the operator's explicit
   `npm run generate:photoreal-card-art -- --force`. See
   [`public/cards/README.md`](../../public/cards/README.md#hd-artwork) for
-  credentials, flags, and the photoreal review gate. The operator script is
-  supported; unavailable credentials block generation. Do not accept
-  seed/fallback images as final HD. Record actual browser visual acceptance
-  separately, after the text-first checkpoint and evidence procedure.
+  credentials, flags, and the photoreal review gate. The current HD files were
+  restored from repository history and do not require regeneration. Credentials
+  are relevant only if an operator chooses to generate new images. Hashes,
+  dimensions, and primary/fallback inequality do not establish visual quality;
+  record actual browser visual acceptance separately after the text-first
+  checkpoint and evidence procedure.
 
 ## What "good" looks like
 
