@@ -287,7 +287,7 @@ describe('service worker lifecycle', () => {
     expect(harness.fetchMock).toHaveBeenCalledWith('/Cardgame/index.html', { cache: 'reload' })
     expect(harness.cacheAddAllCalls).toEqual([
       {
-        cacheName: 'cardgame-build-assets-v10-index-build123.js',
+        cacheName: 'cardgame-build-assets-v11-index-build123.js',
         paths: [
           '/Cardgame/assets/index-abc123.js',
           '/Cardgame/assets/index-def456.css',
@@ -296,7 +296,7 @@ describe('service worker lifecycle', () => {
         ],
       },
     ])
-    expect([...harness.cacheEntries.get('cardgame-shell-v10-index-build123.js')!.keys()]).toEqual([
+    expect([...harness.cacheEntries.get('cardgame-shell-v11-index-build123.js')!.keys()]).toEqual([
       '/Cardgame/',
       '/Cardgame/index.html',
       '/Cardgame/icons.svg',
@@ -407,9 +407,11 @@ describe('service worker lifecycle', () => {
       'cardgame-assets-v8',
       'cardgame-shell-v9-index-previous.js',
       'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-shell-v10-index-previous.js',
+      'cardgame-build-assets-v10-index-previous.js',
       'cardgame-runtime-assets-v0',
-      'cardgame-shell-v10-index-build123.js',
-      'cardgame-build-assets-v10-index-build123.js',
+      'cardgame-shell-v11-index-build123.js',
+      'cardgame-build-assets-v11-index-build123.js',
       'cardgame-runtime-assets-v1',
       'cardgame-runtime-assets-v2',
       'cardgame-runtime-assets-v3',
@@ -423,6 +425,8 @@ describe('service worker lifecycle', () => {
       'cardgame-assets-v8',
       'cardgame-shell-v9-index-previous.js',
       'cardgame-build-assets-v9-index-previous.js',
+      'cardgame-shell-v10-index-previous.js',
+      'cardgame-build-assets-v10-index-previous.js',
       'cardgame-runtime-assets-v0',
       'cardgame-runtime-assets-v1',
       'cardgame-runtime-assets-v2',

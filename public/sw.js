@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v10'
+const CACHE_VERSION = 'v11'
 const RUNTIME_ASSET_VERSION = 'v3'
 const MANAGED_CACHE_PREFIXES = [
   'cardgame-shell-',
