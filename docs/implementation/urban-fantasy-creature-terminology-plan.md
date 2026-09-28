@@ -52,6 +52,20 @@ The following decisions are approved and are requirements for implementation:
 - [ ] Human art review and production-browser visual acceptance: pending
       maintainer verification, not established by provenance, hashes, dimensions,
       or the primary/fallback inequality test.
+- [ ] Production-browser evidence for restored-art revision
+      `6623a7514ef5e479bfa0f4a5544cbe420f09ea96`: the built `/Cardgame/` preview
+      started successfully, but the supported Playwright MCP required
+      browser-based OAuth before navigation. Desktop, mobile, short landscape,
+      200% zoom, online art loading, and cached offline reload remain pending
+      maintainer verification.
+
+| Visual evidence stage | Outcome |
+| --- | --- |
+| Browser interaction completed | Blocked before navigation by Playwright MCP browser OAuth |
+| Screenshot captured | Not run because interaction was blocked |
+| Screenshot inspected | Not run because no screenshot was captured |
+| Evidence attached and reviewer-accessible | Not run because no screenshot was captured |
+
 - [x] Mechanical-source comparison: pre-migration revision
       `0e4ed7cb16379dc219b2be95e45849cc92f9706a` and baseline
       `71bb4c492485c08b70f514a454ab845eb24fdcc1` have the same `src/game`
