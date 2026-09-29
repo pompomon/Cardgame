@@ -133,7 +133,8 @@ Relevant implementation seams:
 
 - Pausing during an encounter continues to save the live `GameState` separately.
 - Pausing on the map or reward screen saves only the run aggregate.
-- Resuming opens the exact persisted stage: map, reward, or encounter snapshot.
+- Resuming opens the exact persisted stage: map, reward, or an encounter
+  snapshot whose envelope matches the saved run and selected attempt.
 - A tab closed with an `active` run is surfaced as paused, without discarding its
   selected route, pending reward, relic charges, or attempt seed.
 
@@ -207,6 +208,9 @@ completed, and unknown IDs are rejected without changing state.
 - The active attempt seed is persisted before an encounter launches.
 - Retrying increments a persisted attempt counter, so reload does not repeat or
   silently replace a generated attempt.
+- Each new run has a persisted, unique run ID independent of its base seed.
+  Each committed encounter attempt is identified by its node ID, attempt
+  ordinal, and seed; retries and new runs must not reuse an earlier identity.
 
 ## Boon and relic contract
 
@@ -268,10 +272,13 @@ remain; expanding the catalog is preferable to adding an unchecked fallback.
 7. If multiple charms are owned, each required creature appears in the opening
    hand. Five charms still fit the minimum five-card hand.
 
-`src/game/engine.ts` may receive a generic, validated initial-hand-size option
-whose default remains five. It must not import Adventure modules, branch on
-relic IDs, or add relic state to `GameState`. Deck reordering and relic policy
-remain in `src/app/`.
+`src/game/engine.ts` may receive a generic, validated two-player initial-hand
+size option (one count for each player, bounded by deck size) whose default
+remains `[5, 5]`. Adventure passes `[playerHandSize, 5]`, never a shared scalar:
+Prepared Pack and Scout's Cache change only player 0's opening hand, not the
+opponent's. The engine must not import Adventure modules, branch on relic IDs,
+or add relic state to `GameState`. Deck reordering and relic policy remain in
+`src/app/`.
 
 ## Versioned run aggregate
 
@@ -280,6 +287,7 @@ New saves use Adventure schema version 2. The aggregate needs these concepts:
 | Field/concept | Purpose and invariant |
 | --- | --- |
 | Schema and rules versions | Distinguish legacy shape, map rules, and reward catalog semantics. Known versions are handled explicitly. |
+| Run identity | A unique persisted ID created for each new run, independent of seed; immutable through pause, migration commit, and retry. |
 | Lifecycle status | Existing `active`, `paused`, `completed`, and `failed` meanings remain. |
 | Stage | Exactly one of map, encounter, encounter-completion-pending, or reward for a resumable run. |
 | Map tiers | Exactly seven ordered tiers; one or two nodes per non-boss tier; one boss; at most three fork tiers. |
@@ -315,7 +323,12 @@ fractional values as appropriate.
   run's remaining chances and win streak respectively.
 - Start with no relics, reward history, or pending reward.
 - Use the separately validated game snapshot to distinguish a paused
-  mid-encounter run from a paused between-encounter run.
+  mid-encounter run from a paused between-encounter run only when it is bound to
+  that run and attempt. Legacy bare snapshots contain no such identity and
+  cannot be safely rebound: reject them with a visible recovery warning and
+  offer a retry of the saved encounter, never restore them into a different run.
+- Assign a fresh run ID on migration at the first explicit run commit; retain
+  it on all subsequent commits. Never derive it solely from the legacy seed.
 - Do not rewrite local storage merely because the lobby was opened. Write
   version 2 at the next explicit run commit.
 - Today an on-load `active` run is normalized to `paused` and immediately
@@ -375,6 +388,21 @@ High-integrity transitions use persistence-first candidates:
 
 This prevents a reward from disappearing or a charged relic from being consumed
 in memory when its durable commit failed.
+
+### Encounter snapshot identity
+
+- Persist the separate `GameState` in a versioned envelope containing the run
+  ID, selected node ID, attempt ordinal, attempt seed, and deeply validated
+  game snapshot. Keep these identity fields in the committed run aggregate too.
+- Restore only when the run is resumable at the encounter stage and **all**
+  envelope identity fields equal its current committed attempt. An invalid,
+  unbound, stale, or mismatched snapshot is never launched, even if removing it
+  from storage fails. Surface a recovery warning and allow the saved encounter
+  to be retried without silently substituting a different game.
+- A reset, a new run, completion, and a newly committed retry invalidate the
+  previous attempt by run or attempt identity before any snapshot cleanup.
+  Deletion is best-effort cleanup, not the correctness boundary. A failed
+  snapshot write during Pause retains the live game and leaves Pause retryable.
 
 ## View-model and presentation contract
 
@@ -459,6 +487,9 @@ generic lobby:
 
 - Version 1 fixtures migrate losslessly, including every counter and deck.
 - Version 2 round-trips and rejects every malformed nested field and invariant.
+- Run IDs are persisted, unique across new runs even with the same seed, and
+  retained by pause and retry; versioned snapshot envelopes reject malformed
+  identity fields and snapshots.
 - Unknown versions fail closed.
 - Constructor/lobby reads do not rewrite stored version 1 JSON.
 - Legacy fixtures with a non-mono seventh opponent or mismatched round/index
@@ -538,6 +569,10 @@ generic lobby:
 - New run → choose either branch → win → convergence tier → later forks → boss.
 - Loss and draw retry the committed node and cannot switch to its sibling.
 - Mid-encounter pause restores the exact game; map pause restores the exact map.
+- Snapshots from a reset run, a completed attempt, or an earlier attempt at
+  the same node are rejected even when removal fails; a matching versioned
+  envelope restores exactly once. Legacy unbound snapshots are rejected with
+  a visible retry path rather than restored into another run.
 - A rejected mid-encounter pause snapshot keeps the live encounter open, shows
   the storage warning last, and leaves an explicit Pause retry usable; it must
   not navigate to the lobby until both snapshot and run commits succeed.
@@ -588,7 +623,11 @@ generic lobby:
 - Unknown/capped choices fail without mutation; valid choices apply exactly once.
 - Guardian and Streak effects consume only when their consequence applies.
 - Opening-hand setup preserves exactly 50 unique cards across all zones, uses
-  canonical mechanical order, guarantees owned charms, and caps at eight.
+  canonical mechanical order, guarantees owned charms, and caps the Adventure
+  player's hand at eight while the opponent still starts with exactly five.
+- Generic engine setup accepts two validated player-specific hand counts;
+  `[5, 5]` retains the default, and an Adventure `[6, 5]` or `[8, 5]` changes
+  only player 0's opening hand.
 - Normal, tutorial, CLI, P2P, and replay initialization remains byte-equivalent
   when no setup override is supplied.
 
@@ -663,6 +702,9 @@ generic lobby:
   safe areas, and 200% text in a production browser.
 - Verify reload at map, pending reward, committed encounter, loss retry, and
   post-boss completion boundaries.
+- Verify mismatched run/node/attempt/seed envelopes cannot restore a stale
+  encounter after reset, retry, or completion, including failed snapshot
+  removal.
 - Reject snapshot and run writes independently during a mid-encounter pause;
   each rejection must retain the resumable game, avoid lobby navigation, and
   succeed exactly once through the explicit Pause retry.
