@@ -191,9 +191,9 @@ Node status is derived rather than persisted independently:
 - `boss` is an additional presentation attribute, not a replacement for route
   status.
 
-The controller accepts a node only when it belongs to the current tier and is
-available, or when it is the already-selected retry node. Stale, bypassed,
-future, completed, and unknown IDs are rejected without changing state.
+The controller accepts a node only when it belongs to the current tier and its
+latest derived status is `current` or `available`. Stale, bypassed, future,
+completed, and unknown IDs are rejected without changing state.
 
 ### Determinism
 
@@ -291,7 +291,7 @@ New saves use Adventure schema version 2. The aggregate needs these concepts:
 | Pending reward | Null outside reward stage; otherwise one source node and three distinct catalog choices. |
 | Relic inventory | Known IDs only, unique entries, bounded rank/charge/count values. |
 | Reward history/counts | Bounded known IDs used to enforce acquisition caps and audit one reward per completed node. |
-| Existing counters | Chances, score-eligible chances, streak, rounds, and attempted summons retain integer validation. Score-eligible chances shadow the chances a reward-free run would have. |
+| Existing counters | Chances, score-eligible chances, streak, score-eligible streak, rounds, and attempted summons retain integer validation. The score-eligible counters shadow the chances and streak a reward-free run would have. |
 
 All arrays and nested discriminated unions are deeply validated and bounded.
 Unknown schema versions, stages, node lanes, node IDs, reward IDs, relic IDs, or
@@ -311,6 +311,8 @@ fractional values as appropriate.
   contradictory `currentRound`, normalize the tier from the opponent index and
   cover that compatibility rule with a fixture. Preserve all chances, streak,
   totals, base seed, active seed, and lifecycle status.
+- Initialize score-eligible chances and score-eligible streak from the migrated
+  run's remaining chances and win streak respectively.
 - Start with no relics, reward history, or pending reward.
 - Use the separately validated game snapshot to distinguish a paused
   mid-encounter run from a paused between-encounter run.
@@ -325,11 +327,16 @@ fractional values as appropriate.
 Existing high scores remain comparable and are not reset. The legacy score
 formula remains unchanged, but version 2 passes its persisted score-eligible
 chance count as the remaining-chances input. This count starts at the migrated
-or new run's normal chance count, follows ordinary third-win gains, and
-decrements on every loss that would consume a chance without a relic. Second
-Wind never increases it, and Guardian Sigil does not prevent its decrement.
-Actual chances continue to control run survival. Tests cover both rewards and
-prove that they cannot increase the chance contribution to score.
+or new run's normal chance count. A separate persisted score-eligible streak
+starts at the migrated run's win streak or zero for a new run, increments on
+every win, and resets on every loss regardless of Streak Anchor. Its ordinary
+third-win milestones increase score-eligible chances. Every loss decrements
+score-eligible chances with a floor of zero, regardless of whether Guardian
+Sigil prevents the actual chance loss. Second Wind never increases the shadow
+count, and actual chances continue to control run survival. Score tests cover
+both chance rewards and the sequence of a two-win streak, a Streak
+Anchor-protected loss, and another win, proving that rewards cannot increase the
+chance contribution to score.
 
 ## Controller state machine
 
