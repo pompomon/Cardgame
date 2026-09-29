@@ -95,7 +95,8 @@ Relevant implementation seams:
   or require relic fields in `GameState`.
 - Adventure support in the CLI, replay controls, or P2P.
 - New artwork, map textures, audio, or service-worker asset policy.
-- A high-score reset or scoring formula change.
+- A high-score reset or change to the legacy score formula. Reward-derived chance
+  benefits are excluded from its remaining-chances input as described below.
 
 ## Player flow
 
@@ -280,16 +281,17 @@ New saves use Adventure schema version 2. The aggregate needs these concepts:
 | --- | --- |
 | Schema and rules versions | Distinguish legacy shape, map rules, and reward catalog semantics. Known versions are handled explicitly. |
 | Lifecycle status | Existing `active`, `paused`, `completed`, and `failed` meanings remain. |
-| Stage | Exactly one of map, encounter, or reward for a resumable run. |
+| Stage | Exactly one of map, encounter, encounter-completion-pending, or reward for a resumable run. |
 | Map tiers | Exactly seven ordered tiers; one or two nodes per non-boss tier; one boss; at most three fork tiers. |
 | Current tier | Integer index in range. Completed tiers form a strict prefix. |
 | Selected/active node | Null before a fork choice; otherwise belongs to the current tier and remains locked through retries. |
 | Selected path | At most one node per completed tier, with unique known node IDs. |
 | Attempt number and seed | Non-negative attempt counter and persisted seed for the selected node. |
+| Pending encounter result | Present only while completion is pending; records win, loss, or draw and whether the completed encounter is the boss so the exact transition can be retried. |
 | Pending reward | Null outside reward stage; otherwise one source node and three distinct catalog choices. |
 | Relic inventory | Known IDs only, unique entries, bounded rank/charge/count values. |
 | Reward history/counts | Bounded known IDs used to enforce acquisition caps and audit one reward per completed node. |
-| Existing counters | Chances, streak, rounds, and attempted summons retain current meanings and integer validation. |
+| Existing counters | Chances, score-eligible chances, streak, rounds, and attempted summons retain integer validation. Score-eligible chances shadow the chances a reward-free run would have. |
 
 All arrays and nested discriminated unions are deeply validated and bounded.
 Unknown schema versions, stages, node lanes, node IDs, reward IDs, relic IDs, or
@@ -320,9 +322,14 @@ fractional values as appropriate.
 - Keep the existing storage keys. A malformed version 1 or version 2 run remains
   unavailable rather than being partially repaired.
 
-Because every route still has seven encounters and no catalog reward changes the
-score formula directly, existing high scores remain comparable and are not
-reset.
+Existing high scores remain comparable and are not reset. The legacy score
+formula remains unchanged, but version 2 passes its persisted score-eligible
+chance count as the remaining-chances input. This count starts at the migrated
+or new run's normal chance count, follows ordinary third-win gains, and
+decrements on every loss that would consume a chance without a relic. Second
+Wind never increases it, and Guardian Sigil does not prevent its decrement.
+Actual chances continue to control run survival. Tests cover both rewards and
+prove that they cannot increase the chance contribution to score.
 
 ## Controller state machine
 
@@ -336,6 +343,7 @@ The controller is the only authority allowed to advance the run:
 | Encounter loss with chances | Internal game completion | Map with the same retry node selected |
 | Encounter loss without chances | Internal game completion | Failed terminal state and score handling |
 | Encounter draw | Internal game completion | Map with the same retry node selected |
+| Encounter completion pending | Retry completion | Reapply the recorded result to a fresh candidate and persist its exact win/loss/draw transition |
 | Reward | Choose known offered ID | Apply once, advance tier, clear selection/offer, open map |
 | Reward | Skip | Advance tier without inventory change, clear offer, open map |
 | Any resumable stage | Pause/back to lobby | Same stage and decisions retained with paused lifecycle |
@@ -351,8 +359,12 @@ High-integrity transitions use persistence-first candidates:
 2. Validate and apply the requested transition to the candidate.
 3. Persist the candidate.
 4. Only after success, replace controller state and launch/advance.
-5. On storage failure, retain the old actionable state, surface the storage
-   warning last, and allow a safe retry.
+5. If an internally triggered encounter result cannot be persisted, retain the
+   game-over snapshot, enter encounter-completion-pending with that exact result,
+   surface the storage warning last, and expose an explicit Retry completion
+   operation. Retrying replays no game actions and cannot change the result.
+6. On any other storage failure, retain the old actionable state, surface the
+   storage warning last, and allow a safe retry.
 
 This prevents a reward from disappearing or a charged relic from being consumed
 in memory when its durable commit failed.
@@ -382,8 +394,9 @@ generic lobby:
   locked, and boss states.
 - Apply `aria-current="step"` to the current tier/node and include tier,
   opponent, route status, and roster summary in each accessible name.
-- Only available or retry nodes are buttons. Locked, bypassed, and completed
-  nodes are non-interactive.
+- Only `current` and `available` nodes are buttons; `current` covers both
+  single-node convergence tiers and committed retries. Locked, bypassed, and
+  completed nodes are non-interactive.
 - Show chances, streak, attempted summons, owned relics/charges, and current
   opponent context near the route.
 - Show reward choices as a full Adventure panel with exact effect text, current
@@ -518,9 +531,16 @@ generic lobby:
 - New run → choose either branch → win → convergence tier → later forks → boss.
 - Loss and draw retry the committed node and cannot switch to its sibling.
 - Mid-encounter pause restores the exact game; map pause restores the exact map.
+- A rejected mid-encounter pause snapshot keeps the live encounter open, shows
+  the storage warning last, and leaves an explicit Pause retry usable; it must
+  not navigate to the lobby until both snapshot and run commits succeed.
 - Stale/double node activation starts at most one encounter.
 - Storage rejection leaves the same node actionable and does not consume an
   attempt.
+- Rejected completion commits for non-boss win, boss win, loss with chances,
+  terminal loss, and draw retain the exact pending result and converge after one
+  successful Retry completion without double-applying counters, relics, rewards,
+  or score handling.
 - View-model snapshots do not share map/opponent references.
 - Markup has unique IDs, escaped copy, correct semantics, and only valid node
   buttons.
@@ -620,6 +640,8 @@ generic lobby:
 - Audit every map/reward transition against synchronous notifications,
   unchanged-decision rejection, stale input, duplicate activation,
   cancellation/disposal, and storage unavailability.
+- Audit mid-encounter pause persistence so a rejected snapshot or run write keeps
+  the live encounter open with its warning and retry control intact.
 - Complete keyboard, focus, screen-reader, reduced-motion, responsive, and
   high-text-zoom behavior.
 - Add explicit status copy for automatic relic consumption and retry outcomes.
@@ -634,6 +656,9 @@ generic lobby:
   safe areas, and 200% text in a production browser.
 - Verify reload at map, pending reward, committed encounter, loss retry, and
   post-boss completion boundaries.
+- Reject snapshot and run writes independently during a mid-encounter pause;
+  each rejection must retain the resumable game, avoid lobby navigation, and
+  succeed exactly once through the explicit Pause retry.
 
 **Definition of done**
 
