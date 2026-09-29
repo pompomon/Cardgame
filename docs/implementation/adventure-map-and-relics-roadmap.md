@@ -141,7 +141,8 @@ Relevant implementation seams:
 ### Shape
 
 - A map is an ordered list of seven tiers, not a general-purpose graph.
-- Tiers 1–6 are non-boss encounters. Tier 7 contains exactly one mono boss.
+- Tiers 1–6 are non-boss encounters. Tier 7 contains exactly one mono boss for
+  newly generated maps.
 - A tier contains either one center node or two left/right nodes.
 - At most three of tiers 1–6 contain two nodes.
 - New runs use three non-adjacent fork tiers. The base seed deterministically
@@ -156,7 +157,11 @@ Relevant implementation seams:
 
 The validator accepts zero through three fork tiers. Zero is reserved for
 migrated legacy runs, which remain linear rather than receiving new opponents
-mid-run.
+mid-run. Version 1 accepted any known opponent kind in its seventh slot, so a
+version 2 map explicitly marked as migrated legacy data must also accept and
+preserve that final opponent. The single final tier is still the run's boss
+encounter by position; only newly generated maps require its opponent kind to be
+`mono`.
 
 ### Node identity and opponents
 
@@ -297,13 +302,21 @@ fractional values as appropriate.
 - Validate it with its current strict validator before migration.
 - Convert its seven stored opponents into seven single-node tiers in the same
   order. Do not generate alternatives or replace stored decks.
-- Map `currentOpponentIndex` to the current tier and preserve all chances,
-  streak, totals, base seed, active seed, and lifecycle status.
+- Mark the converted map as legacy-linear so its final stored opponent remains
+  valid even if hand-edited version 1 data used a non-mono known kind.
+- Map `currentOpponentIndex` to the current tier because that field currently
+  selects the actual opponent deck. If a valid version 1 payload has a
+  contradictory `currentRound`, normalize the tier from the opponent index and
+  cover that compatibility rule with a fixture. Preserve all chances, streak,
+  totals, base seed, active seed, and lifecycle status.
 - Start with no relics, reward history, or pending reward.
 - Use the separately validated game snapshot to distinguish a paused
   mid-encounter run from a paused between-encounter run.
 - Do not rewrite local storage merely because the lobby was opened. Write
   version 2 at the next explicit run commit.
+- Today an on-load `active` run is normalized to `paused` and immediately
+  rewritten. Version 2 deliberately keeps that normalization in memory but
+  defers its durable write until resume or another explicit run commit.
 - Keep the existing storage keys. A malformed version 1 or version 2 run remains
   unavailable rather than being partially repaired.
 
@@ -428,8 +441,10 @@ generic lobby:
 - Version 2 round-trips and rejects every malformed nested field and invariant.
 - Unknown versions fail closed.
 - Constructor/lobby reads do not rewrite stored version 1 JSON.
-- Existing pause/resume, score, streak chance, and recording behavior is
-  unchanged.
+- Legacy fixtures with a non-mono seventh opponent or mismatched round/index
+  follow the documented compatibility normalization and remain completable.
+- Existing pause/resume gameplay, score, streak chance, and recording behavior
+  is unchanged; only the documented eager on-load storage rewrite is removed.
 
 **Definition of done**
 
@@ -444,9 +459,10 @@ generic lobby:
 - Add a focused app-level map module for seeded tier generation, structural
   validation, available-node selection, path completion, bypass derivation, and
   deterministic attempt seeds.
-- Generate new version 2 runs with three non-adjacent two-node tiers and a shared
-  boss; keep migrated maps linear.
-- Keep controller/UI behavior unchanged until Milestone 3 consumes the module.
+- Provide a pure generator for three non-adjacent two-node tiers and a shared
+  boss, but do not connect it to live `createAdventureRun` yet.
+- Keep live new runs and migrated maps linear until Milestone 3 lands the
+  generator, controller selection API, and map UI together.
 
 **Primary modules**
 
@@ -477,6 +493,8 @@ generic lobby:
 **Scope**
 
 - Add map/encounter stages and controller commands to start a valid node.
+- Switch new-run construction from the temporary linear version 2 aggregate to
+  the tested branching generator in this same vertical change.
 - Start and resume Adventure at its hub instead of automatically launching a
   fresh encounter; continue restoring true mid-encounter snapshots directly.
 - Advance wins to the next tier, lock losses/draws to retry, and complete at the
@@ -657,7 +675,7 @@ generic lobby:
 ### Map
 
 - New runs have seven tiers, exactly two choices at each of no more than three
-  forks, and one shared boss.
+  forks, and one shared mono boss.
 - No route can skip, repeat, or exceed an encounter tier.
 - Route choice, retry, reload, and resume are deterministic and preserve the
   committed node.
@@ -709,4 +727,3 @@ generic lobby:
 | Larger maps cause local-storage jank | Persist only at map/reward/encounter/pause boundaries, never on every action; measure serialized payload size. |
 | Player farms rewards by losing or switching a branch | Reward wins once per node, lock a selected node through retries, and keep completed/rewarded node IDs in validated state. |
 | Native route is unusable on mobile or assistive technology | Use semantic HTML and text status, test focus/zoom/orientation, and keep WebGL out of the route UI. |
-
