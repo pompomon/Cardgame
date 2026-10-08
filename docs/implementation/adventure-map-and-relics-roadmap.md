@@ -125,8 +125,9 @@ Relevant implementation seams:
 - A loss applies any relevant protection relics, then performs the remaining
   existing chance/streak consequences. If chances remain, the selected node
   stays locked for a retry with a new deterministic attempt seed.
-- A draw keeps the selected node locked for a retry and consumes no reward or
-  relic charge.
+- A draw keeps the selected node locked for a retry, consumes no reward or
+  protection charge, and does not refund encounter-setup charges such as
+  Scout's Cache that were consumed when the encounter was committed.
 - Neither result advances the map or creates a reward.
 
 ### Pause, reload, and resume
@@ -295,7 +296,7 @@ New saves use Adventure schema version 2. The aggregate needs these concepts:
 | Selected/active node | Null before a fork choice; otherwise belongs to the current tier and remains locked through retries. |
 | Selected path | At most one node per completed tier, with unique known node IDs. |
 | Attempt number and seed | Non-negative attempt counter and persisted seed for the selected node. |
-| Pending encounter result | Present only while completion is pending; records win, loss, or draw and whether the completed encounter is the boss so the exact transition can be retried. |
+| Pending encounter result | Present only while completion is pending; records win, loss, or draw, whether the completed encounter is the boss, and any terminal score candidate so the exact transition can be retried. |
 | Pending reward | Null outside reward stage; otherwise one source node and three distinct catalog choices. |
 | Relic inventory | Known IDs only, unique entries, bounded rank/charge/count values. |
 | Reward history/counts | Bounded known IDs used to enforce acquisition caps and audit one reward per completed node. |
@@ -359,9 +360,9 @@ The controller is the only authority allowed to advance the run:
 | --- | --- | --- |
 | Map | Start current/available node | Encounter with committed node, attempt, setup consumption, and seed persisted first |
 | Encounter win, non-boss | Internal game completion | Reward with completed node and pending offer persisted |
-| Encounter win, boss | Internal game completion | Completed terminal state and score handling |
+| Encounter win, boss | Internal game completion | Completed terminal state and persisted high-score handling |
 | Encounter loss with chances | Internal game completion | Map with the same retry node selected |
-| Encounter loss without chances | Internal game completion | Failed terminal state and score handling |
+| Encounter loss without chances | Internal game completion | Failed terminal state and persisted high-score handling |
 | Encounter draw | Internal game completion | Map with the same retry node selected |
 | Encounter completion pending | Retry completion | Reapply the recorded result to a fresh candidate and persist its exact win/loss/draw transition |
 | Reward | Choose known offered ID | Apply once, advance tier, clear selection/offer, open map |
@@ -383,7 +384,13 @@ High-integrity transitions use persistence-first candidates:
    game-over snapshot, enter encounter-completion-pending with that exact result,
    surface the storage warning last, and expose an explicit Retry completion
    operation. Retrying replays no game actions and cannot change the result.
-6. On any other storage failure, retain the old actionable state, surface the
+6. Treat a terminal run candidate and its high-score update as one completion
+   transaction. Persist the idempotent maximum high score first, then persist
+   the terminal run state; do not replace controller state, clear the run, or
+   discard completion-pending state until both writes succeed. Failure of either
+   write keeps Retry completion available with the same terminal result and
+   score candidate.
+7. On any other storage failure, retain the old actionable state, surface the
    storage warning last, and allow a safe retry.
 
 This prevents a reward from disappearing or a charged relic from being consumed
@@ -583,6 +590,10 @@ generic lobby:
   terminal loss, and draw retain the exact pending result and converge after one
   successful Retry completion without double-applying counters, relics, rewards,
   or score handling.
+- Reject terminal run and high-score writes independently. A rejected high-score
+  write must retain completion-pending and Retry completion before any terminal
+  cleanup; each retry converges exactly once without lowering or double-counting
+  the score.
 - View-model snapshots do not share map/opponent references.
 - Markup has unique IDs, escaped copy, correct semantics, and only valid node
   buttons.
