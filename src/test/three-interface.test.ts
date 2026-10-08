@@ -20,7 +20,7 @@ import {
   threeTargets,
   type InterfaceUi,
 } from '../renderers/three/interface-model'
-import type { BoardHit } from '../renderers/three/contracts'
+import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit } from '../renderers/three/contracts'
 
 function makeView(): AppViewModel {
   return {
@@ -236,13 +236,15 @@ class DocumentStub {
   emit(name: string, event: unknown): unknown { return this.listeners.get(name)?.(event as never) }
 }
 
-function setup(view = makeView(), separateHud = false) {
+function setup(view = makeView(), separateHud = false, narrow: { enabled: boolean } | null = null) {
   let current = view
   const document = new DocumentStub()
   const host = document.createElement('section')
   const hud = separateHud ? document.createElement('section') : null
+  const dock = narrow ? document.createElement('section') : null
   const board = document.createElement('canvas')
   if (hud) document.body.append(hud)
+  if (dock) document.body.append(dock)
   document.body.append(board, host)
   const controller = {
     subscribe: vi.fn(() => () => {}), getViewModel: vi.fn(() => current),
@@ -255,14 +257,18 @@ function setup(view = makeView(), separateHud = false) {
   } satisfies ControllerApi
   const onChange = vi.fn()
   const onBlock = vi.fn()
-  const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock, hud as unknown as HTMLElement | null)
+  const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock, hud as unknown as HTMLElement | null,
+    dock ? { dockHost: dock as unknown as HTMLElement, narrow: () => narrow!.enabled } : {})
   ui.update(view, view.game?.actor ?? 0)
   const content = host.children[0]
+  // The interface owns the dock's prompt (first child) and action row (second).
+  const dockPrompt = dock?.children[0] ?? null
+  const dockActions = dock?.children[1] ?? null
   const click = (selector: string): ElementStub => {
-    const element = content.querySelector(selector) ?? hud?.querySelector(selector)
+    const element = content.querySelector(selector) ?? hud?.querySelector(selector) ?? dockActions?.querySelector(selector)
     if (!element) throw new Error(`Missing button ${selector}`)
     element.focus()
-    ;(hud?.contains(element) ? hud : host).emit('click', { target: element })
+    ;(hud?.contains(element) ? hud : dockActions?.contains(element) ? dockActions : host).emit('click', { target: element })
     return element
   }
   const openCards = (): void => {
@@ -270,7 +276,10 @@ function setup(view = makeView(), separateHud = false) {
     click('[data-action="cards"]')
   }
   const update = (next: AppViewModel, actor = next.game?.actor ?? 0): void => { current = next; ui.update(next, actor) }
-  return { ui, host, content, hud, board, document, controller, onChange, onBlock, click, openCards, update, latest: (next: AppViewModel) => { current = next } }
+  return {
+    ui, host, content, hud, dock, dockPrompt, dockActions, board, document, controller, onChange, onBlock, click, openCards, update,
+    latest: (next: AppViewModel) => { current = next },
+  }
 }
 
 function setupPlainsForest({
@@ -1881,5 +1890,291 @@ describe('Three native interface behavior', () => {
     h.ui.dispose()
     h.ui.dispose()
     expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:three-test')
+  })
+})
+
+describe('Three narrow profile', () => {
+  type Harness = ReturnType<typeof setup>
+  const mountainHand: BoardHit = { key: 'source', cardId: 'source', owner: 0, zone: 'hand', name: 'Mountain', playable: true }
+  const escape = (h: Harness): void => { h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() }) }
+  const promptText = (h: Harness): string => (h.dockPrompt as unknown as { textContent?: string }).textContent ?? ''
+  const dockActionNames = (h: Harness): string[] =>
+    h.dockActions!.querySelectorAll('button').map((element) => element.dataset.action ?? '')
+  const selectedCardActions = ['select-summon', 'select-details', 'select-clear']
+
+  it('replaces the stacked HUD with a fixed top bar and an idle dock prompt', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    const hud = h.hud!.innerHTML
+    expect(hud).toContain('data-layout="narrow"')
+    expect(hud).toContain('Turn 1 · Action phase')
+    expect(hud).not.toContain('three-required-prompt')
+    expect(h.hud!.querySelector('[data-action="menu"]')?.getAttribute('aria-label')).toBe('Menu')
+    expect(h.dockPrompt!.id).toBe(THREE_DOCK_PROMPT_ID)
+    expect(h.dockPrompt!.getAttribute('role')).toBe('status')
+    expect(h.dockPrompt!.getAttribute('aria-live')).toBe('polite')
+    expect(promptText(h)).toBe('Drag a highlighted creature onto your board, or select a card for options.')
+    expect(dockActionNames(h)).toEqual([])
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    h.ui.dispose()
+    expect(h.dock!.children).toHaveLength(0)
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+  })
+
+  it('selects a narrow hand card with any pointer and offers Summon, Details and Clear', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    const name = displayCardName('Mountain')
+    const ability = cardCatalogEntry('Mountain').primaryAbility
+    h.ui.activate(mountainHand, 'mouse')
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+    expect(promptText(h)).toBe(`${name} · ${ability.name}: ${ability.rulesText}`)
+    expect(dockActionNames(h)).toEqual(selectedCardActions)
+    expect(h.dockActions!.querySelector('[data-action="select-summon"]')?.getAttribute('aria-label')).toBe(`Summon ${name}`)
+    expect(h.dockActions!.innerHTML).not.toContain('source')
+    h.click('[data-action="select-details"]')
+    expect(h.content.querySelector('dialog')?.dataset.modal).toBe('preview')
+    escape(h)
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.document.activeElement).toBe(h.dockActions!.querySelector('[data-action="select-details"]'))
+    h.click('[data-action="select-summon"]')
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    expect(dockActionNames(h)).toEqual(['target-list', 'close'])
+    expect(h.dockActions!.querySelector('[data-action="close"]')?.getAttribute('aria-label')).toBe('Cancel Target Selection')
+    expect(h.content.querySelector('.three-target-panel')).toBeNull()
+    expect(h.ui.selection.cardId).toBe('source')
+    h.click('[data-action="close"]')
+    expect(dockActionNames(h)).toEqual(selectedCardActions)
+    expect(h.document.activeElement).toBe(h.dockActions!.querySelector('[data-action="select-summon"]'))
+    h.click('[data-action="select-clear"]')
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(dockActionNames(h)).toEqual([])
+    h.ui.dispose()
+  })
+
+  it('confirms touch-selected battlefield targets from the dock while mouse taps submit at once', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    const forest = displayCardName('Forest')
+    h.ui.activate(mountainHand, 'touch')
+    h.click('[data-action="select-summon"]')
+    h.ui.activate(hit(), 'touch')
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: 'target-1', discardId: null })
+    expect(promptText(h)).toContain(`Selected: ${forest}.`)
+    expect(h.dockActions!.querySelector('[data-action="confirm-target"]')?.getAttribute('aria-label')).toBe(`Confirm target: ${forest}`)
+    h.ui.activate(hit(), 'pen')
+    expect(h.ui.selection.targetId).toBeNull()
+    expect(dockActionNames(h)).toEqual(['target-list', 'close'])
+    h.ui.activate(hit({ key: 'target-2', cardId: 'card-2', instanceId: 'target-2', name: 'Island' }), 'touch')
+    h.click('[data-action="confirm-target"]')
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'play_land', actor: 0, cardId: 'source', effectTargetId: 'target-2' })
+    h.ui.dispose()
+
+    const mouse = setup(makeView(), true, { enabled: true })
+    mouse.ui.activate(mountainHand, 'mouse')
+    mouse.click('[data-action="select-summon"]')
+    mouse.ui.activate(hit(), 'mouse')
+    expect(mouse.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'play_land', actor: 0, cardId: 'source', effectTargetId: 'target-1' })
+    mouse.ui.dispose()
+  })
+
+  it('selects an Intercept discard on touch and confirms it from the dock', () => {
+    const h = setup(responseView(), true, { enabled: true })
+    const verb = cardCatalogEntry('Island').responseAbility!.name
+    const required = displayCardName('Island')
+    const forest = displayCardName('Forest')
+    expect(promptText(h)).toBe(`${verb} the summon of Memory Vampire? Select a pink-framed card to discard with ${required}, or choose Let It Through.`)
+    expect(dockActionNames(h)).toEqual([])
+    h.ui.activate(responseHit('required-island'), 'touch')
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    h.ui.activate(responseHit('discard-forest-1'), 'touch')
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    expect(h.ui.selection).toEqual({ cardId: null, targetId: null, discardId: 'discard-forest-1' })
+    expect(promptText(h)).toBe(`${verb} Memory Vampire by discarding ${required} and ${forest}?`)
+    expect(dockActionNames(h)).toEqual(['confirm-response', 'select-clear'])
+    expect(h.dockActions!.querySelector('[data-action="confirm-response"]')?.getAttribute('aria-label'))
+      .toBe(`${verb}: discard ${required} and ${forest}`)
+    escape(h)
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    h.ui.activate(responseHit('discard-forest-2'), 'touch')
+    h.click('[data-action="confirm-response"]')
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'counter_land', actor: 0, discardCardId: 'discard-forest-2' })
+    h.controller.submitAction.mockClear()
+    h.ui.activate(responseHit('discard-island'), 'mouse')
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'counter_land', actor: 0, discardCardId: 'discard-island' })
+    h.ui.dispose()
+  })
+
+  it('keeps immediate touch decisions and the stacked HUD outside the narrow profile', () => {
+    const h = setup(responseView(), true, { enabled: false })
+    expect(promptText(h)).toBe('')
+    expect(dockActionNames(h)).toEqual([])
+    expect(h.hud!.innerHTML).not.toContain('data-layout="narrow"')
+    h.ui.activate(responseHit(), 'touch')
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'counter_land', actor: 0, discardCardId: 'discard-forest-1' })
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    h.ui.dispose()
+  })
+
+  it('clears narrow selections when the decision changes or the profile turns off', () => {
+    const narrow = { enabled: true }
+    const view = makeView()
+    const h = setup(view, true, narrow)
+    h.ui.activate(mountainHand, 'touch')
+    h.update({ ...view, status: 'Saved' })
+    expect(h.ui.selection.cardId).toBe('source')
+    const next = structuredClone(view)
+    next.game!.turn = 2
+    h.update(next)
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    h.ui.activate(mountainHand, 'touch')
+    expect(h.ui.selection.cardId).toBe('source')
+    narrow.enabled = false
+    h.update({ ...next, status: 'Unfolded' })
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(dockActionNames(h)).toEqual([])
+    expect(promptText(h)).toBe('')
+    expect(h.hud!.innerHTML).not.toContain('data-layout="narrow"')
+    narrow.enabled = true
+    h.update({ ...next, status: 'Folded' })
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(h.hud!.innerHTML).toContain('data-layout="narrow"')
+    h.ui.dispose()
+  })
+
+  it('steps back through the target list, the selected target and target mode with Escape', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    h.ui.activate(mountainHand, 'touch')
+    h.click('[data-action="select-summon"]')
+    h.ui.activate(hit(), 'touch')
+    h.click('[data-action="target-list"]')
+    expect(h.content.querySelector('.three-target-panel')).not.toBeNull()
+    expect(h.content.querySelector('[data-action="target-list-hide"]')).not.toBeNull()
+    expect(h.document.activeElement).toBe(h.content.querySelector('[data-action="target"]'))
+    expect(h.dockActions!.querySelector('[data-action="target-list"]')?.getAttribute('aria-expanded')).toBe('true')
+    escape(h)
+    expect(h.content.querySelector('.three-target-panel')).toBeNull()
+    expect(h.document.activeElement).toBe(h.dockActions!.querySelector('[data-action="target-list"]'))
+    expect(h.dockActions!.querySelector('[data-action="target-list"]')?.getAttribute('aria-expanded')).toBe('false')
+    expect(h.ui.selection.targetId).toBe('target-1')
+    escape(h)
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+    expect(dockActionNames(h)).toEqual(['target-list', 'close'])
+    escape(h)
+    expect(dockActionNames(h)).toEqual(selectedCardActions)
+    escape(h)
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it('opens and hides the optional target list from the dock with focus handoff', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    h.ui.activate(mountainHand, 'touch')
+    h.click('[data-action="select-summon"]')
+    h.click('[data-action="target-list"]')
+    expect(h.document.activeElement).toBe(h.content.querySelector('[data-action="target"]'))
+    h.click('[data-action="target-list-hide"]')
+    expect(h.content.querySelector('.three-target-panel')).toBeNull()
+    expect(h.document.activeElement).toBe(h.dockActions!.querySelector('[data-action="target-list"]'))
+    h.click('[data-action="target-list"]')
+    h.click('[data-action="target"][data-target-id="target-2"]')
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'play_land', actor: 0, cardId: 'source', effectTargetId: 'target-2' })
+    h.ui.dispose()
+  })
+
+  it('targets phase choices on the board and resumes a dismissed picker from the dock', () => {
+    const view = makeView()
+    view.game!.phase = 'plains_target'
+    view.game!.pendingPlainsReuseName = 'Mountain'
+    view.game!.legal.plainsReuseOptions = [{ action: { type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'target-1' }, label: 'Destroy Forest' }]
+    const h = setup(view, true, { enabled: true })
+    const title = "Choose an opposing creature to send to its owner's discard pile."
+    expect(h.content.querySelector('.three-target-panel')).toBeNull()
+    expect(promptText(h)).toBe(`${title} Select a highlighted creature, or open Targets.`)
+    expect(h.dockActions!.querySelector('[data-action="close"]')?.getAttribute('aria-label')).toBe('Close Target Selection')
+    h.click('[data-action="close"]')
+    expect(promptText(h)).toBe(title)
+    expect(dockActionNames(h)).toEqual(['resume-target'])
+    expect(h.content.innerHTML).not.toContain('resume-target')
+    h.ui.activate(hit(), 'touch')
+    expect(h.ui.selection.targetId).toBe('target-1')
+    expect(dockActionNames(h)).toEqual(['confirm-target', 'target-list', 'close'])
+    h.click('[data-action="confirm-target"]')
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'resolve_plains_reuse', actor: 0, effectTargetId: 'target-1' })
+    h.ui.dispose()
+  })
+
+  it('moves winner, replay transport and waiting prompts into the dock', () => {
+    const over = makeView()
+    over.game!.phase = 'gameOver'
+    over.game!.winnerText = 'Player 1 wins!'
+    over.game!.legal.canEndTurn = false
+    const h = setup(over, true, { enabled: true })
+    expect(promptText(h)).toBe('Player 1 wins!')
+    expect(dockActionNames(h)).toEqual(['replay-start', 'rematch', 'back-to-lobby'])
+    expect(h.dockActions!.querySelector('[data-action="back-to-lobby"]')?.getAttribute('aria-label')).toBe('Back to Lobby')
+    expect(h.hud!.innerHTML).not.toContain('Player 1 wins!')
+    h.click('[data-action="rematch"]')
+    expect(h.controller.rematch).toHaveBeenCalledOnce()
+    h.ui.dispose()
+
+    const replay = makeView()
+    replay.replay = { active: true, step: 0, totalSteps: 10, isPlaying: false }
+    const r = setup(replay, true, { enabled: true })
+    expect(promptText(r)).toBe('Replay · Step 0/10 · Paused')
+    expect(dockActionNames(r)).toEqual(['replay-playpause', 'replay-prev', 'replay-next', 'replay-end', 'replay-exit'])
+    expect(r.dockActions!.querySelector('[data-action="replay-playpause"]')?.getAttribute('aria-label')).toBe('Play Replay')
+    expect(r.dockActions!.querySelector('[data-action="replay-prev"]')?.hasAttribute('disabled')).toBe(true)
+    expect(r.hud!.innerHTML).not.toContain('replay-')
+    r.click('[data-action="replay-next"]')
+    expect(r.controller.stepReplay).toHaveBeenCalledExactlyOnceWith(1)
+    r.ui.dispose()
+
+    const waiting = makeView()
+    waiting.game!.canInput = false
+    const w = setup(waiting, true, { enabled: true })
+    expect(promptText(w)).toBe('Waiting for the other player.')
+    expect(w.hud!.innerHTML).not.toContain('Waiting for the other player.')
+    w.ui.activate(mountainHand, 'touch')
+    expect(w.ui.selection).toBe(NO_BOARD_SELECTION)
+    w.ui.dispose()
+  })
+
+  it('shows the tutorial as a dismissible banner with a Hint button to restore it', () => {
+    const view = makeView()
+    view.mode = 'tutorial'
+    view.tutorial = { active: true, stepId: 'first', hint: '<Summon a creature>' }
+    const h = setup(view, true, { enabled: true })
+    expect(h.content.querySelector('.three-tutorial-banner')?.getAttribute('aria-label')).toBe('Tutorial hint')
+    expect(h.content.innerHTML).toContain('&lt;Summon a creature&gt;')
+    expect(h.hud!.innerHTML).not.toContain('Summon a creature')
+    h.click('[data-action="tutorial-dismiss"]')
+    expect(h.content.querySelector('.three-tutorial-banner')).toBeNull()
+    expect(h.document.activeElement).toBe(h.hud!.querySelector('[data-action="tutorial-show"]'))
+    expect(h.hud!.querySelector('[data-action="tutorial-show"]')?.getAttribute('aria-label')).toBe('Show tutorial hint')
+    h.update({ ...view, status: 'Saved' })
+    expect(h.content.querySelector('.three-tutorial-banner')).toBeNull()
+    h.click('[data-action="tutorial-show"]')
+    expect(h.document.activeElement).toBe(h.content.querySelector('[data-action="tutorial-dismiss"]'))
+    h.click('[data-action="tutorial-dismiss"]')
+    h.update({ ...view, tutorial: { active: true, stepId: 'second', hint: 'Next step' } })
+    expect(h.content.innerHTML).toContain('Next step')
+    expect(h.hud!.querySelector('[data-action="tutorial-show"]')).toBeNull()
+    h.ui.dispose()
+  })
+
+  it('moves adventure progress into the menu and keeps ids unique across hosts', () => {
+    const view = makeView()
+    view.mode = 'adventure-hvai'
+    view.adventure = { ...view.adventure, currentRound: 3, remainingChances: 2, winStreak: 1, highScore: 4 }
+    const summary = 'Adventure round 3/7 · Chances 2 · Win streak 1 · High score 4'
+    expect(renderThreeHud(view, defaultUi)).toContain(summary)
+    const h = setup(view, true, { enabled: true })
+    expect(h.hud!.innerHTML).not.toContain(summary)
+    h.click('[data-action="menu"]')
+    expect(h.content.innerHTML).toContain(summary)
+    const ids = [h.hud!, h.content, h.dock!].flatMap((root) => root.querySelectorAll('[id]').map((element) => element.id))
+    expect(ids).toContain(THREE_DOCK_PROMPT_ID)
+    expect(new Set(ids).size).toBe(ids.length)
+    h.ui.dispose()
   })
 })

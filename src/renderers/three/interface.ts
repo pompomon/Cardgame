@@ -625,14 +625,21 @@ export class ThreeInterface {
   private readonly handleKeydown = (event: KeyboardEvent): void => {
     if (this.disposed) return
     if (event.key === 'Escape' && this.narrowActive() && !this.menuOpen && !this.cardsOpen && !this.preview) {
-      // Step back one narrow layer: the target list, then a pending selection.
+      // Step back one narrow layer: the target list, a selected target, then
+      // (once no picker is open) the selected card or discard.
       if (this.targetListOpen) {
         event.preventDefault()
         this.targetListOpen = false
         this.changed()
         return
       }
-      if (this.selectedTargetId !== null || !this.isBlocked() && this.hasSelection()) {
+      if (this.selectedTargetId !== null) {
+        event.preventDefault()
+        this.selectedTargetId = null
+        this.changed()
+        return
+      }
+      if (!this.isBlocked() && this.hasSelection()) {
         event.preventDefault()
         this.clearSelection()
         this.changed()
