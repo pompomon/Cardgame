@@ -14,12 +14,15 @@ import { isRenderQualityPreference } from '../../app/render-quality'
 import type { AppViewModel } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
-import type { BoardHit } from './contracts'
+import type { DragPointerType } from '../shared/drag-state'
+import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit, type ThreeBoardSelection } from './contracts'
 import { resetRasterCardArtLoadFailures } from './native-html'
 import {
   canThreeInput,
+  EMPTY_THREE_DOCK,
   isThreeInGame,
   isThreeMode,
+  renderThreeDock,
   renderThreeHover,
   renderThreeHud,
   renderThreeInterface,
@@ -42,6 +45,13 @@ interface SavedFocus {
   key: string
   start: number | null
   end: number | null
+}
+
+export interface ThreeInterfaceOptions {
+  /** Narrow-profile action dock; the interface owns its prompt and buttons. */
+  readonly dockHost?: HTMLElement | null
+  /** Whether the narrow profile is active (it also requires a dock). */
+  readonly narrow?: () => boolean
 }
 
 function focusKey(element: HTMLElement): string {
@@ -69,6 +79,15 @@ export class ThreeInterface {
   private markup = ''
   private hudMarkup = ''
   private hoverMarkup = ''
+  private dockMarkup = ''
+  private dockPromptText = ''
+  // Narrow select→confirm state; cleared whenever the decision changes.
+  private selectedCardId: string | null = null
+  private selectedTargetId: string | null = null
+  private selectedDiscardId: string | null = null
+  private targetListOpen = false
+  private tutorialDismissed: string | null = null
+  private wasNarrow = false
   private readonly scrollPositions = new Map<string, [number, number]>()
   private readonly detailStates = new Map<string, boolean>()
   private followLatest = true
@@ -86,6 +105,10 @@ export class ThreeInterface {
   private readonly content: HTMLElement
   private readonly hoverContent: HTMLElement
   private readonly hudHost: HTMLElement | null
+  private readonly dockHost: HTMLElement | null
+  private readonly dockPrompt: HTMLElement | null
+  private readonly dockActions: HTMLElement | null
+  private readonly narrowEnabled: () => boolean
   private readonly fileInput: HTMLInputElement
   private readonly document: Document
   private readonly host: HTMLElement
@@ -106,6 +129,7 @@ export class ThreeInterface {
     onChange: () => void,
     onBlock: () => void,
     hudHost: HTMLElement | null = null,
+    options: ThreeInterfaceOptions = {},
   ) {
     this.host = host
     this.controller = controller
@@ -113,6 +137,21 @@ export class ThreeInterface {
     this.onBlock = onBlock
     this.hudHost = hudHost
     this.document = host.ownerDocument
+    this.dockHost = options.dockHost ?? null
+    this.narrowEnabled = options.narrow ?? (() => false)
+    if (this.dockHost) {
+      this.dockPrompt = this.document.createElement('p')
+      this.dockPrompt.classList.add('three-dock-prompt')
+      this.dockPrompt.setAttribute('id', THREE_DOCK_PROMPT_ID)
+      this.dockPrompt.setAttribute('role', 'status')
+      this.dockPrompt.setAttribute('aria-live', 'polite')
+      this.dockActions = this.document.createElement('div')
+      this.dockActions.classList.add('three-dock-actions')
+      this.dockHost.append(this.dockPrompt, this.dockActions)
+    } else {
+      this.dockPrompt = null
+      this.dockActions = null
+    }
     host.classList.add('three-interface')
     this.content = this.document.createElement('div')
     this.hoverContent = this.document.createElement('div')
@@ -144,11 +183,40 @@ export class ThreeInterface {
       previewReturnToCards: this.previewReturnToCards,
       hostAnswerDraft: this.hostAnswerDraft, joinOfferDraft: this.joinOfferDraft,
       lobbyPage: this.lobbyPage,
+      narrow: this.narrowActive(),
+      selectedCardId: this.selectedCardId, selectedTargetId: this.selectedTargetId,
+      selectedDiscardId: this.selectedDiscardId, targetListOpen: this.targetListOpen,
+      tutorialHidden: this.tutorialDismissed !== null && this.tutorialDismissed === (this.view?.tutorial.hint ?? ''),
     }
   }
 
   private get roots(): HTMLElement[] {
-    return this.hudHost ? [this.hudHost, this.host] : [this.host]
+    return [this.hudHost, this.host, this.dockActions].filter((root): root is HTMLElement => root !== null)
+  }
+
+  private narrowActive(): boolean {
+    return this.dockActions !== null && this.narrowEnabled()
+  }
+
+  private hasSelection(): boolean {
+    return this.selectedCardId !== null || this.selectedTargetId !== null || this.selectedDiscardId !== null
+  }
+
+  private clearSelection(): void {
+    this.selectedCardId = null
+    this.selectedTargetId = null
+    this.selectedDiscardId = null
+  }
+
+  /** Narrow touch and pen taps select first; a dock button confirms. */
+  private confirmsTaps(pointerType: DragPointerType): boolean {
+    return pointerType !== 'mouse' && this.narrowActive()
+  }
+
+  /** Selection highlights for the narrow board; empty in other profiles. */
+  get selection(): ThreeBoardSelection {
+    if (this.disposed || !this.narrowActive() || !this.hasSelection()) return NO_BOARD_SELECTION
+    return { cardId: this.selectedCardId, targetId: this.selectedTargetId, discardId: this.selectedDiscardId }
   }
 
   private elements(selector: string): HTMLElement[] {
@@ -222,6 +290,7 @@ export class ThreeInterface {
       this.previewReturnFocus = null
       this.targetReturnFocus = null
       this.targetReturnToCards = false
+      this.tutorialDismissed = null
       this.fileGeneration += 1
     }
     if (this.decision !== decision || this.presentedActor !== presentedActor) {
@@ -236,7 +305,15 @@ export class ThreeInterface {
       this.targetReturnFocus = null
       this.targetReturnToCards = false
       this.submittedDecision = null
+      this.clearSelection()
+      this.targetListOpen = false
     }
+    const narrow = this.narrowActive()
+    if (this.wasNarrow && !narrow) {
+      this.clearSelection()
+      this.targetListOpen = false
+    }
+    this.wasNarrow = narrow
     this.view = view
     this.presentedActor = presentedActor
     this.decision = decision
@@ -273,19 +350,41 @@ export class ThreeInterface {
     }
   }
 
-  activate(hit: BoardHit): void {
+  activate(hit: BoardHit, pointerType: DragPointerType = 'mouse'): void {
     const view = this.latestForAction()
     if (!view?.game || !isThreeInGame(view) || this.menuOpen || this.cardsOpen || this.preview) return
-    if (threeResponse(view, this.ui()) && hit.zone === 'hand' && hit.owner === view.game.actor) {
+    const response = threeResponse(view, this.ui())
+    if (response && hit.zone === 'hand' && hit.owner === view.game.actor) {
+      if (this.confirmsTaps(pointerType)) {
+        if (response.choices.some((choice) => choice.cardId === hit.cardId)) {
+          this.selectedDiscardId = this.selectedDiscardId === hit.cardId ? null : hit.cardId
+          this.changed()
+        }
+        return
+      }
       this.respondWithCard(hit.cardId, hit.owner)
       return
     }
     if (hit.zone === 'battlefield' && hit.instanceId && threePreviewCard(view.game, hit) !== null) {
       const targets = threeTargets(view, this.ui())
       if (targets?.battlefield && targets.options.some((option) => option.effectTargetId === hit.instanceId)) {
+        if (this.confirmsTaps(pointerType)) {
+          this.selectedTargetId = this.selectedTargetId === hit.instanceId ? null : hit.instanceId
+          // Tapping a legal target also resumes a dismissed phase picker.
+          if (!this.pendingCardId) this.phaseDismissed = false
+          this.changed()
+          return
+        }
         this.chooseTarget(hit.instanceId)
         return
       }
+    }
+    // Narrow hand taps (any pointer) select a card; the dock offers its actions.
+    if (this.narrowActive() && hit.zone === 'hand' && hit.owner === view.game.actor && view.game.phase === 'main'
+      && canThreeInput(view, this.presentedActor) && !this.nativeActionBlocked() && threePreviewCard(view.game, hit) !== null) {
+      this.selectedCardId = this.selectedCardId === hit.cardId ? null : hit.cardId
+      this.changed()
+      return
     }
     this.previewCard(hit)
   }
@@ -342,6 +441,8 @@ export class ThreeInterface {
       this.previewReturnFocus = null
       this.targetReturnFocus = null
       this.targetReturnToCards = false
+      this.clearSelection()
+      this.targetListOpen = false
     }
     if (!this.disposed) this.changed()
   }
@@ -381,10 +482,18 @@ export class ThreeInterface {
     if (blocked && !this.blocked) this.onBlock()
     this.blocked = blocked
     this.renderHover()
-    const markup = renderThreeInterface(this.view, this.ui(), !this.hudHost)
-    const hudMarkup = this.hudHost ? renderThreeHud(this.view, this.ui()) : ''
-    if (markup === this.markup && hudMarkup === this.hudMarkup) return
+    const ui = this.ui()
+    const markup = renderThreeInterface(this.view, ui, !this.hudHost)
+    const hudMarkup = this.hudHost ? renderThreeHud(this.view, ui) : ''
+    const dock = ui.narrow ? renderThreeDock(this.view, ui) : EMPTY_THREE_DOCK
+    if (this.dockPrompt && dock.prompt !== this.dockPromptText) {
+      this.dockPrompt.textContent = dock.prompt
+      this.dockPromptText = dock.prompt
+    }
+    const dockChanged = this.dockActions !== null && dock.actions !== this.dockMarkup
+    if (markup === this.markup && hudMarkup === this.hudMarkup && !dockChanged) return
     const focus = this.captureFocus()
+    const focusInDock = !!focus && !!this.dockActions?.contains(focus.element)
     if (preserveState) {
       this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
         if (element.dataset.scrollKey === 'log' && !element.closest<HTMLDetailsElement>('details')?.open) return
@@ -404,8 +513,10 @@ export class ThreeInterface {
       this.hudHost.innerHTML = hudMarkup
       this.hudHost.hidden = !hudMarkup
     }
+    if (this.dockActions && dockChanged) this.dockActions.innerHTML = dock.actions
     this.markup = markup
     this.hudMarkup = hudMarkup
+    this.dockMarkup = dock.actions
     this.host.scrollLeft = hostScroll[0]
     this.host.scrollTop = hostScroll[1]
     this.content.querySelectorAll<HTMLDetailsElement>('[data-detail-key]').forEach((element) => {
@@ -433,9 +544,16 @@ export class ThreeInterface {
     } else if (focus && this.roots.some((root) => root.contains(focus.element))) {
       this.restoreFocus(focus)
     } else if (focus && !focus.element.isConnected) {
-      this.restoreFocus(focus)
+      // A replaced dock action hands focus to the dock's next action.
+      if (!this.restoreFocus(focus) && focusInDock) this.focusDock()
     }
     this.restoreScroll()
+  }
+
+  private focusDock(): void {
+    const target = this.dockActions?.querySelector<HTMLElement>(FOCUSABLE)
+      ?? this.dockHost?.querySelector<HTMLElement>('.three-board-primary:not([hidden]):not([disabled])')
+    target?.focus({ preventScroll: true })
   }
 
   private restoreScroll(): void {
@@ -495,6 +613,8 @@ export class ThreeInterface {
       this.pendingCardId = null
       this.phaseDismissed = true
       this.targetReturnFocus = null
+      this.selectedTargetId = null
+      this.targetListOpen = false
       if (this.targetReturnToCards) this.cardsOpen = true
       this.targetReturnToCards = false
     }
@@ -504,6 +624,21 @@ export class ThreeInterface {
 
   private readonly handleKeydown = (event: KeyboardEvent): void => {
     if (this.disposed) return
+    if (event.key === 'Escape' && this.narrowActive() && !this.menuOpen && !this.cardsOpen && !this.preview) {
+      // Step back one narrow layer: the target list, then a pending selection.
+      if (this.targetListOpen) {
+        event.preventDefault()
+        this.targetListOpen = false
+        this.changed()
+        return
+      }
+      if (this.selectedTargetId !== null || !this.isBlocked() && this.hasSelection()) {
+        event.preventDefault()
+        this.clearSelection()
+        this.changed()
+        return
+      }
+    }
     if (event.key === 'Escape' && this.isBlocked()) {
       event.preventDefault()
       this.close()
@@ -594,6 +729,8 @@ export class ThreeInterface {
         this.preview = null
         this.previewReturnFocus = null
         this.previewReturnToCards = false
+        this.clearSelection()
+        this.targetListOpen = false
         this.menuOpen = true
         this.changed()
         break
@@ -614,6 +751,33 @@ export class ThreeInterface {
         break
       }
       case 'target': this.chooseTarget(element.dataset.targetId); break
+      case 'select-summon': if (this.selectedCardId && this.narrowActive()) this.playCard(this.selectedCardId); break
+      case 'select-details': {
+        const cardId = this.selectedCardId
+        if (!cardId || !view.game || !this.narrowActive()) break
+        this.previewCard({ key: '', cardId, name: '', owner: view.game.actor, zone: 'hand', playable: false })
+        break
+      }
+      case 'select-clear': this.clearSelection(); this.changed(); break
+      case 'confirm-target': if (this.selectedTargetId && this.narrowActive()) this.chooseTarget(this.selectedTargetId); break
+      case 'confirm-response':
+        if (this.selectedDiscardId && view.game && this.narrowActive()) this.respondWithCard(this.selectedDiscardId, view.game.actor)
+        break
+      case 'target-list':
+      case 'target-list-hide':
+        if (!this.narrowActive()) break
+        this.targetListOpen = action === 'target-list'
+        this.changed()
+        break
+      case 'tutorial-dismiss':
+      case 'tutorial-show':
+        if (!view.tutorial.active) break
+        this.tutorialDismissed = action === 'tutorial-dismiss' ? view.tutorial.hint ?? '' : null
+        this.changed()
+        // Hand focus to the control that undoes this one.
+        this.elements(`[data-action="${action === 'tutorial-dismiss' ? 'tutorial-show' : 'tutorial-dismiss'}"]`)[0]
+          ?.focus({ preventScroll: true })
+        break
       case 'preview': {
         const owner = element.dataset.owner === '0' ? 0 : element.dataset.owner === '1' ? 1 : null
         const zone = element.dataset.zone
@@ -723,6 +887,9 @@ export class ThreeInterface {
     this.hostAnswerDraft = ''
     this.joinOfferDraft = ''
     this.submittedDecision = null
+    this.clearSelection()
+    this.targetListOpen = false
+    this.tutorialDismissed = null
     this.render(preserveMenu)
   }
 
@@ -754,6 +921,8 @@ export class ThreeInterface {
     this.content.remove()
     this.fileInput.remove()
     this.hoverContent.remove()
+    this.dockPrompt?.remove()
+    this.dockActions?.remove()
     if (this.hudHost) this.hudHost.innerHTML = ''
     this.view = null
     this.cardsOpen = false
@@ -761,6 +930,8 @@ export class ThreeInterface {
     this.previewReturnToCards = false
     this.hover = null
     this.pendingCardId = null
+    this.clearSelection()
+    this.targetListOpen = false
     this.returnFocus = null
     this.cardsReturnFocus = null
     this.previewReturnFocus = null
