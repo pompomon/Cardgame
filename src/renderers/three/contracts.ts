@@ -20,6 +20,24 @@ export interface BoardHit extends RendererCardIdentity {
   readonly playable: boolean
 }
 
+/** Pending touch selections, highlighted on the board until confirmed or cleared. */
+export interface ThreeBoardSelection {
+  readonly cardId: string | null
+  readonly targetId: string | null
+  readonly discardId: string | null
+}
+
+export interface ThreeBoardPresentation {
+  /** Narrow single-column profile; the primary action then lives in the action dock. */
+  readonly narrow: boolean
+  readonly selection: ThreeBoardSelection
+}
+
+export const NO_BOARD_SELECTION: ThreeBoardSelection = Object.freeze({ cardId: null, targetId: null, discardId: null })
+export const DEFAULT_BOARD_PRESENTATION: ThreeBoardPresentation = Object.freeze({ narrow: false, selection: NO_BOARD_SELECTION })
+/** The action dock's live prompt, which also describes the docked primary button. */
+export const THREE_DOCK_PROMPT_ID = 'three-dock-prompt'
+
 export interface ThreeBoardApi {
   readonly canvas: HTMLCanvasElement
   render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>,

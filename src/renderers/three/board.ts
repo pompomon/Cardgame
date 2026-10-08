@@ -9,21 +9,30 @@ import { durationMsForSpeed, MAX_QUEUED_EFFECTS } from '../../app/animation-sett
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../../app/types'
 import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
-import { isBasicLand, type BasicLand } from '../../game/types'
+import { BASIC_LANDS, isBasicLand, type BasicLand } from '../../game/types'
 import { effectFeedbackForDescriptor } from '../shared/interaction-feedback'
 import { ThreeAssets } from './assets'
 import { ThreeBackground } from './background'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'
-import type { BoardHit, ThreeBoardApi } from './contracts'
+import {
+  DEFAULT_BOARD_PRESENTATION, NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID,
+  type BoardHit, type ThreeBoardApi, type ThreeBoardPresentation, type ThreeBoardSelection,
+} from './contracts'
 import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
 import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
-import { boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pendingCardRect, pointInRect, type BoardRow, type ThreeLayout } from './layout'
+import {
+  boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, NARROW_TYPE_SLOTS, narrowBoardColumns,
+  narrowBoardLayout, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
+  type BoardLayoutMode, type BoardRow, type ThreeLayout,
+} from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
 
 interface RowChrome {
   readonly header: HTMLDivElement
+  /** Hidden worst-case copy whose height reserves the header's space. */
+  readonly sizer: HTMLDivElement
   readonly label: HTMLParagraphElement
   readonly stats: HTMLParagraphElement
   readonly stacks: readonly HTMLSpanElement[]
@@ -50,6 +59,31 @@ const RELEASE_INSTRUCTION = 'Release to summon'
 const MAX_INSTRUCTION_WIDTH = 544
 const OVERLAY_GAP = 4
 const EFFECT_ANNOUNCEMENT_MS = 350
+// Header sizers hold the longest copy each live header can show.
+const SIZER_LABELS: Readonly<Record<BoardRow, string>> = {
+  far: 'Player 2 · Board · ACTIVE', near: 'Player 2 · Board · ACTIVE', hand: 'Player 2 · Hand · ACTIVE',
+}
+const SIZER_STATS = 'Hand 99 · Deck 99 · Discard pile 99'
+const SIZER_STACKS = ['Deck 99', 'Discard 99'] as const
+const PRIMARY_LABELS = ['End Turn', 'Let It Through'] as const
+const NARROW_TARGET_LABEL_MIN = 46
+const TARGET_LABEL_MIN = 64
+
+/** Presentation-only grouping: unknown cards share the first slot. */
+function typeSlot(card: { readonly name: string; readonly serializedKey?: BasicLand }): number {
+  const key = card.serializedKey ?? (isBasicLand(card.name) ? card.name : null)
+  return key ? Math.max(0, BASIC_LANDS.indexOf(key)) : 0
+}
+
+interface NarrowPlacement {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+  readonly stackIndex: number
+  /** Uppermost card of its type stack. */
+  readonly top: boolean
+}
 
 function cardIdentity(
   card: { readonly name: string; readonly serializedKey?: BasicLand; readonly displayName?: string },
@@ -96,6 +130,15 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly onFailure: (message: string) => void
   private readonly onResize: () => void
   private readonly onPrimaryAction: (action: ThreePrimaryAction) => void
+  private readonly dockSlot: HTMLElement | null
+  private readonly presentation: () => ThreeBoardPresentation
+  private readonly ghostMaterial = new MeshBasicMaterial({ color: '#b9d3e0', opacity: 0.12, transparent: true, depthWrite: false })
+  private readonly ghosts: Mesh<PlaneGeometry, MeshBasicMaterial>[] = []
+  private readonly countBadges = new Map<string, HTMLSpanElement>()
+  private typeSlotsShown = false
+  private primaryDocked = false
+  private narrow = false
+  private selection: ThreeBoardSelection = NO_BOARD_SELECTION
   private renderer: WebGLRenderer | null = null
   private assets: ThreeAssets | null = null
   private cards: ThreeCardRegistry | null = null
@@ -124,11 +167,15 @@ export class ThreeBoard implements ThreeBoardApi {
     onFailure: (message: string) => void,
     onResize: () => void,
     onPrimaryAction: (action: ThreePrimaryAction) => void,
+    dockSlot: HTMLElement | null = null,
+    presentation: () => ThreeBoardPresentation = () => DEFAULT_BOARD_PRESENTATION,
   ) {
     this.host = host
     this.onFailure = onFailure
     this.onResize = onResize
     this.onPrimaryAction = onPrimaryAction
+    this.dockSlot = dockSlot
+    this.presentation = presentation
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'three-board-canvas'
     this.canvas.setAttribute('aria-label', 'Urban Creatures board. Use the adjacent card controls for keyboard interaction.')
@@ -160,6 +207,16 @@ export class ThreeBoard implements ThreeBoardApi {
         surface.position.z = 0
         this.surfaces.set(row, surface)
         this.scene.add(surface)
+      }
+      // Empty type slots in the narrow profile keep a faint placeholder so a
+      // newly summoned creature lands where the player expects it.
+      for (let index = 0; index < NARROW_TYPE_SLOTS * 2; index++) {
+        const ghost = new Mesh(this.plane, this.ghostMaterial)
+        ghost.name = 'three-type-slot'
+        ghost.visible = false
+        ghost.position.z = 0.05
+        this.ghosts.push(ghost)
+        this.scene.add(ghost)
       }
       this.effectCaption.className = 'three-board-effect-caption'
       this.effectCaption.hidden = true
@@ -212,7 +269,9 @@ export class ThreeBoard implements ThreeBoardApi {
       if (typeof ResizeObserver !== 'undefined') {
         this.observer = new ResizeObserver(this.resize)
         this.observer.observe(this.stage)
-        for (const chrome of this.chrome.values()) this.observer.observe(chrome.header)
+        // Sizers, not live headers: content changes inside a header can never
+        // resize the rows, so they cannot cancel a gesture.
+        for (const chrome of this.chrome.values()) this.observer.observe(chrome.sizer)
       }
       this.applySize()
       this.setBackground(DEFAULT_BOARD_THEME)
@@ -248,10 +307,34 @@ export class ThreeBoard implements ThreeBoardApi {
     this.response = response
     this.primaryAction = primaryAction
     this.inputBlocked = blocked
+    const presentation = this.presentation()
+    const narrow = presentation.narrow === true
+    if (narrow !== this.narrow) {
+      // Switching profiles moves every card, so no gesture can survive it.
+      this.endDrag(false)
+      this.onResize()
+    }
+    this.narrow = narrow
+    this.selection = narrow ? presentation.selection : NO_BOARD_SELECTION
+    this.placePrimaryButton()
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
     this.present(!reoriented, reoriented)
     this.invalidate()
+  }
+
+  /** The narrow profile docks the primary action beside the action prompt. */
+  private placePrimaryButton(): void {
+    const docked = this.narrow && this.dockSlot !== null
+    if (docked === this.primaryDocked) return
+    const focused = this.primaryButton.ownerDocument.activeElement === this.primaryButton
+    const host = docked && this.dockSlot ? this.dockSlot : this.chrome.get('near')!.header
+    host.append(this.primaryButton)
+    this.primaryButton.setAttribute('aria-describedby', docked ? THREE_DOCK_PROMPT_ID : this.instruction.id)
+    this.primaryDocked = docked
+    if (focused && !this.primaryButton.hidden && !this.primaryButton.disabled) {
+      this.primaryButton.focus({ preventScroll: true })
+    }
   }
 
   private present(animate = true, invalidateHistory = false): void {
@@ -261,6 +344,7 @@ export class ThreeBoard implements ThreeBoardApi {
       this.clearPendingCard()
       this.cards?.reconcile([])
       this.syncTargetLabels([])
+      this.syncTypeSlots(null)
       this.effectCaption.hidden = true
       this.instruction.hidden = true
       this.primaryButton.hidden = true
@@ -283,7 +367,9 @@ export class ThreeBoard implements ThreeBoardApi {
     if (primaryFocused && (this.primaryButton.hidden || this.primaryButton.disabled)) {
       this.chrome.get('near')!.label.focus({ preventScroll: true })
     }
-    this.instruction.hidden = !this.canDrop && !response
+    // The narrow dock carries the instructions; the overlay only returns to
+    // give live feedback while a card is being dragged.
+    this.instruction.hidden = this.narrow ? !this.drag || this.drag.returning : !this.canDrop && !response
     for (const size of this.instructionSizes) size.hidden = !this.canDrop
     this.instructionText.textContent = response
       ? primary?.prompt || (response.choices.length
@@ -309,10 +395,16 @@ export class ThreeBoard implements ThreeBoardApi {
       }
     }
     const resized = this.applySize()
+    const selection = this.narrow ? this.selection : NO_BOARD_SELECTION
+    // Hand selections only exist while this player may act on them.
+    const handSelection = input ? selection : NO_BOARD_SELECTION
+    const slotCounts: number[][] = []
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
       const entries = row === 'hand' ? player.handCards : player.battlefield
+      const placements = this.narrow ? this.narrowPlacements(row, entries, row === 'hand' ? handSelection : selection) : null
+      if (placements && row !== 'hand') slotCounts.push(placements.counts)
       for (let index = 0; index < entries.length; index++) {
         const card = entries[index]
         const instanceId = 'instanceId' in card ? card.instanceId : undefined
@@ -324,13 +416,21 @@ export class ThreeBoard implements ThreeBoardApi {
           playable: row === 'hand' && input && game.phase === 'main' && card.name !== HIDDEN_HAND_CARD_NAME
             && (game.legal.playLandByCard[cardId]?.length ?? 0) > 0,
         }
+        const target = this.targetIds.has(instanceId ?? cardId) || this.targetIds.has(cardId)
+        const placement = placements?.cards[index]
+        const selected = row === 'hand'
+          ? cardId === handSelection.cardId || cardId === handSelection.discardId
+          : target && instanceId !== undefined && instanceId === selection.targetId
         descriptors.push({
           hit, style, visible: true,
-          x: cardSlotX(index, entries.length, this.layout),
-          y: this.layout.rows[row].y,
-          width: this.layout.cardWidth, height: this.layout.cardHeight,
-          stackIndex: index,
-          target: this.targetIds.has(instanceId ?? cardId) || this.targetIds.has(cardId),
+          x: placement?.x ?? cardSlotX(index, entries.length, this.layout),
+          y: placement?.y ?? this.layout.rows[row].y,
+          width: placement?.width ?? this.layout.cardWidth,
+          height: placement?.height ?? this.layout.cardHeight,
+          stackIndex: placement?.stackIndex ?? index,
+          // Only the uppermost card of a narrow stack advertises targeting.
+          target: target && (placement?.top ?? true),
+          selected: selected || undefined,
           response: row === 'hand' && card.name !== HIDDEN_HAND_CARD_NAME
             ? response?.requiredIslandId === cardId ? 'required' : responseIds.has(cardId) ? 'discard' : null
             : null,
@@ -349,8 +449,95 @@ export class ThreeBoard implements ThreeBoardApi {
     if (resized || invalidateHistory) this.cards?.invalidateHistoricalAnchors()
     this.reanchorEffects()
     this.syncTargetLabels(descriptors)
+    this.syncTypeSlots(this.narrow ? slotCounts : null)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
+  }
+
+  /**
+   * Narrow placement: battlefield creatures share one fixed slot per type,
+   * stacked with targets and the selection on top; the hand wraps onto lines.
+   */
+  private narrowPlacements(
+    row: BoardRow,
+    entries: readonly { readonly name: string; readonly serializedKey?: BasicLand; readonly id?: string; readonly instanceId?: string; readonly cardId?: string }[],
+    selection: ThreeBoardSelection,
+  ): { cards: NarrowPlacement[]; counts: number[] } {
+    const layout = this.layout
+    if (row === 'hand') {
+      const rects = narrowHandRects(entries.length, layout)
+      const cards = entries.map((card, index): NarrowPlacement => {
+        const rect = rects[index]
+        const cardId = card.id ?? card.cardId
+        const lifted = cardId !== undefined && (cardId === selection.cardId || cardId === selection.discardId)
+        return {
+          x: rect.x, y: rect.y + (lifted ? Math.min(8, rect.height * 0.06) : 0),
+          width: rect.width, height: rect.height,
+          stackIndex: lifted ? 1000 : index, top: true,
+        }
+      })
+      return { cards, counts: [] }
+    }
+    const groups: number[][] = Array.from({ length: NARROW_TYPE_SLOTS }, () => [])
+    for (const [index, card] of entries.entries()) groups[typeSlot(card)].push(index)
+    const cards: NarrowPlacement[] = []
+    const rank = (index: number): number => {
+      const card = entries[index]
+      const instanceId = card.instanceId ?? card.cardId ?? ''
+      if (instanceId !== '' && instanceId === selection.targetId) return 2
+      return this.targetIds.has(instanceId) || (card.cardId !== undefined && this.targetIds.has(card.cardId)) ? 1 : 0
+    }
+    for (const [slot, members] of groups.entries()) {
+      const ordered = [...members].sort((left, right) => rank(left) - rank(right) || left - right)
+      for (const [position, index] of ordered.entries()) {
+        cards[index] = {
+          x: typeSlotX(slot, layout), y: layout.rows[row].y,
+          width: layout.cardWidth, height: layout.cardHeight,
+          stackIndex: position, top: position === ordered.length - 1,
+        }
+      }
+    }
+    return { cards, counts: groups.map((members) => members.length) }
+  }
+
+  /** Ghost placeholders mark empty narrow slots; badges count stacked copies. */
+  private syncTypeSlots(counts: readonly (readonly number[])[] | null): void {
+    if (!counts && !this.typeSlotsShown) return
+    this.typeSlotsShown = counts !== null
+    const live = new Set<string>()
+    for (const [rowIndex, row] of (['far', 'near'] as const).entries()) {
+      const rowCounts = counts?.[rowIndex] ?? []
+      for (let slot = 0; slot < NARROW_TYPE_SLOTS; slot++) {
+        const count = rowCounts[slot] ?? 0
+        const ghost = this.ghosts[rowIndex * NARROW_TYPE_SLOTS + slot]
+        if (ghost) {
+          ghost.visible = counts !== null && count === 0
+          ghost.position.set(typeSlotX(slot, this.layout), this.layout.rows[row].y, 0.05)
+          ghost.scale.set(this.layout.cardWidth, this.layout.cardHeight, 1)
+        }
+        if (count < 2) continue
+        const key = `${row}:${slot}`
+        live.add(key)
+        let badge = this.countBadges.get(key)
+        if (!badge) {
+          badge = document.createElement('span')
+          badge.className = 'three-board-count'
+          badge.setAttribute('aria-hidden', 'true')
+          this.stage.append(badge)
+          this.countBadges.set(key, badge)
+        }
+        badge.textContent = `×${count}`
+        const x = typeSlotX(slot, this.layout) + this.layout.cardWidth / 2
+        const y = this.layout.rows[row].y + this.layout.cardHeight / 2
+        badge.style.left = `${this.layout.width / 2 + x}px`
+        badge.style.top = `${this.layout.height / 2 - y}px`
+      }
+    }
+    for (const [key, badge] of this.countBadges) {
+      if (live.has(key)) continue
+      badge.remove()
+      this.countBadges.delete(key)
+    }
   }
 
   private clearPendingCard(): void {
@@ -385,7 +572,9 @@ export class ThreeBoard implements ThreeBoardApi {
     this.pendingCaption.textContent = `${pending.displayName ?? displayCardName(pending.name)} · awaiting interception`
     this.pendingCaption.style.left = `${this.layout.width / 2 + rect.x}px`
     this.pendingCaption.style.top = `${this.layout.height / 2 - rect.y - rect.height / 2 + 4}px`
-    this.pendingCaption.style.width = `${rect.width - 8}px`
+    this.pendingCaption.style.width = this.narrow
+      ? `${Math.min(160, this.layout.columns.cardsWidth - 8)}px`
+      : `${rect.width - 8}px`
   }
 
   private syncTargetLabels(descriptors: readonly CardDescriptor[]): void {
@@ -431,7 +620,7 @@ export class ThreeBoard implements ThreeBoardApi {
         : anchor.x + anchor.width / 2
       const exposedCenter = right > left ? (left + right) / 2 : anchor.x
       const exposedWidth = Math.max(1, right - left)
-      const compact = exposedWidth < 64
+      const compact = exposedWidth < (this.narrow ? NARROW_TARGET_LABEL_MIN : TARGET_LABEL_MIN)
       targetLabel.element.dataset.compact = String(compact)
       targetLabel.element.textContent = compact ? '' : 'Target'
       targetLabel.element.style.width = compact ? `${Math.min(12, exposedWidth)}px` : ''
@@ -481,6 +670,8 @@ export class ThreeBoard implements ThreeBoardApi {
     proxy.group.rotation.set(-0.06, 0.08, -0.025)
     source.setOpacity(0.35)
     this.drag = { source, proxy, returning: false, elapsed: 0, fromX: 0, fromY: 0 }
+    // The overlay's height is reserved, so showing it cannot resize anything.
+    if (this.narrow) this.instruction.hidden = false
     this.invalidate()
   }
 
@@ -513,6 +704,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.dropMaterial.color.set('#70e7b1')
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
     this.instructionText.textContent = SUMMON_INSTRUCTION
+    if (this.narrow) this.instruction.hidden = true
     this.invalidate()
   }
 
@@ -661,7 +853,21 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   private resize = (): void => {
+    this.relayout(false)
+  }
+
+  /**
+   * Viewport and observer callbacks only interrupt gestures when the layout
+   * really changed; otherwise overlays are re-anchored in place.
+   */
+  private relayout(force: boolean): void {
     if (!this.usable()) return
+    const changed = this.applySize()
+    if (!changed && !force) {
+      this.positionTargetLabels()
+      this.invalidate()
+      return
+    }
     this.endDrag(false)
     this.onResize()
     this.present(false, true)
@@ -672,19 +878,23 @@ export class ThreeBoard implements ThreeBoardApi {
     const width = Math.max(1, this.stage.clientWidth || this.host.clientWidth || window.innerWidth || 1000)
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight ?? this.stage.clientHeight
     const compact = compactBoardViewport(width, viewportHeight)
-    this.stage.dataset.layout = compact ? 'compact' : 'stacked'
-    const columns = boardColumns(width, compact)
+    const mode: BoardLayoutMode = this.narrow ? 'narrow' : compact ? 'compact' : 'stacked'
+    // Set before measuring: the sizers' copy depends on the mode's styles.
+    this.stage.dataset.layout = mode
+    const columns = this.narrow ? narrowBoardColumns(width) : boardColumns(width, compact)
     const headers = { far: 0, near: 0, hand: 0 }
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
-      chrome.header.style.left = `${columns.labelLeft}px`
-      chrome.header.style.width = `${columns.labelWidth}px`
-      headers[row] = Math.max(chrome.header.offsetHeight, chrome.header.scrollHeight || 0)
+      for (const element of [chrome.header, chrome.sizer]) {
+        element.style.left = `${columns.labelLeft}px`
+        element.style.width = `${columns.labelWidth}px`
+      }
+      headers[row] = Math.max(chrome.sizer.offsetHeight, chrome.sizer.scrollHeight || 0)
     }
     const height = Math.max(1, this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
-    const nextLayout = boardLayout(width, height, headers, compact)
-    const layoutChanged = JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
+    const nextLayout = this.narrow ? narrowBoardLayout(width, height, headers) : boardLayout(width, height, headers, compact)
+    const layoutChanged = !this.sized || JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
     this.layout = nextLayout
     this.camera.left = -width / 2
     this.camera.right = width / 2
@@ -713,7 +923,10 @@ export class ThreeBoard implements ThreeBoardApi {
     this.effectCaption.style.maxWidth = `${columns.cardsWidth - 12}px`
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
+      // Live headers are pinned to their reserved height, so a changing
+      // label, count, or primary action never moves the rows below.
       chrome.header.style.top = `${this.layout.rows[row].labelTop}px`
+      chrome.header.style.height = `${this.layout.rows[row].labelHeight}px`
       chrome.header.style.maxHeight = `${this.layout.rows[row].labelHeight}px`
       const surface = this.surfaces.get(row)!
       surface.position.set(cardSlotX(0, 1, this.layout), this.layout.rows[row].y, 0)
@@ -778,7 +991,54 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     header.append(summary)
     this.stage.append(header)
-    this.chrome.set(row, { header, label, stats, stacks })
+    this.chrome.set(row, { header, sizer: this.createSizer(row), label, stats, stacks })
+  }
+
+  /**
+   * An invisible header carrying the longest copy and both primary labels.
+   * Its height is the row's reserved header height in every state.
+   */
+  private createSizer(row: BoardRow): HTMLDivElement {
+    const sizer = document.createElement('div')
+    sizer.className = 'three-board-label three-board-sizer'
+    sizer.dataset.row = row
+    sizer.setAttribute('aria-hidden', 'true')
+    sizer.inert = true
+    const summary = document.createElement('div')
+    const label = document.createElement('p')
+    label.textContent = SIZER_LABELS[row]
+    const stats = document.createElement('p')
+    stats.className = 'three-board-stats'
+    stats.textContent = SIZER_STATS
+    stats.hidden = row === 'hand'
+    summary.append(label, stats)
+    if (row !== 'hand') {
+      const holder = document.createElement('div')
+      holder.className = 'three-board-stacks'
+      for (const text of SIZER_STACKS) {
+        const stack = document.createElement('span')
+        stack.className = 'three-board-stack'
+        stack.textContent = text
+        holder.append(stack)
+      }
+      summary.append(holder)
+    }
+    sizer.append(summary)
+    if (row === 'near') {
+      const primary = document.createElement('button')
+      primary.type = 'button'
+      primary.className = 'three-board-primary three-board-primary-size'
+      primary.disabled = true
+      primary.tabIndex = -1
+      for (const text of PRIMARY_LABELS) {
+        const option = document.createElement('span')
+        option.textContent = text
+        primary.append(option)
+      }
+      sizer.append(primary)
+    }
+    this.stage.append(sizer)
+    return sizer
   }
 
   private invalidate = (): void => {
@@ -859,8 +1119,11 @@ export class ThreeBoard implements ThreeBoardApi {
     this.effectDescriptors.clear()
     this.chrome.clear()
     this.targetLabels.clear()
+    this.countBadges.clear()
     for (const surface of this.surfaces.values()) surface.material.dispose()
     this.surfaces.clear()
+    this.ghosts.length = 0
+    this.ghostMaterial.dispose()
     this.clearPendingCard()
     this.cards?.dispose()
     this.background?.dispose()
@@ -875,6 +1138,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.renderer?.dispose()
     this.renderer?.forceContextLoss()
     this.renderer = null
+    // A docked primary button lives outside the stage.
+    this.primaryButton.remove()
     this.stage.remove()
   }
 }

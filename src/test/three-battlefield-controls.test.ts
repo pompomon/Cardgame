@@ -66,7 +66,8 @@ class ElementStub extends EventTarget {
     this.ownerDocument = ownerDocument
   }
   get offsetHeight(): number {
-    if (this.className !== 'three-board-label') return 44
+    // Live headers and their hidden sizers share the same header metrics.
+    if (!this.className.split(' ').includes('three-board-label')) return 44
     const base = this.dataset.row === 'near' ? 112 : 52
     const prompt = this.children.find((child) => child.className === 'three-board-instruction')
     if (!prompt || prompt.hidden) return base
