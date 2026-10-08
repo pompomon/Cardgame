@@ -71,3 +71,84 @@
 .three-root--game .three-controls .three-target-panel {
   pointer-events: auto;
 }
+
+.three-dock {
+  display: none;
+}
+
+/*
+ * Narrow in-game profile (shares NARROW_LAYOUT_QUERY with the board): a fixed
+ * top bar, the board, and a fixed-height action dock. Every row has a constant
+ * height, so prompts and actions can change without moving the board.
+ */
+.three-root--game.three-root--narrow {
+  --three-topbar-height: 3.5rem;
+  --three-dock-prompt-height: calc(3 * 1.25 * 0.8125rem);
+  --three-dock-height: calc(var(--three-dock-prompt-height) + 62px);
+  padding: 4px;
+  padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right))
+    max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));
+  grid-template-rows: var(--three-topbar-height) minmax(0, 1fr) var(--three-dock-height);
+  gap: 4px;
+}
+
+.three-root--narrow .three-hud-mount {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.three-root--narrow .three-stage {
+  border-radius: 12px;
+}
+
+.three-root--narrow .three-dock {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(44px, auto);
+  grid-template-areas:
+    "prompt prompt"
+    "actions primary";
+  gap: 4px 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid #476478;
+  border-radius: 10px;
+  background: #0e2029;
+  color: #f1f5ff;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  overflow: hidden;
+}
+
+.three-root--narrow .three-dock[hidden],
+.three-dock [hidden] {
+  display: none;
+}
+
+.three-dock-prompt {
+  grid-area: prompt;
+  min-height: 0;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+
+.three-dock-primary {
+  grid-area: primary;
+  display: flex;
+  min-width: 0;
+}
+
+.three-dock .three-board-primary {
+  width: auto;
+  min-width: 96px;
+  padding: 6px 12px;
+  font-size: 0.9375rem;
+}
+
+.three-root--game .three-controls .three-tutorial-banner {
+  pointer-events: auto;
+}

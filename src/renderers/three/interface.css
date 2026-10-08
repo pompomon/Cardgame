@@ -577,3 +577,125 @@
     padding: 10px;
   }
 }
+
+/* Narrow in-game profile: a fixed top bar; decisions live in the action dock. */
+.three-interface .three-hud[data-layout="narrow"] {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "menu title extra"
+    "menu status extra";
+  align-items: center;
+  column-gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 2px 6px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.three-interface .three-hud[data-layout="narrow"] > [data-action="menu"] {
+  grid-area: menu;
+  padding: 0;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.three-interface .three-hud[data-layout="narrow"] > h2 {
+  grid-area: title;
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.25;
+}
+
+.three-interface .three-hud[data-layout="narrow"] > h2 span {
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.three-interface .three-hud[data-layout="narrow"] > p {
+  grid-area: status;
+  align-self: start;
+  max-height: 100%;
+  margin: 0;
+  overflow-y: auto;
+  font-size: 0.75rem;
+}
+
+.three-interface .three-hud[data-layout="narrow"] > [data-action="tutorial-show"] {
+  grid-area: extra;
+}
+
+.three-root--narrow .three-interface .three-tutorial-banner {
+  position: fixed;
+  top: calc(4px + var(--three-topbar-height, 3.5rem) + 8px);
+  top: calc(max(4px, env(safe-area-inset-top)) + var(--three-topbar-height, 3.5rem) + 8px);
+  right: 12px;
+  left: 12px;
+  right: max(12px, env(safe-area-inset-right));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-height: 30vh;
+  max-height: 30dvh;
+  padding: 6px 6px 6px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #ffda7b;
+  border-radius: 8px;
+  background: #102532;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 50%);
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.three-root--narrow .three-interface .three-tutorial-banner p {
+  flex: 1;
+  margin: 0;
+}
+
+.three-root--narrow .three-interface .three-tutorial-banner button {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+}
+
+/* The dock's action row: one line of short labels that scrolls, never clips. */
+.three-dock-actions.three-interface {
+  grid-area: actions;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  line-height: 1.2;
+}
+
+.three-dock-actions.three-interface button {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.three-dock-actions.three-interface [data-action^="confirm-"],
+.three-dock-actions.three-interface [data-action="select-summon"] {
+  border-color: #b1ffdd;
+  background: #164d3d;
+  font-weight: 700;
+}
+
+/* The optional target list opens above the dock, keeping Confirm/Cancel visible. */
+.three-root--narrow .three-interface .three-target-panel {
+  bottom: calc(4px + var(--three-dock-height, 111px) + 8px);
+  bottom: calc(max(4px, env(safe-area-inset-bottom)) + var(--three-dock-height, 111px) + 8px);
+  max-height: min(45vh, calc(100vh - var(--three-topbar-height, 3.5rem) - var(--three-dock-height, 111px) - 40px));
+  max-height: min(45dvh, calc(100dvh - var(--three-topbar-height, 3.5rem) - var(--three-dock-height, 111px) - 40px
+    - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+}
