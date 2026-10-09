@@ -1,5 +1,25 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { boardLayout, cardSlotX, clientToBoard, compactBoardViewport, pendingCardRect, pointInRect } from '../renderers/three/layout'
+import {
+  boardLayout, cardSlotX, clientToBoard, compactBoardViewport, isNarrowWidth, NARROW_LAYOUT_MAX_WIDTH,
+  NARROW_LAYOUT_QUERY, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
+  type BoardRect, type ThreeLayout,
+} from '../renderers/three/layout'
+
+function laneBounds(layout: ThreeLayout, row: 'far' | 'near' | 'hand') {
+  const lane = layout.rows[row]
+  return {
+    left: layout.columns.cardsLeft - layout.width / 2,
+    right: layout.columns.cardsLeft + layout.columns.cardsWidth - layout.width / 2,
+    top: lane.y + lane.height / 2,
+    bottom: lane.y - lane.height / 2,
+  }
+}
+
+function overlaps(a: BoardRect, b: BoardRect): boolean {
+  return Math.abs(a.x - b.x) < (a.width + b.width) / 2 - 0.001 && Math.abs(a.y - b.y) < (a.height + b.height) / 2 - 0.001
+}
 
 describe('Three.js fixed tabletop layout', () => {
   it.each([[320, 690], [390, 844], [844, 690], [1440, 960]])('keeps cards within %sx%s', (width, height) => {
@@ -173,5 +193,176 @@ describe('Three.js fixed tabletop layout', () => {
         }
       }
     }
+  })
+})
+
+const css = (file: string) => readFileSync(join(__dirname, '..', 'renderers', 'three', file), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
+
+interface SafeArea { top: number; right: number; bottom: number; left: number }
+const NO_INSETS: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 }
+
+/**
+ * The board's stage size inside renderer.css's narrow shell: a 3.5rem top bar
+ * and rem-sized dock, 4px gaps, safe-area-aware 4px padding, and the 1px
+ * borders of `.three-stage` and `.three-board-stage`.
+ */
+function narrowStage(viewportWidth: number, viewportHeight: number, textScale = 1, insets: SafeArea = NO_INSETS) {
+  const rem = 16 * textScale
+  const pad = (inset: number) => Math.max(4, inset)
+  const topBar = 3.5 * rem
+  const dock = 3 * 1.25 * 0.8125 * rem + 62
+  const borders = 4
+  return {
+    width: viewportWidth - pad(insets.left) - pad(insets.right) - borders,
+    height: viewportHeight - pad(insets.top) - pad(insets.bottom) - 2 * 4 - topBar - dock - borders,
+  }
+}
+
+describe('Three.js narrow single-column layout', () => {
+  // Fold4 cover screen as an installed PWA and in a browser tab, plus common phones.
+  const screens = [[320, 690], [344, 655], [344, 770], [344, 834], [344, 882], [360, 780], [390, 844], [430, 932]]
+  const fold4Pwa: SafeArea = { top: 28, right: 0, bottom: 16, left: 0 }
+  // Viewport, browser text size, and safe-area insets → the board's stage.
+  const viewports = [
+    ...screens.flatMap(([width, height]) => [1, 2].map((scale) => [width, height, scale, NO_INSETS] as const)),
+    [344, 882, 1, fold4Pwa] as const,
+    [344, 882, 2, fold4Pwa] as const,
+  ].map(([width, height, scale, insets]) => {
+    const stage = narrowStage(width, height, scale, insets)
+    const headers = { far: 36 * scale, near: 36 * scale, hand: 50 * scale }
+    return [`${width}x${height} at ${scale * 100}% text${insets === NO_INSETS ? '' : ' with safe areas'}`, stage, headers] as const
+  })
+  // The Fold4 cover screen in a browser tab.
+  const cover = narrowStage(344, 770)
+
+  it('derives stage sizes from the narrow shell in renderer.css', () => {
+    const shell = css('renderer.css')
+    const root = shell.match(/\.three-root--game\.three-root--narrow \{([^}]*)\}/)?.[1] ?? ''
+    expect(root).toContain('--three-topbar-height: 3.5rem;')
+    expect(root).toContain('--three-dock-prompt-height: calc(3 * 1.25 * 0.8125rem);')
+    expect(root).toContain('--three-dock-height: calc(var(--three-dock-prompt-height) + 62px);')
+    expect(root).toContain('padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));')
+    expect(root).toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr) var(--three-dock-height);')
+    expect(root).toContain('gap: 4px;')
+    expect(shell).toMatch(/\.three-stage \{[^}]*border: 1px /)
+    expect(css('graphics.css')).toMatch(/\.three-board-stage \{[^}]*border: 1px /)
+    // A 344x770 browser tab leaves the board well under the viewport height.
+    expect(narrowStage(344, 770)).toEqual({ width: 332, height: 583.25 })
+    expect(narrowStage(344, 770, 2).height).toBe(478.5)
+  })
+
+  it('classifies the narrow profile at the shared 480px breakpoint', () => {
+    expect(NARROW_LAYOUT_QUERY).toBe(`(max-width: ${NARROW_LAYOUT_MAX_WIDTH}px)`)
+    expect(isNarrowWidth(344)).toBe(true)
+    expect(isNarrowWidth(480)).toBe(true)
+    expect(isNarrowWidth(481)).toBe(false)
+    for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(isNarrowWidth(invalid)).toBe(false)
+  })
+
+  it.each(viewports)('keeps fixed type slots inside the lanes at %s', (_, { width, height }, headers) => {
+    const layout = narrowBoardLayout(width, height, headers)
+    expect(layout.height).toBe(Math.max(NARROW_MIN_BOARD_HEIGHT, height))
+    expect(layout.mode).toBe('narrow')
+    expect(layout.compact).toBe(false)
+    expect(layout.columns.cardsWidth).toBe(width - 16)
+    for (const row of ['far', 'near'] as const) {
+      const bounds = laneBounds(layout, row)
+      for (let slot = 0; slot < NARROW_TYPE_SLOTS; slot++) {
+        const x = typeSlotX(slot, layout)
+        expect(x - layout.cardWidth / 2).toBeGreaterThanOrEqual(bounds.left - 0.001)
+        expect(x + layout.cardWidth / 2).toBeLessThanOrEqual(bounds.right + 0.001)
+        if (slot) expect(x - typeSlotX(slot - 1, layout)).toBeGreaterThanOrEqual(layout.cardWidth)
+      }
+      expect(layout.rows[row].y + layout.cardHeight / 2).toBeLessThanOrEqual(bounds.top + 0.001)
+      expect(layout.rows[row].y - layout.cardHeight / 2).toBeGreaterThanOrEqual(bounds.bottom - 0.001)
+    }
+    expect(layout.rows.far.y).toBeGreaterThan(layout.rows.near.y)
+    expect(layout.rows.near.y).toBeGreaterThan(layout.rows.hand.y)
+    const handBottom = layout.height / 2 - layout.rows.hand.y + layout.rows.hand.height / 2
+    expect(handBottom).toBeLessThanOrEqual(layout.height + 0.001)
+    // The hand receives at least as much height as a battlefield row.
+    expect(layout.rows.hand.height).toBeGreaterThanOrEqual(layout.rows.near.height)
+  })
+
+  it('does not depend on how many creatures are on the battlefield', () => {
+    const layout = narrowBoardLayout(344, 655)
+    expect(narrowBoardLayout(344, 655)).toEqual(layout)
+    expect(typeSlotX(-3, layout)).toBe(typeSlotX(0, layout))
+    expect(typeSlotX(99, layout)).toBe(typeSlotX(NARROW_TYPE_SLOTS - 1, layout))
+    expect(typeSlotX(Number.NaN, layout)).toBe(typeSlotX(0, layout))
+  })
+
+  it('drops onto the near header or lane, never the hand', () => {
+    const layout = narrowBoardLayout(344, 655)
+    const near = layout.rows.near
+    const headerY = layout.height / 2 - near.labelTop - near.labelHeight / 2
+    expect(pointInRect({ x: 0, y: near.y }, layout.drop)).toBe(true)
+    expect(pointInRect({ x: 0, y: headerY }, layout.drop)).toBe(true)
+    expect(pointInRect({ x: layout.columns.cardsWidth / 2 - 2, y: near.y }, layout.drop)).toBe(true)
+    expect(pointInRect({ x: 0, y: layout.rows.hand.y }, layout.drop)).toBe(false)
+    expect(pointInRect({ x: 0, y: layout.rows.far.y }, layout.drop)).toBe(false)
+  })
+
+  it('fits the Fold4 cover screen with large board slots and a large hand', () => {
+    const layout = narrowBoardLayout(cover.width, cover.height, { far: 36, near: 36, hand: 50 })
+    expect(layout.cardWidth).toBeGreaterThanOrEqual(56)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(78)
+    const five = narrowHandRects(5, layout)
+    expect(five[0].width).toBeGreaterThanOrEqual(90)
+    const seven = narrowHandRects(7, layout)
+    expect(seven[0].width).toBeGreaterThanOrEqual(70)
+  })
+
+  it.each(viewports)('keeps every page of up to fifty hand cards separate and tappable at %s', (_, { width, height }, headers) => {
+    const layout = narrowBoardLayout(width, height, headers)
+    const bounds = laneBounds(layout, 'hand')
+    const pageSize = narrowHandPageSize(layout)
+    for (let count = 1; count <= 50; count++) {
+      for (let start = 0; start < count; start += pageSize) {
+        const rects = narrowHandRects(count - start, layout)
+        expect(rects).toHaveLength(Math.min(count - start, pageSize))
+        for (const [index, rect] of rects.entries()) {
+          expect(rect.width).toBeGreaterThanOrEqual(44)
+          expect(rect.x - rect.width / 2).toBeGreaterThanOrEqual(bounds.left - 0.001)
+          expect(rect.x + rect.width / 2).toBeLessThanOrEqual(bounds.right + 0.001)
+          expect(rect.y + rect.height / 2).toBeLessThanOrEqual(bounds.top + 0.001)
+          expect(rect.y - rect.height / 2).toBeGreaterThanOrEqual(bounds.bottom - 0.001)
+          for (const other of rects.slice(index + 1)) expect(overlaps(rect, other)).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('keeps the hand in reading order and handles invalid input safely', () => {
+    const layout = narrowBoardLayout(344, 655)
+    const rects = narrowHandRects(7, layout)
+    for (let index = 1; index < rects.length; index++) {
+      const previous = rects[index - 1]
+      const current = rects[index]
+      expect(current.y < previous.y - 0.001 || (Math.abs(current.y - previous.y) < 0.001 && current.x > previous.x)).toBe(true)
+    }
+    expect(narrowHandRects(0, layout)).toEqual([])
+    expect(narrowHandRects(-2, layout)).toEqual([])
+    expect(narrowHandRects(Number.NaN, layout)).toEqual([])
+    const degenerate = narrowBoardLayout(Number.NaN, -1, { far: Number.NaN, near: -5, hand: Number.POSITIVE_INFINITY })
+    expect(Number.isFinite(degenerate.cardWidth)).toBe(true)
+    expect(degenerate.cardHeight).toBeGreaterThan(0)
+    expect(narrowHandRects(3, degenerate).every((rect) => Number.isFinite(rect.x) && Number.isFinite(rect.y))).toBe(true)
+  })
+
+  it('reserves scrollable height for full touch targets when the narrow viewport is short', () => {
+    const layout = narrowBoardLayout(344, 200, { far: 36, near: 36, hand: 50 })
+    expect(layout.height).toBeGreaterThan(200)
+    const rects = narrowHandRects(50, layout)
+    expect(rects).toHaveLength(narrowHandPageSize(layout))
+    expect(rects.every((rect) => rect.width >= 44)).toBe(true)
+  })
+
+  it('caps oversized headers instead of collapsing the lanes', () => {
+    const layout = narrowBoardLayout(344, 655, { far: 400, near: 400, hand: 400 })
+    const chrome = layout.rows.far.labelHeight + layout.rows.near.labelHeight + layout.rows.hand.labelHeight
+    expect(chrome).toBeLessThanOrEqual(655 * 0.3 + 0.001)
+    expect(layout.cardHeight).toBeGreaterThan(60)
   })
 })

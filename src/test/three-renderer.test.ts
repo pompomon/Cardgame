@@ -7,11 +7,13 @@ import type { CounterHandOptions } from '../app/response-options'
 import type { BoardHit } from '../renderers/three/contracts'
 import { createInitialGame } from '../game/engine'
 import { threePrimaryAction, threeResponse, threeTargets, type ThreePrimaryAction } from '../renderers/three/interface-model'
+import { NARROW_LAYOUT_QUERY } from '../renderers/three/layout'
 
 const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
   ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
-    response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn() },
+    response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn(),
+    activate: vi.fn(), clearHandSelection: vi.fn(), selection: { cardId: 'selected', targetId: null, discardId: null } },
   boardConstruct: vi.fn(),
   uiConstruct: vi.fn(),
   inputConstruct: vi.fn(),
@@ -37,27 +39,28 @@ function view(): AppViewModel {
   } as unknown as AppViewModel
 }
 
-function harness() {
-  const elements: Array<{ hidden: boolean }> = []
+function harness(narrow = false) {
+  const elements: Array<{ hidden: boolean; className: string; append: ReturnType<typeof vi.fn> }> = []
   const document = {
     hidden: false,
     createElement: () => {
-      const node = { hidden: false, className: '', setAttribute: vi.fn() }
+      const node = { hidden: false, className: '', setAttribute: vi.fn(), append: vi.fn() }
       elements.push(node)
       return node
     },
     addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }
   const media = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  const narrowMedia = { matches: narrow, addEventListener: vi.fn(), removeEventListener: vi.fn() }
   vi.stubGlobal('document', document)
-  vi.stubGlobal('window', { matchMedia: () => media })
+  vi.stubGlobal('window', { matchMedia: (query: string) => query === NARROW_LAYOUT_QUERY ? narrowMedia : media })
   const container = {
     classList: { add: vi.fn(), remove: vi.fn() },
     replaceChildren: vi.fn(),
   } as unknown as HTMLElement
   const renderer = new ThreeRenderer()
   renderer.mount(container, {} as ControllerApi)
-  return { renderer, document, media, elements, container }
+  return { renderer, document, media, narrowMedia, elements, container }
 }
 
 afterEach(() => {
@@ -72,8 +75,13 @@ afterEach(() => {
 describe('Three.js composition', () => {
   it('mounts a separate HUD before the stable board and delegates hover only while mounted', () => {
     const { renderer, elements, container } = harness()
-    expect(container.replaceChildren).toHaveBeenLastCalledWith(elements[2], elements[0], elements[1])
-    expect(mocks.uiConstruct).toHaveBeenLastCalledWith(elements[1], expect.anything(), expect.any(Function), expect.any(Function), elements[2])
+    // HUD, stage, action dock, then the fixed overlay controls.
+    expect(container.replaceChildren).toHaveBeenLastCalledWith(elements[2], elements[0], elements[3], elements[1])
+    expect(mocks.uiConstruct).toHaveBeenLastCalledWith(elements[1], expect.anything(), expect.any(Function), expect.any(Function), elements[2],
+      { dockHost: elements[3], narrow: expect.any(Function) })
+    expect(elements[3].className).toBe('three-dock')
+    expect(elements[3].append).toHaveBeenCalledExactlyOnceWith(elements[4])
+    expect(mocks.boardConstruct.mock.calls.at(-1)![4]).toBe(elements[4])
     const hover = mocks.inputConstruct.mock.calls.at(-1)![5] as (hit: BoardHit | null) => void
     const hit: BoardHit = { key: 'card', cardId: 'card', name: 'Forest', owner: 0, zone: 'hand', playable: true }
     hover(hit)
@@ -323,5 +331,44 @@ describe('Three.js composition', () => {
     expect(mocks.input.dispose).toHaveBeenCalledOnce()
     expect(document.removeEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
     expect(media.removeEventListener).toHaveBeenCalledOnce()
+  })
+
+  it('switches the narrow in-game profile with the shared breakpoint and releases its listener', () => {
+    const { renderer, narrowMedia, elements, container } = harness(true)
+    const dock = elements[3]
+    const presentation = mocks.boardConstruct.mock.calls.at(-1)![5] as () => unknown
+    const narrow = (mocks.uiConstruct.mock.calls.at(-1)![5] as { narrow: () => boolean }).narrow
+    expect(narrowMedia.addEventListener).toHaveBeenCalledExactlyOnceWith('change', expect.any(Function))
+    // The lobby keeps its wide layout even on a narrow screen.
+    renderer.render({ ...view(), game: null })
+    expect(narrow()).toBe(false)
+    expect(dock.hidden).toBe(true)
+    expect(presentation()).toEqual({ narrow: false, selection: { cardId: null, targetId: null, discardId: null } })
+    renderer.render(view())
+    expect(narrow()).toBe(true)
+    expect(dock.hidden).toBe(false)
+    expect(container.classList.add).toHaveBeenCalledWith('three-root--narrow')
+    expect(presentation()).toEqual({ narrow: true, selection: mocks.ui.selection })
+    // Paging the narrow hand drops a selection that is no longer visible.
+    const handPage = mocks.boardConstruct.mock.calls.at(-1)![6] as () => void
+    handPage()
+    expect(mocks.ui.clearHandSelection).toHaveBeenCalledOnce()
+    // Leaving the breakpoint re-renders through the media listener.
+    narrowMedia.matches = false
+    const change = narrowMedia.addEventListener.mock.calls[0][1] as () => void
+    change()
+    expect(narrow()).toBe(false)
+    expect(dock.hidden).toBe(true)
+    expect(container.classList.remove).toHaveBeenCalledWith('three-root--narrow')
+    renderer.unmount()
+    expect(narrowMedia.removeEventListener).toHaveBeenCalledExactlyOnceWith('change', change)
+  })
+
+  it('forwards the activating pointer type to the interface', () => {
+    harness()
+    const activate = mocks.inputConstruct.mock.calls.at(-1)![4] as (hit: BoardHit, pointerType: string) => void
+    const hit: BoardHit = { key: 'card', cardId: 'card', name: 'Forest', owner: 0, zone: 'hand', playable: false }
+    activate(hit, 'touch')
+    expect(mocks.ui.activate).toHaveBeenCalledExactlyOnceWith(hit, 'touch')
   })
 })
