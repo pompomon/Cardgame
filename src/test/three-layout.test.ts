@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   boardLayout, cardSlotX, clientToBoard, compactBoardViewport, isNarrowWidth, NARROW_LAYOUT_MAX_WIDTH,
-  NARROW_LAYOUT_QUERY, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
+  NARROW_LAYOUT_QUERY, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
   type BoardRect, type ThreeLayout,
 } from '../renderers/three/layout'
 
@@ -194,9 +196,61 @@ describe('Three.js fixed tabletop layout', () => {
   })
 })
 
+const css = (file: string) => readFileSync(join(__dirname, '..', 'renderers', 'three', file), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
+
+interface SafeArea { top: number; right: number; bottom: number; left: number }
+const NO_INSETS: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 }
+
+/**
+ * The board's stage size inside renderer.css's narrow shell: a 3.5rem top bar
+ * and rem-sized dock, 4px gaps, safe-area-aware 4px padding, and the 1px
+ * borders of `.three-stage` and `.three-board-stage`.
+ */
+function narrowStage(viewportWidth: number, viewportHeight: number, textScale = 1, insets: SafeArea = NO_INSETS) {
+  const rem = 16 * textScale
+  const pad = (inset: number) => Math.max(4, inset)
+  const topBar = 3.5 * rem
+  const dock = 3 * 1.25 * 0.8125 * rem + 62
+  const borders = 4
+  return {
+    width: viewportWidth - pad(insets.left) - pad(insets.right) - borders,
+    height: viewportHeight - pad(insets.top) - pad(insets.bottom) - 2 * 4 - topBar - dock - borders,
+  }
+}
+
 describe('Three.js narrow single-column layout', () => {
   // Fold4 cover screen as an installed PWA and in a browser tab, plus common phones.
-  const viewports = [[320, 690], [344, 655], [344, 770], [344, 834], [344, 882], [360, 780], [390, 844], [430, 932]]
+  const screens = [[320, 690], [344, 655], [344, 770], [344, 834], [344, 882], [360, 780], [390, 844], [430, 932]]
+  const fold4Pwa: SafeArea = { top: 28, right: 0, bottom: 16, left: 0 }
+  // Viewport, browser text size, and safe-area insets → the board's stage.
+  const viewports = [
+    ...screens.flatMap(([width, height]) => [1, 2].map((scale) => [width, height, scale, NO_INSETS] as const)),
+    [344, 882, 1, fold4Pwa] as const,
+    [344, 882, 2, fold4Pwa] as const,
+  ].map(([width, height, scale, insets]) => {
+    const stage = narrowStage(width, height, scale, insets)
+    const headers = { far: 36 * scale, near: 36 * scale, hand: 50 * scale }
+    return [`${width}x${height} at ${scale * 100}% text${insets === NO_INSETS ? '' : ' with safe areas'}`, stage, headers] as const
+  })
+  // The Fold4 cover screen in a browser tab.
+  const cover = narrowStage(344, 770)
+
+  it('derives stage sizes from the narrow shell in renderer.css', () => {
+    const shell = css('renderer.css')
+    const root = shell.match(/\.three-root--game\.three-root--narrow \{([^}]*)\}/)?.[1] ?? ''
+    expect(root).toContain('--three-topbar-height: 3.5rem;')
+    expect(root).toContain('--three-dock-prompt-height: calc(3 * 1.25 * 0.8125rem);')
+    expect(root).toContain('--three-dock-height: calc(var(--three-dock-prompt-height) + 62px);')
+    expect(root).toContain('padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));')
+    expect(root).toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr) var(--three-dock-height);')
+    expect(root).toContain('gap: 4px;')
+    expect(shell).toMatch(/\.three-stage \{[^}]*border: 1px /)
+    expect(css('graphics.css')).toMatch(/\.three-board-stage \{[^}]*border: 1px /)
+    // A 344x770 browser tab leaves the board well under the viewport height.
+    expect(narrowStage(344, 770)).toEqual({ width: 332, height: 583.25 })
+    expect(narrowStage(344, 770, 2).height).toBe(478.5)
+  })
 
   it('classifies the narrow profile at the shared 480px breakpoint', () => {
     expect(NARROW_LAYOUT_QUERY).toBe(`(max-width: ${NARROW_LAYOUT_MAX_WIDTH}px)`)
@@ -206,8 +260,9 @@ describe('Three.js narrow single-column layout', () => {
     for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(isNarrowWidth(invalid)).toBe(false)
   })
 
-  it.each(viewports)('keeps fixed type slots inside the lanes at %sx%s', (width, height) => {
-    const layout = narrowBoardLayout(width, height)
+  it.each(viewports)('keeps fixed type slots inside the lanes at %s', (_, { width, height }, headers) => {
+    const layout = narrowBoardLayout(width, height, headers)
+    expect(layout.height).toBe(Math.max(NARROW_MIN_BOARD_HEIGHT, height))
     expect(layout.mode).toBe('narrow')
     expect(layout.compact).toBe(false)
     expect(layout.columns.cardsWidth).toBe(width - 16)
@@ -225,7 +280,7 @@ describe('Three.js narrow single-column layout', () => {
     expect(layout.rows.far.y).toBeGreaterThan(layout.rows.near.y)
     expect(layout.rows.near.y).toBeGreaterThan(layout.rows.hand.y)
     const handBottom = layout.height / 2 - layout.rows.hand.y + layout.rows.hand.height / 2
-    expect(handBottom).toBeLessThanOrEqual(height + 0.001)
+    expect(handBottom).toBeLessThanOrEqual(layout.height + 0.001)
     // The hand receives at least as much height as a battlefield row.
     expect(layout.rows.hand.height).toBeGreaterThanOrEqual(layout.rows.near.height)
   })
@@ -250,7 +305,7 @@ describe('Three.js narrow single-column layout', () => {
   })
 
   it('fits the Fold4 cover screen with large board slots and a large hand', () => {
-    const layout = narrowBoardLayout(344, 655)
+    const layout = narrowBoardLayout(cover.width, cover.height, { far: 36, near: 36, hand: 50 })
     expect(layout.cardWidth).toBeGreaterThanOrEqual(56)
     expect(layout.cardHeight).toBeGreaterThanOrEqual(78)
     const five = narrowHandRects(5, layout)
@@ -259,8 +314,8 @@ describe('Three.js narrow single-column layout', () => {
     expect(seven[0].width).toBeGreaterThanOrEqual(70)
   })
 
-  it.each(viewports)('keeps every page of up to fifty hand cards separate and tappable at %sx%s', (width, height) => {
-    const layout = narrowBoardLayout(width, height, { far: 36, near: 36, hand: 50 })
+  it.each(viewports)('keeps every page of up to fifty hand cards separate and tappable at %s', (_, { width, height }, headers) => {
+    const layout = narrowBoardLayout(width, height, headers)
     const bounds = laneBounds(layout, 'hand')
     const pageSize = narrowHandPageSize(layout)
     for (let count = 1; count <= 50; count++) {
