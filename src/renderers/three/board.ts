@@ -939,6 +939,11 @@ export class ThreeBoard implements ThreeBoardApi {
     const height = Math.max(this.narrow ? NARROW_MIN_BOARD_HEIGHT : 1,
       this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
     this.canvas.style.height = this.narrow ? `${height}px` : ''
+    const scrollable = this.narrow && height > this.stage.clientHeight
+    this.stage.dataset.scrollable = String(scrollable)
+    for (const chrome of this.chrome.values()) {
+      chrome.header.title = scrollable ? 'Swipe this player header to scroll the board' : ''
+    }
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
     const nextLayout = this.narrow ? narrowBoardLayout(width, height, headers) : boardLayout(width, height, headers, compact)
     const layoutChanged = !this.sized || JSON.stringify(this.layout) !== JSON.stringify(nextLayout)

@@ -57,6 +57,7 @@ class ElementStub extends EventTarget {
   tabIndex = 0
   type = ''
   id = ''
+  title = ''
   clientWidth = 390
   clientHeight = 760
   readonly tagName: string
@@ -357,11 +358,17 @@ describe('constructed Three battlefield controls', () => {
     stage.clientHeight = 200
     h.present()
     expect(h.board.canvas.style.height).toBe('320px')
+    expect(stage.dataset.scrollable).toBe('true')
+    expect(h.near.title).toBe('Swipe this player header to scroll the board')
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\[data-scrollable="true"\] \.three-board-label\s*\{[^}]*pointer-events: auto;[^}]*touch-action: pan-y;/)
     const id = h.app.game!.players[0].hand[0].id
     expect(h.registry.get(boardCardKey(id, 0))!.descriptor.width).toBeGreaterThanOrEqual(44)
     presentation.narrow = false
     h.present()
     expect(h.board.canvas.style.height).toBe('')
+    expect(stage.dataset.scrollable).toBe('false')
+    expect(h.near.title).toBe('')
   })
 
   it.each([

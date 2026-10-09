@@ -265,6 +265,10 @@
   flex-wrap: nowrap;
 }
 .three-board-stage[data-layout="narrow"] .three-board-pagination[hidden] { display: none; }
+.three-board-stage[data-layout="narrow"][data-scrollable="true"] .three-board-label {
+  pointer-events: auto;
+  touch-action: pan-y;
+}
 .three-board-stage[data-layout="narrow"] .three-board-stacks,
 .three-board-stage[data-layout="narrow"] .three-board-primary-size { display: none; }
 .three-board-stage[data-layout="narrow"] .three-board-target-label {
