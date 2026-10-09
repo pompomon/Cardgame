@@ -296,6 +296,14 @@ describe('Three.js narrow single-column layout', () => {
     expect(narrowHandRects(3, degenerate).every((rect) => Number.isFinite(rect.x) && Number.isFinite(rect.y))).toBe(true)
   })
 
+  it('reserves scrollable height for full touch targets when the narrow viewport is short', () => {
+    const layout = narrowBoardLayout(344, 200, { far: 36, near: 36, hand: 50 })
+    expect(layout.height).toBeGreaterThan(200)
+    const rects = narrowHandRects(50, layout)
+    expect(rects).toHaveLength(narrowHandPageSize(layout))
+    expect(rects.every((rect) => rect.width >= 44)).toBe(true)
+  })
+
   it('caps oversized headers instead of collapsing the lanes', () => {
     const layout = narrowBoardLayout(344, 655, { far: 400, near: 400, hand: 400 })
     const chrome = layout.rows.far.labelHeight + layout.rows.near.labelHeight + layout.rows.hand.labelHeight

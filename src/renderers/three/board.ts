@@ -22,7 +22,7 @@ import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
 import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
 import {
-  boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, NARROW_TYPE_SLOTS, narrowBoardColumns,
+  boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns,
   narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
   type BoardLayoutMode, type BoardRow, type ThreeLayout,
 } from './layout'
@@ -936,7 +936,9 @@ export class ThreeBoard implements ThreeBoardApi {
       headers[row] = Math.max(chrome.sizer.offsetHeight, chrome.sizer.scrollHeight || 0)
       if (this.narrow && row === 'hand') headers[row] = Math.max(50, headers[row])
     }
-    const height = Math.max(1, this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
+    const height = Math.max(this.narrow ? NARROW_MIN_BOARD_HEIGHT : 1,
+      this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
+    this.canvas.style.height = this.narrow ? `${height}px` : ''
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
     const nextLayout = this.narrow ? narrowBoardLayout(width, height, headers) : boardLayout(width, height, headers, compact)
     const layoutChanged = !this.sized || JSON.stringify(this.layout) !== JSON.stringify(nextLayout)

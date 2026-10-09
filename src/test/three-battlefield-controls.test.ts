@@ -349,6 +349,21 @@ describe('constructed Three battlefield controls', () => {
     expect(label.textContent).toBe(text)
   })
 
+  it('extends the narrow canvas inside its scrolling stage on short viewports and restores its height on unfold', () => {
+    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const h = setup(presentation)
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 344
+    stage.clientHeight = 200
+    h.present()
+    expect(h.board.canvas.style.height).toBe('320px')
+    const id = h.app.game!.players[0].hand[0].id
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor.width).toBeGreaterThanOrEqual(44)
+    presentation.narrow = false
+    h.present()
+    expect(h.board.canvas.style.height).toBe('')
+  })
+
   it.each([
     [0, 0], [0, 1], [1, 0], [1, 1],
   ])('shows the public pending card for caster %s with player %s near the camera', (owner, presentedActor) => {

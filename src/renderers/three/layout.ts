@@ -45,6 +45,7 @@ export const NARROW_LAYOUT_QUERY = '(max-width: 480px)'
 export const NARROW_LAYOUT_MAX_WIDTH = 480
 /** Narrow battlefields reserve one stacked slot per creature type. */
 export const NARROW_TYPE_SLOTS = 5
+export const NARROW_MIN_BOARD_HEIGHT = 320
 const CARD_ASPECT = 0.73
 const MAX_CARD_HEIGHT = 204
 const NARROW_INSET = 8
@@ -188,7 +189,7 @@ export function narrowBoardLayout(
   headers: Readonly<Record<BoardRow, number>> = { far: 36, near: 36, hand: 22 },
 ): ThreeLayout {
   const w = Number.isFinite(width) && width > 0 ? width : 1
-  const h = Number.isFinite(height) && height > 0 ? height : 1
+  const h = Math.max(NARROW_MIN_BOARD_HEIGHT, Number.isFinite(height) && height > 0 ? height : 1)
   const columns = narrowBoardColumns(w)
   const measured = (['far', 'near', 'hand'] as const)
     .map((row) => Number.isFinite(headers[row]) ? Math.max(0, headers[row]) : 0)
