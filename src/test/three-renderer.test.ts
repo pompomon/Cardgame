@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
   ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
     response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn(),
-    activate: vi.fn(), selection: { cardId: 'selected', targetId: null, discardId: null } },
+    activate: vi.fn(), clearHandSelection: vi.fn(), selection: { cardId: 'selected', targetId: null, discardId: null } },
   boardConstruct: vi.fn(),
   uiConstruct: vi.fn(),
   inputConstruct: vi.fn(),
@@ -349,6 +349,10 @@ describe('Three.js composition', () => {
     expect(dock.hidden).toBe(false)
     expect(container.classList.add).toHaveBeenCalledWith('three-root--narrow')
     expect(presentation()).toEqual({ narrow: true, selection: mocks.ui.selection })
+    // Paging the narrow hand drops a selection that is no longer visible.
+    const handPage = mocks.boardConstruct.mock.calls.at(-1)![6] as () => void
+    handPage()
+    expect(mocks.ui.clearHandSelection).toHaveBeenCalledOnce()
     // Leaving the breakpoint re-renders through the media listener.
     narrowMedia.matches = false
     const change = narrowMedia.addEventListener.mock.calls[0][1] as () => void

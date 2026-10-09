@@ -208,6 +208,14 @@ export class ThreeInterface {
     this.selectedDiscardId = null
   }
 
+  /** Paging the narrow hand hides its selected card, so drop that selection. */
+  clearHandSelection(): void {
+    if (this.disposed || this.selectedCardId === null && this.selectedDiscardId === null) return
+    this.selectedCardId = null
+    this.selectedDiscardId = null
+    this.changed()
+  }
+
   /** Narrow touch and pen taps select first; a dock button confirms. */
   private confirmsTaps(pointerType: DragPointerType): boolean {
     return pointerType !== 'mouse' && this.narrowActive()

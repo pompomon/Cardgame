@@ -160,8 +160,9 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
   const cancel = vi.fn()
   const activate = vi.fn<(action: ThreePrimaryAction) => void>()
   const dock = document.createElement('section')
+  const handPage = vi.fn()
   const board = new ThreeBoard(host as unknown as HTMLElement, vi.fn(), cancel, activate,
-    dock as unknown as HTMLElement, () => presentation)
+    dock as unknown as HTMLElement, () => presentation, handPage)
   boards.push(board)
   const app = state()
   const ui: InterfaceUi = {
@@ -197,7 +198,7 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
   const cards = scene.children.find((entry) => entry.type === 'Group') as Group
   const pending = () => cards.children.find((entry) => entry.name === 'pending-land-play')
   const registry = (board as unknown as { cards: ThreeCardRegistry }).cards
-  return { app, board, host, dock, scene, registry, document, window, button, near, far, cards, pending, activate, cancel, present, act }
+  return { app, board, host, dock, scene, registry, document, window, button, near, far, cards, pending, activate, cancel, handPage, present, act }
 }
 
 beforeEach(() => {
@@ -331,8 +332,11 @@ describe('constructed Three battlefield controls', () => {
       emit(next, 'click')
     } while (true)
     expect(seen.size).toBe(50)
+    const pageTurns = h.handPage.mock.calls.length
+    expect(pageTurns).toBeGreaterThan(0)
     expect(previous.disabled).toBe(false)
     emit(previous, 'click')
+    expect(h.handPage).toHaveBeenCalledTimes(pageTurns + 1)
     expect(next.disabled).toBe(false)
     const oldPage = label.textContent
     h.app.status = 'Status only'
@@ -348,6 +352,7 @@ describe('constructed Three battlefield controls', () => {
     const text = label.textContent
     emit(next, 'click')
     expect(label.textContent).toBe(text)
+    expect(h.handPage).toHaveBeenCalledTimes(pageTurns + 1)
   })
 
   it('extends the narrow canvas inside its scrolling stage on short viewports and restores its height on unfold', () => {

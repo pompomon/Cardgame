@@ -135,6 +135,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly onFailure: (message: string) => void
   private readonly onResize: () => void
   private readonly onPrimaryAction: (action: ThreePrimaryAction) => void
+  private readonly onHandPage: () => void
   private readonly dockSlot: HTMLElement | null
   private readonly presentation: () => ThreeBoardPresentation
   private readonly ghostMaterial = new MeshBasicMaterial({ color: '#b9d3e0', opacity: 0.12, transparent: true, depthWrite: false })
@@ -174,6 +175,7 @@ export class ThreeBoard implements ThreeBoardApi {
     onPrimaryAction: (action: ThreePrimaryAction) => void,
     dockSlot: HTMLElement | null = null,
     presentation: () => ThreeBoardPresentation = () => DEFAULT_BOARD_PRESENTATION,
+    onHandPage: () => void = () => {},
   ) {
     this.host = host
     this.onFailure = onFailure
@@ -181,6 +183,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.onPrimaryAction = onPrimaryAction
     this.dockSlot = dockSlot
     this.presentation = presentation
+    this.onHandPage = onHandPage
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'three-board-canvas'
     this.canvas.setAttribute('aria-label', 'Urban Creatures board. Use the adjacent card controls for keyboard interaction.')
@@ -496,6 +499,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.handPage += delta
     this.present(false, true)
     this.invalidate()
+    // A selection on the previous page is now hidden and must not stay actionable.
+    this.onHandPage()
   }
 
   /**

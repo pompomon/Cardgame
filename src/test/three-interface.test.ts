@@ -2071,6 +2071,32 @@ describe('Three narrow profile', () => {
     h.ui.dispose()
   })
 
+  it('clears hidden hand and discard selections when the narrow hand pages, keeping battlefield targets', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    const changes = h.onChange.mock.calls.length
+    h.ui.clearHandSelection()
+    expect(h.onChange).toHaveBeenCalledTimes(changes)
+    h.ui.activate(mountainHand, 'touch')
+    h.click('[data-action="select-summon"]')
+    h.ui.activate(hit(), 'touch')
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: 'target-1', discardId: null })
+    h.ui.clearHandSelection()
+    expect(h.ui.selection).toEqual({ cardId: null, targetId: 'target-1', discardId: null })
+    h.ui.dispose()
+
+    const response = setup(responseView(), true, { enabled: true })
+    response.ui.activate(responseHit(), 'touch')
+    expect(dockActionNames(response)).toEqual(['confirm-response', 'select-clear'])
+    const confirm = response.dockActions!.querySelector('[data-action="confirm-response"]')!
+    response.ui.clearHandSelection()
+    expect(response.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(dockActionNames(response)).toEqual([])
+    response.dockActions!.emit('click', { target: confirm })
+    expect(response.controller.submitAction).not.toHaveBeenCalled()
+    response.ui.dispose()
+    response.ui.clearHandSelection()
+  })
+
   it('clears narrow selections when the decision changes or the profile turns off', () => {
     const narrow = { enabled: true }
     const view = makeView()
