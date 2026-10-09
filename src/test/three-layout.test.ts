@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   boardLayout, cardSlotX, clientToBoard, compactBoardViewport, isNarrowWidth, NARROW_LAYOUT_MAX_WIDTH,
-  NARROW_LAYOUT_QUERY, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
+  NARROW_LAYOUT_QUERY, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
   type BoardRect, type ThreeLayout,
 } from '../renderers/three/layout'
 
@@ -259,19 +259,22 @@ describe('Three.js narrow single-column layout', () => {
     expect(seven[0].width).toBeGreaterThanOrEqual(70)
   })
 
-  it.each(viewports)('keeps up to twelve hand cards separate and tappable at %sx%s', (width, height) => {
-    const layout = narrowBoardLayout(width, height)
+  it.each(viewports)('keeps every page of up to fifty hand cards separate and tappable at %sx%s', (width, height) => {
+    const layout = narrowBoardLayout(width, height, { far: 36, near: 36, hand: 50 })
     const bounds = laneBounds(layout, 'hand')
-    for (let count = 1; count <= 12; count++) {
-      const rects = narrowHandRects(count, layout)
-      expect(rects).toHaveLength(count)
-      for (const [index, rect] of rects.entries()) {
-        expect(rect.width).toBeGreaterThanOrEqual(44)
-        expect(rect.x - rect.width / 2).toBeGreaterThanOrEqual(bounds.left - 0.001)
-        expect(rect.x + rect.width / 2).toBeLessThanOrEqual(bounds.right + 0.001)
-        expect(rect.y + rect.height / 2).toBeLessThanOrEqual(bounds.top + 0.001)
-        expect(rect.y - rect.height / 2).toBeGreaterThanOrEqual(bounds.bottom - 0.001)
-        for (const other of rects.slice(index + 1)) expect(overlaps(rect, other)).toBe(false)
+    const pageSize = narrowHandPageSize(layout)
+    for (let count = 1; count <= 50; count++) {
+      for (let start = 0; start < count; start += pageSize) {
+        const rects = narrowHandRects(count - start, layout)
+        expect(rects).toHaveLength(Math.min(count - start, pageSize))
+        for (const [index, rect] of rects.entries()) {
+          expect(rect.width).toBeGreaterThanOrEqual(44)
+          expect(rect.x - rect.width / 2).toBeGreaterThanOrEqual(bounds.left - 0.001)
+          expect(rect.x + rect.width / 2).toBeLessThanOrEqual(bounds.right + 0.001)
+          expect(rect.y + rect.height / 2).toBeLessThanOrEqual(bounds.top + 0.001)
+          expect(rect.y - rect.height / 2).toBeGreaterThanOrEqual(bounds.bottom - 0.001)
+          for (const other of rects.slice(index + 1)) expect(overlaps(rect, other)).toBe(false)
+        }
       }
     }
   })

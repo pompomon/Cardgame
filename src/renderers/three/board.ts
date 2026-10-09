@@ -23,7 +23,7 @@ import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
 import {
   boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, NARROW_TYPE_SLOTS, narrowBoardColumns,
-  narrowBoardLayout, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
+  narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
   type BoardLayoutMode, type BoardRow, type ThreeLayout,
 } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
@@ -124,6 +124,11 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly instructionText = document.createElement('span')
   private readonly instructionSizes: HTMLSpanElement[] = []
   private readonly primaryButton = document.createElement('button')
+  private readonly handPagination = document.createElement('div')
+  private readonly handPrevious = document.createElement('button')
+  private readonly handNext = document.createElement('button')
+  private readonly handPageLabel = document.createElement('span')
+  private handPage = 0
   private primaryAction: ThreePrimaryAction | null = null
   private pressedAction: ThreePrimaryAction | null = null
   private readonly point = { x: 0, y: 0 }
@@ -254,6 +259,17 @@ export class ThreeBoard implements ThreeBoardApi {
       }
       this.primaryButton.setAttribute('aria-describedby', this.instruction.id)
       this.chrome.get('near')!.header.append(this.primaryButton)
+      this.handPagination.className = 'three-board-pagination'
+      this.handPagination.hidden = true
+      this.handPrevious.type = this.handNext.type = 'button'
+      this.handPrevious.textContent = '‹'
+      this.handNext.textContent = '›'
+      this.handPrevious.setAttribute('aria-label', 'Previous hand page')
+      this.handNext.setAttribute('aria-label', 'Next hand page')
+      this.handPageLabel.setAttribute('aria-live', 'polite')
+      this.handPrevious.addEventListener('click', this.previousHandPage)
+      this.handNext.addEventListener('click', this.nextHandPage)
+      this.handPagination.append(this.handPrevious, this.handPageLabel, this.handNext)
       this.stage.append(this.instruction)
       host.append(this.stage)
       this.canvas.addEventListener('webglcontextlost', this.contextLost)
@@ -295,6 +311,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const reoriented = this.actor !== presentedActor || boundary
     if (reoriented) {
       this.endDrag(false)
+      this.handPage = 0
     }
     if (boundary) {
       for (const effect of this.effects) effect.cancel()
@@ -312,7 +329,10 @@ export class ThreeBoard implements ThreeBoardApi {
     if (narrow !== this.narrow) {
       // Switching profiles moves every card, so no gesture can survive it.
       this.endDrag(false)
+      this.handPage = 0
       this.onResize()
+      if (narrow) this.chrome.get('hand')!.header.append(this.handPagination)
+      else this.handPagination.remove()
     }
     this.narrow = narrow
     this.selection = narrow ? presentation.selection : NO_BOARD_SELECTION
@@ -348,6 +368,7 @@ export class ThreeBoard implements ThreeBoardApi {
       this.effectCaption.hidden = true
       this.instruction.hidden = true
       this.primaryButton.hidden = true
+      this.handPagination.hidden = true
       return
     }
     const descriptors: CardDescriptor[] = []
@@ -395,6 +416,14 @@ export class ThreeBoard implements ThreeBoardApi {
       }
     }
     const resized = this.applySize()
+    const pageSize = narrowHandPageSize(this.layout)
+    const hand = game.players[this.actor].handCards
+    const pages = Math.max(1, Math.ceil(hand.length / pageSize))
+    this.handPage = Math.min(this.handPage, pages - 1)
+    this.handPagination.hidden = !this.narrow || pages === 1
+    this.handPrevious.disabled = this.handPage === 0
+    this.handNext.disabled = this.handPage === pages - 1
+    this.handPageLabel.textContent = `${this.handPage + 1}/${pages}`
     const selection = this.narrow ? this.selection : NO_BOARD_SELECTION
     // Hand selections only exist while this player may act on them.
     const handSelection = input ? selection : NO_BOARD_SELECTION
@@ -402,7 +431,9 @@ export class ThreeBoard implements ThreeBoardApi {
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
-      const entries = row === 'hand' ? player.handCards : player.battlefield
+      const entries = row === 'hand'
+        ? this.narrow ? player.handCards.slice(this.handPage * pageSize, (this.handPage + 1) * pageSize) : player.handCards
+        : player.battlefield
       const placements = this.narrow ? this.narrowPlacements(row, entries, row === 'hand' ? handSelection : selection) : null
       if (placements && row !== 'hand') slotCounts.push(placements.counts)
       for (let index = 0; index < entries.length; index++) {
@@ -452,6 +483,19 @@ export class ThreeBoard implements ThreeBoardApi {
     this.syncTypeSlots(this.narrow ? slotCounts : null)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
+  }
+
+  private previousHandPage = (): void => { this.changeHandPage(-1) }
+  private nextHandPage = (): void => { this.changeHandPage(1) }
+
+  private changeHandPage(delta: number): void {
+    if (!this.usable() || this.handPagination.hidden
+      || (delta < 0 ? this.handPrevious.disabled : this.handNext.disabled)) return
+    this.endDrag(false)
+    this.onResize()
+    this.handPage += delta
+    this.present(false, true)
+    this.invalidate()
   }
 
   /**
@@ -890,6 +934,7 @@ export class ThreeBoard implements ThreeBoardApi {
         element.style.width = `${columns.labelWidth}px`
       }
       headers[row] = Math.max(chrome.sizer.offsetHeight, chrome.sizer.scrollHeight || 0)
+      if (this.narrow && row === 'hand') headers[row] = Math.max(50, headers[row])
     }
     const height = Math.max(1, this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
@@ -1105,6 +1150,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.primaryButton.removeEventListener('keydown', this.capturePrimaryKey)
     this.primaryButton.removeEventListener('pointercancel', this.clearPrimaryPress)
     this.primaryButton.removeEventListener('blur', this.clearPrimaryPress)
+    this.handPrevious.removeEventListener('click', this.previousHandPage)
+    this.handNext.removeEventListener('click', this.nextHandPage)
     this.primaryAction = null
     this.pressedAction = null
     window.removeEventListener('resize', this.resize)

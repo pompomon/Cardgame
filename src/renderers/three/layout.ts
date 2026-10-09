@@ -53,6 +53,7 @@ const NARROW_GAP = 4
 const NARROW_FRAME_ROOM = 6
 const NARROW_MAX_SLOT_HEIGHT = 148
 const NARROW_MAX_HAND_LINES = 3
+const MIN_TOUCH_WIDTH = 44
 
 export function isNarrowWidth(width: number): boolean {
   return Number.isFinite(width) && width > 0 && width <= NARROW_LAYOUT_MAX_WIDTH
@@ -233,13 +234,22 @@ export function typeSlotX(slot: number, layout: ThreeLayout): number {
   return left + layout.cardWidth / 2 + index * (layout.cardWidth + layout.gap) - layout.width / 2
 }
 
+/** Number of cards that fit on one page without shrinking touch targets. */
+export function narrowHandPageSize(layout: ThreeLayout): number {
+  const columns = Math.max(1, Math.floor((layout.columns.cardsWidth + layout.gap) / (MIN_TOUCH_WIDTH + layout.gap)))
+  const lines = Math.max(1, Math.min(NARROW_MAX_HAND_LINES, Math.floor(
+    (layout.rows.hand.height - NARROW_FRAME_ROOM + layout.gap) / (MIN_TOUCH_WIDTH / CARD_ASPECT + layout.gap),
+  )))
+  return columns * lines
+}
+
 /**
- * Lays a narrow hand out in up to three centred lines, choosing the line count
+ * Lays one narrow hand page out in up to three centred lines, choosing the line count
  * that gives the largest cards. Cards never overlap: overlapping would enlarge
  * the art but shrink each card's exposed, tappable width.
  */
 export function narrowHandRects(count: number, layout: ThreeLayout): BoardRect[] {
-  const total = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
+  const total = Number.isFinite(count) ? Math.min(narrowHandPageSize(layout), Math.max(0, Math.floor(count))) : 0
   if (!total) return []
   const lane = layout.columns.cardsWidth
   const row = layout.rows.hand
@@ -254,6 +264,7 @@ export function narrowHandRects(count: number, layout: ThreeLayout): BoardRect[]
     const byWidth = (lane - (candidatePerLine - 1) * gap) / candidatePerLine / CARD_ASPECT
     const byHeight = (laneHeight - (candidate - 1) * gap) / candidate
     const candidateHeight = Math.min(MAX_CARD_HEIGHT, byWidth, byHeight)
+    if (candidateHeight * CARD_ASPECT < MIN_TOUCH_WIDTH && total > 1) continue
     if (candidateHeight > height + 0.5) {
       lines = candidate
       perLine = candidatePerLine

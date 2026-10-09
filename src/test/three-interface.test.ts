@@ -2014,6 +2014,63 @@ describe('Three narrow profile', () => {
     h.ui.dispose()
   })
 
+  it.each(['target', 'response'] as const)('clears a narrow %s confirmation on a synchronous accepted update without submitting twice', (kind) => {
+    const view = kind === 'target' ? makeView() : responseView()
+    const h = setup(view, true, { enabled: true })
+    if (kind === 'target') {
+      h.ui.activate(mountainHand, 'touch')
+      h.click('[data-action="select-summon"]')
+      h.ui.activate(hit(), 'touch')
+    } else h.ui.activate(responseHit(), 'touch')
+    const action = kind === 'target'
+      ? { type: 'play_land', actor: 0, cardId: 'source', effectTargetId: 'target-1' }
+      : { type: 'counter_land', actor: 0, discardCardId: 'discard-forest-1' }
+    const confirm = h.dockActions!.querySelector(`[data-action="confirm-${kind}"]`)!
+    h.controller.submitAction.mockImplementation(() => {
+      const next = structuredClone(view)
+      next.game!.phase = kind === 'target' ? 'respond' : 'main'
+      next.game!.canInput = false
+      h.update(next)
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    })
+    h.click(`[data-action="confirm-${kind}"]`)
+    h.dockActions!.emit('click', { target: confirm })
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(action)
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(dockActionNames(h)).toEqual([])
+    expect(h.content.querySelector('.three-target-panel')).toBeNull()
+    h.ui.dispose()
+  })
+
+  it.each(['target', 'response'] as const)('preserves a narrow %s selection on a synchronous status-only rejection and allows retry', (kind) => {
+    const view = kind === 'target' ? makeView() : responseView()
+    const h = setup(view, true, { enabled: true })
+    if (kind === 'target') {
+      h.ui.activate(mountainHand, 'touch')
+      h.click('[data-action="select-summon"]')
+      h.ui.activate(hit(), 'touch')
+    } else h.ui.activate(responseHit(), 'touch')
+    const selected = h.ui.selection
+    const prompt = promptText(h)
+    const actions = dockActionNames(h)
+    h.controller.submitAction.mockImplementationOnce(() => h.update({ ...view, status: 'Send failed. Try again.' }))
+    h.click(`[data-action="confirm-${kind}"]`)
+    expect(h.ui.selection).toEqual(selected)
+    expect(promptText(h)).toBe(prompt)
+    expect(dockActionNames(h)).toEqual(actions)
+    h.controller.submitAction.mockImplementationOnce(() => {
+      const next = structuredClone(view)
+      next.game!.canInput = false
+      h.update(next)
+    })
+    h.click(`[data-action="confirm-${kind}"]`)
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+    expect(h.controller.submitAction.mock.calls[1]).toEqual(h.controller.submitAction.mock.calls[0])
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(dockActionNames(h)).toEqual([])
+    h.ui.dispose()
+  })
+
   it('clears narrow selections when the decision changes or the profile turns off', () => {
     const narrow = { enabled: true }
     const view = makeView()

@@ -163,6 +163,8 @@ describe('retained Three.js card registry', () => {
         dropMaterial: { opacity: 0 },
         primaryButton: { ownerDocument: { activeElement: null }, hidden: true, disabled: true, textContent: '', dataset: {} },
         primaryAction: null,
+        handPage: 0, handPagination: { hidden: true }, handPageLabel: { textContent: '' },
+        handPrevious: { disabled: true }, handNext: { disabled: true },
         usable: () => true, onResize: vi.fn(), invalidate: vi.fn(), applySize: vi.fn(), syncTargetLabels: vi.fn(),
       }
       const board = Object.assign(Object.create(ThreeBoard.prototype), fields) as typeof fields & {

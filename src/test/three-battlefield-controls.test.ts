@@ -8,7 +8,8 @@ import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import type { Card, GameAction } from '../game/types'
 import { ThreeBoard } from '../renderers/three/board'
-import { boardCardKey } from '../renderers/three/card-registry'
+import { boardCardKey, type ThreeCardRegistry } from '../renderers/three/card-registry'
+import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type ThreeBoardPresentation } from '../renderers/three/contracts'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
 import { cardSlotX, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
@@ -74,7 +75,7 @@ class ElementStub extends EventTarget {
     return base + (prompt.children[0]?.textContent.length > 80 ? 112 : 44)
   }
   append(...children: ElementStub[]): void {
-    children.forEach((child) => { child.parent = this; this.children.push(child) })
+    children.forEach((child) => { child.remove(); child.parent = this; this.children.push(child) })
   }
   remove(): void {
     if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1)
@@ -149,7 +150,7 @@ function counterEffect(actor: number, discard: 'Island' | 'Mountain' = 'Mountain
 }
 
 const boards: ThreeBoard[] = []
-function setup() {
+function setup(presentation: ThreeBoardPresentation = { narrow: false, selection: NO_BOARD_SELECTION }) {
   const document = new DocumentStub()
   const window = Object.assign(new EventTarget(), { innerWidth: 390, devicePixelRatio: 1 })
   vi.stubGlobal('document', document)
@@ -157,7 +158,9 @@ function setup() {
   const host = document.createElement('section')
   const cancel = vi.fn()
   const activate = vi.fn<(action: ThreePrimaryAction) => void>()
-  const board = new ThreeBoard(host as unknown as HTMLElement, vi.fn(), cancel, activate)
+  const dock = document.createElement('section')
+  const board = new ThreeBoard(host as unknown as HTMLElement, vi.fn(), cancel, activate,
+    dock as unknown as HTMLElement, () => presentation)
   boards.push(board)
   const app = state()
   const ui: InterfaceUi = {
@@ -165,7 +168,7 @@ function setup() {
     previewReturnToCards: false,
     phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
   }
-  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0) => {
+  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0, targets = new Set<string>()) => {
     const view = buildViewModel(app, false)
     if (replay) {
       view.replay.active = true
@@ -174,7 +177,7 @@ function setup() {
     }
     const nextUi = { ...ui, presentedActor: view.game!.actor, ...changes }
     const primary = threePrimaryAction(view, nextUi)
-    board.render(view, nextUi.presentedActor, new Set(), threeResponse(view, nextUi), primary)
+    board.render(view, nextUi.presentedActor, targets, threeResponse(view, nextUi), primary)
     return primary
   }
   const act = (type: GameAction['type']) => {
@@ -188,11 +191,12 @@ function setup() {
   const headers = host.all('three-board-label')
   const near = headers.find((entry) => entry.dataset.row === 'near')!
   const far = headers.find((entry) => entry.dataset.row === 'far')!
-  const button = host.all('three-board-primary')[0]
+  const button = host.all('three-board-primary')[0] ?? dock.all('three-board-primary')[0]
   const scene = gpu.render.mock.calls[0][0] as Scene
   const cards = scene.children.find((entry) => entry.type === 'Group') as Group
   const pending = () => cards.children.find((entry) => entry.name === 'pending-land-play')
-  return { app, board, host, document, window, button, near, far, cards, pending, activate, cancel, present, act }
+  const registry = (board as unknown as { cards: ThreeCardRegistry }).cards
+  return { app, board, host, dock, scene, registry, document, window, button, near, far, cards, pending, activate, cancel, present, act }
 }
 
 beforeEach(() => {
@@ -208,6 +212,143 @@ afterEach(() => {
 })
 
 describe('constructed Three battlefield controls', () => {
+  it('docks the narrow primary button, preserves focus when unfolding, and removes its listeners on disposal', () => {
+    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const h = setup(presentation)
+    expect(h.button.parent).toBe(h.dock)
+    expect(h.button.getAttribute('aria-describedby')).toBe(THREE_DOCK_PROMPT_ID)
+    expect(h.button.textContent).toBe('End Turn')
+    emit(h.button, 'click')
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(h.present())
+    h.button.focus()
+    presentation.narrow = false
+    h.present()
+    expect(h.button.parent).toBe(h.near)
+    expect(h.document.activeElement).toBe(h.button)
+    expect(h.button.getAttribute('aria-describedby')).toBe('three-battlefield-prompt')
+    presentation.narrow = true
+    h.present()
+    expect(h.button.parent).toBe(h.dock)
+    h.board.dispose()
+    h.board.dispose()
+    emit(h.button, 'click')
+    expect(h.activate).toHaveBeenCalledTimes(1)
+    expect(h.dock.children).toHaveLength(0)
+    expect(h.host.children).toHaveLength(0)
+  })
+
+  it('orders narrow type stacks by target then selection, updates badges and ghosts, and clears them on profile and session changes', () => {
+    const presentation = { narrow: true, selection: { cardId: null, targetId: 'target-0', discardId: null } }
+    const h = setup(presentation)
+    h.app.game!.players[1].battlefield = Array.from({ length: 3 }, (_, index) => ({
+      instanceId: `target-${index}`, card: { id: `card-${index}`, name: 'Forest', type: 'land' },
+    }))
+    const targets = new Set(['target-0', 'target-1'])
+    h.present({}, false, 0, targets)
+    const cards = Array.from({ length: 3 }, (_, index) =>
+      h.registry.get(boardCardKey(`card-${index}`, 1, `target-${index}`))!)
+    expect(cards.map((card) => card.descriptor.stackIndex)).toEqual([2, 1, 0])
+    expect(new Set(cards.map((card) => card.descriptor.x)).size).toBe(1)
+    expect(cards.map((card) => card.descriptor.target)).toEqual([true, false, false])
+    expect(cards[0].descriptor.selected).toBe(true)
+    const frame = cards[0].group.children[1] as Group
+    expect(frame.visible).toBe(true)
+    expect(((frame.children[0] as Mesh).material as MeshBasicMaterial).color.getHexString()).toBe('ffffff')
+    expect(frame.children[0].scale.y).toBe(4)
+    expect(h.host.all('three-board-count').map((badge) => badge.textContent)).toEqual(['×3'])
+    const ghosts = h.scene.children.filter((entry) => entry.name === 'three-type-slot')
+    expect(ghosts.filter((ghost) => ghost.visible)).toHaveLength(9)
+    h.app.game!.players[1].battlefield = h.app.game!.players[1].battlefield.slice(0, 1)
+    h.present({}, false, 0, targets)
+    expect(h.host.all('three-board-count')).toHaveLength(0)
+    presentation.narrow = false
+    h.present({}, false, 0, targets)
+    expect(cards[0].descriptor.selected).toBeUndefined()
+    expect(ghosts.every((ghost) => !ghost.visible)).toBe(true)
+    presentation.narrow = true
+    h.present()
+    h.app.game = null
+    h.board.render(buildViewModel(h.app, false), 0, new Set(), null, null)
+    expect(ghosts.every((ghost) => !ghost.visible)).toBe(true)
+    expect(h.cards.children).toHaveLength(0)
+    const dispose = vi.spyOn((ghosts[0] as Mesh).material as MeshBasicMaterial, 'dispose')
+    h.board.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(h.scene.children).toHaveLength(0)
+  })
+
+  it.each(['cardId', 'discardId'] as const)('lifts and frames the narrow hand %s selection, then clears it when input ends', (field) => {
+    const presentation = { narrow: true, selection: { cardId: null as string | null, targetId: null, discardId: null as string | null } }
+    const h = setup(presentation)
+    const id = h.app.game!.players[0].hand[0].id
+    const card = h.registry.get(boardCardKey(id, 0))!
+    const originalY = card.descriptor.y
+    presentation.selection[field] = id
+    h.present()
+    expect(card.descriptor.y).toBeGreaterThan(originalY)
+    expect(card.descriptor.stackIndex).toBe(1000)
+    expect(card.descriptor.selected).toBe(true)
+    const frame = card.group.children[1] as Group
+    expect(((frame.children[0] as Mesh).material as MeshBasicMaterial).color.getHexString()).toBe('ffffff')
+    h.present({}, true)
+    const replayCard = h.registry.get(boardCardKey(id, 0))!
+    expect(replayCard.descriptor.selected).toBeUndefined()
+    expect(replayCard.descriptor.y).toBe(originalY)
+    expect(replayCard.group.children[1].visible).toBe(false)
+  })
+
+  it('pages all fifty narrow hand cards with full hit targets and clamps or resets the page when the hand or actor changes', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 344
+    stage.clientHeight = 655
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    h.present()
+    const pagination = h.host.all('three-board-pagination')[0]
+    const [previous, label, next] = pagination.children
+    const seen = new Set<string>()
+    const visit = () => {
+      for (const card of player.hand) {
+        const retained = h.registry.get(boardCardKey(card.id, 0))
+        if (!retained?.descriptor.visible) continue
+        const { x, y, width } = retained.descriptor
+        expect(width).toBeGreaterThanOrEqual(44)
+        const bounds = h.board.canvas.getBoundingClientRect()
+        expect(h.board.hitTest(
+          (stage.clientWidth / 2 + x) / stage.clientWidth * bounds.width,
+          (stage.clientHeight / 2 - y) / stage.clientHeight * bounds.height,
+        )?.cardId).toBe(card.id)
+        seen.add(card.id)
+      }
+    }
+    expect(previous.disabled).toBe(true)
+    expect(pagination.hidden).toBe(false)
+    do {
+      visit()
+      if (next.disabled) break
+      emit(next, 'click')
+    } while (true)
+    expect(seen.size).toBe(50)
+    expect(previous.disabled).toBe(false)
+    emit(previous, 'click')
+    expect(next.disabled).toBe(false)
+    const oldPage = label.textContent
+    h.app.status = 'Status only'
+    h.present()
+    expect(label.textContent).toBe(oldPage)
+    player.hand = player.hand.slice(0, 5)
+    h.present()
+    expect(pagination.hidden).toBe(true)
+    expect(label.textContent).toBe('1/1')
+    h.present({ presentedActor: 1 })
+    expect(previous.disabled).toBe(true)
+    h.board.dispose()
+    const text = label.textContent
+    emit(next, 'click')
+    expect(label.textContent).toBe(text)
+  })
+
   it.each([
     [0, 0], [0, 1], [1, 0], [1, 1],
   ])('shows the public pending card for caster %s with player %s near the camera', (owner, presentedActor) => {
