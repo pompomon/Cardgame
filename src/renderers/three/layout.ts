@@ -45,7 +45,6 @@ export const NARROW_LAYOUT_QUERY = '(max-width: 480px)'
 export const NARROW_LAYOUT_MAX_WIDTH = 480
 /** Narrow battlefields reserve one stacked slot per creature type. */
 export const NARROW_TYPE_SLOTS = 5
-export const NARROW_MIN_BOARD_HEIGHT = 320
 /** Large-text headers may grow the scrollable board up to this multiple of its stage height. */
 export const NARROW_MAX_BOARD_GROWTH = 2
 /** Header chrome fits within this share of the stage before the board grows. */
@@ -59,6 +58,12 @@ const NARROW_FRAME_ROOM = 6
 const NARROW_MAX_SLOT_HEIGHT = 148
 const NARROW_MAX_HAND_LINES = 3
 const MIN_TOUCH_WIDTH = 44
+const NARROW_BATTLEFIELD_SHARE = 0.3
+/** Reserve enough lane height for 44px battlefield widths, even on short screens. */
+export const NARROW_MIN_BOARD_HEIGHT = Math.ceil(
+  ((MIN_TOUCH_WIDTH / CARD_ASPECT + NARROW_FRAME_ROOM) / NARROW_BATTLEFIELD_SHARE
+    + NARROW_SPACING * 7) / (1 - NARROW_CHROME_SHARE),
+)
 
 export function isNarrowWidth(width: number): boolean {
   return Number.isFinite(width) && width > 0 && width <= NARROW_LAYOUT_MAX_WIDTH
@@ -210,7 +215,7 @@ export function narrowBoardLayout(
   const slotWidth = Math.max(1, (columns.cardsWidth - (NARROW_TYPE_SLOTS - 1) * NARROW_GAP) / NARROW_TYPE_SLOTS)
   // The two battlefields together never take more than 60% of the card space.
   const cardHeight = Math.max(1, Math.min(
-    NARROW_MAX_SLOT_HEIGHT, slotWidth / CARD_ASPECT, lanes * 0.3 - NARROW_FRAME_ROOM,
+    NARROW_MAX_SLOT_HEIGHT, slotWidth / CARD_ASPECT, lanes * NARROW_BATTLEFIELD_SHARE - NARROW_FRAME_ROOM,
   ))
   const cardWidth = Math.max(1, Math.min(slotWidth, cardHeight * CARD_ASPECT))
   const boardLane = cardHeight + NARROW_FRAME_ROOM

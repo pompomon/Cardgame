@@ -272,6 +272,8 @@ describe('Three.js narrow single-column layout', () => {
     }
     expect(layout.mode).toBe('narrow')
     expect(layout.compact).toBe(false)
+    expect(layout.cardWidth).toBeGreaterThanOrEqual(44)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(44)
     expect(layout.columns.cardsWidth).toBe(width - 16)
     for (const row of ['far', 'near'] as const) {
       const bounds = laneBounds(layout, row)
@@ -361,9 +363,20 @@ describe('Three.js narrow single-column layout', () => {
   it('reserves scrollable height for full touch targets when the narrow viewport is short', () => {
     const layout = narrowBoardLayout(344, 200, { far: 36, near: 36, hand: 50 })
     expect(layout.height).toBeGreaterThan(200)
+    expect(layout.cardWidth).toBeGreaterThanOrEqual(44)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(44)
     const rects = narrowHandRects(50, layout)
     expect(rects).toHaveLength(narrowHandPageSize(layout))
     expect(rects.every((rect) => rect.width >= 44)).toBe(true)
+  })
+
+  it('removes inherited narrow HUD padding and keeps clipped controls focusable visibly', () => {
+    const shell = css('renderer.css')
+    expect(shell).toMatch(/\.three-root--narrow \.three-hud-mount \{[^}]*padding: 0;/)
+    const styles = css('interface.css')
+    expect(styles).toMatch(/\.three-interface \.three-hud\[data-layout="narrow"\] :focus-visible[^}]*outline-offset: -3px;/)
+    expect(styles).toMatch(/\.three-dock-actions\.three-interface :focus-visible[^}]*outline-offset: -3px;/)
+    expect(shell).toMatch(/\.three-dock \.three-board-primary:focus-visible \{[^}]*outline-offset: -3px;/)
   })
 
   it('grows the scrollable board instead of shrinking large-text headers into the lanes', () => {

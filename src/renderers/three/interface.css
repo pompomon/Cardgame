@@ -684,6 +684,11 @@
   white-space: nowrap;
 }
 
+.three-interface .three-hud[data-layout="narrow"] :focus-visible,
+.three-dock-actions.three-interface :focus-visible {
+  outline-offset: -3px;
+}
+
 .three-dock-actions.three-interface [data-action^="confirm-"],
 .three-dock-actions.three-interface [data-action="select-summon"] {
   border-color: #b1ffdd;

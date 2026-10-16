@@ -360,7 +360,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
   }
 
-  private present(animate = true, invalidateHistory = false): void {
+  private present(animate = true, invalidateHistory = false, handPageChanged = false): void {
     const game = this.view?.game
     if (!game) {
       this.canDrop = false
@@ -430,12 +430,15 @@ export class ThreeBoard implements ThreeBoardApi {
     const selection = this.narrow ? this.selection : NO_BOARD_SELECTION
     // Hand selections only exist while this player may act on them.
     const handSelection = input ? selection : NO_BOARD_SELECTION
+    const visibleHand = this.narrow ? hand.slice(this.handPage * pageSize, (this.handPage + 1) * pageSize) : hand
+    const hiddenHandSelection = [handSelection.cardId, handSelection.discardId]
+      .some((id) => id !== null && !visibleHand.some((card) => card.id === id))
     const slotCounts: number[][] = []
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
       const entries = row === 'hand'
-        ? this.narrow ? player.handCards.slice(this.handPage * pageSize, (this.handPage + 1) * pageSize) : player.handCards
+        ? visibleHand
         : player.battlefield
       const placements = this.narrow ? this.narrowPlacements(row, entries, row === 'hand' ? handSelection : selection) : null
       if (placements && row !== 'hand') slotCounts.push(placements.counts)
@@ -486,6 +489,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.syncTypeSlots(this.narrow ? slotCounts : null)
     if (this.drag) this.drag.source.setOpacity(0.35)
     this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
+    // Clearing the interface selection may synchronously render a newer view.
+    if (handPageChanged || hiddenHandSelection) this.onHandPage()
   }
 
   private previousHandPage = (): void => { this.changeHandPage(-1) }
@@ -497,10 +502,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.endDrag(false)
     this.onResize()
     this.handPage += delta
-    this.present(false, true)
+    this.present(false, true, true)
     this.invalidate()
-    // A selection on the previous page is now hidden and must not stay actionable.
-    this.onHandPage()
   }
 
   /**
@@ -520,7 +523,7 @@ export class ThreeBoard implements ThreeBoardApi {
         const cardId = card.id ?? card.cardId
         const lifted = cardId !== undefined && (cardId === selection.cardId || cardId === selection.discardId)
         return {
-          x: rect.x, y: rect.y + (lifted ? Math.min(8, rect.height * 0.06) : 0),
+          x: rect.x, y: rect.y + (lifted ? Math.min(layout.gap / 2, rect.height * 0.06) : 0),
           width: rect.width, height: rect.height,
           stackIndex: lifted ? 1000 : index, top: true,
         }

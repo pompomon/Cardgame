@@ -93,6 +93,7 @@
 }
 
 .three-root--narrow .three-hud-mount {
+  padding: 0;
   overflow: hidden;
   scrollbar-gutter: auto;
 }
@@ -147,6 +148,10 @@
   min-width: 96px;
   padding: 6px 12px;
   font-size: 0.9375rem;
+}
+
+.three-dock .three-board-primary:focus-visible {
+  outline-offset: -3px;
 }
 
 .three-root--game .three-controls .three-tutorial-banner {

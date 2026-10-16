@@ -11,7 +11,7 @@ import { ThreeBoard } from '../renderers/three/board'
 import { boardCardKey, type ThreeCardRegistry } from '../renderers/three/card-registry'
 import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type ThreeBoardPresentation } from '../renderers/three/contracts'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { cardSlotX, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
+import { cardSlotX, narrowHandPageSize, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
@@ -362,8 +362,8 @@ describe('constructed Three battlefield controls', () => {
     stage.clientWidth = 344
     stage.clientHeight = 200
     h.present()
-    // 320px minimum, grown by the 216px of measured header chrome beyond its 30% share.
-    expect(h.board.canvas.style.height).toBe('440px')
+    // Reserve minimum touch widths as well as the 216px of measured header chrome.
+    expect(h.board.canvas.style.height).toBe('466px')
     expect(h.near.style.height).toBe('112px')
     expect(stage.dataset.scrollable).toBe('true')
     expect(h.near.title).toBe('Swipe this player header to scroll the board')
@@ -376,6 +376,113 @@ describe('constructed Three battlefield controls', () => {
     expect(h.board.canvas.style.height).toBe('')
     expect(stage.dataset.scrollable).toBe('false')
     expect(h.near.title).toBe('')
+  })
+
+  describe.each(['cardId', 'discardId'] as const)('responsive narrow %s selection', (field) => {
+    it.each(['width', 'height'] as const)('clears a hidden selection after a %s resize with a synchronous refresh', (dimension) => {
+      const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+      const h = setup(presentation)
+      const player = h.app.game!.players[0]
+      player.hand.push(...player.deck.splice(0))
+      if (field === 'discardId') {
+        h.app.game!.currentPlayer = 1
+        h.act('play_land')
+      }
+      for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+        Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 50 : 36 })
+      }
+      const stage = h.host.all('three-board-stage')[0]
+      // Inner stages for 430/344x770 viewports, after the narrow shell.
+      stage.clientWidth = dimension === 'width' ? 418 : 332
+      stage.clientHeight = 583.25
+      h.present()
+      const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
+      const pageSize = narrowHandPageSize(layout())
+      const id = player.hand[pageSize - 1].id
+      presentation.selection[field] = id
+      h.present()
+      expect(h.registry.get(boardCardKey(id, 0))!.descriptor.selected).toBe(true)
+      h.handPage.mockImplementation(() => {
+        presentation.selection = { ...NO_BOARD_SELECTION }
+        h.present()
+      })
+      h.handPage.mockClear()
+      if (dimension === 'width') stage.clientWidth = 332
+      else stage.clientHeight = 468.25 // 344x655 viewport.
+      if (dimension === 'width') emit(h.window, 'resize')
+      else ObserverStub.latest.callback()
+      expect(narrowHandPageSize(layout())).toBeLessThan(pageSize)
+      expect(h.registry.get(boardCardKey(id, 0))?.descriptor.visible ?? false).toBe(false)
+      expect(h.handPage).toHaveBeenCalledOnce()
+      expect(presentation.selection).toEqual(NO_BOARD_SELECTION)
+      // Repeated observers and status-only updates must not notify again.
+      ObserverStub.latest.callback()
+      h.app.status = 'Status only'
+      h.present()
+      expect(h.handPage).toHaveBeenCalledOnce()
+      // A selection which stays on screen survives the same capacity change.
+      presentation.selection[field] = player.hand[0].id
+      stage.clientHeight = 583.25
+      stage.clientWidth = dimension === 'width' ? 418 : 332
+      h.present()
+      if (dimension === 'width') stage.clientWidth = 332
+      else stage.clientHeight = 468.25
+      ObserverStub.latest.callback()
+      expect(h.handPage).toHaveBeenCalledOnce()
+      expect(h.registry.get(boardCardKey(player.hand[0].id, 0))!.descriptor.selected).toBe(true)
+    })
+  })
+
+  it.each(['cardId', 'discardId'] as const)('keeps the lifted %s selection inside its lane without overlapping another hand line', (field) => {
+    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 332
+    stage.clientHeight = 583.25
+    h.present()
+    const visible = player.hand.filter((card) => h.registry.get(boardCardKey(card.id, 0))?.descriptor.visible)
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const row = layout.rows.hand
+    for (const selected of visible) {
+      presentation.selection[field] = selected.id
+      h.present()
+      const card = h.registry.get(boardCardKey(selected.id, 0))!.descriptor
+      expect(card.y + card.height / 2).toBeLessThanOrEqual(row.y + row.height / 2)
+      expect(card.y - card.height / 2).toBeGreaterThanOrEqual(row.y - row.height / 2)
+      for (const other of visible.filter((entry) => entry.id !== selected.id)) {
+        const rect = h.registry.get(boardCardKey(other.id, 0))!.descriptor
+        expect(Math.abs(card.x - rect.x) >= (card.width + rect.width) / 2
+          || Math.abs(card.y - rect.y) >= (card.height + rect.height) / 2).toBe(true)
+      }
+    }
+  })
+
+  it('keeps short-board battlefield hit targets at least 44px wide for both players', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 344
+    stage.clientHeight = 200
+    for (const owner of [0, 1]) {
+      h.app.game!.players[owner].battlefield = [{
+        instanceId: `target-${owner}`, card: { id: `card-${owner}`, name: 'Forest', type: 'land' },
+      }]
+    }
+    h.present()
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const bounds = h.board.canvas.getBoundingClientRect()
+    for (const owner of [0, 1]) {
+      const { x, y, width, height } = h.registry.get(boardCardKey(`card-${owner}`, owner, `target-${owner}`))!.descriptor
+      expect(width).toBeGreaterThanOrEqual(44)
+      expect(height).toBeGreaterThanOrEqual(44)
+      for (const offset of [-21.9, 21.9]) {
+        expect(h.board.hitTest(
+          (layout.width / 2 + x + offset) / layout.width * bounds.width,
+          (layout.height / 2 - y) / layout.height * bounds.height,
+        )?.instanceId).toBe(`target-${owner}`)
+      }
+    }
   })
 
   it.each([
