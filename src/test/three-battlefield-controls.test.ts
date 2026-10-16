@@ -47,7 +47,7 @@ class ElementStub extends EventTarget {
   readonly dataset: Record<string, string> = {}
   readonly attributes = new Map<string, string>()
   readonly style = {
-    setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', right: '', bottom: '', width: '', maxWidth: '',
+    setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', right: '', bottom: '', width: '', maxWidth: '', height: '', maxHeight: '',
   }
   parent: ElementStub | null = null
   className = ''
@@ -362,7 +362,9 @@ describe('constructed Three battlefield controls', () => {
     stage.clientWidth = 344
     stage.clientHeight = 200
     h.present()
-    expect(h.board.canvas.style.height).toBe('320px')
+    // 320px minimum, grown by the 216px of measured header chrome beyond its 30% share.
+    expect(h.board.canvas.style.height).toBe('440px')
+    expect(h.near.style.height).toBe('112px')
     expect(stage.dataset.scrollable).toBe('true')
     expect(h.near.title).toBe('Swipe this player header to scroll the board')
     const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')

@@ -941,8 +941,11 @@ export class ThreeBoard implements ThreeBoardApi {
       headers[row] = Math.max(chrome.sizer.offsetHeight, chrome.sizer.scrollHeight || 0)
       if (this.narrow && row === 'hand') headers[row] = Math.max(50, headers[row])
     }
-    const height = Math.max(this.narrow ? NARROW_MIN_BOARD_HEIGHT : 1,
+    const stageHeight = Math.max(this.narrow ? NARROW_MIN_BOARD_HEIGHT : 1,
       this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
+    const nextLayout = this.narrow ? narrowBoardLayout(width, stageHeight, headers) : boardLayout(width, stageHeight, headers, compact)
+    // Narrow layouts may grow taller than the stage to keep headers and touch targets intact.
+    const height = nextLayout.height
     this.canvas.style.height = this.narrow ? `${height}px` : ''
     const scrollable = this.narrow && height > this.stage.clientHeight
     this.stage.dataset.scrollable = String(scrollable)
@@ -950,7 +953,6 @@ export class ThreeBoard implements ThreeBoardApi {
       chrome.header.title = scrollable ? 'Swipe this player header to scroll the board' : ''
     }
     const resized = !this.sized || width !== this.layout.width || height !== this.layout.height
-    const nextLayout = this.narrow ? narrowBoardLayout(width, height, headers) : boardLayout(width, height, headers, compact)
     const layoutChanged = !this.sized || JSON.stringify(this.layout) !== JSON.stringify(nextLayout)
     this.layout = nextLayout
     this.camera.left = -width / 2

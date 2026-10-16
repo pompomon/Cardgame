@@ -347,6 +347,9 @@ export class ThreeInterface {
     if (!view?.game || !canThreeInput(view, this.presentedActor) || this.nativeActionBlocked() || view.game.phase !== 'main') return
     if (!view.game.players[view.game.actor].handCards.some((card) => card.id === cardId)) return
     const resolution = resolvePlayLandDrop(view.game, cardId)
+    // Drags and buttons may act on a card other than the selected one; record
+    // it so a rejected submission keeps offering the card actually attempted.
+    if (this.narrowActive() && resolution.kind !== 'invalid') this.selectedCardId = cardId
     if (resolution.kind === 'single') {
       this.submit(resolution.action)
     } else if (resolution.kind === 'needs_target') {
@@ -401,7 +404,11 @@ export class ThreeInterface {
     const view = this.latestForAction()
     if (!view?.game || owner !== view.game.actor || this.nativeActionBlocked()) return
     const choice = threeResponse(view, this.ui())?.choices.find((entry) => entry.cardId === cardId)
-    if (choice) this.submit(choice.action)
+    if (!choice) return
+    // Mixed input can submit a card other than the selected one; a rejected
+    // submission must keep offering the card that was actually attempted.
+    if (this.narrowActive()) this.selectedDiscardId = cardId
+    this.submit(choice.action)
   }
 
   private previewCard(hit: BoardHit): void {
@@ -425,7 +432,9 @@ export class ThreeInterface {
       ? resolveTargetedPlayLandAction(game, this.pendingCardId, id)
       : game.phase === 'plains_target' ? resolvePlainsReuseAction(game, id)
         : game.phase === 'swamp_target' ? resolveSwampDiscardAction(game, id) : null
-    if (action) this.submit(action)
+    if (!action) return
+    if (this.narrowActive() && id !== undefined && threeTargets(view, this.ui())?.battlefield) this.selectedTargetId = id
+    this.submit(action)
   }
 
   private submit(action: GameAction): void {

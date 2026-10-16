@@ -2071,6 +2071,39 @@ describe('Three narrow profile', () => {
     h.ui.dispose()
   })
 
+  it.each(['target', 'response', 'drag'] as const)('preserves the attempted %s, not an earlier selection, when a mixed-input submission is rejected', (kind) => {
+    const view = kind === 'response' ? responseView() : makeView()
+    if (kind === 'drag') {
+      view.game!.players[0].handCards = [...view.game!.players[0].handCards, { id: 'other', name: 'Forest' }]
+      view.game!.players[0].handCount = 2
+      view.game!.legal.playLandByCard.other = [{ action: { type: 'play_land', actor: 0, cardId: 'other' }, label: 'Summon' }]
+    }
+    const h = setup(view, true, { enabled: true })
+    if (kind === 'target') {
+      h.ui.activate(mountainHand, 'touch')
+      h.click('[data-action="select-summon"]')
+      h.ui.activate(hit(), 'touch')
+    } else if (kind === 'response') h.ui.activate(responseHit('discard-forest-1'), 'touch')
+    else h.ui.activate(mountainHand, 'touch')
+    h.controller.submitAction.mockImplementation(() => h.update({ ...view, status: 'Send failed. Try again.' }))
+    if (kind === 'target') {
+      h.ui.activate(hit({ key: 'target-2', cardId: 'card-2', instanceId: 'target-2', name: 'Island' }), 'mouse')
+      expect(h.ui.selection).toEqual({ cardId: 'source', targetId: 'target-2', discardId: null })
+      expect(promptText(h)).toContain(`Selected: ${displayCardName('Island')}.`)
+    } else if (kind === 'response') {
+      h.ui.activate(responseHit('discard-forest-2'), 'mouse')
+      expect(h.ui.selection).toEqual({ cardId: null, targetId: null, discardId: 'discard-forest-2' })
+    } else {
+      h.ui.playCard('other')
+      expect(h.ui.selection).toEqual({ cardId: 'other', targetId: null, discardId: null })
+    }
+    const attempted = h.controller.submitAction.mock.calls[0][0]
+    h.click(`[data-action="${kind === 'target' ? 'confirm-target' : kind === 'response' ? 'confirm-response' : 'select-summon'}"]`)
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+    expect(h.controller.submitAction.mock.calls[1][0]).toEqual(attempted)
+    h.ui.dispose()
+  })
+
   it('clears hidden hand and discard selections when the narrow hand pages, keeping battlefield targets', () => {
     const h = setup(makeView(), true, { enabled: true })
     const changes = h.onChange.mock.calls.length

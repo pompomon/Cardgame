@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   boardLayout, cardSlotX, clientToBoard, compactBoardViewport, isNarrowWidth, NARROW_LAYOUT_MAX_WIDTH,
-  NARROW_LAYOUT_QUERY, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
+  NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
   type BoardRect, type ThreeLayout,
 } from '../renderers/three/layout'
 
@@ -262,7 +262,14 @@ describe('Three.js narrow single-column layout', () => {
 
   it.each(viewports)('keeps fixed type slots inside the lanes at %s', (_, { width, height }, headers) => {
     const layout = narrowBoardLayout(width, height, headers)
-    expect(layout.height).toBe(Math.max(NARROW_MIN_BOARD_HEIGHT, height))
+    expect(layout.height).toBeGreaterThanOrEqual(Math.max(NARROW_MIN_BOARD_HEIGHT, height))
+    expect(layout.height).toBeLessThanOrEqual(Math.max(NARROW_MIN_BOARD_HEIGHT, height) * NARROW_MAX_BOARD_GROWTH)
+    for (const row of ['far', 'near', 'hand'] as const) {
+      // Measured headers keep their height and end above their own card lane.
+      expect(layout.rows[row].labelHeight).toBeCloseTo(headers[row], 6)
+      const laneTop = layout.height / 2 - layout.rows[row].y - layout.rows[row].height / 2
+      expect(layout.rows[row].labelTop + layout.rows[row].labelHeight).toBeLessThanOrEqual(laneTop + 0.001)
+    }
     expect(layout.mode).toBe('narrow')
     expect(layout.compact).toBe(false)
     expect(layout.columns.cardsWidth).toBe(width - 16)
@@ -359,10 +366,25 @@ describe('Three.js narrow single-column layout', () => {
     expect(rects.every((rect) => rect.width >= 44)).toBe(true)
   })
 
-  it('caps oversized headers instead of collapsing the lanes', () => {
+  it('grows the scrollable board instead of shrinking large-text headers into the lanes', () => {
+    // Fold4 cover screen in a browser tab at 200% text.
+    const stage = narrowStage(344, 770, 2)
+    const headers = { far: 72, near: 72, hand: 100 }
+    const layout = narrowBoardLayout(stage.width, stage.height, headers)
+    expect(layout.height).toBe(Math.ceil(stage.height + 244 - stage.height * 0.3))
+    expect(layout.rows.far.labelHeight).toBe(72)
+    expect(layout.rows.near.labelHeight).toBe(72)
+    expect(layout.rows.hand.labelHeight).toBe(100)
+    // The card lanes keep the space they had in the stage-sized board.
+    const unscaled = narrowBoardLayout(stage.width, stage.height, { far: 36, near: 36, hand: 50 })
+    expect(layout.cardHeight).toBeCloseTo(unscaled.cardHeight, 0)
+  })
+
+  it('bounds board growth for oversized headers instead of collapsing the lanes', () => {
     const layout = narrowBoardLayout(344, 655, { far: 400, near: 400, hand: 400 })
+    expect(layout.height).toBe(655 * NARROW_MAX_BOARD_GROWTH)
     const chrome = layout.rows.far.labelHeight + layout.rows.near.labelHeight + layout.rows.hand.labelHeight
-    expect(chrome).toBeLessThanOrEqual(655 * 0.3 + 0.001)
+    expect(chrome).toBeLessThanOrEqual(layout.height - 655 * 0.7 + 0.001)
     expect(layout.cardHeight).toBeGreaterThan(60)
   })
 })

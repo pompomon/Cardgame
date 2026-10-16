@@ -46,6 +46,10 @@ export const NARROW_LAYOUT_MAX_WIDTH = 480
 /** Narrow battlefields reserve one stacked slot per creature type. */
 export const NARROW_TYPE_SLOTS = 5
 export const NARROW_MIN_BOARD_HEIGHT = 320
+/** Large-text headers may grow the scrollable board up to this multiple of its stage height. */
+export const NARROW_MAX_BOARD_GROWTH = 2
+/** Header chrome fits within this share of the stage before the board grows. */
+const NARROW_CHROME_SHARE = 0.3
 const CARD_ASPECT = 0.73
 const MAX_CARD_HEIGHT = 204
 const NARROW_INSET = 8
@@ -181,7 +185,8 @@ export function narrowBoardColumns(width: number): BoardColumns {
 /**
  * Full-width rows for portrait phones and cover screens. Each battlefield row
  * has fixed creature-type slots, so its height never depends on the number of
- * creatures; the hand receives the remaining height.
+ * creatures; the hand receives the remaining height. Tall (large-text) headers
+ * grow the scrollable board rather than shrinking below their measured height.
  */
 export function narrowBoardLayout(
   width: number,
@@ -189,11 +194,16 @@ export function narrowBoardLayout(
   headers: Readonly<Record<BoardRow, number>> = { far: 36, near: 36, hand: 22 },
 ): ThreeLayout {
   const w = Number.isFinite(width) && width > 0 ? width : 1
-  const h = Math.max(NARROW_MIN_BOARD_HEIGHT, Number.isFinite(height) && height > 0 ? height : 1)
+  const stage = Math.max(NARROW_MIN_BOARD_HEIGHT, Number.isFinite(height) && height > 0 ? height : 1)
   const columns = narrowBoardColumns(w)
   const measured = (['far', 'near', 'hand'] as const)
     .map((row) => Number.isFinite(headers[row]) ? Math.max(0, headers[row]) : 0)
-  const [far, near, hand] = fitToBudget(measured, [0, 0, 0], h * 0.3)
+  // Grow the board by any chrome beyond its share of the stage, so card lanes
+  // keep their stage-sized space and headers keep their measured height.
+  const measuredChrome = measured.reduce((sum, size) => sum + size, 0)
+  const overflow = Math.max(0, measuredChrome - stage * NARROW_CHROME_SHARE)
+  const h = overflow > 0 ? Math.min(stage * NARROW_MAX_BOARD_GROWTH, Math.ceil(stage + overflow)) : stage
+  const [far, near, hand] = fitToBudget(measured, [0, 0, 0], h - stage * (1 - NARROW_CHROME_SHARE))
   const chrome = far + near + hand
   const spacing = Math.min(NARROW_SPACING, Math.max(0, (h - chrome) / 60))
   const lanes = Math.max(3, h - chrome - spacing * 7)
