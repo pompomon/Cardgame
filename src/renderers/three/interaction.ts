@@ -71,7 +71,7 @@ export class ThreeInteraction {
   private readonly getView: () => AppViewModel | null
   private readonly isBlocked: () => boolean
   private readonly playCard: (cardId: string) => void
-  private readonly activate: (hit: BoardHit) => void
+  private readonly activate: (hit: BoardHit, pointerType: DragPointerType) => void
   private readonly onHover: (hit: BoardHit | null) => void
   private readonly document: Document
   private readonly window: Window | null
@@ -86,7 +86,7 @@ export class ThreeInteraction {
     getView: () => AppViewModel | null,
     isBlocked: () => boolean,
     playCard: (cardId: string) => void,
-    activate: (hit: BoardHit) => void,
+    activate: (hit: BoardHit, pointerType: DragPointerType) => void,
     onHover: (hit: BoardHit | null) => void = () => {},
   ) {
     this.board = board
@@ -301,7 +301,7 @@ export class ThreeInteraction {
     } else if (tap) {
       const hit = this.board.hitTest(event.clientX, event.clientY)
       if (hit && sameSource(hit, gesture.hit)) {
-        this.activate(hit)
+        this.activate(hit, gesture.pointerType)
       }
     }
   }

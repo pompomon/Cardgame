@@ -21,6 +21,8 @@ export interface CardDescriptor extends BoardRect {
   readonly shadows: boolean
   readonly lifted?: boolean
   readonly stackIndex?: number
+  /** A touch selection awaiting confirmation; drawn with a white frame. */
+  readonly selected?: boolean
 }
 
 export interface CardAnchor extends BoardRect {
@@ -102,9 +104,10 @@ export class RetainedCard {
       this.position(descriptor)
     }
     this.shadow.visible = descriptor.shadows
-    this.frame.visible = descriptor.target || descriptor.hit.playable || !!descriptor.response
-    this.frameMaterial.color.set(descriptor.response === 'required' ? '#80bfff'
-      : descriptor.response === 'discard' ? '#e4a0ff' : descriptor.target ? '#ffdf7e' : '#7bf5bd')
+    this.frame.visible = descriptor.target || descriptor.hit.playable || !!descriptor.response || !!descriptor.selected
+    this.frameMaterial.color.set(descriptor.selected ? '#ffffff'
+      : descriptor.response === 'required' ? '#80bfff'
+        : descriptor.response === 'discard' ? '#e4a0ff' : descriptor.target ? '#ffdf7e' : '#7bf5bd')
     this.sizeFrame()
     this.setOpacity(1)
   }
@@ -123,7 +126,7 @@ export class RetainedCard {
 
   private sizeFrame(): void {
     const gap = this.descriptor.response === 'required' ? 2 : 3
-    const thickness = 2
+    const thickness = this.descriptor.selected ? 4 : 2
     const width = this.body.scale.x + 2 * gap
     const height = this.body.scale.y + 2 * gap
     const [top, bottom, left, right] = this.frame.children
@@ -305,7 +308,7 @@ export class ThreeCardRegistry {
 
   createProxy(source: RetainedCard): RetainedCard {
     const proxy = this.createPresentation({
-      ...source.descriptor, ...source.anchor(), visible: true, target: false, response: null,
+      ...source.descriptor, ...source.anchor(), visible: true, target: false, response: null, selected: false,
       hit: { ...source.descriptor.hit, playable: false },
     })
     proxy.group.position.z = 60

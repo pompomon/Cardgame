@@ -8,9 +8,10 @@ import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import type { Card, GameAction } from '../game/types'
 import { ThreeBoard } from '../renderers/three/board'
-import { boardCardKey } from '../renderers/three/card-registry'
+import { boardCardKey, type ThreeCardRegistry } from '../renderers/three/card-registry'
+import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type ThreeBoardPresentation } from '../renderers/three/contracts'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { cardSlotX, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
+import { cardSlotX, narrowHandPageSize, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
@@ -46,7 +47,7 @@ class ElementStub extends EventTarget {
   readonly dataset: Record<string, string> = {}
   readonly attributes = new Map<string, string>()
   readonly style = {
-    setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', right: '', bottom: '', width: '', maxWidth: '',
+    setProperty: vi.fn(), removeProperty: vi.fn(), left: '', top: '', right: '', bottom: '', width: '', maxWidth: '', height: '', maxHeight: '',
   }
   parent: ElementStub | null = null
   className = ''
@@ -56,6 +57,7 @@ class ElementStub extends EventTarget {
   tabIndex = 0
   type = ''
   id = ''
+  title = ''
   clientWidth = 390
   clientHeight = 760
   readonly tagName: string
@@ -66,14 +68,15 @@ class ElementStub extends EventTarget {
     this.ownerDocument = ownerDocument
   }
   get offsetHeight(): number {
-    if (this.className !== 'three-board-label') return 44
+    // Live headers and their hidden sizers share the same header metrics.
+    if (!this.className.split(' ').includes('three-board-label')) return 44
     const base = this.dataset.row === 'near' ? 112 : 52
     const prompt = this.children.find((child) => child.className === 'three-board-instruction')
     if (!prompt || prompt.hidden) return base
     return base + (prompt.children[0]?.textContent.length > 80 ? 112 : 44)
   }
   append(...children: ElementStub[]): void {
-    children.forEach((child) => { child.parent = this; this.children.push(child) })
+    children.forEach((child) => { child.remove(); child.parent = this; this.children.push(child) })
   }
   remove(): void {
     if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1)
@@ -148,7 +151,7 @@ function counterEffect(actor: number, discard: 'Island' | 'Mountain' = 'Mountain
 }
 
 const boards: ThreeBoard[] = []
-function setup() {
+function setup(presentation: ThreeBoardPresentation = { narrow: false, selection: NO_BOARD_SELECTION }) {
   const document = new DocumentStub()
   const window = Object.assign(new EventTarget(), { innerWidth: 390, devicePixelRatio: 1 })
   vi.stubGlobal('document', document)
@@ -156,7 +159,10 @@ function setup() {
   const host = document.createElement('section')
   const cancel = vi.fn()
   const activate = vi.fn<(action: ThreePrimaryAction) => void>()
-  const board = new ThreeBoard(host as unknown as HTMLElement, vi.fn(), cancel, activate)
+  const dock = document.createElement('section')
+  const handPage = vi.fn()
+  const board = new ThreeBoard(host as unknown as HTMLElement, vi.fn(), cancel, activate,
+    dock as unknown as HTMLElement, () => presentation, handPage)
   boards.push(board)
   const app = state()
   const ui: InterfaceUi = {
@@ -164,7 +170,7 @@ function setup() {
     previewReturnToCards: false,
     phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
   }
-  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0) => {
+  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0, targets = new Set<string>()) => {
     const view = buildViewModel(app, false)
     if (replay) {
       view.replay.active = true
@@ -173,7 +179,7 @@ function setup() {
     }
     const nextUi = { ...ui, presentedActor: view.game!.actor, ...changes }
     const primary = threePrimaryAction(view, nextUi)
-    board.render(view, nextUi.presentedActor, new Set(), threeResponse(view, nextUi), primary)
+    board.render(view, nextUi.presentedActor, targets, threeResponse(view, nextUi), primary)
     return primary
   }
   const act = (type: GameAction['type']) => {
@@ -187,11 +193,12 @@ function setup() {
   const headers = host.all('three-board-label')
   const near = headers.find((entry) => entry.dataset.row === 'near')!
   const far = headers.find((entry) => entry.dataset.row === 'far')!
-  const button = host.all('three-board-primary')[0]
+  const button = host.all('three-board-primary')[0] ?? dock.all('three-board-primary')[0]
   const scene = gpu.render.mock.calls[0][0] as Scene
   const cards = scene.children.find((entry) => entry.type === 'Group') as Group
   const pending = () => cards.children.find((entry) => entry.name === 'pending-land-play')
-  return { app, board, host, document, window, button, near, far, cards, pending, activate, cancel, present, act }
+  const registry = (board as unknown as { cards: ThreeCardRegistry }).cards
+  return { app, board, host, dock, scene, registry, document, window, button, near, far, cards, pending, activate, cancel, handPage, present, act }
 }
 
 beforeEach(() => {
@@ -207,6 +214,277 @@ afterEach(() => {
 })
 
 describe('constructed Three battlefield controls', () => {
+  it('docks the narrow primary button, preserves focus when unfolding, and removes its listeners on disposal', () => {
+    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const h = setup(presentation)
+    expect(h.button.parent).toBe(h.dock)
+    expect(h.button.getAttribute('aria-describedby')).toBe(THREE_DOCK_PROMPT_ID)
+    expect(h.button.textContent).toBe('End Turn')
+    emit(h.button, 'click')
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(h.present())
+    h.button.focus()
+    presentation.narrow = false
+    h.present()
+    expect(h.button.parent).toBe(h.near)
+    expect(h.document.activeElement).toBe(h.button)
+    expect(h.button.getAttribute('aria-describedby')).toBe('three-battlefield-prompt')
+    presentation.narrow = true
+    h.present()
+    expect(h.button.parent).toBe(h.dock)
+    h.board.dispose()
+    h.board.dispose()
+    emit(h.button, 'click')
+    expect(h.activate).toHaveBeenCalledTimes(1)
+    expect(h.dock.children).toHaveLength(0)
+    expect(h.host.children).toHaveLength(0)
+  })
+
+  it('orders narrow type stacks by target then selection, updates badges and ghosts, and clears them on profile and session changes', () => {
+    const presentation = { narrow: true, selection: { cardId: null, targetId: 'target-0', discardId: null } }
+    const h = setup(presentation)
+    h.app.game!.players[1].battlefield = Array.from({ length: 3 }, (_, index) => ({
+      instanceId: `target-${index}`, card: { id: `card-${index}`, name: 'Forest', type: 'land' },
+    }))
+    const targets = new Set(['target-0', 'target-1'])
+    h.present({}, false, 0, targets)
+    const cards = Array.from({ length: 3 }, (_, index) =>
+      h.registry.get(boardCardKey(`card-${index}`, 1, `target-${index}`))!)
+    expect(cards.map((card) => card.descriptor.stackIndex)).toEqual([2, 1, 0])
+    expect(new Set(cards.map((card) => card.descriptor.x)).size).toBe(1)
+    expect(cards.map((card) => card.descriptor.target)).toEqual([true, false, false])
+    expect(cards[0].descriptor.selected).toBe(true)
+    const frame = cards[0].group.children[1] as Group
+    expect(frame.visible).toBe(true)
+    expect(((frame.children[0] as Mesh).material as MeshBasicMaterial).color.getHexString()).toBe('ffffff')
+    expect(frame.children[0].scale.y).toBe(4)
+    expect(h.host.all('three-board-count').map((badge) => badge.textContent)).toEqual(['×3'])
+    const ghosts = h.scene.children.filter((entry) => entry.name === 'three-type-slot')
+    expect(ghosts.filter((ghost) => ghost.visible)).toHaveLength(9)
+    h.app.game!.players[1].battlefield = h.app.game!.players[1].battlefield.slice(0, 1)
+    h.present({}, false, 0, targets)
+    expect(h.host.all('three-board-count')).toHaveLength(0)
+    presentation.narrow = false
+    h.present({}, false, 0, targets)
+    expect(cards[0].descriptor.selected).toBeUndefined()
+    expect(ghosts.every((ghost) => !ghost.visible)).toBe(true)
+    presentation.narrow = true
+    h.present()
+    h.app.game = null
+    h.board.render(buildViewModel(h.app, false), 0, new Set(), null, null)
+    expect(ghosts.every((ghost) => !ghost.visible)).toBe(true)
+    expect(h.cards.children).toHaveLength(0)
+    const dispose = vi.spyOn((ghosts[0] as Mesh).material as MeshBasicMaterial, 'dispose')
+    h.board.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(h.scene.children).toHaveLength(0)
+  })
+
+  it.each(['cardId', 'discardId'] as const)('lifts and frames the narrow hand %s selection, then clears it when input ends', (field) => {
+    const presentation = { narrow: true, selection: { cardId: null as string | null, targetId: null, discardId: null as string | null } }
+    const h = setup(presentation)
+    const id = h.app.game!.players[0].hand[0].id
+    const card = h.registry.get(boardCardKey(id, 0))!
+    const originalY = card.descriptor.y
+    presentation.selection[field] = id
+    h.present()
+    expect(card.descriptor.y).toBeGreaterThan(originalY)
+    expect(card.descriptor.stackIndex).toBe(1000)
+    expect(card.descriptor.selected).toBe(true)
+    const frame = card.group.children[1] as Group
+    expect(((frame.children[0] as Mesh).material as MeshBasicMaterial).color.getHexString()).toBe('ffffff')
+    h.present({}, true)
+    const replayCard = h.registry.get(boardCardKey(id, 0))!
+    expect(replayCard.descriptor.selected).toBeUndefined()
+    expect(replayCard.descriptor.y).toBe(originalY)
+    expect(replayCard.group.children[1].visible).toBe(false)
+  })
+
+  it('pages all fifty narrow hand cards with full hit targets and clamps or resets the page when the hand or actor changes', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 344
+    stage.clientHeight = 655
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    h.present()
+    const pagination = h.host.all('three-board-pagination')[0]
+    const [previous, label, next] = pagination.children
+    const seen = new Set<string>()
+    const visit = () => {
+      for (const card of player.hand) {
+        const retained = h.registry.get(boardCardKey(card.id, 0))
+        if (!retained?.descriptor.visible) continue
+        const { x, y, width } = retained.descriptor
+        expect(width).toBeGreaterThanOrEqual(44)
+        const bounds = h.board.canvas.getBoundingClientRect()
+        expect(h.board.hitTest(
+          (stage.clientWidth / 2 + x) / stage.clientWidth * bounds.width,
+          (stage.clientHeight / 2 - y) / stage.clientHeight * bounds.height,
+        )?.cardId).toBe(card.id)
+        seen.add(card.id)
+      }
+    }
+    expect(previous.disabled).toBe(true)
+    expect(pagination.hidden).toBe(false)
+    do {
+      visit()
+      if (next.disabled) break
+      emit(next, 'click')
+    } while (true)
+    expect(seen.size).toBe(50)
+    const pageTurns = h.handPage.mock.calls.length
+    expect(pageTurns).toBeGreaterThan(0)
+    expect(previous.disabled).toBe(false)
+    emit(previous, 'click')
+    expect(h.handPage).toHaveBeenCalledTimes(pageTurns + 1)
+    expect(next.disabled).toBe(false)
+    const oldPage = label.textContent
+    h.app.status = 'Status only'
+    h.present()
+    expect(label.textContent).toBe(oldPage)
+    player.hand = player.hand.slice(0, 5)
+    h.present()
+    expect(pagination.hidden).toBe(true)
+    expect(label.textContent).toBe('1/1')
+    h.present({ presentedActor: 1 })
+    expect(previous.disabled).toBe(true)
+    h.board.dispose()
+    const text = label.textContent
+    emit(next, 'click')
+    expect(label.textContent).toBe(text)
+    expect(h.handPage).toHaveBeenCalledTimes(pageTurns + 1)
+  })
+
+  it('extends the narrow canvas inside its scrolling stage on short viewports and restores its height on unfold', () => {
+    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const h = setup(presentation)
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 344
+    stage.clientHeight = 200
+    h.present()
+    // Reserve minimum touch widths as well as the 216px of measured header chrome.
+    expect(h.board.canvas.style.height).toBe('466px')
+    expect(h.near.style.height).toBe('112px')
+    expect(stage.dataset.scrollable).toBe('true')
+    expect(h.near.title).toBe('Swipe this player header to scroll the board')
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(/\[data-scrollable="true"\] \.three-board-label\s*\{[^}]*pointer-events: auto;[^}]*touch-action: pan-y;/)
+    const id = h.app.game!.players[0].hand[0].id
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor.width).toBeGreaterThanOrEqual(44)
+    presentation.narrow = false
+    h.present()
+    expect(h.board.canvas.style.height).toBe('')
+    expect(stage.dataset.scrollable).toBe('false')
+    expect(h.near.title).toBe('')
+  })
+
+  describe.each(['cardId', 'discardId'] as const)('responsive narrow %s selection', (field) => {
+    it.each(['width', 'height'] as const)('clears a hidden selection after a %s resize with a synchronous refresh', (dimension) => {
+      const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+      const h = setup(presentation)
+      const player = h.app.game!.players[0]
+      player.hand.push(...player.deck.splice(0))
+      if (field === 'discardId') {
+        h.app.game!.currentPlayer = 1
+        h.act('play_land')
+      }
+      for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+        Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 50 : 36 })
+      }
+      const stage = h.host.all('three-board-stage')[0]
+      // Inner stages for 430/344x770 viewports, after the narrow shell.
+      stage.clientWidth = dimension === 'width' ? 418 : 332
+      stage.clientHeight = 583.25
+      h.present()
+      const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
+      const pageSize = narrowHandPageSize(layout())
+      const id = player.hand[pageSize - 1].id
+      presentation.selection[field] = id
+      h.present()
+      expect(h.registry.get(boardCardKey(id, 0))!.descriptor.selected).toBe(true)
+      h.handPage.mockImplementation(() => {
+        presentation.selection = { ...NO_BOARD_SELECTION }
+        h.present()
+      })
+      h.handPage.mockClear()
+      if (dimension === 'width') stage.clientWidth = 332
+      else stage.clientHeight = 468.25 // 344x655 viewport.
+      if (dimension === 'width') emit(h.window, 'resize')
+      else ObserverStub.latest.callback()
+      expect(narrowHandPageSize(layout())).toBeLessThan(pageSize)
+      expect(h.registry.get(boardCardKey(id, 0))?.descriptor.visible ?? false).toBe(false)
+      expect(h.handPage).toHaveBeenCalledOnce()
+      expect(presentation.selection).toEqual(NO_BOARD_SELECTION)
+      // Repeated observers and status-only updates must not notify again.
+      ObserverStub.latest.callback()
+      h.app.status = 'Status only'
+      h.present()
+      expect(h.handPage).toHaveBeenCalledOnce()
+      // A selection which stays on screen survives the same capacity change.
+      presentation.selection[field] = player.hand[0].id
+      stage.clientHeight = 583.25
+      stage.clientWidth = dimension === 'width' ? 418 : 332
+      h.present()
+      if (dimension === 'width') stage.clientWidth = 332
+      else stage.clientHeight = 468.25
+      ObserverStub.latest.callback()
+      expect(h.handPage).toHaveBeenCalledOnce()
+      expect(h.registry.get(boardCardKey(player.hand[0].id, 0))!.descriptor.selected).toBe(true)
+    })
+  })
+
+  it.each(['cardId', 'discardId'] as const)('keeps the lifted %s selection inside its lane without overlapping another hand line', (field) => {
+    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 332
+    stage.clientHeight = 583.25
+    h.present()
+    const visible = player.hand.filter((card) => h.registry.get(boardCardKey(card.id, 0))?.descriptor.visible)
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const row = layout.rows.hand
+    for (const selected of visible) {
+      presentation.selection[field] = selected.id
+      h.present()
+      const card = h.registry.get(boardCardKey(selected.id, 0))!.descriptor
+      expect(card.y + card.height / 2).toBeLessThanOrEqual(row.y + row.height / 2)
+      expect(card.y - card.height / 2).toBeGreaterThanOrEqual(row.y - row.height / 2)
+      for (const other of visible.filter((entry) => entry.id !== selected.id)) {
+        const rect = h.registry.get(boardCardKey(other.id, 0))!.descriptor
+        expect(Math.abs(card.x - rect.x) >= (card.width + rect.width) / 2
+          || Math.abs(card.y - rect.y) >= (card.height + rect.height) / 2).toBe(true)
+      }
+    }
+  })
+
+  it('keeps short-board battlefield hit targets at least 44px wide for both players', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 344
+    stage.clientHeight = 200
+    for (const owner of [0, 1]) {
+      h.app.game!.players[owner].battlefield = [{
+        instanceId: `target-${owner}`, card: { id: `card-${owner}`, name: 'Forest', type: 'land' },
+      }]
+    }
+    h.present()
+    const layout = (h.board as unknown as { layout: ThreeLayout }).layout
+    const bounds = h.board.canvas.getBoundingClientRect()
+    for (const owner of [0, 1]) {
+      const { x, y, width, height } = h.registry.get(boardCardKey(`card-${owner}`, owner, `target-${owner}`))!.descriptor
+      expect(width).toBeGreaterThanOrEqual(44)
+      expect(height).toBeGreaterThanOrEqual(44)
+      for (const offset of [-21.9, 21.9]) {
+        expect(h.board.hitTest(
+          (layout.width / 2 + x + offset) / layout.width * bounds.width,
+          (layout.height / 2 - y) / layout.height * bounds.height,
+        )?.instanceId).toBe(`target-${owner}`)
+      }
+    }
+  })
+
   it.each([
     [0, 0], [0, 1], [1, 0], [1, 1],
   ])('shows the public pending card for caster %s with player %s near the camera', (owner, presentedActor) => {
