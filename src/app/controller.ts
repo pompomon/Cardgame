@@ -748,10 +748,11 @@ export class AppController implements ControllerApi {
       this.launchAdventureGameFromSnapshot(resumed, slot.envelope.game)
       clearStoredAdventureGameSnapshot()
     } else {
+      // Warn whenever a mid-encounter game was lost, including when the tab
+      // closed without pausing and so left no save at all. Stale saves from
+      // earlier attempts are cleaned up quietly.
+      recovered = stored.stage === 'encounter' || (record.migratedFromV1 && slot.kind === 'legacy')
       if (slot.kind !== 'none') {
-        // Warn only when a mid-encounter game was lost; stale saves from
-        // earlier attempts are cleaned up quietly.
-        recovered = stored.stage === 'encounter' || (record.migratedFromV1 && slot.kind === 'legacy')
         clearStoredAdventureGameSnapshot()
       }
       this.launchAdventureGameFromRun(resumed)

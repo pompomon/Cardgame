@@ -401,6 +401,24 @@ describe('Adventure controller with version 2 runs', () => {
     expect(controller.getViewModel().adventure.remainingChances).toBe(3)
   })
 
+  it('relaunches with a recovery warning after a reload mid-encounter that left no save', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    playFirstLand(controller)
+    expect(storage.data.has(ADVENTURE_GAME_STORAGE_KEY)).toBe(false)
+
+    const reloaded = new AppController()
+    reloaded.resumeAdventure()
+
+    const run = currentRun(reloaded)
+    expect(liveGame(reloaded)).toEqual(freshAttemptGame(run))
+    expect(reloaded.getViewModel().status).toBe(recoveryMessage(1))
+    expect(reloaded.getViewModel().adventure.remainingChances).toBe(3)
+    expect(run.attemptOrdinal).toBe(0)
+    expect(storage.data.has(ADVENTURE_GAME_STORAGE_KEY)).toBe(false)
+  })
+
   it('relaunches a paused version 1 game from its seed with a recovery warning and no lost chance', () => {
     const legacy = v1Run()
     const storage = installTrackedStorage(fixture.pausedMidRound)
