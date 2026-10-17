@@ -1,7 +1,7 @@
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent } from '../game/types'
 import type { AiLevel } from '../game/ai-levels'
 import type { GameRecordFile } from './game-recording'
-import type { AdventureOpponentDeck, AdventureOpponentKind, AdventureRunStatus } from './adventure'
+import type { AdventureOpponentKind, AdventureRunState, AdventureRunStatus } from './adventure'
 import type { BoardTheme } from './board-theme'
 import type { CardVisualStyle } from './card-visual-styles'
 import type { RenderQualityPreference } from './render-quality'
@@ -19,17 +19,11 @@ export type { BoardTheme }
 export type { RenderQualityPreference }
 export type AnimationSpeed = 'off' | 'fast' | 'normal' | 'slow'
 
+// Controller-owned Adventure state. `run` is the validated schema version 2
+// run (or null when no run is loaded); renderers only see the frozen
+// `AdventureUiState` projection built by the view model.
 export interface AdventureState {
-  baseSeed: number
-  currentRound: number
-  remainingChances: number
-  winStreak: number
-  totalRoundsPlayed: number
-  totalCardsPlayed: number
-  opponentLineup: AdventureOpponentDeck[]
-  currentOpponentIndex: number
-  activeGameSeed: number | null
-  status: AdventureRunStatus | 'inactive'
+  run: AdventureRunState | null
   highScore: number
   hasSavedRun: boolean
 }

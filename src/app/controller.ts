@@ -8,20 +8,30 @@ import { activeActor } from './active-actor'
 import { isGameAction, isLegalActionForState, isSeedPayload } from './action-validation'
 import { readStorageItem, tryReadStorageItem, writeStorageItem } from './safe-storage'
 import {
+  applyAdventureEncounterResult,
+  beginAdventureEncounter,
   clearStoredAdventureGameSnapshot,
+  cloneAdventureRun,
   computeAdventureScore,
   createAdventureRun,
+  createAdventureRunId,
+  createInactiveAdventureState,
   deckPairForAdventureGame,
+  isAdventureGameSnapshotForRun,
+  isResumableAdventureRun,
+  pauseAdventureRun,
   persistAdventureGameSnapshot,
   persistAdventureHighScore,
   readStoredAdventureGameSnapshot,
   readStoredAdventureHighScore,
+  type AdventureEncounterOutcome,
   type AdventureRunState,
 } from './adventure'
 import {
   clearStoredAdventureRun,
   persistAdventureRun,
-  readStoredAdventureRun,
+  readStoredAdventureRunRecord,
+  type StoredAdventureRunRecord,
 } from './adventure-persistence'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
@@ -39,30 +49,18 @@ import {
   snapshotFromRecord,
 } from './game-recording'
 import { buildViewModel } from './view-model'
-import type { AdventureState, AiLevel, AnimationSpeed, AppState, AppViewModel, CardVisualStyle, Mode } from './types'
+import type { AiLevel, AnimationSpeed, AppState, AppViewModel, CardVisualStyle, Mode } from './types'
 
 const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
 const TUTORIAL_SEED = 1
+const ADVENTURE_STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
 
-// Factory for the "inactive" adventure baseline. Centralized so the
-// constructor, storage refresh, and reset paths cannot drift out of sync as
-// adventure state evolves.
-function inactiveAdventureState(highScore: number, hasSavedRun = false): AdventureState {
-  return {
-    baseSeed: 0,
-    currentRound: 0,
-    remainingChances: 0,
-    winStreak: 0,
-    totalRoundsPlayed: 0,
-    totalCardsPlayed: 0,
-    opponentLineup: [],
-    currentOpponentIndex: 0,
-    activeGameSeed: null,
-    status: 'inactive',
-    highScore,
-    hasSavedRun,
-  }
+// Adventure seeds come from the clock, as before. Clamp unusual clock values
+// so run changes always receive the non-negative integer they require.
+function adventureClockSeed(): number {
+  const now = Math.floor(Date.now())
+  return Number.isSafeInteger(now) && now >= 0 ? now : 0
 }
 
 function isP2PMode(mode: Mode): boolean {
@@ -114,6 +112,10 @@ export class AppController implements ControllerApi {
   private p2p: P2PLink | null = null
   private replayInterval: ReturnType<typeof setInterval> | null = null
   private aiTimeout: ReturnType<typeof setTimeout> | null = null
+  // The unsaved ID shown for a version 1 run converted in memory. Later reads
+  // of the same unversioned save reuse it, so the first version 2 write keeps
+  // the ID already in memory. A successful run write or a reset retires it.
+  private unsavedConversionRunId: string | null = null
 
   constructor() {
     this.state = {
@@ -135,7 +137,7 @@ export class AppController implements ControllerApi {
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
-      adventure: inactiveAdventureState(readStoredAdventureHighScore()),
+      adventure: createInactiveAdventureState(readStoredAdventureHighScore()),
     }
     this.refreshAdventureFromStorage()
   }
@@ -168,8 +170,16 @@ export class AppController implements ControllerApi {
     this.state.hasSavedRecording = this.hasSavedRecording()
   }
 
+  private readAdventureRunRecord(): StoredAdventureRunRecord | null {
+    const record = readStoredAdventureRunRecord(this.unsavedConversionRunId ?? undefined)
+    if (record?.migratedFromV1) {
+      this.unsavedConversionRunId = record.run.runId
+    }
+    return record
+  }
+
   private refreshAdventureFromStorage(): void {
-    const run = readStoredAdventureRun()
+    const run = this.readAdventureRunRecord()?.run ?? null
     const highScore = readStoredAdventureHighScore()
     if (this.state.mode === 'adventure-hvai') {
       this.state.adventure.highScore = highScore
@@ -179,19 +189,15 @@ export class AppController implements ControllerApi {
     if (!run) {
       // Reset adventure view-state to the inactive baseline so the lobby never
       // shows stale round/lineup/status when storage is missing or corrupted.
-      this.state.adventure = inactiveAdventureState(highScore)
+      this.state.adventure = createInactiveAdventureState(highScore)
       return
     }
-    // Normalize any stored 'active' run to 'paused' on load. A run can be
-    // persisted as 'active' if the user closed the tab mid-round; surfacing
-    // it in the lobby as 'paused' lets them resume cleanly without leaving
-    // the controller in a phantom-active state.
-    const normalized = run.status === 'active' ? { ...run, status: 'paused' as const } : run
-    if (normalized !== run) {
-      persistAdventureRun(normalized)
-    }
+    // Show a stored 'active' run as 'paused'. A run is stored as 'active' if
+    // the user closed the tab mid-round; surfacing it as 'paused' lets them
+    // resume cleanly. Reading never writes: the normalization (and any
+    // version 1 conversion) is only saved by the next explicit run save.
     this.state.adventure = {
-      ...normalized,
+      run: run.status === 'active' ? pauseAdventureRun(run) : run,
       highScore,
       hasSavedRun: true,
     }
@@ -222,55 +228,50 @@ export class AppController implements ControllerApi {
     this.state.replay = null
   }
 
-  private currentAdventureRun(): AdventureRunState | null {
-    if (this.state.adventure.status === 'inactive') {
-      return null
-    }
-    return {
-      baseSeed: this.state.adventure.baseSeed,
-      currentRound: this.state.adventure.currentRound,
-      remainingChances: this.state.adventure.remainingChances,
-      winStreak: this.state.adventure.winStreak,
-      totalRoundsPlayed: this.state.adventure.totalRoundsPlayed,
-      totalCardsPlayed: this.state.adventure.totalCardsPlayed,
-      currentOpponentIndex: this.state.adventure.currentOpponentIndex,
-      activeGameSeed: this.state.adventure.activeGameSeed,
-      status: this.state.adventure.status,
-      opponentLineup: this.state.adventure.opponentLineup,
-    }
-  }
-
   private setAdventureRun(run: AdventureRunState | null, statusMessage?: string): boolean {
     const highScore = this.state.adventure.highScore
     if (!run) {
-      this.state.adventure = inactiveAdventureState(highScore)
+      this.unsavedConversionRunId = null
+      this.state.adventure = createInactiveAdventureState(highScore)
       clearStoredAdventureRun()
       if (statusMessage) {
         this.state.status = statusMessage
       }
       return true
     }
-    this.state.adventure = {
-      ...run,
-      highScore,
-      hasSavedRun: false,
-    }
-    // Only mark hasSavedRun true if the write actually succeeded; otherwise
-    // resumeAdventure() would later fail to find anything in storage.
-    const persisted = persistAdventureRun(run)
+    const next = cloneAdventureRun(run)
+    // Replace the in-memory run even when the write fails, so the current
+    // session keeps playing; hasSavedRun follows the write result because
+    // resumeAdventure() reads the run back from storage.
+    const persisted = persistAdventureRun(next)
     if (persisted) {
-      this.state.adventure.hasSavedRun = true
+      this.unsavedConversionRunId = null
+    }
+    this.state.adventure = {
+      run: next,
+      highScore,
+      hasSavedRun: persisted,
     }
     if (!persisted) {
-      this.state.status = 'Adventure progress could not be saved (storage unavailable).'
+      this.state.status = ADVENTURE_STORAGE_WARNING
     } else if (statusMessage) {
       this.state.status = statusMessage
     }
     return persisted
   }
 
+  // A resumable run needs a write when it became active in this session or
+  // its last save failed. A run that was only loaded (or converted from
+  // version 1) is never written just because the lobby was shown.
+  private adventureRunNeedsSave(): boolean {
+    const run = this.state.adventure.run
+    return run !== null
+      && isResumableAdventureRun(run)
+      && (run.status === 'active' || !this.state.adventure.hasSavedRun)
+  }
+
   private launchAdventureGameFromRun(run: AdventureRunState): void {
-    const seed = run.activeGameSeed ?? Date.now()
+    const seed = run.attemptSeed ?? adventureClockSeed()
     const [playerDeck, opponentDeck] = deckPairForAdventureGame(run, seed)
     this.state.mode = 'adventure-hvai'
     this.state.seed = seed
@@ -285,7 +286,7 @@ export class AppController implements ControllerApi {
   }
 
   private launchAdventureGameFromSnapshot(run: AdventureRunState, snapshot: GameState): void {
-    const seed = run.activeGameSeed ?? Date.now()
+    const seed = run.attemptSeed ?? adventureClockSeed()
     this.state.mode = 'adventure-hvai'
     this.state.seed = seed
     this.state.game = snapshot
@@ -304,13 +305,14 @@ export class AppController implements ControllerApi {
     this.state.adventure.highScore = nextHighScore
     persistAdventureHighScore(nextHighScore)
     const fullMessage = `${message} Score: ${score}. High score: ${nextHighScore}.`
-    // This helper is terminal-only and is called after setting run.status to
-    // 'completed' or 'failed'. Clear stored run/snapshot and surface terminal
-    // status in memory without persisting and immediately removing the run.
+    // This helper is terminal-only and receives a 'completed' or 'failed'
+    // run. Clear stored run/snapshot and surface terminal status in memory
+    // without persisting and immediately removing the run.
     clearStoredAdventureRun()
     clearStoredAdventureGameSnapshot()
+    this.unsavedConversionRunId = null
     this.state.adventure = {
-      ...run,
+      run: cloneAdventureRun(run),
       highScore: nextHighScore,
       hasSavedRun: false,
     }
@@ -324,61 +326,36 @@ export class AppController implements ControllerApi {
     if (this.state.mode !== 'adventure-hvai' || !this.state.game || previousState.phase === 'gameOver' || this.state.game.phase !== 'gameOver') {
       return
     }
-    const run = this.currentAdventureRun()
-    if (!run || run.status !== 'active') {
+    const run = this.state.adventure.run
+    if (!run || run.status !== 'active' || run.stage !== 'encounter') {
       return
     }
 
     // Any in-progress mid-round snapshot is no longer valid once a round
     // resolves; clear it so a future resume starts a fresh round from the
-    // run state rather than restoring a stale finished board.
+    // run state rather than restoring a stale finished board. The new
+    // attempt or tier also stops any leftover snapshot from matching.
     clearStoredAdventureGameSnapshot()
 
-    run.totalRoundsPlayed += 1
     const winner = this.state.game.winner
-    if (winner === 0) {
-      run.winStreak += 1
-      if (run.winStreak > 0 && run.winStreak % 3 === 0) {
-        run.remainingChances += 1
-      }
-      if (run.currentRound >= 7) {
-        run.status = 'completed'
-        run.activeGameSeed = null
-        this.applyAdventureCompletion(run, 'Adventure completed!')
-        return
-      }
-      run.currentRound += 1
-      run.currentOpponentIndex = Math.min(run.currentOpponentIndex + 1, 6)
-      run.activeGameSeed = Date.now()
-      run.status = 'paused'
-      this.setAdventureRun(run, `Round won. Resume adventure for Round ${run.currentRound}.`)
-      this.state.mode = null
-      this.state.game = null
-      this.state.controllers = ['human', 'human']
+    const outcome: AdventureEncounterOutcome = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw'
+    const next = applyAdventureEncounterResult(run, outcome, adventureClockSeed())
+    if (next.status === 'completed') {
+      this.applyAdventureCompletion(next, 'Adventure completed!')
       return
     }
-
-    if (winner === 1) {
-      run.remainingChances = Math.max(0, run.remainingChances - 1)
-      run.winStreak = 0
-      if (run.remainingChances <= 0) {
-        run.status = 'failed'
-        run.activeGameSeed = null
-        this.applyAdventureCompletion(run, 'Adventure failed.')
-        return
-      }
-      run.status = 'paused'
-      run.activeGameSeed = Date.now()
-      this.setAdventureRun(run, `Round lost. ${run.remainingChances} chances left. Resume adventure to retry Round ${run.currentRound}.`)
-      this.state.mode = null
-      this.state.game = null
-      this.state.controllers = ['human', 'human']
+    if (next.status === 'failed') {
+      this.applyAdventureCompletion(next, 'Adventure failed.')
       return
     }
-
-    run.status = 'paused'
-    run.activeGameSeed = Date.now()
-    this.setAdventureRun(run, `Round ended in a draw. Resume adventure to replay Round ${run.currentRound}.`)
+    const round = next.currentTierIndex + 1
+    if (outcome === 'win') {
+      this.setAdventureRun(next, `Round won. Resume adventure for Round ${round}.`)
+    } else if (outcome === 'loss') {
+      this.setAdventureRun(next, `Round lost. ${next.remainingChances} chances left. Resume adventure to retry Round ${round}.`)
+    } else {
+      this.setAdventureRun(next, `Round ended in a draw. Resume adventure to replay Round ${round}.`)
+    }
     this.state.mode = null
     this.state.game = null
     this.state.controllers = ['human', 'human']
@@ -673,14 +650,14 @@ export class AppController implements ControllerApi {
     const previous = this.state.game
     const next = applyAction(previous, action)
     this.state.game = next
-    if (this.state.mode === 'adventure-hvai' && action.type === 'play_land' && this.state.adventure.status === 'active') {
+    if (this.state.mode === 'adventure-hvai' && action.type === 'play_land' && this.state.adventure.run?.status === 'active') {
       // Update the in-memory counter only. setAdventureRun() would
       // synchronously JSON-stringify and write the entire run (including the
-      // 7×50-card opponentLineup) to localStorage on every play_land, which
+      // 7×50-card opponent map) to localStorage on every play_land, which
       // can introduce main-thread jank during gameplay. Persistence happens
       // at round boundaries via setAdventureRun() in onAdventureGameFinished()
       // and on pause/resume/abandon, which already capture totalCardsPlayed.
-      this.state.adventure.totalCardsPlayed += 1
+      this.state.adventure.run.totalCardsPlayed += 1
     }
 
     this.appendRecordingStep(action, next, source)
@@ -729,7 +706,8 @@ export class AppController implements ControllerApi {
     this.p2p?.close()
     this.p2p = null
     this.state.replay = null
-    const run = createAdventureRun(Date.now())
+    const seed = adventureClockSeed()
+    const run = beginAdventureEncounter(createAdventureRun(seed, createAdventureRunId()), seed)
     clearStoredAdventureGameSnapshot()
     const persisted = this.setAdventureRun(run)
     this.launchAdventureGameFromRun(run)
@@ -746,31 +724,45 @@ export class AppController implements ControllerApi {
       this.notify()
       return
     }
-    const run = readStoredAdventureRun()
-    if (!run || (run.status !== 'paused' && run.status !== 'active')) {
+    // Read once. A version 1 run arrives converted in memory; this resume is
+    // its first version 2 write.
+    const record = this.readAdventureRunRecord()
+    if (!record || !isResumableAdventureRun(record.run)) {
       this.state.status = 'No paused adventure run found.'
       this.refreshAdventureFromStorage()
       this.notify()
       return
     }
-    const resumed = {
-      ...run,
-      status: 'active' as const,
-      activeGameSeed: run.activeGameSeed ?? Date.now(),
-    }
+    const stored = record.run
+    const slot = readStoredAdventureGameSnapshot()
+    const resumed = beginAdventureEncounter(stored, adventureClockSeed())
     const persisted = this.setAdventureRun(resumed)
-    // If a mid-round game snapshot was persisted on pause, restore it so the
-    // player continues from the exact same board state. Otherwise launch a
-    // fresh round deterministically from the run's activeGameSeed.
-    const snapshot = readStoredAdventureGameSnapshot()
-    if (snapshot) {
-      this.launchAdventureGameFromSnapshot(resumed, snapshot)
+    const round = resumed.currentTierIndex + 1
+    let recovered = false
+    // Restore a mid-game save only when it belongs to this run's paused
+    // encounter: same run, node, attempt number and attempt seed. Anything
+    // else (a bare version 1 game, a corrupt slot, or a save from another
+    // run or attempt) is never restored; the encounter restarts from its
+    // seed without using a chance.
+    if (stored.stage === 'encounter' && slot.kind === 'envelope' && isAdventureGameSnapshotForRun(slot.envelope, resumed)) {
+      this.launchAdventureGameFromSnapshot(resumed, slot.envelope.game)
       clearStoredAdventureGameSnapshot()
     } else {
+      // Warn whenever a mid-encounter game was lost, including when the tab
+      // closed without pausing and so left no save at all. Stale saves from
+      // earlier attempts are cleaned up quietly.
+      recovered = stored.stage === 'encounter' || (record.migratedFromV1 && slot.kind === 'legacy')
+      if (slot.kind !== 'none') {
+        clearStoredAdventureGameSnapshot()
+      }
       this.launchAdventureGameFromRun(resumed)
     }
+    // Message priority: storage warning (already set by setAdventureRun),
+    // then the recovery warning, then the success message.
     if (persisted) {
-      this.state.status = `Adventure resumed at Round ${resumed.currentRound}.`
+      this.state.status = recovered
+        ? `Adventure resumed at Round ${round}. The saved game could not be restored, so the round restarted without using a chance.`
+        : `Adventure resumed at Round ${round}.`
     }
     this.notify()
     this.scheduleAiIfNeeded()
@@ -780,31 +772,34 @@ export class AppController implements ControllerApi {
     if (this.state.mode !== 'adventure-hvai') {
       return
     }
-    const run = this.currentAdventureRun()
-    if (!run) {
+    const run = this.state.adventure.run
+    if (!run || !isResumableAdventureRun(run)) {
       return
     }
-    // Pausing mid-round: snapshot the live GameState so resuming continues
-    // exactly where the player left off. Pausing after the round ended
-    // (gameOver) is handled by onAdventureGameFinished, which already wrote
-    // a paused run to storage and sent us back to the lobby — no game
-    // snapshot is needed in that case.
-    if (this.state.game && this.state.game.phase !== 'gameOver') {
-      persistAdventureGameSnapshot(this.state.game)
+    // Pausing mid-round: save the live GameState, bound to this run's
+    // attempt identity, so resuming continues exactly where the player left
+    // off. Pausing after the round ended (gameOver) is handled by
+    // onAdventureGameFinished, which already wrote a paused run to storage
+    // and sent us back to the lobby — no game snapshot is needed then.
+    const game = this.state.game
+    if (game && game.phase !== 'gameOver' && run.stage === 'encounter') {
+      persistAdventureGameSnapshot(run, game)
     } else {
       clearStoredAdventureGameSnapshot()
     }
-    this.clearAiTimeout()
-    // Mark in-memory state as paused; backToLobby() owns the single
-    // persistence write for the paused run, avoiding a redundant
-    // localStorage write here.
-    this.state.adventure.status = 'paused'
-    this.state.adventure.activeGameSeed = this.state.adventure.activeGameSeed ?? this.state.seed
-    this.backToLobby(`Adventure paused at Round ${run.currentRound}.`)
+    const paused = pauseAdventureRun(run)
+    this.resetToLobby()
+    // The single run write for this pause. If it fails, drop the game save
+    // too; setAdventureRun() surfaces the storage warning last.
+    const persisted = this.setAdventureRun(paused, `Adventure paused at Round ${paused.currentTierIndex + 1}.`)
+    if (!persisted) {
+      clearStoredAdventureGameSnapshot()
+    }
+    this.notify()
   }
 
   abandonAdventure(): void {
-    const hadAdventure = this.state.adventure.status !== 'inactive' || this.state.adventure.hasSavedRun
+    const hadAdventure = this.state.adventure.run !== null || this.state.adventure.hasSavedRun
     clearStoredAdventureGameSnapshot()
     this.setAdventureRun(null)
     if (this.state.mode === 'adventure-hvai') {
@@ -838,19 +833,16 @@ export class AppController implements ControllerApi {
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
     // If there's an in-memory active adventure (e.g. user navigated back to
-    // the lobby with state still active, or storage held an 'active' run from
-    // a closed tab), demote it to 'paused' rather than clearing it. Starting
-    // a non-adventure mode should never silently delete saved adventure
-    // progress; the user can still resume the run from the lobby afterwards.
+    // the lobby with state still active), demote it to 'paused' rather than
+    // clearing it. Starting a non-adventure mode should never silently delete
+    // saved adventure progress; the user can still resume the run from the
+    // lobby afterwards. A run that was only loaded from storage is not
+    // rewritten.
     let adventurePersisted = true
-    if (this.state.adventure.status === 'active') {
-      const run = this.currentAdventureRun()
-      if (run) {
-        // Preserve activeGameSeed as-is; resumeAdventure() supplies a fresh
-        // seed if needed when the run is later resumed.
-        run.status = 'paused'
-        adventurePersisted = this.setAdventureRun(run)
-      }
+    const adventureRun = this.state.adventure.run
+    if (adventureRun && this.adventureRunNeedsSave()) {
+      // pauseAdventureRun() keeps the attempt seed and identity as-is.
+      adventurePersisted = this.setAdventureRun(pauseAdventureRun(adventureRun))
     }
 
     if (mode === 'local-hvh') {
@@ -902,7 +894,8 @@ export class AppController implements ControllerApi {
     this.scheduleAiIfNeeded()
   }
 
-  backToLobby(statusMessage?: string): void {
+  // UI-only reset to the lobby; it never writes Adventure progress.
+  private resetToLobby(statusMessage?: string): void {
     this.stopReplayInterval()
     this.clearAiTimeout()
     this.p2p?.close()
@@ -917,12 +910,16 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
-    if (this.state.adventure.status !== 'inactive' && this.state.adventure.status !== 'completed' && this.state.adventure.status !== 'failed') {
-      const run = this.currentAdventureRun()
-      if (run) {
-        run.status = 'paused'
-        run.activeGameSeed = run.activeGameSeed ?? Date.now()
-        const persisted = this.setAdventureRun(run)
+  }
+
+  backToLobby(statusMessage?: string): void {
+    this.resetToLobby(statusMessage)
+    const run = this.state.adventure.run
+    if (run && isResumableAdventureRun(run)) {
+      // Demote and save a run that became active in this session (or whose
+      // last save failed). A run that was only loaded stays as stored.
+      if (this.adventureRunNeedsSave()) {
+        const persisted = this.setAdventureRun(pauseAdventureRun(run))
         if (!persisted) {
           clearStoredAdventureGameSnapshot()
         }

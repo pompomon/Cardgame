@@ -11,8 +11,10 @@ Every JSON value entering the app must pass a structural guard before it is
 used. Examples in the codebase:
 
 - `isGameStateLike` (recording load)
-- `isAdventureRunState`, `isAdventureOpponentDeck`, `isGameStateSnapshot`,
-  `isPlayerStateSnapshot` (adventure snapshot load)
+- `isAdventureRunState` (schema version 2 Adventure run),
+  `isLegacyAdventureRunState` (unversioned version 1 run, checked before
+  migration), `isGameStateSnapshot`, `isPlayerStateSnapshot` (Adventure
+  mid-game save load)
 - `sanitizeLogEvents` (recording log normalization)
 - `normalizeStateSchema` (recording back-fill)
 
@@ -111,13 +113,14 @@ These patterns come up repeatedly:
   feature owns its own keys.
 - **Centralize "inactive adventure baseline".** The same object literal
   was duplicated across the constructor, `refreshAdventureFromStorage()`,
-  and `setAdventureRun(null)`. Use one factory; otherwise fields drift.
-- **Avoid redundant persistence.** `pauseAdventure()` calling
-  `setAdventureRun(run)` followed by `backToLobby()` (which re-pauses)
-  causes two synchronous `localStorage` writes. Do the work once.
+  and `setAdventureRun(null)`. Use `createInactiveAdventureState()`;
+  otherwise fields drift.
+- **Avoid redundant persistence.** `pauseAdventure()` writes the mid-game
+  save and then the paused run once. It resets the UI with `resetToLobby()`,
+  not `backToLobby()`, which would save the run a second time.
 - **Don't write large objects to `localStorage` on every action.**
   Triggering `setAdventureRun(run)` from every `play_land` synchronously
-  JSON-stringifies the full 7×50-card lineup. Write on commit boundaries
+  JSON-stringifies the full 7×50-card map. Write on commit boundaries
   (round end, explicit pause), or debounce.
 - **Don't silently overwrite warning statuses.** If `setAdventureRun(...)`
   surfaces a "storage unavailable" warning via `state.status`, a later
@@ -192,6 +195,68 @@ for changes to target pickers, response controls, and shared submission paths.
   narrowly scoped view-model field and disappear when the relevant decision
   phase ends. Keep those fields as projected snapshots, not references to
   controller-owned `state.game` or `state.adventure` objects.
+
+## Adventure run schema (version 2)
+
+`cardgame.adventure-run` holds a schema version 2 run and
+`cardgame.adventure-game` holds an identity-bound mid-game save. Both keys
+keep their names; only their formats changed.
+
+- **Dispatch on the version key.** A payload with a `schemaVersion` key must
+  be exactly `2` and pass `isAdventureRunState`. A payload without the key is
+  version 1: it must pass the strict `isLegacyAdventureRunState` guard first
+  and is then converted in memory by `migrateLegacyAdventureRun`. Any other
+  value (`1`, `3`, `"2"`, `null`, …) makes the run unavailable; never repair it.
+- **Reading never writes.** The constructor, `refreshAdventureFromStorage()`,
+  `importRecordingJson()`, and lobby navigation show a stored `active` run as
+  `paused` in memory only. A loaded or converted run is written only by an
+  explicit run save, normally Resume. `backToLobby()` and `startGame()` save
+  only a run that became active in this session or whose last save failed.
+- **One change and save path.** Change runs only through the helpers in
+  `src/app/adventure.ts` (`beginAdventureEncounter`, `pauseAdventureRun`,
+  `applyAdventureEncounterResult`). They copy their input and throw on an
+  invalid result. Save through `setAdventureRun()`; `persistAdventureRun()`
+  refuses a run that fails the guard. Copy runs with `cloneAdventureRun()`,
+  which copies only known fields, deeply.
+- **Milestone 1 rules.**
+  - `stage` is `map` or `encounter` for a resumable (`active`/`paused`) run.
+    Finished runs have no stage, selected node, or attempt seed.
+  - `map.kind` is `linear` for new runs, where only the final tier is a mono
+    boss, or `legacy-linear` for converted runs, where any known kind may be
+    last. Keep accepting both kinds until such runs finish.
+  - Exactly seven tiers, each with one `center` node. The guard recomputes each
+    node ID (`tier-N-center`) and rejects mismatches.
+  - Opponents keep the legacy `label`, a known `kind`, one to five unique known
+    lands, and a 50-card deck with unique card IDs. Strings are length-limited.
+  - `currentTierIndex` is 0–6. `completedNodeIds` lists one node per finished
+    tier in order, or all seven for a completed run. `selectedNodeId` is a node
+    of the current tier and stays fixed through retries; it and
+    `attemptSeed` are required at `encounter`.
+  - Counters are finite, non-negative integers. `relics` and `rewardHistory`
+    are reserved and must be empty.
+- **Migration closure.** Every version 1 run the app could have written must
+  convert into a run that passes the version 2 guard. When a version 2 limit
+  is stricter than version 1, check that app-written data meets it and add a
+  rejection test for hand-edited data that does not. The real version 1
+  capture lives in `src/test/fixtures/adventure-v1-saves.json`.
+- **Run identity.** `createAdventureRunId()` uses `crypto.getRandomValues`
+  (`randomUUID` is missing on insecure LAN origins) with a counter, clock and
+  `Math.random` fallback. Never derive a run ID from a seed. A converted
+  version 1 run keeps one unsaved ID in memory until its first save; a reload
+  before that harmlessly assigns another.
+- **Mid-game save identity.** Pause writes an envelope with the run ID, node
+  ID, attempt ordinal, attempt seed, and the deeply validated `GameState`.
+  Resume restores it only when the run is at `encounter` and all four identity
+  fields match. A bare version 1 `GameState`, an invalid slot, or a mismatched
+  envelope is never restored: the saved encounter restarts from its attempt
+  seed without using a chance, with a recovery warning when a mid-encounter
+  game was lost. Deleting the slot is best-effort cleanup; identity matching
+  is the safety boundary.
+- **Score counters.** `scoreEligibleChances` and `scoreEligibleWinStreak`
+  shadow the real chances and streak, and `computeAdventureScore` reads the
+  score-eligible chances. Without rewards they move together.
+- **Resume status priority.** Storage warning first, then the recovery
+  warning, then the success message.
 
 ## Adventure-specific rules
 

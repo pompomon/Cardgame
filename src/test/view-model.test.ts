@@ -1,7 +1,36 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import {
+  createAdventureRun,
+  createInactiveAdventureState,
+  migrateLegacyAdventureRun,
+  type AdventureOpponentDeck,
+  type AdventureRunState,
+  type AdventureRunStateV1,
+} from '../app/adventure'
+import { displayAdventureOpponentLabel } from '../app/game-presentation'
 import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import { HIDDEN_HAND_CARD_NAME, type AppState } from '../app/types'
+
+const TEST_RUN_ID = '0123456789abcdef0123456789abcdef'
+
+function v1FixtureRun(): AdventureRunStateV1 {
+  const fixture = JSON.parse(readFileSync(resolve(__dirname, 'fixtures', 'adventure-v1-saves.json'), 'utf8')) as {
+    closedMidRound: Record<string, string>
+  }
+  return JSON.parse(fixture.closedMidRound['cardgame.adventure-run']) as AdventureRunStateV1
+}
+
+function runWithOpponents(opponents: Record<number, Omit<AdventureOpponentDeck, 'deck'>>): AdventureRunState {
+  const run = createAdventureRun(57, TEST_RUN_ID)
+  for (const [tierIndex, opponent] of Object.entries(opponents)) {
+    const node = run.map.tiers[Number(tierIndex)].nodes[0]
+    node.opponent = { ...opponent, deck: node.opponent.deck }
+  }
+  return run
+}
 
 function createState(seed: number): AppState {
   return {
@@ -23,20 +52,7 @@ function createState(seed: number): AppState {
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
-    adventure: {
-      baseSeed: 0,
-      currentRound: 0,
-      remainingChances: 0,
-      winStreak: 0,
-      totalRoundsPlayed: 0,
-      totalCardsPlayed: 0,
-      opponentLineup: [],
-      currentOpponentIndex: 0,
-      activeGameSeed: null,
-      status: 'inactive',
-      highScore: 0,
-      hasSavedRun: false,
-    },
+    adventure: createInactiveAdventureState(),
   }
 }
 
@@ -185,13 +201,11 @@ describe('buildViewModel', () => {
     state.game!.players[0].battlefield = [
       { instanceId: 'bf-1', card: { id: 'bf-card-1', name: 'Mountain', type: 'land' } },
     ]
-    state.adventure.opponentLineup = [{
-      id: 'opponent-1',
-      label: 'Opponent 1',
-      kind: 'dual',
-      lands: ['Forest', 'Swamp'],
-      deck: [{ id: 'deck-1', name: 'Forest', type: 'land' }],
-    }]
+    const run = runWithOpponents({
+      0: { id: 'opponent-1', label: 'Opponent 1', kind: 'dual', lands: ['Forest', 'Swamp'] },
+    })
+    state.adventure = { run, highScore: 0, hasSavedRun: true }
+    const source = run.map.tiers[0].nodes[0].opponent
 
     const vm = buildViewModel(state, false)
 
@@ -232,44 +246,125 @@ describe('buildViewModel', () => {
     expect(vm.game?.events[0]).not.toBe(state.game!.events[0])
 
     expect(vm.adventure).not.toBe(state.adventure)
-    expect(vm.adventure.opponentLineup).not.toBe(state.adventure.opponentLineup)
-    expect(vm.adventure.opponentLineup[0]).not.toBe(state.adventure.opponentLineup[0])
+    expect(vm.adventure.opponentLineup).not.toBe(run.map.tiers)
+    expect(vm.adventure.opponentLineup[0]).not.toBe(source)
     expect(vm.adventure.opponentLineup[0].label).toBe(
       'Duo: Gravebloom Dryad + Memory Vampire',
     )
-    expect(vm.adventure.opponentLineup[0].label).not.toBe(
-      state.adventure.opponentLineup[0].label,
-    )
+    expect(vm.adventure.opponentLineup[0].label).not.toBe(source.label)
     expect(vm.adventure.opponentLineup[0].lands).toEqual(['Forest', 'Swamp'])
-    expect(vm.adventure.opponentLineup[0].lands).not.toBe(state.adventure.opponentLineup[0].lands)
+    expect(vm.adventure.opponentLineup[0].lands).not.toBe(source.lands)
   })
 
   it('never exposes pre-migration Adventure opponent labels', () => {
     const state = createState(58)
-    state.adventure.opponentLineup = [
-      {
-        id: 'legacy-standard',
-        label: 'Standard Deck (10 of each land)',
-        kind: 'standard',
-        lands: ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'],
-        deck: [],
-      },
-      {
-        id: 'legacy-boss',
-        label: 'Boss: Mono Forest Deck',
-        kind: 'mono',
-        lands: ['Forest'],
-        deck: [],
-      },
-    ]
+    state.adventure = {
+      run: runWithOpponents({
+        0: {
+          id: 'legacy-standard',
+          label: 'Standard Deck (10 of each land)',
+          kind: 'standard',
+          lands: ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'],
+        },
+        6: {
+          id: 'legacy-boss',
+          label: 'Boss: Mono Forest Deck',
+          kind: 'mono',
+          lands: ['Forest'],
+        },
+      }),
+      highScore: 0,
+      hasSavedRun: true,
+    }
 
     const lineup = buildViewModel(state, false).adventure.opponentLineup
 
-    expect(lineup.map((entry) => entry.label)).toEqual([
+    expect([lineup[0].label, lineup[6].label]).toEqual([
       'Balanced roster (10 of each creature)',
       'Boss: Gravebloom Dryad specialist',
     ])
-    expect(JSON.stringify(lineup)).not.toMatch(/Standard Deck|Mono Forest|each land/)
+    expect(JSON.stringify(lineup)).not.toMatch(/Standard Deck|Mono Forest|each land|Deck/)
+  })
+
+  it('projects a migrated version 1 run exactly like the version 1 Adventure view', () => {
+    const legacy = v1FixtureRun()
+    const run = migrateLegacyAdventureRun(legacy, TEST_RUN_ID)
+    expect(run).not.toBeNull()
+    const state = createState(59)
+    state.adventure = { run: run!, highScore: 321, hasSavedRun: true }
+
+    expect(buildViewModel(state, false).adventure).toEqual({
+      baseSeed: legacy.baseSeed,
+      currentRound: legacy.currentRound,
+      remainingChances: legacy.remainingChances,
+      winStreak: legacy.winStreak,
+      totalRoundsPlayed: legacy.totalRoundsPlayed,
+      totalCardsPlayed: legacy.totalCardsPlayed,
+      opponentLineup: legacy.opponentLineup.map((entry) => ({
+        id: entry.id,
+        label: displayAdventureOpponentLabel(entry.kind, entry.lands),
+        kind: entry.kind,
+        lands: entry.lands,
+      })),
+      currentOpponentIndex: legacy.currentOpponentIndex,
+      activeGameSeed: legacy.activeGameSeed,
+      status: legacy.status,
+      highScore: 321,
+      hasSavedRun: true,
+    })
+  })
+
+  it('projects the inactive Adventure baseline when no run is loaded', () => {
+    const state = createState(60)
+    state.adventure = createInactiveAdventureState(77, false)
+
+    const adventure = buildViewModel(state, false).adventure
+
+    expect(adventure).toEqual({
+      baseSeed: 0,
+      currentRound: 0,
+      remainingChances: 0,
+      winStreak: 0,
+      totalRoundsPlayed: 0,
+      totalCardsPlayed: 0,
+      opponentLineup: [],
+      currentOpponentIndex: 0,
+      activeGameSeed: null,
+      status: 'inactive',
+      highScore: 77,
+      hasSavedRun: false,
+    })
+    expect(Object.isFrozen(adventure)).toBe(true)
+    expect(Object.isFrozen(adventure.opponentLineup)).toBe(true)
+  })
+
+  it('returns frozen deck-free Adventure snapshots that ignore later run changes', () => {
+    const state = createState(61)
+    const run = createAdventureRun(61, TEST_RUN_ID)
+    state.adventure = { run, highScore: 5, hasSavedRun: true }
+
+    const adventure = buildViewModel(state, false).adventure
+    const before = JSON.stringify(adventure)
+
+    expect(Object.isFrozen(adventure)).toBe(true)
+    expect(Object.isFrozen(adventure.opponentLineup)).toBe(true)
+    expect(adventure.opponentLineup).toHaveLength(7)
+    for (const entry of adventure.opponentLineup) {
+      expect(Object.isFrozen(entry)).toBe(true)
+      expect(Object.isFrozen(entry.lands)).toBe(true)
+      expect(Object.keys(entry).sort()).toEqual(['id', 'kind', 'label', 'lands'])
+    }
+    expect(adventure.currentRound).toBe(1)
+    expect(adventure.currentOpponentIndex).toBe(0)
+    expect(adventure.activeGameSeed).toBe(run.attemptSeed)
+    expect(adventure.status).toBe('active')
+
+    run.totalCardsPlayed += 9
+    run.currentTierIndex = 3
+    run.map.tiers[0].nodes[0].opponent.lands.push('Island')
+    run.map.tiers[0].nodes[0].opponent.id = 'changed'
+
+    expect(JSON.stringify(adventure)).toBe(before)
   })
 })
 

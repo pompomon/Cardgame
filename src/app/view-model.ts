@@ -19,25 +19,45 @@ import type {
 } from './types'
 
 function projectAdventureUiState(state: AppState): AdventureUiState {
-  const adventure = state.adventure
+  const { run, highScore, hasSavedRun } = state.adventure
+  if (!run) {
+    return Object.freeze({
+      baseSeed: 0,
+      currentRound: 0,
+      remainingChances: 0,
+      winStreak: 0,
+      totalRoundsPlayed: 0,
+      totalCardsPlayed: 0,
+      opponentLineup: Object.freeze([]),
+      currentOpponentIndex: 0,
+      activeGameSeed: null,
+      status: 'inactive',
+      highScore,
+      hasSavedRun,
+    })
+  }
   return Object.freeze({
-    baseSeed: adventure.baseSeed,
-    currentRound: adventure.currentRound,
-    remainingChances: adventure.remainingChances,
-    winStreak: adventure.winStreak,
-    totalRoundsPlayed: adventure.totalRoundsPlayed,
-    totalCardsPlayed: adventure.totalCardsPlayed,
-    opponentLineup: Object.freeze(adventure.opponentLineup.map((entry) => Object.freeze({
-      id: entry.id,
-      label: displayAdventureOpponentLabel(entry.kind, entry.lands),
-      kind: entry.kind,
-      lands: Object.freeze([...entry.lands]),
-    }))),
-    currentOpponentIndex: adventure.currentOpponentIndex,
-    activeGameSeed: adventure.activeGameSeed,
-    status: adventure.status,
-    highScore: adventure.highScore,
-    hasSavedRun: adventure.hasSavedRun,
+    baseSeed: run.baseSeed,
+    currentRound: run.currentTierIndex + 1,
+    remainingChances: run.remainingChances,
+    winStreak: run.winStreak,
+    totalRoundsPlayed: run.totalRoundsPlayed,
+    totalCardsPlayed: run.totalCardsPlayed,
+    // Milestone 1 maps are linear, so each tier's only node is the lineup entry.
+    opponentLineup: Object.freeze(run.map.tiers.map((tier) => {
+      const opponent = tier.nodes[0].opponent
+      return Object.freeze({
+        id: opponent.id,
+        label: displayAdventureOpponentLabel(opponent.kind, opponent.lands),
+        kind: opponent.kind,
+        lands: Object.freeze([...opponent.lands]),
+      })
+    })),
+    currentOpponentIndex: run.currentTierIndex,
+    activeGameSeed: run.attemptSeed,
+    status: run.status,
+    highScore,
+    hasSavedRun,
   })
 }
 
