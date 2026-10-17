@@ -32,7 +32,7 @@ The following product decisions are approved for implementation:
 ## Implementation checklist
 
 - [x] Milestone 0 — Record the approved design and atomic delivery plan
-- [ ] Milestone 1 — Introduce the versioned Adventure aggregate and legacy migration
+- [x] Milestone 1 — Introduce the versioned Adventure aggregate and legacy migration
 - [ ] Milestone 2 — Add deterministic two-branch map generation and route rules
 - [ ] Milestone 3 — Deliver the branching map as an end-to-end browser flow
 - [ ] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
@@ -509,6 +509,24 @@ generic lobby:
 - Production behavior is still linear and functionally unchanged.
 - All new schema data is deeply validated and immutable outside its owner.
 - This milestone can be reverted without touching renderer or engine code.
+
+**Delivery notes**
+
+- New runs use a `linear` map and converted version 1 runs use
+  `legacy-linear`. Later milestones must keep reading both kinds until those
+  runs finish.
+- The mid-game save uses the identity-bound envelope from
+  [Encounter snapshot identity](#encounter-snapshot-identity). A bare version 1
+  game snapshot is never restored: Resume restarts the saved encounter from its
+  seed, without using a chance, and shows a recovery warning.
+- `relics` and `rewardHistory` already exist and must be empty, so Milestone 5
+  only relaxes their guards.
+- Stages are still limited to `map` and `encounter`, each tier has one center
+  node, and Resume still launches the current encounter immediately. Map
+  selection, completion-pending retry, and persistence-first launch remain
+  Milestone 3 work.
+- Rules and pitfalls for contributors are in
+  [`docs/agent/state-and-persistence.md`](../agent/state-and-persistence.md#adventure-run-schema-version-2).
 
 ### Milestone 2 — Pure map generation and route rules
 
