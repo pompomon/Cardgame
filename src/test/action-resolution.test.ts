@@ -12,6 +12,7 @@ import {
   resolveTargetedPlayLandAction,
   targetPromptForContext,
 } from '../app/action-resolution'
+import { createInactiveAdventureState } from '../app/adventure'
 import { buildViewModel } from '../app/view-model'
 import { createInitialGame } from '../game/engine'
 import type { AppState } from '../app/types'
@@ -36,20 +37,7 @@ function createState(seed: number): AppState {
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
-    adventure: {
-      baseSeed: 0,
-      currentRound: 0,
-      remainingChances: 0,
-      winStreak: 0,
-      totalRoundsPlayed: 0,
-      totalCardsPlayed: 0,
-      opponentLineup: [],
-      currentOpponentIndex: 0,
-      activeGameSeed: null,
-      status: 'inactive',
-      highScore: 0,
-      hasSavedRun: false,
-    },
+    adventure: createInactiveAdventureState(),
   }
 }
 

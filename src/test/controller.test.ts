@@ -952,12 +952,12 @@ describe('controller recording and replay', () => {
       state: {
         mode: string | null
         game: ReturnType<typeof createInitialGame> | null
-        adventure: { status: 'active' | 'paused' }
+        adventure: { run: { status: 'active' | 'paused' } }
       }
       onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
     }
     internals.state.mode = 'adventure-hvai'
-    internals.state.adventure.status = 'active'
+    internals.state.adventure.run.status = 'active'
     internals.state.game = createInitialGame(300)
     const previous = structuredClone(internals.state.game)
     internals.state.game.winner = 0
@@ -1030,9 +1030,13 @@ describe('controller recording and replay', () => {
       ;(original as unknown as {
         state: { game: typeof pending }
       }).state.game = structuredClone(pending)
+      const runId = (original as unknown as { state: { adventure: { run: { runId: string } } } })
+        .state.adventure.run.runId
       original.pauseAdventure()
       const stored = localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)
-      expect(JSON.parse(stored!)).toEqual(pending)
+      const envelope = JSON.parse(stored!)
+      expect(envelope.game).toEqual(pending)
+      expect(envelope).toMatchObject({ schemaVersion: 2, runId, nodeId: 'tier-1-center', attemptOrdinal: 0 })
       expect(stored).not.toMatch(/"displayName"|"assetSlug"|Gravebloom|Doppelgänger|Vampire/)
       expect(original.getViewModel().mode).toBeNull()
 
@@ -1198,19 +1202,23 @@ describe('controller recording and replay', () => {
         mode: string | null
         game: ReturnType<typeof createInitialGame> | null
         adventure: {
-          winStreak: number
-          remainingChances: number
-          status: 'active' | 'paused'
-          currentRound: number
-          currentOpponentIndex: number
+          run: {
+            winStreak: number
+            scoreEligibleWinStreak: number
+            remainingChances: number
+            scoreEligibleChances: number
+            status: 'active' | 'paused'
+          }
         }
       }
       onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
     }
     internals.state.mode = 'adventure-hvai'
-    internals.state.adventure.winStreak = 2
-    internals.state.adventure.remainingChances = 3
-    internals.state.adventure.status = 'active'
+    internals.state.adventure.run.winStreak = 2
+    internals.state.adventure.run.scoreEligibleWinStreak = 2
+    internals.state.adventure.run.remainingChances = 3
+    internals.state.adventure.run.scoreEligibleChances = 3
+    internals.state.adventure.run.status = 'active'
     internals.state.game = createInitialGame(100)
     const previous = structuredClone(internals.state.game)
     internals.state.game.winner = 0
@@ -1223,6 +1231,8 @@ describe('controller recording and replay', () => {
     expect(view.adventure.winStreak).toBe(3)
     expect(view.adventure.currentRound).toBe(2)
     expect(view.mode).toBeNull()
+    expect(internals.state.adventure.run.scoreEligibleChances).toBe(4)
+    expect(internals.state.adventure.run.scoreEligibleWinStreak).toBe(3)
   })
 
   it('fails adventure when last chance is lost and persists high score', () => {
@@ -1233,19 +1243,23 @@ describe('controller recording and replay', () => {
         mode: string | null
         game: ReturnType<typeof createInitialGame> | null
         adventure: {
-          remainingChances: number
-          totalCardsPlayed: number
-          totalRoundsPlayed: number
-          status: 'active' | 'paused'
+          run: {
+            remainingChances: number
+            scoreEligibleChances: number
+            totalCardsPlayed: number
+            totalRoundsPlayed: number
+            status: 'active' | 'paused'
+          }
         }
       }
       onAdventureGameFinished: (previous: ReturnType<typeof createInitialGame>) => void
     }
     internals.state.mode = 'adventure-hvai'
-    internals.state.adventure.remainingChances = 1
-    internals.state.adventure.totalCardsPlayed = 5
-    internals.state.adventure.totalRoundsPlayed = 2
-    internals.state.adventure.status = 'active'
+    internals.state.adventure.run.remainingChances = 1
+    internals.state.adventure.run.scoreEligibleChances = 1
+    internals.state.adventure.run.totalCardsPlayed = 5
+    internals.state.adventure.run.totalRoundsPlayed = 2
+    internals.state.adventure.run.status = 'active'
     internals.state.game = createInitialGame(200)
     const previous = structuredClone(internals.state.game)
     internals.state.game.winner = 1

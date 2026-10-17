@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial, type Scene } from 'three'
+import { createInactiveAdventureState } from '../app/adventure'
 import type { AppState } from '../app/types'
 import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { buildViewModel } from '../app/view-model'
@@ -125,11 +126,7 @@ function state(): AppState {
     replay: null, hasSavedRecording: false, aiLevel: 'basic', cardVisualStyle: 'classic',
     animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
     p2pStarted: false, pendingP2PStartSeed: null, pendingRematchSeed: null,
-    adventure: {
-      baseSeed: 0, currentRound: 0, remainingChances: 0, winStreak: 0, totalRoundsPlayed: 0,
-      totalCardsPlayed: 0, opponentLineup: [], currentOpponentIndex: 0, activeGameSeed: null,
-      status: 'inactive', highScore: 0, hasSavedRun: false,
-    },
+    adventure: createInactiveAdventureState(),
   }
 }
 
