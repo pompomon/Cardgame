@@ -387,3 +387,148 @@ export function isAdventureRouteState(value: unknown): value is AdventureRouteSt
   }
   return true
 }
+
+/**
+ * Fixed purpose tags mixed into every derived seed. The numbers are part of
+ * the derivation, so changing one changes every seed derived with it.
+ */
+export const ADVENTURE_SEED_PURPOSE = Object.freeze({
+  forkPattern: 1,
+  nonBossPick: 2,
+  bossPick: 3,
+  deckOrder: 4,
+  attempt: 5,
+  /** Reserved for Milestone 4 reward offers. */
+  rewardOffer: 6,
+} as const)
+
+export type AdventureSeedPurpose = (typeof ADVENTURE_SEED_PURPOSE)[keyof typeof ADVENTURE_SEED_PURPOSE]
+
+const UINT32_RANGE = 0x100000000
+const SEED_MIX_START = 0x9e3779b9
+
+function isUint32(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value < UINT32_RANGE
+}
+
+/** The 32-bit murmur3 finalizer: an integer-only bijection on uint32 values. */
+function mixUint32(value: number): number {
+  let hash = value >>> 0
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x85ebca6b)
+  hash ^= hash >>> 13
+  hash = Math.imul(hash, 0xc2b2ae35)
+  hash ^= hash >>> 16
+  return hash >>> 0
+}
+
+/**
+ * Derives a 32-bit unsigned seed for `shuffle` and `lcg` from a purpose tag,
+ * the base seed and extra 32-bit unsigned words. The base seed enters as its
+ * low and high 32-bit halves, so every bit of a safe-integer seed counts.
+ * Each word is added and then mixed by a bijection, so changing any single
+ * word always changes the result. Inputs are integers only: never string
+ * hashes, labels, object-key order, `Math.random` or clock values.
+ */
+export function deriveAdventureSeed(
+  purpose: AdventureSeedPurpose,
+  baseSeed: number,
+  words: readonly number[] = [],
+): number {
+  if (!isNonNegativeInteger(baseSeed)) {
+    throw new RangeError('An Adventure base seed must be a non-negative integer.')
+  }
+  const baseLow = baseSeed % UINT32_RANGE
+  const baseHigh = Math.floor(baseSeed / UINT32_RANGE) % UINT32_RANGE
+  let hash = SEED_MIX_START
+  for (const word of [purpose, baseLow, baseHigh, ...words]) {
+    if (!isUint32(word)) {
+      throw new RangeError('Adventure seed words must be 32-bit unsigned integers.')
+    }
+    hash = mixUint32(hash + word)
+  }
+  return hash
+}
+
+/** Fixed lane numbers for seed derivation, independent of display order. */
+function adventureLaneNumber(lane: AdventureNodeLane): number {
+  switch (lane) {
+    case 'center':
+      return 0
+    case 'left':
+      return 1
+    case 'right':
+      return 2
+    default:
+      // Not a 32-bit unsigned word, so seed derivation rejects unknown lanes.
+      return -1
+  }
+}
+
+/**
+ * Seed for one encounter attempt on a node. It depends only on the base
+ * seed, the node's tier and lane, and the attempt number. Different attempt
+ * numbers on the same node always give different seeds; past 2^32 attempts
+ * a 32-bit seed can no longer keep them all apart.
+ */
+export function adventureAttemptSeed(
+  baseSeed: number,
+  tierIndex: number,
+  lane: AdventureNodeLane,
+  attemptOrdinal: number,
+): number {
+  if (!isIntegerInRange(tierIndex, 0, ADVENTURE_TIER_COUNT - 1) || !isAdventureAttemptOrdinal(attemptOrdinal)) {
+    throw new RangeError('An Adventure attempt seed needs a known tier and a valid attempt number.')
+  }
+  return deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.attempt, baseSeed, [
+    tierIndex,
+    adventureLaneNumber(lane),
+    attemptOrdinal % UINT32_RANGE,
+    Math.floor(attemptOrdinal / UINT32_RANGE),
+  ])
+}
+
+function generatedMapNode(tierIndex: number, lane: AdventureNodeLane, opponent: AdventureOpponentDeck): AdventureMapNode {
+  return {
+    id: adventureNodeId(tierIndex, lane),
+    lane,
+    opponent: { ...cloneAdventureOpponent(opponent), id: `adventure-opponent-${tierIndex + 1}-${opponent.id}` },
+  }
+}
+
+/**
+ * Generates a branching map from the base seed alone. The seed picks a fork
+ * pattern, orders the decks, and shuffles the twelve non-boss opponents to
+ * take nine distinct ones. They fill the tiers in ascending order, left
+ * before right at forks. The first opponent of the shuffled mono pool is the
+ * boss. Every call returns fresh objects, and the result must pass
+ * `isAdventureMap`.
+ */
+export function generateBranchingAdventureMap(baseSeed: number): AdventureMap {
+  const patternRandom = lcg(deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.forkPattern, baseSeed))
+  const forkPattern = ADVENTURE_FORK_PATTERNS[Math.floor(patternRandom() * ADVENTURE_FORK_PATTERNS.length)]
+  const pools = buildAdventureOpponentPools(deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.deckOrder, baseSeed))
+  const nonBossCount = ADVENTURE_TIER_COUNT - 1 + forkPattern.length
+  const nonBoss = shuffle(pools.nonBoss, deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.nonBossPick, baseSeed))
+    .slice(0, nonBossCount)
+  const boss = shuffle(pools.boss, deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.bossPick, baseSeed))[0]
+
+  const tiers: AdventureMapTier[] = []
+  let pick = 0
+  for (let tierIndex = 0; tierIndex < ADVENTURE_TIER_COUNT - 1; tierIndex += 1) {
+    const lanes = forkPattern.includes(tierIndex) ? FORK_LANES : CENTER_LANES
+    const nodes: AdventureMapNode[] = []
+    for (const lane of lanes) {
+      nodes.push(generatedMapNode(tierIndex, lane, nonBoss[pick]))
+      pick += 1
+    }
+    tiers.push({ nodes })
+  }
+  tiers.push({ nodes: [generatedMapNode(ADVENTURE_TIER_COUNT - 1, 'center', boss)] })
+
+  const map: AdventureMap = { kind: 'branching', tiers }
+  if (!isAdventureMap(map)) {
+    throw new Error('Branching map generation produced an invalid map.')
+  }
+  return map
+}

@@ -25,6 +25,7 @@ import {
   readStoredAdventureRun,
   readStoredAdventureRunRecord,
 } from '../app/adventure-persistence'
+import { generateBranchingAdventureMap, isAdventureMap } from '../app/adventure-map'
 import { isLegalActionForState } from '../app/action-validation'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import { BASIC_LANDS, type GameState, type LogEvent } from '../game/types'
@@ -354,6 +355,20 @@ describe('adventure run persistence', () => {
     expect(readStoredAdventureRun()).toBeNull()
     expect(isAdventureRunState(run)).toBe(false)
     expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
+  })
+
+  it('treats a stored run on a valid branching map as unavailable and never rewrites it', () => {
+    const run = { ...newRun(42), map: generateBranchingAdventureMap(42) }
+    expect(isAdventureMap(run.map)).toBe(true)
+    const serialized = JSON.stringify(run)
+    store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
+
+    expect(readStoredAdventureRunRecord()).toBeNull()
+    expect(readStoredAdventureRun()).toBeNull()
+    expect(persistAdventureRun(run)).toBe(false)
+    expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
+    expect(store.setCalls).toBe(0)
+    expect(store.removeCalls).toBe(0)
   })
 
   it.each<[string, (run: AdventureRunState) => void]>([

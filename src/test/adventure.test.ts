@@ -27,6 +27,7 @@ import {
   type AdventureRunStateV1,
   type AdventureRunStatus,
 } from '../app/adventure'
+import { generateBranchingAdventureMap, isAdventureMap, isAdventureRouteState } from '../app/adventure-map'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -189,6 +190,34 @@ describe('schema version 2 Adventure runs', () => {
 
     expect(run.map.tiers.map((tier) => tier.nodes[0].opponent)).toEqual(legacy.opponentLineup)
     expect(createAdventureRun(legacy.baseSeed, createAdventureRunId()).map).toEqual(run.map)
+  })
+
+  it('keeps new runs on linear maps instead of the branching generator', () => {
+    for (const seed of [0, 12345, 2 ** 32 + 1, 1_760_000_000_000]) {
+      const run = createAdventureRun(seed, RUN_ID)
+
+      expect(run.map.kind).toBe('linear')
+      expect(run.map.tiers.map((tier) => tier.nodes.map((node) => node.lane))).toEqual(
+        Array.from({ length: ADVENTURE_TIER_COUNT }, () => ['center']),
+      )
+      expect(run.map).not.toEqual(generateBranchingAdventureMap(seed))
+    }
+  })
+
+  it('rejects runs on a branching map even when the map and route are valid', () => {
+    const seed = 1_760_000_000_000
+    const created = createAdventureRun(seed, RUN_ID)
+    const runs = [
+      { ...created, map: generateBranchingAdventureMap(seed) },
+      { ...beginAdventureEncounter(created, 1), map: generateBranchingAdventureMap(seed) },
+    ]
+
+    for (const run of runs) {
+      expect(isAdventureMap(run.map)).toBe(true)
+      expect(isAdventureRouteState(run)).toBe(true)
+      expect(isAdventureRunState(run)).toBe(false)
+      expect(normalizeAdventureRun(run)).toBeNull()
+    }
   })
 
   it('launches the version 1 deck pair from the current node without sharing decks', () => {
