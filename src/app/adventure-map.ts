@@ -1,4 +1,5 @@
-// Adventure map data: opponent pools, decks, map shape and map validation.
+// Adventure map rules: opponent pools and decks, map shapes and validation,
+// seed derivation, the branching map generator and the route rules.
 //
 // This is a leaf module. It imports only game cards and types and the shared
 // validators, never `adventure.ts`, persistence, the controller, storage or
@@ -531,4 +532,152 @@ export function generateBranchingAdventureMap(baseSeed: number): AdventureMap {
     throw new Error('Branching map generation produced an invalid map.')
   }
   return map
+}
+
+/**
+ * Derived route status of a node. `completed` nodes were won; `bypassed`
+ * nodes are the unchosen sibling of a committed fork; `current` is the
+ * selected node or the only node of an uncommitted tier; `available` is
+ * either choice at an uncommitted fork; `locked` nodes cannot be reached yet.
+ */
+export type AdventureNodeStatus = 'completed' | 'current' | 'available' | 'bypassed' | 'locked'
+
+/** A node's place and derived status on the route. It carries no opponent or deck. */
+export interface AdventureRouteNode {
+  id: string
+  tierIndex: number
+  lane: AdventureNodeLane
+  status: AdventureNodeStatus
+  /** The final tier is the boss encounter by position. */
+  boss: boolean
+}
+
+/** The route fields a route rule returns for the caller to apply. */
+export interface AdventureRouteProgress {
+  currentTierIndex: number
+  completedNodeIds: string[]
+  selectedNodeId: string | null
+  attemptOrdinal: number
+  attemptSeed: number | null
+}
+
+/** Route fields after a win; `finished` is true once the final tier is won. */
+export interface AdventureRouteCompletion extends AdventureRouteProgress {
+  finished: boolean
+}
+
+function isResumableAdventureStatus(status: AdventureRunStatus): boolean {
+  return status === 'active' || status === 'paused'
+}
+
+function adventureNodeStatus(
+  state: AdventureRouteState,
+  tierIndex: number,
+  nodeId: string,
+  tierSize: number,
+): AdventureNodeStatus {
+  if (tierIndex < state.completedNodeIds.length) {
+    return state.completedNodeIds[tierIndex] === nodeId ? 'completed' : 'bypassed'
+  }
+  // Failed and completed runs have no actionable nodes.
+  if (tierIndex !== state.currentTierIndex || !isResumableAdventureStatus(state.status)) {
+    return 'locked'
+  }
+  if (state.selectedNodeId !== null) {
+    return state.selectedNodeId === nodeId ? 'current' : 'bypassed'
+  }
+  return tierSize === 1 ? 'current' : 'available'
+}
+
+/** Statuses of a state that already passed `isAdventureRouteState`. */
+function routeNodes(state: AdventureRouteState): AdventureRouteNode[][] {
+  return state.map.tiers.map((tier, tierIndex) => tier.nodes.map((node) => ({
+    id: node.id,
+    tierIndex,
+    lane: node.lane,
+    status: adventureNodeStatus(state, tierIndex, node.id, tier.nodes.length),
+    boss: tierIndex === ADVENTURE_TIER_COUNT - 1,
+  })))
+}
+
+/**
+ * Derived status of every node, one array per tier, for any map kind. The
+ * result is fresh and holds no opponents or decks. Throws when the route
+ * state is invalid, which only a programming error can cause.
+ */
+export function adventureRouteNodes(state: AdventureRouteState): AdventureRouteNode[][] {
+  if (!isAdventureRouteState(state)) {
+    throw new Error('Adventure route statuses need a valid route state.')
+  }
+  return routeNodes(state)
+}
+
+/**
+ * Selects a node from untrusted input, such as a UI node ID. It succeeds only
+ * for a resumable run at the `map` stage, with a string that exactly matches
+ * a current-tier node whose status is `current` or `available`. The attempt
+ * number is kept, and so is a stored attempt seed; without one, the seed is
+ * derived for this node and attempt. Never throws: any rejection returns
+ * null, and the input is never changed.
+ */
+export function selectAdventureNode(state: AdventureRouteState, nodeId: unknown): AdventureRouteProgress | null {
+  if (typeof nodeId !== 'string' || !isAdventureRouteState(state)) return null
+  if (!isResumableAdventureStatus(state.status) || state.stage !== 'map') return null
+  const node = routeNodes(state)[state.currentTierIndex].find((entry) => entry.id === nodeId)
+  if (!node || (node.status !== 'current' && node.status !== 'available')) return null
+  return {
+    currentTierIndex: state.currentTierIndex,
+    completedNodeIds: [...state.completedNodeIds],
+    selectedNodeId: node.id,
+    attemptOrdinal: state.attemptOrdinal,
+    attemptSeed: state.attemptSeed
+      ?? adventureAttemptSeed(state.baseSeed, state.currentTierIndex, node.lane, state.attemptOrdinal),
+  }
+}
+
+/** The selected node of an active encounter; throws for any other state. */
+function activeEncounterNode(state: AdventureRouteState): AdventureMapNode {
+  const node = isAdventureRouteState(state) && state.status === 'active' && state.stage === 'encounter'
+    ? state.map.tiers[state.currentTierIndex].nodes.find((entry) => entry.id === state.selectedNodeId)
+    : undefined
+  if (!node) {
+    throw new Error('Only an active Adventure encounter can be retried or completed.')
+  }
+  return node
+}
+
+/**
+ * Retries the selected node after a loss or draw: the same node, the next
+ * attempt number (capped at `Number.MAX_SAFE_INTEGER`) and its derived seed.
+ * Nothing else changes. Throws unless the state is an active encounter.
+ */
+export function retryAdventureNode(state: AdventureRouteState): AdventureRouteProgress {
+  const node = activeEncounterNode(state)
+  const attemptOrdinal = Math.min(state.attemptOrdinal + 1, Number.MAX_SAFE_INTEGER)
+  return {
+    currentTierIndex: state.currentTierIndex,
+    completedNodeIds: [...state.completedNodeIds],
+    selectedNodeId: node.id,
+    attemptOrdinal,
+    attemptSeed: adventureAttemptSeed(state.baseSeed, state.currentTierIndex, node.lane, attemptOrdinal),
+  }
+}
+
+/**
+ * Completes the selected node after a win. The node joins the completed
+ * path, the selection clears, the attempt number resets to 0 and the seed to
+ * null. The route moves to the next tier, or reports `finished` after the
+ * final tier and stays on it. Throws unless the state is an active encounter.
+ */
+export function completeAdventureNode(state: AdventureRouteState): AdventureRouteCompletion {
+  const node = activeEncounterNode(state)
+  const finished = state.currentTierIndex === ADVENTURE_TIER_COUNT - 1
+  return {
+    currentTierIndex: finished ? state.currentTierIndex : state.currentTierIndex + 1,
+    completedNodeIds: [...state.completedNodeIds, node.id],
+    selectedNodeId: null,
+    attemptOrdinal: 0,
+    attemptSeed: null,
+    finished,
+  }
 }
