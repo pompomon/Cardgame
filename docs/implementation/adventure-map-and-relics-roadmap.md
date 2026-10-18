@@ -33,7 +33,7 @@ The following product decisions are approved for implementation:
 
 - [x] Milestone 0 — Record the approved design and atomic delivery plan
 - [x] Milestone 1 — Introduce the versioned Adventure aggregate and legacy migration
-- [ ] Milestone 2 — Add deterministic two-branch map generation and route rules
+- [x] Milestone 2 — Add deterministic two-branch map generation and route rules
 - [ ] Milestone 3 — Deliver the branching map as an end-to-end browser flow
 - [ ] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
 - [ ] Milestone 5 — Deliver reward selection and relic application end to end
@@ -563,6 +563,52 @@ generic lobby:
 - Map policy is pure, deterministic, renderer-independent, and exhaustively
   tested.
 - No UI advertises branching before the complete vertical flow exists.
+
+**Delivery notes**
+
+- `src/app/adventure-map.ts` is a leaf module. It owns the opponent pools and
+  decks, map types, node IDs, map validation, seed derivation, the branching
+  generator, and the route rules. It imports only `game/cards`, `game/types`,
+  and `app/validators`. `adventure.ts` imports it and re-exports the names
+  other modules already used, so their imports did not change.
+- The map kinds are `linear`, `legacy-linear`, and the new `branching`.
+  Linear kinds keep the Milestone 1 rules and have no forks. A branching map
+  forks exactly three of tiers 1–6 into `[left, right]`, on tiers {1,3,5},
+  {1,3,6}, {1,4,6}, or {2,4,6}, and ends with one shared mono boss. No mono
+  opponent appears earlier, and opponent IDs never repeat. Maps with one or
+  two forks are rejected because nothing generates them.
+- The run guard still accepts only `linear` and `legacy-linear` maps. A stored
+  run on a valid branching map is unavailable, like an unknown kind, and is
+  never rewritten. New runs stay linear and transitions still use clock seeds,
+  so live behavior is unchanged.
+- `deriveAdventureSeed` mixes a fixed purpose tag, explicit lane numbers
+  (center 0, left 1, right 2), and both 32-bit halves of the base seed into a
+  32-bit unsigned seed with integer-only operations. It never uses string
+  hashes, labels, object-key order, `Math.random`, or the clock. The generator
+  draws the fork pattern, deck order, non-boss picks, and boss from separate
+  purposes through the existing `shuffle` and `lcg`. `adventureAttemptSeed`
+  gives every attempt at a node its own seed. The `rewardOffer` purpose is
+  reserved for Milestone 4.
+- The route rules (`adventureRouteNodes`, `selectAdventureNode`,
+  `retryAdventureNode`, `completeAdventureNode`) work on every map kind and
+  return fresh route fields for the caller to apply. Selection rejects
+  untrusted node IDs without throwing; retry and completion throw when the
+  state is not an active encounter.
+- Milestone 3 handoff:
+  - Remove the gate in the same change that switches `createAdventureRun` to
+    `generateBranchingAdventureMap`. Saved runs then grow from seven to ten
+    opponent decks.
+  - Move the start and result transitions onto the route rules and derived
+    seeds. `completeAdventureNode` also resets the attempt number after the
+    boss, where today's final-win transition keeps it.
+  - Make `deckPairForAdventureGame` reject a missing node instead of falling
+    back to a starter deck.
+  - Replace the view model's `nodes[0]` projection, and add the map UI and a
+    controller command to start a node.
+  - Decide whether a branching run must have no seed before a node is
+    selected. Selection keeps any stored seed, as linear runs need today.
+- Rules and pitfalls for contributors are in
+  [`docs/agent/state-and-persistence.md`](../agent/state-and-persistence.md#adventure-run-schema-version-2).
 
 ### Milestone 3 — Branching map vertical slice
 

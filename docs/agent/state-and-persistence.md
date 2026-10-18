@@ -234,6 +234,53 @@ keep their names; only their formats changed.
     `attemptSeed` are required at `encounter`.
   - Counters are finite, non-negative integers. `relics` and `rewardHistory`
     are reserved and must be empty.
+- **Milestone 2 rules.**
+  - **Ownership.** `src/app/adventure-map.ts` owns opponent pools and decks,
+    map types, node IDs, `isAdventureMap`, the shared route check
+    `isAdventureRouteState`, seed derivation, the branching generator, and the
+    route rules. It is a leaf module that imports only `game/cards`,
+    `game/types`, and `app/validators`, never `adventure.ts`, persistence, the
+    controller, storage, or the DOM. Imports go one way: `adventure.ts` uses
+    the map module and re-exports the names other modules already import.
+    `adventure-map.test.ts` checks the imports.
+  - **Map kinds.** `isAdventureMap` applies rules per kind. `linear` and
+    `legacy-linear` keep the Milestone 1 rules. A `branching` map has seven
+    tiers; tiers 1–6 hold `[center]` or `[left, right]` in that order; its
+    forks are one of `ADVENTURE_FORK_PATTERNS` (tiers {1,3,5}, {1,3,6},
+    {1,4,6}, or {2,4,6}); tier 7 is a single `center` mono boss with no mono
+    opponent before it; and opponent IDs are unique across the map. Unknown
+    kinds fail closed.
+  - **Gate.** Until Milestone 3, `isAdventureRunState` accepts only `linear`
+    and `legacy-linear` maps. A stored run on a valid `branching` map is
+    unavailable, like an unknown kind, and is never rewritten. Remove the gate
+    in the same change that makes `createAdventureRun` use
+    `generateBranchingAdventureMap`.
+  - **Seeds.** Derive map and attempt seeds only with `deriveAdventureSeed`:
+    a fixed `ADVENTURE_SEED_PURPOSE` tag, explicit lane numbers (center 0,
+    left 1, right 2), and both 32-bit halves of the base seed, mixed with
+    integer-only operations into a 32-bit unsigned seed for the existing
+    `shuffle` and `lcg`. Never use string hashes, labels, object-key order,
+    `Math.random`, or the clock. `lcg` keeps only `seed >>> 0`, so a raw clock
+    seed would ignore its high bits. `adventureAttemptSeed` gives every attempt
+    number at a node its own seed. Changing a tag, lane number, or the mixing
+    changes every derived seed; the pinned test makes that deliberate.
+  - **Route statuses** are derived by `adventureRouteNodes`, never stored. In
+    completed tiers the won node is `completed` and its sibling `bypassed`. In
+    the current tier of a resumable run, a selected node is `current` and its
+    sibling `bypassed`; with nothing selected, a single node is `current` and
+    fork nodes are `available`. Later tiers, and the current tier of a failed
+    run, are `locked`. `boss` marks the final tier by position.
+  - **Selection rejection.** `selectAdventureNode` treats the node ID as
+    untrusted. It accepts only a string that exactly matches a `current` or
+    `available` node of the current tier, on a resumable run at the `map`
+    stage. Anything else — non-strings, case or whitespace variants,
+    prototype-style keys, bypassed, completed, or future nodes, the boss
+    early, or the sibling of a node locked in for retry — returns null without
+    throwing or changing the run. A successful selection keeps the attempt
+    number and any stored seed, and derives a seed only when none is stored.
+  - `retryAdventureNode` and `completeAdventureNode` throw unless the state is
+    an active encounter. All route rules leave their input unchanged and
+    return fresh route fields with no opponents or decks.
 - **Migration closure.** Every version 1 run the app could have written must
   convert into a run that passes the version 2 guard. When a version 2 limit
   is stricter than version 1, check that app-written data meets it and add a
