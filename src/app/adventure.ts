@@ -6,10 +6,13 @@ import {
   buildAdventureLineup,
   cloneAdventureDeck,
   cloneAdventureMap,
+  isAdventureAttemptOrdinal,
   isAdventureCard,
-  isAdventureMap,
+  isAdventureRouteState,
+  isAdventureRunStatus,
   linearAdventureTiers,
   type AdventureMap,
+  type AdventureMapKind,
   type AdventureMapNode,
   type AdventureOpponentDeck,
   type AdventureRunStage,
@@ -18,7 +21,6 @@ import {
 import { sanitizeLogEvents } from './game-recording'
 import {
   isFiniteInteger as validatorsIsFiniteInteger,
-  isIntegerInRange,
   isNonNegativeInteger as validatorsIsNonNegativeInteger,
   isRecordObject,
 } from './validators'
@@ -234,10 +236,6 @@ function isLegacyAdventureOpponentDeck(value: unknown): value is AdventureOppone
     && entry.deck.every((card) => isAdventureCard(card))
 }
 
-function isAdventureRunStatus(value: unknown): value is AdventureRunStatus {
-  return value === 'active' || value === 'paused' || value === 'completed' || value === 'failed'
-}
-
 function isFiniteInteger(value: unknown): value is number {
   return validatorsIsFiniteInteger(value)
 }
@@ -276,16 +274,8 @@ export function isLegacyAdventureRunState(value: unknown): value is AdventureRun
   return run.opponentLineup.every((entry) => isLegacyAdventureOpponentDeck(entry))
 }
 
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0
-}
-
 function isEmptyArray(value: unknown): boolean {
   return Array.isArray(value) && value.length === 0
-}
-
-function tierHasNode(map: AdventureMap, tierIndex: number, nodeId: unknown): boolean {
-  return map.tiers[tierIndex].nodes.some((node) => node.id === nodeId)
 }
 
 const ADVENTURE_COUNTER_KEYS = [
@@ -297,40 +287,22 @@ const ADVENTURE_COUNTER_KEYS = [
   'totalCardsPlayed',
 ] as const
 
+/**
+ * Map kinds a run may use. Branching maps are valid map data, but runs on
+ * them stay unavailable, like an unknown kind, until Milestone 3 wires up
+ * the map flow.
+ */
+function isLiveAdventureMapKind(kind: AdventureMapKind): boolean {
+  return kind === 'linear' || kind === 'legacy-linear'
+}
+
 /** Strict guard for schema version 2 runs. Unknown versions fail closed. */
 export function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (!isRecordObject(value)) return false
   if (value.schemaVersion !== ADVENTURE_SCHEMA_VERSION) return false
   if (!isAdventureRunId(value.runId)) return false
-  if (!isNonNegativeInteger(value.baseSeed)) return false
-  const status = value.status
-  if (!isAdventureRunStatus(status)) return false
-  const terminal = status === 'completed' || status === 'failed'
-  const stage = value.stage
-  if (terminal ? stage !== null : stage !== 'map' && stage !== 'encounter') return false
-  const map = value.map
-  if (!isAdventureMap(map)) return false
-  const tierIndex = value.currentTierIndex
-  if (!isIntegerInRange(tierIndex, 0, ADVENTURE_TIER_COUNT - 1)) return false
-  if (status === 'completed' && tierIndex !== ADVENTURE_TIER_COUNT - 1) return false
-  // Completed tiers form a strict prefix with one node from each tier.
-  const completed = value.completedNodeIds
-  const completedCount = status === 'completed' ? ADVENTURE_TIER_COUNT : tierIndex
-  if (!Array.isArray(completed) || completed.length !== completedCount) return false
-  if (!completed.every((nodeId, index) => tierHasNode(map, index, nodeId))) return false
-  const selected = value.selectedNodeId
-  if (selected === null) {
-    if (stage === 'encounter') return false
-  } else if (terminal || !tierHasNode(map, tierIndex, selected)) {
-    return false
-  }
-  if (!isNonNegativeSafeInteger(value.attemptOrdinal)) return false
-  const attemptSeed = value.attemptSeed
-  if (attemptSeed === null) {
-    if (stage === 'encounter') return false
-  } else if (terminal || !isNonNegativeInteger(attemptSeed)) {
-    return false
-  }
+  if (!isAdventureRouteState(value)) return false
+  if (!isLiveAdventureMapKind(value.map.kind)) return false
   if (!ADVENTURE_COUNTER_KEYS.every((key) => isNonNegativeInteger(value[key]))) return false
   return isEmptyArray(value.relics) && isEmptyArray(value.rewardHistory)
 }
@@ -659,7 +631,7 @@ function normalizeAdventureGameSnapshotEnvelope(value: unknown): AdventureGameSn
   const { runId, nodeId, attemptOrdinal, attemptSeed } = value
   if (!isAdventureRunId(runId)) return null
   if (typeof nodeId !== 'string' || !ADVENTURE_NODE_ID_PATTERN.test(nodeId)) return null
-  if (!isNonNegativeSafeInteger(attemptOrdinal) || !isNonNegativeInteger(attemptSeed)) return null
+  if (!isAdventureAttemptOrdinal(attemptOrdinal) || !isNonNegativeInteger(attemptSeed)) return null
   const game = normalizeGameSnapshot(value.game)
   if (!game) {
     return null

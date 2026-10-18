@@ -278,7 +278,7 @@ describe('adventure run persistence', () => {
       run.stage = 'map'
     }],
     ['missing map', (run) => { delete asRecord(run).map }],
-    ['unknown map kind', (run) => { asRecord(run.map).kind = 'branching' }],
+    ['unknown map kind', (run) => { asRecord(run.map).kind = 'graph' }],
     ['six tiers', (run) => { run.map.tiers = run.map.tiers.slice(0, 6) }],
     ['eight tiers', (run) => { run.map.tiers = [...run.map.tiers, run.map.tiers[6]] }],
     ['a tier without nodes', (run) => { tier(run, 2).nodes = [] }],

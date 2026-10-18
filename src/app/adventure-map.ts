@@ -7,7 +7,7 @@
 
 import { lcg, shuffle } from '../game/cards'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card } from '../game/types'
-import { isRecordObject } from './validators'
+import { isIntegerInRange, isNonNegativeInteger, isRecordObject } from './validators'
 
 export const ADVENTURE_TIER_COUNT = 7
 export const ADVENTURE_NODE_ID_PATTERN = /^tier-[1-7]-(?:center|left|right)$/
@@ -23,9 +23,11 @@ export type AdventureRunStage = 'map' | 'encounter'
 /**
  * `linear` maps are generated for new runs: six non-boss tiers and a mono
  * boss. `legacy-linear` maps hold a migrated version 1 lineup verbatim, so
- * any known opponent kind may be the final tier.
+ * any known opponent kind may be the final tier. `branching` maps fork three
+ * non-boss tiers into `[left, right]` (see `ADVENTURE_FORK_PATTERNS`) and
+ * converge on a single mono boss.
  */
-export type AdventureMapKind = 'linear' | 'legacy-linear'
+export type AdventureMapKind = 'linear' | 'legacy-linear' | 'branching'
 export type AdventureNodeLane = 'center' | 'left' | 'right'
 
 export interface AdventureOpponentDeck {
@@ -56,6 +58,37 @@ export interface AdventureOpponentPools {
   nonBoss: AdventureOpponentDeck[]
   boss: AdventureOpponentDeck[]
 }
+
+/**
+ * The run fields the route rules read. A full `AdventureRunState` fits this
+ * shape, so callers can pass a run directly.
+ */
+export interface AdventureRouteState {
+  readonly status: AdventureRunStatus
+  readonly stage: AdventureRunStage | null
+  readonly baseSeed: number
+  readonly map: AdventureMap
+  readonly currentTierIndex: number
+  readonly completedNodeIds: readonly string[]
+  readonly selectedNodeId: string | null
+  readonly attemptOrdinal: number
+  readonly attemptSeed: number | null
+}
+
+/**
+ * Fork tiers of a branching map, as 0-based tier indexes: exactly three
+ * forks, never adjacent and never on the boss tier. In 1-based tier numbers
+ * these are {1,3,5}, {1,3,6}, {1,4,6} and {2,4,6}.
+ */
+export const ADVENTURE_FORK_PATTERNS: readonly (readonly number[])[] = Object.freeze([
+  Object.freeze([0, 2, 4]),
+  Object.freeze([0, 2, 5]),
+  Object.freeze([0, 3, 5]),
+  Object.freeze([1, 3, 5]),
+])
+
+const CENTER_LANES: readonly AdventureNodeLane[] = Object.freeze(['center'])
+const FORK_LANES: readonly AdventureNodeLane[] = Object.freeze(['left', 'right'])
 
 export function cloneAdventureDeck(deck: Card[]): Card[] {
   return deck.map((card) => ({ id: card.id, name: card.name, type: card.type }))
@@ -220,6 +253,15 @@ export function isAdventureCard(value: unknown): value is Card {
   return typeof card.id === 'string' && isBasicLand(card.name) && card.type === 'land'
 }
 
+export function isAdventureRunStatus(value: unknown): value is AdventureRunStatus {
+  return value === 'active' || value === 'paused' || value === 'completed' || value === 'failed'
+}
+
+/** Attempt ordinals are non-negative safe integers. */
+export function isAdventureAttemptOrdinal(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
 function isBoundedString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength
 }
@@ -244,31 +286,104 @@ function isAdventureOpponent(value: unknown): value is AdventureOpponentDeck {
   return true
 }
 
-function isAdventureMapNode(value: unknown, tierIndex: number, kind: AdventureMapKind): value is AdventureMapNode {
+function isAdventureMapNode(
+  value: unknown,
+  tierIndex: number,
+  lane: AdventureNodeLane,
+  kind: AdventureMapKind,
+): value is AdventureMapNode {
   if (!isRecordObject(value)) return false
-  // Forks arrive in a later milestone; until then every node is centered.
-  if (value.lane !== 'center' || value.id !== adventureNodeId(tierIndex, 'center')) return false
+  if (value.lane !== lane || value.id !== adventureNodeId(tierIndex, lane)) return false
   const opponent = value.opponent
   if (!isAdventureOpponent(opponent)) return false
-  if (kind === 'linear') {
-    // Generated maps end with the mono boss and use no mono opponent before it.
-    return (opponent.kind === 'mono') === (tierIndex === ADVENTURE_TIER_COUNT - 1)
-  }
-  return true
+  if (kind === 'legacy-linear') return true
+  // Generated maps end with the mono boss and use no mono opponent before it.
+  return (opponent.kind === 'mono') === (tierIndex === ADVENTURE_TIER_COUNT - 1)
 }
 
-function isAdventureMapTier(value: unknown, tierIndex: number, kind: AdventureMapKind): value is AdventureMapTier {
-  if (!isRecordObject(value)) return false
-  const nodes = value.nodes
-  return Array.isArray(nodes) && nodes.length === 1 && isAdventureMapNode(nodes[0], tierIndex, kind)
+function isAdventureForkPattern(forkTierIndexes: readonly number[]): boolean {
+  return ADVENTURE_FORK_PATTERNS.some((pattern) => pattern.length === forkTierIndexes.length
+    && pattern.every((tierIndex, index) => forkTierIndexes[index] === tierIndex))
 }
 
+/**
+ * Strict map guard with rules per kind. Every kind has seven tiers, node IDs
+ * recomputed from tier and lane, and valid opponents. `linear` and
+ * `legacy-linear` maps hold one `center` node per tier. A `branching` map
+ * holds `[center]` or `[left, right]` on tiers 1–6, forks on exactly one of
+ * `ADVENTURE_FORK_PATTERNS`, ends with a single `center` mono boss, and never
+ * repeats an opponent ID. Unknown kinds fail closed.
+ */
 export function isAdventureMap(value: unknown): value is AdventureMap {
   if (!isRecordObject(value)) return false
   const kind = value.kind
-  if (kind !== 'linear' && kind !== 'legacy-linear') return false
+  if (kind !== 'linear' && kind !== 'legacy-linear' && kind !== 'branching') return false
   const tiers = value.tiers
-  return Array.isArray(tiers)
-    && tiers.length === ADVENTURE_TIER_COUNT
-    && tiers.every((tier, tierIndex) => isAdventureMapTier(tier, tierIndex, kind))
+  if (!Array.isArray(tiers) || tiers.length !== ADVENTURE_TIER_COUNT) return false
+  const forkTierIndexes: number[] = []
+  const opponentIds = new Set<string>()
+  for (let tierIndex = 0; tierIndex < ADVENTURE_TIER_COUNT; tierIndex += 1) {
+    const tier: unknown = tiers[tierIndex]
+    if (!isRecordObject(tier) || !Array.isArray(tier.nodes)) return false
+    const nodes: unknown[] = tier.nodes
+    // Only the non-boss tiers of a branching map may fork.
+    const fork = kind === 'branching' && tierIndex < ADVENTURE_TIER_COUNT - 1 && nodes.length === FORK_LANES.length
+    const lanes = fork ? FORK_LANES : CENTER_LANES
+    if (nodes.length !== lanes.length) return false
+    for (let laneIndex = 0; laneIndex < lanes.length; laneIndex += 1) {
+      const node = nodes[laneIndex]
+      if (!isAdventureMapNode(node, tierIndex, lanes[laneIndex], kind)) return false
+      if (kind === 'branching') {
+        if (opponentIds.has(node.opponent.id)) return false
+        opponentIds.add(node.opponent.id)
+      }
+    }
+    if (fork) forkTierIndexes.push(tierIndex)
+  }
+  return kind !== 'branching' || isAdventureForkPattern(forkTierIndexes)
+}
+
+function tierHasNode(map: AdventureMap, tierIndex: number, nodeId: unknown): boolean {
+  return map.tiers[tierIndex].nodes.some((node) => node.id === nodeId)
+}
+
+/**
+ * Strict guard for the route fields of a run, shared by the run guard and
+ * the route rules. It checks the lifecycle, the map and route consistency:
+ * the tier index is in range, completed tiers form a strict prefix with one
+ * node from each tier, and a selected node belongs to the current tier. It
+ * accepts every map kind; callers decide which kinds a run may use.
+ */
+export function isAdventureRouteState(value: unknown): value is AdventureRouteState {
+  if (!isRecordObject(value)) return false
+  if (!isNonNegativeInteger(value.baseSeed)) return false
+  const status = value.status
+  if (!isAdventureRunStatus(status)) return false
+  const terminal = status === 'completed' || status === 'failed'
+  const stage = value.stage
+  if (terminal ? stage !== null : stage !== 'map' && stage !== 'encounter') return false
+  const map = value.map
+  if (!isAdventureMap(map)) return false
+  const tierIndex = value.currentTierIndex
+  if (!isIntegerInRange(tierIndex, 0, ADVENTURE_TIER_COUNT - 1)) return false
+  if (status === 'completed' && tierIndex !== ADVENTURE_TIER_COUNT - 1) return false
+  // Completed tiers form a strict prefix with one node from each tier.
+  const completed = value.completedNodeIds
+  const completedCount = status === 'completed' ? ADVENTURE_TIER_COUNT : tierIndex
+  if (!Array.isArray(completed) || completed.length !== completedCount) return false
+  if (!completed.every((nodeId, index) => tierHasNode(map, index, nodeId))) return false
+  const selected = value.selectedNodeId
+  if (selected === null) {
+    if (stage === 'encounter') return false
+  } else if (terminal || !tierHasNode(map, tierIndex, selected)) {
+    return false
+  }
+  if (!isAdventureAttemptOrdinal(value.attemptOrdinal)) return false
+  const attemptSeed = value.attemptSeed
+  if (attemptSeed === null) {
+    if (stage === 'encounter') return false
+  } else if (terminal || !isNonNegativeInteger(attemptSeed)) {
+    return false
+  }
+  return true
 }
