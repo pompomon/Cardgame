@@ -17,6 +17,18 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
    changes; review and commit the manifest and lockfile together. Do not regenerate
    the lockfile or upgrade dependencies just to recover from an agent-tool error.
 
+   **Node 26.** If only Node 26 is available, the project still works with no
+   code changes. On Node v26.8.2 and npm 11.19.1, `npm ci`, lint, tests and
+   build all exit 0. Two warnings are expected and can be ignored:
+   - npm lists esbuild's `postinstall` under `install-scripts`. The platform
+     binary installs as an optional dependency.
+   - Node prints `ExperimentalWarning: localStorage is not available because
+     --localstorage-file was not provided` during tests. Tests that need
+     storage install in-memory doubles.
+
+   Report the Node version you actually used. Node 24 remains the deployment
+   version.
+
 2. **Lint** — typecheck only, no emit:
 
    ```bash

@@ -113,17 +113,18 @@ These patterns come up repeatedly:
   feature owns its own keys.
 - **Centralize "inactive adventure baseline".** The same object literal
   was duplicated across the constructor, `refreshAdventureFromStorage()`,
-  and `setAdventureRun(null)`. Use `createInactiveAdventureState()`;
-  otherwise fields drift.
+  and the reset path. Use `createInactiveAdventureState()`; otherwise
+  fields drift.
 - **Avoid redundant persistence.** `pauseAdventure()` writes the mid-game
-  save and then the paused run once. It resets the UI with `resetToLobby()`,
-  not `backToLobby()`, which would save the run a second time.
+  save and then the paused run once, then resets the UI with
+  `resetToLobby()`. Every Adventure transition is saved when it happens, so
+  `backToLobby()` and `startGame()` never write Adventure progress.
 - **Don't write large objects to `localStorage` on every action.**
-  Triggering `setAdventureRun(run)` from every `play_land` synchronously
-  JSON-stringifies the full 7×50-card map. Write on commit boundaries
-  (round end, explicit pause), or debounce.
-- **Don't silently overwrite warning statuses.** If `setAdventureRun(...)`
-  surfaces a "storage unavailable" warning via `state.status`, a later
+  Saving the run on every `play_land` would synchronously JSON-stringify the
+  whole map, up to ten 50-card decks. The summon counter changes in memory;
+  write only at commit points (node start, result, explicit pause).
+- **Don't silently overwrite warning statuses.** If a refused Adventure
+  write puts a "storage unavailable" warning in `state.status`, a later
   unconditional `state.status = 'Adventure started.'` hides the failure
   from the user. Either surface the warning last, or only set the success
   status when persistence succeeded.
@@ -134,7 +135,7 @@ These patterns come up repeatedly:
 - **Don't block replay on a paused adventure run.** A saved-and-paused
   adventure is exactly the state where the user might want to import a
   recording. `startReplay()` must not refuse merely because a paused run
-  exists.
+  exists. It refuses only while Adventure mode is open.
 - **Don't auto-clear an active adventure run on unrelated `startGame()`
   calls.** If a tab closed mid-round leaves the run as `active` in
   storage, starting a casual non-adventure mode must not silently delete
@@ -209,21 +210,25 @@ keep their names; only their formats changed.
   value (`1`, `3`, `"2"`, `null`, …) makes the run unavailable; never repair it.
 - **Reading never writes.** The constructor, `refreshAdventureFromStorage()`,
   `importRecordingJson()`, and lobby navigation show a stored `active` run as
-  `paused` in memory only. A loaded or converted run is written only by an
-  explicit run save, normally Resume. `backToLobby()` and `startGame()` save
-  only a run that became active in this session or whose last save failed.
+  `paused` in memory only. A loaded or converted run is written only by the
+  next committed transition: a node start, Pause, a result, or a Resume that
+  restores a saved game. `backToLobby()`, `startGame()` and
+  `importRecordingJson()` never write Adventure progress.
 - **One change and save path.** Change runs only through the helpers in
-  `src/app/adventure.ts` (`beginAdventureEncounter`, `pauseAdventureRun`,
+  `src/app/adventure.ts` (`startAdventureEncounter`, `openAdventureMap`,
+  `resumeAdventureEncounter`, `pauseAdventureRun`,
   `applyAdventureEncounterResult`). They copy their input and throw on an
-  invalid result. Save through `setAdventureRun()`; `persistAdventureRun()`
-  refuses a run that fails the guard. Copy runs with `cloneAdventureRun()`,
-  which copies only known fields, deeply.
+  invalid result; `startAdventureEncounter` returns null for a rejected
+  node. Save with `persistAdventureRun()`, which refuses a run that fails the
+  guard. Copy runs with `cloneAdventureRun()`, which copies only known
+  fields, deeply.
 - **Milestone 1 rules.**
   - `stage` is `map` or `encounter` for a resumable (`active`/`paused`) run.
     Finished runs have no stage, selected node, or attempt seed.
-  - `map.kind` is `linear` for new runs, where only the final tier is a mono
-    boss, or `legacy-linear` for converted runs, where any known kind may be
-    last. Keep accepting both kinds until such runs finish.
+  - `map.kind` is `linear` for runs created by Milestones 1–2, where only
+    the final tier is a mono boss, or `legacy-linear` for converted runs,
+    where any known kind may be last. Keep accepting both kinds until such
+    runs finish. New runs use `branching` (see the Milestone 3 rules).
   - Exactly seven tiers, each with one `center` node. The guard recomputes each
     node ID (`tier-N-center`) and rejects mismatches.
   - Opponents keep the legacy `label`, a known `kind`, one to five unique known
@@ -250,10 +255,8 @@ keep their names; only their formats changed.
     {1,4,6}, or {2,4,6}); tier 7 is a single `center` mono boss with no mono
     opponent before it; and opponent IDs are unique across the map. Unknown
     kinds fail closed.
-  - **Gate.** Until Milestone 3, `isAdventureRunState` accepts only `linear`
-    and `legacy-linear` maps. A stored run on a valid `branching` map is
-    unavailable, like an unknown kind, and is never rewritten. Remove the gate
-    in the same change that makes `createAdventureRun` use
+  - **Gate (removed in Milestone 3).** `isAdventureRunState` now accepts
+    `branching` maps, and `createAdventureRun` uses
     `generateBranchingAdventureMap`.
   - **Seeds.** Derive map and attempt seeds only with `deriveAdventureSeed`:
     a fixed `ADVENTURE_SEED_PURPOSE` tag, explicit lane numbers (center 0,
@@ -281,6 +284,49 @@ keep their names; only their formats changed.
   - `retryAdventureNode` and `completeAdventureNode` throw unless the state is
     an active encounter. All route rules leave their input unchanged and
     return fresh route fields with no opponents or decks.
+- **Milestone 3 rules.**
+  - **Stages.** A new run starts `active` at `map` with no selected node and
+    no attempt seed. Starting a node moves to `encounter`. A non-terminal
+    result returns the run `active` at `map`, and a terminal run has no
+    stage.
+  - **Save first.** Build the candidate with the `adventure.ts` helpers,
+    persist it, and only then replace controller state or launch a game. A
+    refused write leaves state and controls unchanged, with the storage
+    warning as the status. Write order:
+    - **Start:** run write, game-slot clear, then the hub.
+    - **Node start:** run write, game-slot clear, then
+      `createInitialGame(attemptSeed, deckPair)`.
+    - **Pause mid-encounter:** envelope write, then the paused-run write. If
+      the run write fails, clear the envelope and keep the game open.
+    - **Resume with a matching save:** run write, launch the game, then clear
+      the slot.
+  - **Completion.**
+    - A non-terminal result writes the next run.
+    - A terminal result writes the highest of the stored, in-memory and new
+      scores as the high score, then removes the run key. A failed removal
+      counts as success when no readable run remains.
+    - If any write fails, memory keeps the pre-result run, the game-over
+      board and `pendingCompletion` with the exact outcome. Retry applies
+      the outcome again to a fresh candidate from the same run, so nothing
+      is applied twice.
+    - While a result is pending, every navigation action except Reset is
+      blocked.
+  - **Navigation never writes.** `backToLobby()`, `startGame()` and
+    `importRecordingJson()` re-read storage and never write or delete
+    Adventure progress. Leaving mid-encounter without Pause loses the live
+    game; Resume then opens the map, and the committed attempt restarts
+    without using a chance.
+  - **Commands re-read the latest state.** `startAdventureNode(nodeId)` does
+    nothing unless all of these hold: Adventure is open, there is no game,
+    no replay and no pending result, and the run is resumable. It treats the
+    node ID as untrusted. A repeated Start while a run is open does nothing.
+  - **Projection.** The `AdventureUiState` snapshot is frozen. Tier
+    summaries contain no decks and are cached in a `WeakMap` by run object
+    and route key, so never change a run's route or map in place; replace
+    the run object. The summon counter is the only field changed in place.
+    It is not part of the route key and does not affect the cached tiers.
+    `decisionKey` (`runId|route|attempt|pending`) changes with every
+    committed route decision and is part of `threeDecisionKey`.
 - **Migration closure.** Every version 1 run the app could have written must
   convert into a run that passes the version 2 guard. When a version 2 limit
   is stricter than version 1, check that app-written data meets it and add a
@@ -293,17 +339,24 @@ keep their names; only their formats changed.
   before that harmlessly assigns another.
 - **Mid-game save identity.** Pause writes an envelope with the run ID, node
   ID, attempt ordinal, attempt seed, and the deeply validated `GameState`.
-  Resume restores it only when the run is at `encounter` and all four identity
-  fields match. A bare version 1 `GameState`, an invalid slot, or a mismatched
-  envelope is never restored: the saved encounter restarts from its attempt
-  seed without using a chance, with a recovery warning when a mid-encounter
-  game was lost. Deleting the slot is best-effort cleanup; identity matching
-  is the safety boundary.
+  Resume restores it only when all of these hold:
+  - the run is paused at `encounter`;
+  - all four identity fields match;
+  - the saved game is not over;
+  - the run write succeeds.
+
+  A bare version 1 `GameState`, an invalid slot, or a mismatched envelope is
+  never restored. Resume opens the map with the committed node, attempt and
+  seed, so the encounter restarts from its attempt seed without using a
+  chance. A recovery warning appears when a mid-encounter game was lost.
+  Deleting the slot is best-effort cleanup; identity matching is the safety
+  boundary.
 - **Score counters.** `scoreEligibleChances` and `scoreEligibleWinStreak`
   shadow the real chances and streak, and `computeAdventureScore` reads the
   score-eligible chances. Without rewards they move together.
-- **Resume status priority.** Storage warning first, then the recovery
-  warning, then the success message.
+- **Resume status.** A refused write shows only the storage warning.
+  Otherwise the status is the success message, followed by the recovery
+  warning when a mid-encounter game was lost.
 
 ## Adventure-specific rules
 

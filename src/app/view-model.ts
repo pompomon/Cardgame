@@ -1,6 +1,7 @@
 import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
+import { adventureRouteNodes, type AdventureOpponentDeck, type AdventureRunState } from './adventure'
 import {
   displayAdventureOpponentLabel,
   labelGameAction,
@@ -10,6 +11,10 @@ import {
 import { displayCardName } from './card-catalog'
 import { getCurrentTutorialStep } from './tutorial'
 import type {
+  AdventureEncounterResult,
+  AdventureOpponentSummary,
+  AdventureResultSummary,
+  AdventureTierSummary,
   AdventureUiState,
   AppState,
   AppViewModel,
@@ -18,46 +23,116 @@ import type {
   SwampDiscardOption,
 } from './types'
 
+const EMPTY_ADVENTURE_TIERS: readonly AdventureTierSummary[] = Object.freeze([])
+
+function projectAdventureOpponent(opponent: AdventureOpponentDeck): AdventureOpponentSummary {
+  return Object.freeze({
+    id: opponent.id,
+    label: displayAdventureOpponentLabel(opponent.kind, opponent.lands),
+    kind: opponent.kind,
+    lands: Object.freeze([...opponent.lands]),
+  })
+}
+
+function adventureRouteKey(run: AdventureRunState): string {
+  return [
+    run.status,
+    run.stage ?? '-',
+    run.currentTierIndex,
+    run.selectedNodeId ?? '-',
+    run.completedNodeIds.join(','),
+  ].join('|')
+}
+
+// Route projection validates the whole map, so it is cached per run object
+// and route position. Transitions replace the run object; the map is never
+// changed in place.
+const adventureTierCache = new WeakMap<AdventureRunState, { key: string; tiers: readonly AdventureTierSummary[] }>()
+
+function projectAdventureTiers(run: AdventureRunState): readonly AdventureTierSummary[] {
+  const key = adventureRouteKey(run)
+  const cached = adventureTierCache.get(run)
+  if (cached && cached.key === key) {
+    return cached.tiers
+  }
+  const tiers = Object.freeze(adventureRouteNodes(run).map((nodes, tierIndex) => Object.freeze({
+    tierIndex,
+    nodes: Object.freeze(nodes.map((node, laneIndex) => Object.freeze({
+      id: node.id,
+      tierIndex: node.tierIndex,
+      lane: node.lane,
+      status: node.status,
+      boss: node.boss,
+      opponent: projectAdventureOpponent(run.map.tiers[tierIndex].nodes[laneIndex].opponent),
+    }))),
+  })))
+  adventureTierCache.set(run, { key, tiers })
+  return tiers
+}
+
+function projectAdventureResult(
+  run: AdventureRunState,
+  result: AdventureEncounterResult | null,
+): AdventureResultSummary | null {
+  if (!result) {
+    return null
+  }
+  const opponent = run.map.tiers[result.tierIndex]?.nodes.find((node) => node.id === result.nodeId)?.opponent
+  return Object.freeze({
+    outcome: result.outcome,
+    tierIndex: result.tierIndex,
+    opponentLabel: opponent ? displayAdventureOpponentLabel(opponent.kind, opponent.lands) : 'Adventure opponent',
+    score: result.score,
+  })
+}
+
 function projectAdventureUiState(state: AppState): AdventureUiState {
-  const { run, highScore, hasSavedRun } = state.adventure
+  const { run, highScore, hasSavedRun, pendingCompletion, lastResult } = state.adventure
   if (!run) {
     return Object.freeze({
+      runId: null,
       baseSeed: 0,
-      currentRound: 0,
+      status: 'inactive',
+      stage: null,
+      currentTier: 0,
+      attemptOrdinal: 0,
       remainingChances: 0,
       winStreak: 0,
       totalRoundsPlayed: 0,
       totalCardsPlayed: 0,
-      opponentLineup: Object.freeze([]),
-      currentOpponentIndex: 0,
+      tiers: EMPTY_ADVENTURE_TIERS,
       activeGameSeed: null,
-      status: 'inactive',
+      pendingCompletion: null,
+      lastResult: null,
       highScore,
       hasSavedRun,
+      decisionKey: 'none',
     })
   }
+  const pendingOutcome = pendingCompletion?.outcome ?? null
   return Object.freeze({
+    runId: run.runId,
     baseSeed: run.baseSeed,
-    currentRound: run.currentTierIndex + 1,
+    status: run.status,
+    stage: run.stage,
+    currentTier: run.currentTierIndex + 1,
+    attemptOrdinal: run.attemptOrdinal,
     remainingChances: run.remainingChances,
     winStreak: run.winStreak,
     totalRoundsPlayed: run.totalRoundsPlayed,
     totalCardsPlayed: run.totalCardsPlayed,
-    // Milestone 1 maps are linear, so each tier's only node is the lineup entry.
-    opponentLineup: Object.freeze(run.map.tiers.map((tier) => {
-      const opponent = tier.nodes[0].opponent
-      return Object.freeze({
-        id: opponent.id,
-        label: displayAdventureOpponentLabel(opponent.kind, opponent.lands),
-        kind: opponent.kind,
-        lands: Object.freeze([...opponent.lands]),
-      })
-    })),
-    currentOpponentIndex: run.currentTierIndex,
+    tiers: projectAdventureTiers(run),
     activeGameSeed: run.attemptSeed,
-    status: run.status,
+    pendingCompletion: pendingOutcome,
+    lastResult: projectAdventureResult(run, lastResult),
     highScore,
     hasSavedRun,
+    decisionKey: [
+      run.runId,
+      adventureRouteKey(run),
+      run.attemptOrdinal,
+      pendingOutcome ?? '-',
+    ].join('|'),
   })
 }
 

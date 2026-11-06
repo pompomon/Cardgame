@@ -1,7 +1,15 @@
 import type { BasicLand, GameAction, GamePhase, GameState, LogEvent } from '../game/types'
 import type { AiLevel } from '../game/ai-levels'
 import type { GameRecordFile } from './game-recording'
-import type { AdventureOpponentKind, AdventureRunState, AdventureRunStatus } from './adventure'
+import type {
+  AdventureEncounterOutcome,
+  AdventureNodeLane,
+  AdventureNodeStatus,
+  AdventureOpponentKind,
+  AdventureRunStage,
+  AdventureRunState,
+  AdventureRunStatus,
+} from './adventure'
 import type { BoardTheme } from './board-theme'
 import type { CardVisualStyle } from './card-visual-styles'
 import type { RenderQualityPreference } from './render-quality'
@@ -19,6 +27,24 @@ export type { BoardTheme }
 export type { RenderQualityPreference }
 export type AnimationSpeed = 'off' | 'fast' | 'normal' | 'slow'
 
+/**
+ * A finished encounter whose run commit was rejected by storage. The run in
+ * memory is still the pre-result run, so Retry completion re-applies exactly
+ * this outcome to a fresh candidate. It lives in memory only.
+ */
+export interface AdventurePendingCompletion {
+  outcome: AdventureEncounterOutcome
+}
+
+/** The last committed encounter result, shown on the Adventure hub. */
+export interface AdventureEncounterResult {
+  outcome: AdventureEncounterOutcome
+  tierIndex: number
+  nodeId: string
+  /** Final score once a completed or failed run is committed; otherwise null. */
+  score: number | null
+}
+
 // Controller-owned Adventure state. `run` is the validated schema version 2
 // run (or null when no run is loaded); renderers only see the frozen
 // `AdventureUiState` projection built by the view model.
@@ -26,6 +52,8 @@ export interface AdventureState {
   run: AdventureRunState | null
   highScore: number
   hasSavedRun: boolean
+  pendingCompletion: AdventurePendingCompletion | null
+  lastResult: AdventureEncounterResult | null
 }
 
 // UI-facing summary of an adventure opponent. Excludes the heavy `deck`
@@ -38,22 +66,53 @@ export interface AdventureOpponentSummary {
   readonly lands: readonly BasicLand[]
 }
 
+/** One route node: identity, place, derived status and opponent summary. */
+export interface AdventureNodeSummary {
+  readonly id: string
+  readonly tierIndex: number
+  readonly lane: AdventureNodeLane
+  readonly status: AdventureNodeStatus
+  readonly boss: boolean
+  readonly opponent: AdventureOpponentSummary
+}
+
+export interface AdventureTierSummary {
+  readonly tierIndex: number
+  readonly nodes: readonly AdventureNodeSummary[]
+}
+
+export interface AdventureResultSummary {
+  readonly outcome: AdventureEncounterOutcome
+  readonly tierIndex: number
+  readonly opponentLabel: string
+  readonly score: number | null
+}
+
 // Read-only projection of `AdventureState` exposed via the view model. Keeps
 // renderers/tests from accidentally mutating controller state by holding a
 // reference to the live `AppState.adventure` object.
 export interface AdventureUiState {
+  readonly runId: string | null
   readonly baseSeed: number
-  readonly currentRound: number
+  readonly status: AdventureRunStatus | 'inactive'
+  readonly stage: AdventureRunStage | null
+  /** 1-based tier number; 0 without a run. */
+  readonly currentTier: number
+  readonly attemptOrdinal: number
   readonly remainingChances: number
   readonly winStreak: number
   readonly totalRoundsPlayed: number
   readonly totalCardsPlayed: number
-  readonly opponentLineup: readonly AdventureOpponentSummary[]
-  readonly currentOpponentIndex: number
+  readonly tiers: readonly AdventureTierSummary[]
+  /** Seed of the committed attempt, or null before a node is selected. */
   readonly activeGameSeed: number | null
-  readonly status: AdventureRunStatus | 'inactive'
+  /** Outcome waiting for Retry completion, or null. */
+  readonly pendingCompletion: AdventureEncounterOutcome | null
+  readonly lastResult: AdventureResultSummary | null
   readonly highScore: number
   readonly hasSavedRun: boolean
+  /** Changes whenever the actionable Adventure decision changes. */
+  readonly decisionKey: string
 }
 
 export interface AppState {

@@ -5,16 +5,30 @@ import {
   targetPromptForContext,
   type TargetSelectionContext,
 } from '../../app/action-resolution'
+import { ADVENTURE_TIER_COUNT, type AdventureNodeLane, type AdventureNodeStatus } from '../../app/adventure'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../../app/card-catalog'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
 import { displayGamePhase } from '../../app/game-presentation'
-import { hasSavedAdventureRun, isAdventureResumable, LOBBY_MODE_OPTIONS } from '../../app/lobby-presentation'
+import {
+  describeNextAdventureOpponent,
+  hasSavedAdventureRun,
+  isAdventureResumable,
+  LOBBY_MODE_OPTIONS,
+} from '../../app/lobby-presentation'
 import { RENDER_QUALITY_PREFERENCE_OPTIONS } from '../../app/render-quality'
 import { buildCounterHandOptions, type CounterHandOptions } from '../../app/response-options'
-import { HIDDEN_HAND_CARD_NAME, type AppViewModel, type GameUiState, type Mode } from '../../app/types'
+import {
+  HIDDEN_HAND_CARD_NAME,
+  type AdventureNodeSummary,
+  type AdventureTierSummary,
+  type AdventureUiState,
+  type AppViewModel,
+  type GameUiState,
+  type Mode,
+} from '../../app/types'
 import { isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { BoardHit, RendererCardIdentity } from './contracts'
@@ -94,15 +108,21 @@ export function canThreeInput(view: AppViewModel, presentedActor: number): boole
     && !view.replay.active && view.game.actor === presentedActor
 }
 
+/** Adventure mode with no game or replay shows the route hub instead of the lobby. */
+export function isThreeAdventureHub(view: AppViewModel): boolean {
+  return view.mode === 'adventure-hvai' && view.game === null && !view.replay.active
+}
+
 export function threeSessionKey(view: AppViewModel): string {
   return JSON.stringify([view.mode, view.seed, !!view.game, view.replay.active, view.game?.isReplay, view.p2pStarted])
 }
 
 // Excludes settings/status and the growing log, but invalidates selections on
-// changes to the actual decision (including a replay step or a same-phase play).
+// changes to the actual decision (including a replay step, a same-phase play,
+// or an Adventure route, attempt or pending-result change).
 export function threeDecisionKey(view: AppViewModel): string {
   const game = view.game
-  return JSON.stringify([threeSessionKey(view), view.replay.step, game && [
+  return JSON.stringify([threeSessionKey(view), view.replay.step, view.adventure.decisionKey, game && [
     game.turn, game.phase, game.actor, game.actorControl, game.canInput, game.pendingLandName, game.pendingLandPlay,
     game.pendingPlainsReuseName, game.legal, game.players, game.revealedEnemyHandForSwamp,
   ]])
@@ -246,6 +266,8 @@ function renderReplay(view: AppViewModel): string {
 
 function renderRecorder(view: AppViewModel): string {
   const meta = view.recording.metadata
+  // Replay is refused while Adventure is open, so its control is not offered.
+  const replayable = !view.replay.active && view.mode !== 'adventure-hvai'
   return `<section aria-label="Recording"><h3>Recording</h3><p>${meta
     ? escapeHtml(`Seed ${meta.seed} · Mode ${meta.mode} · AI ${meta.aiLevel} · Controllers ${meta.controllers.join('/')} · Completed ${meta.completed ? 'Yes' : 'No'}`)
     : 'No recording data.'}</p><p>Local save available: ${view.recording.hasLocalSave ? 'Yes' : 'No'}</p>
@@ -253,12 +275,21 @@ function renderRecorder(view: AppViewModel): string {
     ${button('save-recording-local', 'Save to Browser', !view.recording.canSave)}
     ${button('load-recording-local', 'Load from Browser', !view.recording.canLoadLocal)}
     ${button('load-recording-file', 'Load from File')}
-    ${view.replay.active ? '' : button('replay-start', 'Start Replay', !view.recording.canSave)}</div></section>`
+    ${replayable ? button('replay-start', 'Start Replay', !view.recording.canSave) : ''}</div></section>`
 }
 
 function adventureSummary(view: AppViewModel): string {
   const adventure = view.adventure
-  return `Adventure round ${adventure.currentRound}/7 · Chances ${adventure.remainingChances} · Win streak ${adventure.winStreak} · High score ${adventure.highScore}`
+  return `Adventure Tier ${adventure.currentTier}/${ADVENTURE_TIER_COUNT} · Chances ${adventure.remainingChances} · Win streak ${adventure.winStreak} · High score ${adventure.highScore}`
+}
+
+// In-game Adventure controls. A result that storage refused must be saved (or
+// the run reset) before anything else, so Pause gives way to Retry.
+function renderAdventureGameActions(view: AppViewModel): string {
+  return (view.adventure.pendingCompletion
+    ? button('adventure-retry-completion', 'Retry Saving Result')
+    : button('pause-adventure', 'Pause Adventure'))
+    + button('abandon-adventure', 'Reset Adventure Run')
 }
 
 function renderMenu(view: AppViewModel): string {
@@ -266,7 +297,7 @@ function renderMenu(view: AppViewModel): string {
   return modal('menu', 'Game Menu', `${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
     <div class="three-actions">${button('cards', 'Cards & keyboard controls', false, ' aria-haspopup="dialog"')}
     ${view.mode === 'adventure-hvai' && !view.replay.active
-    ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
+    ? renderAdventureGameActions(view)
     : button('back-to-lobby', view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby')
       + (view.mode === 'tutorial' || view.replay.active ? '' : button('rematch', 'Rematch'))}</div>
     ${renderThreeLog(view.game!, view.cardVisualStyle, logControllers)}
@@ -276,7 +307,7 @@ function renderMenu(view: AppViewModel): string {
 function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
   const page = ui.lobbyPage ?? 'root'
   const adventure = view.adventure
-  const nextOpponent = adventure.opponentLineup[adventure.currentOpponentIndex]
+  const nextOpponent = describeNextAdventureOpponent(adventure)
   const root = `<nav class="three-lobby-modes" aria-label="Game modes">
     ${button('', 'Tutorial (Learn to Play)', false, ' data-mode="tutorial"')}
     ${LOBBY_MODE_OPTIONS.map(({ mode, label }) => button('', label, false, ` data-mode="${mode}"`)).join('')}
@@ -284,14 +315,152 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
     <nav class="three-actions" aria-label="Lobby options">${button('lobby-settings', 'Settings')}${button('lobby-recording', 'Recording')}</nav>
     <section aria-label="Adventure"><h2>Adventure</h2>
       <p>High Score: ${adventure.highScore} · Status: ${escapeHtml(adventure.status)}</p>
-      <p>Round: ${adventure.currentRound}/7 · Chances: ${adventure.remainingChances} · Win Streak: ${adventure.winStreak}</p>
+      <p>Tier: ${adventure.currentTier}/${ADVENTURE_TIER_COUNT} · Chances: ${adventure.remainingChances} · Win Streak: ${adventure.winStreak}</p>
       <p>Total Rounds: ${adventure.totalRoundsPlayed} · Summons attempted (both players): ${adventure.totalCardsPlayed}</p>
-      <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent.label) : 'N/A'}</p>
+      <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent) : 'N/A'}</p>
       ${hasSavedAdventureRun(adventure) ? button('abandon-adventure', 'Reset Adventure Run') : ''}</section>
     ${renderInstallControls()}`
   return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
     <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Urban Creatures${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '<p>Urban-fantasy 2-player card game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>
+    ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
+    ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
+  </section>`
+}
+
+function adventureLaneLabel(lane: AdventureNodeLane): string {
+  switch (lane) {
+    case 'left': return 'Left path'
+    case 'right': return 'Right path'
+    case 'center': return 'Center path'
+    default: return 'Path'
+  }
+}
+
+// Text and an icon carry each status, so the route never relies on color.
+function adventureNodeStatusLabel(status: AdventureNodeStatus): { readonly icon: string; readonly text: string } {
+  switch (status) {
+    case 'completed': return { icon: '✓', text: 'Completed' }
+    case 'current': return { icon: '▶', text: 'Current' }
+    case 'available': return { icon: '◇', text: 'Available' }
+    case 'bypassed': return { icon: '↷', text: 'Bypassed' }
+    case 'locked': return { icon: '🔒', text: 'Locked' }
+    default: return { icon: '•', text: 'Unavailable' }
+  }
+}
+
+function adventureChancesText(chances: number): string {
+  return `${chances} ${chances === 1 ? 'chance' : 'chances'}`
+}
+
+function renderAdventureNode(adventure: AdventureUiState, node: AdventureNodeSummary): string {
+  const status = adventureNodeStatusLabel(node.status)
+  const lane = adventureLaneLabel(node.lane)
+  const opponent = node.opponent.label
+  const contents = `<span class="three-adventure-node-heading"><span class="three-adventure-node-icon" aria-hidden="true">${status.icon}</span>
+    <span>${lane} · ${status.text}</span></span>
+    <span class="three-adventure-node-opponent">${escapeHtml(opponent)}</span>
+    ${node.boss ? '<span class="three-adventure-node-boss"><span aria-hidden="true">♛</span> Boss</span>' : ''}`
+  const attrs = ` data-status="${node.status}" data-lane="${node.lane}"`
+  // Only nodes the route rules can start are buttons: a fork's two choices,
+  // a single-node tier, or a committed node waiting for its retry.
+  if (node.status !== 'current' && node.status !== 'available') {
+    return `<div class="three-adventure-node"${attrs}>${contents}</div>`
+  }
+  const action = node.status === 'available' ? 'Choose this path'
+    : adventure.attemptOrdinal > 0 ? 'Retry encounter' : 'Start encounter'
+  const name = `${action}: Tier ${node.tierIndex + 1} of ${ADVENTURE_TIER_COUNT}${node.boss ? ', boss' : ''}, ${lane.toLowerCase()}, ${opponent}. Status: ${status.text}.`
+  return `<button type="button" class="three-adventure-node" data-action="adventure-node" data-node-id="${escapeHtml(node.id)}"${attrs}
+    aria-label="${escapeHtml(name)}">${contents}<span class="three-adventure-node-action">${action}</span></button>`
+}
+
+function renderAdventureTier(adventure: AdventureUiState, tier: AdventureTierSummary): string {
+  const tierNumber = tier.tierIndex + 1
+  const resumable = adventure.status === 'active' || adventure.status === 'paused'
+  const boss = tier.nodes.some((node) => node.boss)
+  const current = resumable && tierNumber === adventure.currentTier
+  const state = tier.nodes.some((node) => node.status === 'completed') ? 'cleared'
+    : current ? 'current'
+      : adventure.status === 'failed' && tierNumber === adventure.currentTier ? 'failed' : 'upcoming'
+  const suffix = state === 'cleared' ? ' · Cleared' : state === 'current' ? ' · Current' : state === 'failed' ? ' · Run ended' : ''
+  return `<li class="three-adventure-tier" data-tier="${tierNumber}" data-tier-state="${state}"${current ? ' aria-current="step"' : ''}>
+    <h3${current ? ' tabindex="-1" data-adventure-current-tier' : ''}>Tier ${tierNumber} of ${ADVENTURE_TIER_COUNT}${boss ? ' · Boss' : ''}${suffix}</h3>
+    <ul class="three-adventure-nodes" data-count="${tier.nodes.length}">${tier.nodes.map((node) =>
+      `<li>${renderAdventureNode(adventure, node)}</li>`).join('')}</ul></li>`
+}
+
+function renderAdventureResult(adventure: AdventureUiState): string {
+  const result = adventure.lastResult
+  if (!result) return ''
+  const tier = result.tierIndex + 1
+  const score = `Final score ${result.score ?? 0} · High score ${adventure.highScore}`
+  let heading: string
+  let detail: string
+  if (adventure.status === 'completed') {
+    heading = `Adventure complete: Tier ${tier} boss defeated`
+    detail = score
+  } else if (adventure.status === 'failed') {
+    heading = `Adventure over: defeated at Tier ${tier}`
+    detail = score
+  } else {
+    switch (result.outcome) {
+      case 'win':
+        heading = `Victory at Tier ${tier}`
+        detail = `Choose your Tier ${adventure.currentTier} encounter.`
+        break
+      case 'loss':
+        heading = `Defeat at Tier ${tier}`
+        detail = `${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
+        break
+      case 'draw':
+        heading = `Draw at Tier ${tier}`
+        detail = 'No chance was used. Retry the same encounter.'
+        break
+      default:
+        heading = `Tier ${tier} encounter finished`
+        detail = 'Continue from the Adventure map.'
+        break
+    }
+  }
+  return `<section class="three-adventure-result" data-outcome="${escapeHtml(result.outcome)}" aria-label="Encounter result">
+    <h2 tabindex="-1" data-adventure-result-heading>${escapeHtml(heading)}</h2>
+    <p>Opponent: ${escapeHtml(result.opponentLabel)}</p><p>${escapeHtml(detail)}</p></section>`
+}
+
+/**
+ * The Adventure hub: progress, the seven-tier route and its node choices, and
+ * Pause/Reset (or, once the run ends, a new run and the lobby). Settings and
+ * Recording reuse the lobby sub-pages.
+ */
+function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
+  const page = ui.lobbyPage ?? 'root'
+  const adventure = view.adventure
+  const resumable = adventure.status === 'active' || adventure.status === 'paused'
+  const nextOpponent = describeNextAdventureOpponent(adventure)
+  const stats: ReadonlyArray<readonly [string, string]> = [
+    ['Tier', `${adventure.currentTier} / ${ADVENTURE_TIER_COUNT}`],
+    ['Chances', String(adventure.remainingChances)],
+    ['Win streak', String(adventure.winStreak)],
+    ['Rounds played', String(adventure.totalRoundsPlayed)],
+    ['Summons attempted (both players)', String(adventure.totalCardsPlayed)],
+    ['High score', String(adventure.highScore)],
+  ]
+  const root = `${renderAdventureResult(adventure)}
+    <section class="three-adventure-progress" aria-label="Adventure progress">
+      <dl class="three-adventure-stats">${stats.map(([label, value]) =>
+        `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>
+      ${nextOpponent ? `<p>Next opponent: ${escapeHtml(nextOpponent)}</p>` : ''}
+    </section>
+    <section class="three-adventure-map" aria-label="Adventure route"><h2>Route</h2>
+      <ol class="three-adventure-route">${adventure.tiers.map((tier) => renderAdventureTier(adventure, tier)).join('')}</ol>
+    </section>
+    <nav class="three-actions" aria-label="Adventure actions">${resumable
+      ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
+      : button('start-new-adventure', 'Start New Adventure') + button('back-to-lobby', 'Back to Lobby')}</nav>
+    <nav class="three-actions" aria-label="Adventure options">${button('lobby-settings', 'Settings')}${button('lobby-recording', 'Recording')}</nav>`
+  return `<section class="panel three-adventure-hub" data-lobby-page="${page}" aria-label="Adventure map">
+    <header><p>Adventure</p><h1 tabindex="-1" data-lobby-heading>Adventure Map${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
+      ${page === 'root' ? '' : button('lobby-root', 'Back')}</header>
     ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
     ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
   </section>`
@@ -392,6 +561,8 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
     ${game.winnerText ? `<p class="three-winner">${escapeHtml(game.winnerText)}</p>` : ''}
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? TUTORIAL_FALLBACK_HINT)}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
+    ${view.mode === 'adventure-hvai' && view.adventure.pendingCompletion && !view.replay.active && !ui.menuOpen
+    ? `<div class="three-actions">${renderAdventureGameActions(view)}</div>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
     ${targets && !ui.menuOpen && !ui.preview ? `<p class="three-required-prompt">${escapeHtml(targets.title)}</p>` : ''}
     ${ui.menuOpen ? '' : renderReplay(view)}</section>`
@@ -427,12 +598,23 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
     }
   }
   if (game.phase === 'gameOver') {
+    if (view.mode === 'adventure-hvai') {
+      // A committed result replaces the board with the map at once, so a
+      // finished Adventure game only stays while storage refuses its result.
+      const pending = view.adventure.pendingCompletion !== null
+      return {
+        prompt: `${game.winnerText || 'Game over.'}${pending ? ' The result is not saved yet.' : ''}`,
+        actions: pending
+          ? button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
+            + button('abandon-adventure', 'Reset', false, ' aria-label="Reset Adventure Run"')
+          : '',
+      }
+    }
     return {
       prompt: game.winnerText || 'Game over.',
       actions: (view.recording.canSave ? button('replay-start', 'Replay', false, ' aria-label="Start Replay"') : '')
         + (view.mode === 'tutorial' ? button('back-to-lobby', 'Exit Tutorial')
-          : view.mode === 'adventure-hvai' ? ''
-            : button('rematch', 'Rematch') + button('back-to-lobby', 'Lobby', false, ' aria-label="Back to Lobby"')),
+          : button('rematch', 'Rematch') + button('back-to-lobby', 'Lobby', false, ' aria-label="Back to Lobby"')),
     }
   }
   const targets = ui.menuOpen || ui.cardsOpen || ui.preview ? null : threeTargets(view, ui)
@@ -513,6 +695,7 @@ function renderTutorialBanner(view: AppViewModel, ui: InterfaceUi): string {
 
 export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includeHud = true): string {
   if (!isThreeInGame(view)) {
+    if (isThreeAdventureHub(view)) return renderThreeAdventureHub(view, ui)
     const p2p = view.mode === 'p2p-host' || view.mode === 'p2p-join'
     const signaling = p2p ? renderP2P(view, ui.hostAnswerDraft, ui.joinOfferDraft)
       .replace('id="start-p2p-game"', `id="start-p2p-game"${view.p2pConnected && !view.p2pStarted ? '' : ' disabled'}`)

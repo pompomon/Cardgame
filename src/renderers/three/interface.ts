@@ -10,6 +10,7 @@ import { isAnimationSpeed } from '../../app/animation-settings'
 import { isBoardTheme } from '../../app/board-theme'
 import { isCardVisualStyle } from '../../app/card-visual-styles'
 import { promptInstall } from '../../app/install-support'
+import { actionableAdventureNodes } from '../../app/lobby-presentation'
 import { isRenderQualityPreference } from '../../app/render-quality'
 import type { AppViewModel } from '../../app/types'
 import type { GameAction } from '../../game/types'
@@ -20,6 +21,7 @@ import { resetRasterCardArtLoadFailures } from './native-html'
 import {
   canThreeInput,
   EMPTY_THREE_DOCK,
+  isThreeAdventureHub,
   isThreeInGame,
   isThreeMode,
   renderThreeDock,
@@ -57,7 +59,8 @@ export interface ThreeInterfaceOptions {
 function focusKey(element: HTMLElement): string {
   return JSON.stringify([element.tagName, element.id, element.dataset.action, element.dataset.mode,
     element.dataset.cardId, element.dataset.owner, element.dataset.zone, element.dataset.instanceId,
-    element.dataset.targetId, element.dataset.discardCardId, element.closest('[data-modal]')?.getAttribute('data-modal')])
+    element.dataset.targetId, element.dataset.discardCardId, element.dataset.nodeId,
+    element.closest('[data-modal]')?.getAttribute('data-modal')])
 }
 
 export class ThreeInterface {
@@ -286,6 +289,11 @@ export class ThreeInterface {
     if (this.disposed) return
     const session = threeSessionKey(view)
     const decision = threeDecisionKey(view)
+    // Entering the Adventure hub, or a new route decision on it (a committed
+    // result or a new run), moves focus to the result or the current tier.
+    // A refused write keeps the decision, so focus stays on the same control.
+    const hubFocus = isThreeAdventureHub(view) && (!this.view || !isThreeAdventureHub(this.view)
+      || this.view.adventure.decisionKey !== view.adventure.decisionKey)
     if (this.session !== session) {
       this.menuOpen = false
       this.cardsOpen = false
@@ -327,6 +335,15 @@ export class ThreeInterface {
     this.decision = decision
     this.session = session
     this.render()
+    if (hubFocus) this.focusAdventureHub()
+  }
+
+  private focusAdventureHub(): void {
+    if (this.disposed || !this.view || this.lobbyPage !== 'root') return
+    const target = this.content.querySelector<HTMLElement>(this.view.adventure.lastResult
+      ? '[data-adventure-result-heading]' : '[data-adventure-current-tier]')
+      ?? this.content.querySelector<HTMLElement>('[data-lobby-heading]')
+    target?.focus()
   }
 
   // Controller snapshots can advance before the next presented frame. Never
@@ -812,6 +829,17 @@ export class ThreeInterface {
       case 'resume-adventure': this.reset(); this.controller.resumeAdventure(); break
       case 'pause-adventure': this.reset(); this.controller.pauseAdventure(); break
       case 'abandon-adventure': this.reset(); this.controller.abandonAdventure(); break
+      case 'adventure-node': {
+        // Only a node the map offers right now can start; the controller
+        // re-checks the latest run. No reset, so a refused write keeps focus.
+        const nodeId = element.dataset.nodeId
+        if (!nodeId || !isThreeAdventureHub(view) || this.lobbyPage !== 'root'
+          || !actionableAdventureNodes(view.adventure).some((node) => node.id === nodeId)) break
+        this.controller.startAdventureNode(nodeId)
+        break
+      }
+      case 'adventure-retry-completion': if (view.adventure.pendingCompletion) { this.reset(); this.controller.retryAdventureCompletion() }; break
+      case 'start-new-adventure': if (isThreeAdventureHub(view)) { this.reset(); this.controller.startAdventure() }; break
       case 'back-to-lobby': this.reset(); this.controller.backToLobby(); break
       case 'rematch': this.reset(); this.controller.rematch(); break
       case 'create-offer': this.runAsync(() => this.controller.createOffer(), 'Failed to create offer.'); break

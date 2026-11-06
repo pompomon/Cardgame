@@ -5,7 +5,6 @@ import { resolve } from 'node:path'
 import {
   ADVENTURE_GAME_STORAGE_KEY,
   applyAdventureEncounterResult,
-  beginAdventureEncounter,
   clearStoredAdventureGameSnapshot,
   createAdventureRun,
   isAdventureGameSnapshotForRun,
@@ -13,6 +12,7 @@ import {
   isLegacyAdventureRunState,
   persistAdventureGameSnapshot,
   readStoredAdventureGameSnapshot,
+  startAdventureEncounter,
   type AdventureGameSnapshotEnvelope,
   type AdventureRunState,
   type AdventureRunStateV1,
@@ -25,7 +25,13 @@ import {
   readStoredAdventureRun,
   readStoredAdventureRunRecord,
 } from '../app/adventure-persistence'
-import { generateBranchingAdventureMap, isAdventureMap } from '../app/adventure-map'
+import {
+  adventureAttemptSeed,
+  buildAdventureLineup,
+  generateBranchingAdventureMap,
+  isAdventureMap,
+  linearAdventureTiers,
+} from '../app/adventure-map'
 import { isLegalActionForState } from '../app/action-validation'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import { BASIC_LANDS, type GameState, type LogEvent } from '../game/types'
@@ -88,12 +94,31 @@ function v1Run(): AdventureRunStateV1 {
   return JSON.parse(readV1Fixture().closedMidRound[ADVENTURE_RUN_STORAGE_KEY]) as AdventureRunStateV1
 }
 
-function newRun(seed = 123): AdventureRunState {
+/**
+ * A linear run as Milestone 2 wrote it, with the first attempt seed stored.
+ * Saved linear runs stay valid, so the structural cases below use one.
+ */
+function linearRun(seed = 123): AdventureRunState {
+  return {
+    ...createAdventureRun(seed, RUN_ID),
+    map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
+    attemptSeed: seed,
+  }
+}
+
+/** A new run as the app now creates it. */
+function branchingRun(seed = 123): AdventureRunState {
   return createAdventureRun(seed, RUN_ID)
 }
 
+function started(run: AdventureRunState, nodeId = run.map.tiers[run.currentTierIndex].nodes[0].id): AdventureRunState {
+  const next = startAdventureEncounter(run, nodeId)
+  if (!next) throw new Error(`Expected ${nodeId} to start.`)
+  return next
+}
+
 function encounterRun(seed = 123): AdventureRunState {
-  return beginAdventureEncounter(newRun(seed), seed)
+  return started(linearRun(seed))
 }
 
 type MutableRecord = Record<string, unknown>
@@ -187,7 +212,15 @@ describe('adventure run persistence', () => {
   })
 
   it('round-trips valid schema version 2 runs', () => {
-    for (const run of [newRun(), encounterRun(), applyAdventureEncounterResult(encounterRun(), 'loss', 77)]) {
+    for (const run of [
+      linearRun(),
+      encounterRun(),
+      applyAdventureEncounterResult(encounterRun(), 'loss'),
+      branchingRun(),
+      started(branchingRun()),
+      applyAdventureEncounterResult(started(branchingRun()), 'win'),
+      applyAdventureEncounterResult(started(branchingRun()), 'draw'),
+    ]) {
       expect(persistAdventureRun(run)).toBe(true)
       expect(readStoredAdventureRunRecord()).toEqual({ run, migratedFromV1: false })
     }
@@ -220,7 +253,7 @@ describe('adventure run persistence', () => {
   })
 
   it('rejects stored runs whose opponent decks are not exactly 50 cards', () => {
-    const run = newRun(42)
+    const run = linearRun(42)
     opponent(run, 0).deck = run.map.tiers[0].nodes[0].opponent.deck.slice(0, 30)
     store.data.set(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(run))
 
@@ -228,7 +261,7 @@ describe('adventure run persistence', () => {
   })
 
   it('rejects stored runs with non-finite or out-of-range numeric fields', () => {
-    const baseRun = newRun(42)
+    const baseRun = linearRun(42)
     const cases: MutableRecord[] = [
       { currentTierIndex: -1 },
       { currentTierIndex: 7 },
@@ -347,7 +380,7 @@ describe('adventure run persistence', () => {
     ['non-array relics', (run) => { asRecord(run).relics = {} }],
     ['missing reward history', (run) => { delete asRecord(run).rewardHistory }],
   ])('rejects structurally corrupted adventure runs: %s', (_label, mutate) => {
-    const run = newRun(42)
+    const run = linearRun(42)
     mutate(run)
     const serialized = JSON.stringify(run)
     store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
@@ -357,18 +390,43 @@ describe('adventure run persistence', () => {
     expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
   })
 
-  it('treats a stored run on a valid branching map as unavailable and never rewrites it', () => {
-    const run = { ...newRun(42), map: generateBranchingAdventureMap(42) }
+  it('reads a stored run on a valid branching map without rewriting it', () => {
+    const run = branchingRun(42)
+    expect(run.map).toEqual(generateBranchingAdventureMap(42))
     expect(isAdventureMap(run.map)).toBe(true)
     const serialized = JSON.stringify(run)
     store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
 
-    expect(readStoredAdventureRunRecord()).toBeNull()
-    expect(readStoredAdventureRun()).toBeNull()
-    expect(persistAdventureRun(run)).toBe(false)
+    expect(readStoredAdventureRunRecord()).toEqual({ run, migratedFromV1: false })
     expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
     expect(store.setCalls).toBe(0)
     expect(store.removeCalls).toBe(0)
+  })
+
+  it.each<[string, (run: AdventureRunState) => void]>([
+    ['a fork collapsed to one node', (run) => {
+      const fork = run.map.tiers.findIndex((entry) => entry.nodes.length === 2)
+      run.map.tiers[fork].nodes = run.map.tiers[fork].nodes.slice(0, 1)
+    }],
+    ['a selected node on a later tier', (run) => {
+      run.selectedNodeId = run.map.tiers[1].nodes[0].id
+    }],
+    ['a completed path through both fork nodes', (run) => {
+      const fork = run.map.tiers.findIndex((entry) => entry.nodes.length === 2)
+      run.currentTierIndex = fork + 2
+      run.completedNodeIds = run.map.tiers.slice(0, fork + 2).map((entry, index) =>
+        index === fork + 1 ? run.map.tiers[fork].nodes[1].id : entry.nodes[0].id)
+    }],
+  ])('rejects corrupted branching runs: %s', (_label, mutate) => {
+    const run = branchingRun(42)
+    mutate(run)
+    const serialized = JSON.stringify(run)
+    store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
+
+    expect(isAdventureRunState(run)).toBe(false)
+    expect(readStoredAdventureRun()).toBeNull()
+    expect(persistAdventureRun(run)).toBe(false)
+    expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
   })
 
   it.each<[string, (run: AdventureRunState) => void]>([
@@ -397,7 +455,7 @@ describe('adventure run persistence', () => {
       run.completedNodeIds = run.map.tiers.slice(0, 6).map((entry) => entry.nodes[0].id)
     }],
   ])('rejects finished runs with leftover progress: %s', (_label, mutate) => {
-    const run = newRun(42)
+    const run = linearRun(42)
     mutate(run)
     store.data.set(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(run))
 
@@ -405,7 +463,7 @@ describe('adventure run persistence', () => {
   })
 
   it.each(['completed', 'failed'] as const)('accepts a %s run without leftover progress', (status) => {
-    const run = newRun(42)
+    const run = linearRun(42)
     Object.assign(run, finishedRunFields(run, status))
 
     expect(persistAdventureRun(run)).toBe(true)
@@ -417,14 +475,14 @@ describe('adventure run persistence', () => {
     ['Infinity baseSeed', Infinity],
     ['-Infinity baseSeed', -Infinity],
   ])('rejects direct in-memory adventure run %s', (_label, value) => {
-    const run = asRecord(newRun(42))
+    const run = asRecord(linearRun(42))
     run.baseSeed = value
 
     expect(isAdventureRunState(run)).toBe(false)
   })
 
   it('rejects adventure run fields that JSON parses as Infinity', () => {
-    const run = asRecord(newRun(42))
+    const run = asRecord(linearRun(42))
     run.attemptSeed = '__INF__'
     store.data.set(
       ADVENTURE_RUN_STORAGE_KEY,
@@ -435,10 +493,10 @@ describe('adventure run persistence', () => {
   })
 
   it('refuses to write invalid runs', () => {
-    const valid = newRun(42)
+    const valid = linearRun(42)
     expect(persistAdventureRun(valid)).toBe(true)
     const before = store.data.get(ADVENTURE_RUN_STORAGE_KEY)
-    const invalid = newRun(43)
+    const invalid = linearRun(43)
     invalid.currentTierIndex = 3
 
     expect(persistAdventureRun(invalid)).toBe(false)
@@ -447,7 +505,7 @@ describe('adventure run persistence', () => {
   })
 
   it('writes only known fields', () => {
-    const run = newRun(42)
+    const run = linearRun(42)
     asRecord(run).extra = 'top'
 
     expect(persistAdventureRun(run)).toBe(true)
@@ -455,7 +513,7 @@ describe('adventure run persistence', () => {
   })
 
   it('loads pre-migration opponent labels without rewriting the stored fields', () => {
-    const run = newRun(123)
+    const run = linearRun(123)
     node(run, 0).opponent = {
       ...run.map.tiers[0].nodes[0].opponent,
       label: 'Standard Deck (10 of each land)',
@@ -479,7 +537,7 @@ describe('adventure run persistence', () => {
   })
 
   it('returns null when storage is unavailable on read', () => {
-    store.data.set(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(newRun(123)))
+    store.data.set(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(linearRun(123)))
     store.shouldThrowOnGet = true
 
     expect(readStoredAdventureRun()).toBeNull()
@@ -488,12 +546,12 @@ describe('adventure run persistence', () => {
   it('returns false when storage is unavailable on write', () => {
     store.shouldThrowOnSet = true
 
-    expect(persistAdventureRun(newRun(123))).toBe(false)
+    expect(persistAdventureRun(linearRun(123))).toBe(false)
     expect(store.data.has(ADVENTURE_RUN_STORAGE_KEY)).toBe(false)
   })
 
   it('does not throw when storage is unavailable on clear', () => {
-    store.data.set(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(newRun(123)))
+    store.data.set(ADVENTURE_RUN_STORAGE_KEY, JSON.stringify(linearRun(123)))
     store.shouldThrowOnRemove = true
 
     expect(() => clearStoredAdventureRun()).not.toThrow()
@@ -648,9 +706,10 @@ describe('adventure game snapshot envelope', () => {
   })
 
   it('round-trips the identity-bound envelope for the current attempt', () => {
-    const run = applyAdventureEncounterResult(encounterRun(), 'draw', 9001)
-    const resumed = beginAdventureEncounter(run, 1)
-    const game = createInitialGame(9001)
+    const run = applyAdventureEncounterResult(encounterRun(), 'draw')
+    const resumed = started(run, 'tier-1-center')
+    const seed = adventureAttemptSeed(123, 0, 'center', 1)
+    const game = createInitialGame(seed)
 
     expect(persistAdventureGameSnapshot(resumed, game)).toBe(true)
     const envelope = expectEnvelope(readStoredAdventureGameSnapshot())
@@ -660,21 +719,21 @@ describe('adventure game snapshot envelope', () => {
       runId: RUN_ID,
       nodeId: 'tier-1-center',
       attemptOrdinal: 1,
-      attemptSeed: 9001,
+      attemptSeed: seed,
       game,
     })
     expect(isAdventureGameSnapshotForRun(envelope, resumed)).toBe(true)
   })
 
   it('refuses to save a game for a run outside an encounter', () => {
-    expect(persistAdventureGameSnapshot(newRun(), createInitialGame(1))).toBe(false)
+    expect(persistAdventureGameSnapshot(linearRun(), createInitialGame(1))).toBe(false)
     expect(store.data.has(ADVENTURE_GAME_STORAGE_KEY)).toBe(false)
   })
 
   it.each<[string, (run: AdventureRunState) => AdventureRunState]>([
     ['run', (run) => ({ ...run, runId: OTHER_RUN_ID })],
     ['node', (run) => {
-      const next = beginAdventureEncounter(applyAdventureEncounterResult(run, 'win', run.attemptSeed!), 1)
+      const next = started(applyAdventureEncounterResult(run, 'win'), 'tier-2-center')
       return { ...next, attemptSeed: run.attemptSeed }
     }],
     ['attempt number', (run) => ({ ...run, attemptOrdinal: run.attemptOrdinal + 1 })],

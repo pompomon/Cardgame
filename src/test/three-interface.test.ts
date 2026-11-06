@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController, type ControllerApi } from '../app/controller'
+import type { AdventureNodeLane, AdventureNodeStatus } from '../app/adventure'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import { createGameRecord } from '../app/game-recording'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
 import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
-import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
+import { actionableAdventureNodes } from '../app/lobby-presentation'
+import {
+  HIDDEN_HAND_CARD_NAME,
+  type AdventureNodeSummary,
+  type AdventureTierSummary,
+  type AdventureUiState,
+  type AppViewModel,
+} from '../app/types'
 import { createInitialGame } from '../game/engine'
 import { BASIC_LANDS, type BasicLand } from '../game/types'
 import { escapeHtml, noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
@@ -12,6 +20,7 @@ import { ThreeInterface } from '../renderers/three/interface'
 import {
   canThreeInput,
   isThreeMode,
+  renderThreeDock,
   renderThreeInterface,
   renderThreeHud,
   threeDecisionKey,
@@ -21,6 +30,7 @@ import {
   type InterfaceUi,
 } from '../renderers/three/interface-model'
 import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit } from '../renderers/three/contracts'
+import { withFakeTimers } from './helpers/timers'
 
 function makeView(): AppViewModel {
   return {
@@ -30,9 +40,10 @@ function makeView(): AppViewModel {
     p2pConnected: false, p2pStarted: false,
     tutorial: { active: false, stepId: null, hint: null },
     adventure: {
-      baseSeed: 0, currentRound: 1, remainingChances: 3, winStreak: 0,
-      totalRoundsPlayed: 0, totalCardsPlayed: 0, opponentLineup: [], currentOpponentIndex: 0,
-      activeGameSeed: null, status: 'inactive', highScore: 0, hasSavedRun: false,
+      runId: null, baseSeed: 0, status: 'inactive', stage: null, currentTier: 0, attemptOrdinal: 0,
+      remainingChances: 3, winStreak: 0, totalRoundsPlayed: 0, totalCardsPlayed: 0, tiers: [],
+      activeGameSeed: null, pendingCompletion: null, lastResult: null, highScore: 0, hasSavedRun: false,
+      decisionKey: 'none',
     },
     recording: { canSave: true, canLoadLocal: true, hasLocalSave: true, metadata: null },
     replay: { active: false, step: 0, totalSteps: 10, isPlaying: false },
@@ -249,7 +260,8 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   const controller = {
     subscribe: vi.fn(() => () => {}), getViewModel: vi.fn(() => current),
     setAiLevel: vi.fn(), setCardVisualStyle: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
-    startGame: vi.fn(), startAdventure: vi.fn(), resumeAdventure: vi.fn(), pauseAdventure: vi.fn(), abandonAdventure: vi.fn(), backToLobby: vi.fn(),
+    startGame: vi.fn(), startAdventure: vi.fn(), startAdventureNode: vi.fn(), retryAdventureCompletion: vi.fn(),
+    resumeAdventure: vi.fn(), pauseAdventure: vi.fn(), abandonAdventure: vi.fn(), backToLobby: vi.fn(),
     createOffer: vi.fn(async () => {}), acceptAnswer: vi.fn(async () => {}), createAnswer: vi.fn(async () => {}), startP2PGame: vi.fn(),
     submitAction: vi.fn(), rematch: vi.fn(), exportRecordingJson: vi.fn((): string | null => '{}'),
     importRecordingJson: vi.fn(), saveRecordingToLocalStorage: vi.fn(), loadRecordingFromLocalStorage: vi.fn(), reportStatus: vi.fn(),
@@ -462,7 +474,12 @@ describe('Three native markup and decisions', () => {
     const adventure = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
     expect(adventure).toContain('Pause Adventure')
     expect(adventure).toContain('Reset Adventure Run')
-    expect(renderThreeInterface({ ...view, game: null }, defaultUi)).toContain('Resume Adventure')
+    expect(adventure).not.toContain('data-action="rematch"')
+    expect(renderThreeInterface({ ...view, mode: null, game: null }, defaultUi)).toContain('Resume Adventure')
+    // With no game, Adventure mode is the map hub, which never offers Resume.
+    const hub = renderThreeInterface({ ...view, game: null }, defaultUi)
+    expect(hub).toContain('aria-label="Adventure map"')
+    expect(hub).not.toContain('Resume Adventure')
   })
 
   it('bounds legacy menu logs to the latest 200 and escapes all text', () => {
@@ -2281,8 +2298,8 @@ describe('Three narrow profile', () => {
   it('moves adventure progress into the menu and keeps ids unique across hosts', () => {
     const view = makeView()
     view.mode = 'adventure-hvai'
-    view.adventure = { ...view.adventure, currentRound: 3, remainingChances: 2, winStreak: 1, highScore: 4 }
-    const summary = 'Adventure round 3/7 · Chances 2 · Win streak 1 · High score 4'
+    view.adventure = { ...view.adventure, status: 'active', stage: 'encounter', currentTier: 3, remainingChances: 2, winStreak: 1, highScore: 4 }
+    const summary = 'Adventure Tier 3/7 · Chances 2 · Win streak 1 · High score 4'
     expect(renderThreeHud(view, defaultUi)).toContain(summary)
     const h = setup(view, true, { enabled: true })
     expect(h.hud!.innerHTML).not.toContain(summary)
@@ -2292,5 +2309,253 @@ describe('Three narrow profile', () => {
     expect(ids).toContain(THREE_DOCK_PROMPT_ID)
     expect(new Set(ids).size).toBe(ids.length)
     h.ui.dispose()
+  })
+})
+
+function hubNode(tierIndex: number, lane: AdventureNodeLane, status: AdventureNodeStatus, label = `Tier ${tierIndex + 1} ${lane} foe`): AdventureNodeSummary {
+  return {
+    id: `tier-${tierIndex + 1}-${lane}`, tierIndex, lane, status, boss: tierIndex === 6,
+    opponent: { id: `adventure-opponent-${tierIndex + 1}-${lane}`, label, kind: 'dual', lands: ['Forest', 'Swamp'] },
+  }
+}
+
+// Seven tiers: tier 1 cleared, a fork at tier 2, then single nodes.
+function hubTiers(fork: [AdventureNodeStatus, AdventureNodeStatus] = ['available', 'available'], leftLabel?: string,
+  rest: AdventureNodeStatus = 'locked', first: AdventureNodeStatus = 'completed'): AdventureTierSummary[] {
+  return Array.from({ length: 7 }, (_, tierIndex): AdventureTierSummary => tierIndex === 1
+    ? { tierIndex, nodes: [hubNode(1, 'left', fork[0], leftLabel), hubNode(1, 'right', fork[1])] }
+    : { tierIndex, nodes: [hubNode(tierIndex, 'center', tierIndex === 0 ? first : rest)] })
+}
+
+function hubView(adventure: Partial<AdventureUiState> = {}): AppViewModel {
+  const view = makeView()
+  return {
+    ...view, mode: 'adventure-hvai', game: null, controllers: ['human', 'ai'], status: 'Choose your Tier 2 encounter.',
+    recording: { canSave: true, canLoadLocal: true, hasLocalSave: false, metadata: null },
+    adventure: {
+      ...view.adventure, runId: 'run-1', baseSeed: 7, status: 'active', stage: 'map', currentTier: 2,
+      winStreak: 1, totalRoundsPlayed: 1, tiers: hubTiers(), hasSavedRun: true, decisionKey: 'run-1|fork|0|',
+      ...adventure,
+    },
+  }
+}
+
+function installHubStorage(): Map<string, string> {
+  const entries = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => { entries.set(key, String(value)) },
+    removeItem: (key: string) => { entries.delete(key) },
+    clear: () => { entries.clear() },
+  })
+  return entries
+}
+
+describe('Three Adventure hub', () => {
+  it('renders the route as an ordered list where only playable nodes are buttons', () => {
+    const html = renderThreeInterface(hubView(), defaultUi)
+    expect(html).toContain('aria-label="Adventure map"')
+    expect(html).toContain('<ol class="three-adventure-route">')
+    expect(html.match(/<li class="three-adventure-tier"/g)).toHaveLength(7)
+    expect(html.match(/aria-current="step"/g)).toHaveLength(1)
+    expect(html).toContain('data-tier="2" data-tier-state="current" aria-current="step"')
+    expect(html).toContain('data-tier="1" data-tier-state="cleared"')
+    expect(html.match(/data-action="adventure-node"/g)).toHaveLength(2)
+    expect(html).toContain('data-node-id="tier-2-left"')
+    expect(html).toContain('data-node-id="tier-2-right"')
+    expect(html).not.toContain('data-node-id="tier-1-center"')
+    expect(html).not.toContain('data-node-id="tier-3-center"')
+    expect(html).toContain('aria-label="Choose this path: Tier 2 of 7, left path, Tier 2 left foe. Status: Available."')
+    // Status is spelled out next to its icon, never carried by color alone.
+    for (const text of ['Left path · Available', 'Center path · Completed', 'Center path · Locked']) expect(html).toContain(text)
+    expect(html).toContain('Tier 7 of 7 · Boss')
+    expect(html).toContain('Next opponent: Choose Tier 2 left foe or Tier 2 right foe')
+    for (const action of ['pause-adventure', 'abandon-adventure', 'lobby-settings', 'lobby-recording']) expect(html).toContain(`data-action="${action}"`)
+    for (const action of ['rematch', 'replay-start', 'resume-adventure', 'start-new-adventure', 'adventure-retry-completion']) {
+      expect(html).not.toContain(`data-action="${action}"`)
+    }
+    const recording = renderThreeInterface(hubView(), { ...defaultUi, lobbyPage: 'recording' })
+    expect(recording).toContain('data-action="save-recording-download"')
+    expect(recording).not.toContain('data-action="replay-start"')
+    expect(recording).not.toContain('data-action="adventure-node"')
+    for (const markup of [html, recording, renderThreeInterface(hubView(), { ...defaultUi, lobbyPage: 'settings' })]) {
+      const ids = Array.from(markup.matchAll(/ id="([^"]*)"/g), (match) => match[1])
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+  })
+
+  it('escapes opponent labels and status text', () => {
+    const view = hubView({ tiers: hubTiers(['available', 'available'], '<img src=x onerror="alert(1)">') })
+    view.status = '<b>status</b>'
+    const html = renderThreeInterface(view, defaultUi)
+    expect(html).not.toContain('<img src=x')
+    expect(html).not.toContain('<b>status</b>')
+    expect(html).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;')
+    expect(html).toContain('&lt;b&gt;status&lt;/b&gt;')
+  })
+
+  it('offers only the committed node after a fork choice and labels a retry', () => {
+    const html = renderThreeInterface(hubView({
+      attemptOrdinal: 1, remainingChances: 2, activeGameSeed: 99, tiers: hubTiers(['bypassed', 'current']),
+      lastResult: { outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null },
+    }), defaultUi)
+    expect(html.match(/data-action="adventure-node"/g)).toHaveLength(1)
+    expect(html).toContain('aria-label="Retry encounter: Tier 2 of 7, right path, Tier 2 right foe. Status: Current."')
+    expect(html).toContain('Left path · Bypassed')
+    expect(html).toContain('Defeat at Tier 2')
+    expect(html).toContain('2 chances left. Retry the same encounter.')
+    expect(html).toContain('Next opponent: Tier 2 right foe')
+  })
+
+  it('describes each committed result on the map', () => {
+    const result = (outcome: 'win' | 'loss' | 'draw', extra: Partial<AdventureUiState> = {}): string =>
+      renderThreeInterface(hubView({ lastResult: { outcome, tierIndex: 0, opponentLabel: 'First <foe>', score: null }, ...extra }), defaultUi)
+    const win = result('win')
+    expect(win).toContain('Victory at Tier 1')
+    expect(win).toContain('Choose your Tier 2 encounter.')
+    expect(win).toContain('Opponent: First &lt;foe&gt;')
+    expect(result('draw', { currentTier: 1, tiers: hubTiers(['locked', 'locked'], undefined, 'locked', 'current') }))
+      .toContain('No chance was used. Retry the same encounter.')
+    expect(result('loss', { remainingChances: 1 })).toContain('1 chance left.')
+  })
+
+  it('ends a completed or failed run with a final score and new-run actions only', () => {
+    const ended = (status: 'completed' | 'failed', outcome: 'win' | 'loss', tierIndex: number): string =>
+      renderThreeInterface(hubView({
+        status, stage: null, currentTier: tierIndex + 1, remainingChances: status === 'failed' ? 0 : 2, highScore: 9,
+        tiers: hubTiers(['completed', 'bypassed'], undefined, status === 'completed' ? 'completed' : 'locked'),
+        lastResult: { outcome, tierIndex, opponentLabel: 'Boss', score: 9 }, decisionKey: `run-1|${status}|0|`,
+      }), defaultUi)
+    const completed = ended('completed', 'win', 6)
+    expect(completed).toContain('Adventure complete: Tier 7 boss defeated')
+    expect(completed).toContain('Final score 9 · High score 9')
+    const failed = ended('failed', 'loss', 3)
+    expect(failed).toContain('Adventure over: defeated at Tier 4')
+    expect(failed).toContain('data-tier-state="failed"')
+    for (const html of [completed, failed]) {
+      expect(html).not.toContain('data-action="adventure-node"')
+      expect(html).not.toContain('aria-current')
+      expect(html).not.toContain('data-action="pause-adventure"')
+      expect(html).not.toContain('data-action="abandon-adventure"')
+      expect(html).toContain('data-action="start-new-adventure"')
+      expect(html).toContain('data-action="back-to-lobby"')
+    }
+  })
+
+  it('moves focus to the current tier on entry and to the result after a committed result', () => {
+    const h = setup({ ...makeView(), mode: null, game: null })
+    expect(h.content.querySelector('[data-adventure-current-tier]')).toBeNull()
+    h.update(hubView())
+    const tier = h.content.querySelector('[data-adventure-current-tier]')
+    expect(tier?.tagName).toBe('H3')
+    expect(h.document.activeElement).toBe(tier)
+    // The same decision (for example a refused write) keeps the user's focus.
+    h.content.querySelector('[data-node-id="tier-2-right"]')!.focus()
+    h.update({ ...hubView(), status: 'Adventure progress could not be saved (storage unavailable).' })
+    expect(h.document.activeElement?.dataset.nodeId).toBe('tier-2-right')
+    h.update(hubView({
+      attemptOrdinal: 1, remainingChances: 2, tiers: hubTiers(['bypassed', 'current']), decisionKey: 'run-1|right|1|',
+      lastResult: { outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null },
+    }))
+    expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
+    h.ui.dispose()
+  })
+
+  it('starts only an offered node, once per decision', () => {
+    const view = hubView()
+    const h = setup(view)
+    const left = h.content.querySelector('[data-node-id="tier-2-left"]')!
+    // A node id the map does not offer is ignored before the controller.
+    left.setAttribute('data-node-id', 'tier-3-center')
+    h.host.emit('click', { target: left })
+    expect(h.controller.startAdventureNode).not.toHaveBeenCalled()
+    // Sub-pages never start encounters.
+    h.click('[data-action="lobby-settings"]')
+    expect(h.content.querySelector('[data-action="adventure-node"]')).toBeNull()
+    h.click('[data-action="lobby-root"]')
+    // A refused write keeps the same decision, so the choice can be retried.
+    h.click('[data-node-id="tier-2-left"]')
+    expect(h.controller.startAdventureNode).toHaveBeenCalledExactlyOnceWith('tier-2-left')
+    const encounter = makeView()
+    h.controller.startAdventureNode.mockImplementation(() => h.latest({
+      ...encounter, mode: 'adventure-hvai', controllers: ['human', 'ai'],
+      adventure: { ...view.adventure, stage: 'encounter', tiers: hubTiers(['bypassed', 'current']), decisionKey: 'run-1|right|0|' },
+    }))
+    const right = h.click('[data-node-id="tier-2-right"]')
+    expect(h.controller.startAdventureNode).toHaveBeenCalledTimes(2)
+    expect(h.controller.startAdventureNode).toHaveBeenLastCalledWith('tier-2-right')
+    // A repeated activation before the next frame meets the newer decision,
+    // which only refreshes the view.
+    h.host.emit('click', { target: right })
+    expect(h.controller.startAdventureNode).toHaveBeenCalledTimes(2)
+    expect(h.content.querySelector('[data-action="adventure-node"]')).toBeNull()
+    h.ui.dispose()
+  })
+
+  it('offers Retry Saving Result instead of Pause while a result waits to be saved', () => {
+    const view = makeView()
+    view.mode = 'adventure-hvai'
+    view.controllers = ['human', 'ai']
+    view.game = { ...view.game!, phase: 'gameOver', canInput: false, winnerText: 'Player 1 wins!' }
+    view.adventure = { ...view.adventure, runId: 'run-1', status: 'active', stage: 'encounter', currentTier: 2, pendingCompletion: 'win', decisionKey: 'run-1|left|0|win' }
+    const menu = renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+    expect(menu).toContain('data-action="adventure-retry-completion"')
+    expect(menu).toContain('data-action="abandon-adventure"')
+    expect(menu).not.toContain('data-action="pause-adventure"')
+    expect(menu).not.toContain('data-action="rematch"')
+    const hud = renderThreeHud(view, defaultUi)
+    expect(hud).toContain('Retry Saving Result')
+    expect(renderThreeHud(view, { ...defaultUi, menuOpen: true })).not.toContain('Retry Saving Result')
+    const dock = renderThreeDock(view, { ...defaultUi, narrow: true })
+    expect(dock.prompt).toBe('Player 1 wins! The result is not saved yet.')
+    expect(dock.actions).toContain('aria-label="Retry Saving Result"')
+    expect(dock.actions).not.toContain('rematch')
+    expect(renderThreeDock({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, narrow: true }).actions).toBe('')
+    const h = setup(view)
+    h.click('[data-action="adventure-retry-completion"]')
+    expect(h.controller.retryAdventureCompletion).toHaveBeenCalledTimes(1)
+    h.ui.dispose()
+  })
+
+  it('runs a real Adventure from the lobby through a node, Pause and Resume', () => {
+    withFakeTimers(() => {
+      const storage = installHubStorage()
+      const real = new AppController()
+      const h = setup(real.getViewModel())
+      h.controller.getViewModel.mockImplementation(() => real.getViewModel())
+      h.controller.startAdventure.mockImplementation(() => real.startAdventure())
+      h.controller.startAdventureNode.mockImplementation((nodeId) => real.startAdventureNode(nodeId))
+      h.controller.pauseAdventure.mockImplementation(() => real.pauseAdventure())
+      h.controller.resumeAdventure.mockImplementation(() => real.resumeAdventure())
+      const unsubscribe = real.subscribe((next) => h.update(next))
+      h.click('[data-mode="adventure-hvai"]')
+      const hub = real.getViewModel()
+      expect(hub.mode).toBe('adventure-hvai')
+      expect(hub.game).toBeNull()
+      expect(storage.has('cardgame.adventure-run')).toBe(true)
+      expect(h.content.querySelector('[aria-label="Adventure map"]')).not.toBeNull()
+      expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-current-tier]'))
+      const offered = actionableAdventureNodes(hub.adventure)
+      expect(offered.length).toBeGreaterThan(0)
+      expect(h.content.querySelectorAll('[data-action="adventure-node"]').map((element) => element.dataset.nodeId))
+        .toEqual(offered.map((node) => node.id))
+      const chosen = h.click(`[data-node-id="${offered[0].id}"]`)
+      expect(h.controller.startAdventureNode).toHaveBeenCalledExactlyOnceWith(offered[0].id)
+      const encounter = real.getViewModel()
+      expect(encounter.game).not.toBeNull()
+      expect(encounter.adventure.stage).toBe('encounter')
+      // The detached button of the previous frame cannot start a second game.
+      h.host.emit('click', { target: chosen })
+      expect(h.controller.startAdventureNode).toHaveBeenCalledTimes(1)
+      h.click('[data-action="menu"]')
+      h.click('[data-action="pause-adventure"]')
+      expect(real.getViewModel().mode).toBeNull()
+      h.click('[data-action="resume-adventure"]')
+      const resumed = real.getViewModel()
+      expect(resumed.game?.players).toEqual(encounter.game?.players)
+      expect(resumed.adventure.activeGameSeed).toBe(encounter.adventure.activeGameSeed)
+      unsubscribe()
+      h.ui.dispose()
+    })
   })
 })

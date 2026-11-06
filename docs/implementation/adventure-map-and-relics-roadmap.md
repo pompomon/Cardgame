@@ -34,7 +34,7 @@ The following product decisions are approved for implementation:
 - [x] Milestone 0 — Record the approved design and atomic delivery plan
 - [x] Milestone 1 — Introduce the versioned Adventure aggregate and legacy migration
 - [x] Milestone 2 — Add deterministic two-branch map generation and route rules
-- [ ] Milestone 3 — Deliver the branching map as an end-to-end browser flow
+- [x] Milestone 3 — Deliver the branching map as an end-to-end browser flow
 - [ ] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
 - [ ] Milestone 5 — Deliver reward selection and relic application end to end
 - [ ] Milestone 6 — Harden persistence, reentrant input, accessibility, and recovery
@@ -667,6 +667,103 @@ generic lobby:
 - The branching map is fully playable without rewards.
 - Existing linear migrated runs use the same hub and remain completable.
 - Browser users never reach a state with no legal navigation action.
+
+**Delivery notes**
+
+- **Run model.** `createAdventureRun` now calls `generateBranchingAdventureMap`,
+  and `isAdventureRunState` accepts `branching` maps, so the Milestone 2 gate is
+  gone. A new run starts `active` at the `map` stage with no selected node and
+  no attempt seed. A fresh tier stores no seed until a node is chosen. The guard
+  still allows a seed at the `map` stage because retries and saved linear runs
+  keep theirs. Saved runs now hold ten opponent decks.
+- **Transitions use the route rules.**
+  - `startAdventureEncounter(run, nodeId)` replaces `beginAdventureEncounter`.
+    It validates the untrusted node ID with `selectAdventureNode` and returns
+    null when the choice is rejected.
+  - `applyAdventureEncounterResult` completes or retries the selected node with
+    derived attempt seeds. A non-terminal result returns the run `active` at
+    the `map` stage. After the boss, the attempt number resets to 0.
+  - `openAdventureMap` and `resumeAdventureEncounter` serve Resume.
+  - `deckPairForAdventureGame` throws when no node is selected instead of
+    using another opponent's deck.
+- **Controller.** `ControllerApi` adds `startAdventureNode(nodeId)` and
+  `retryAdventureCompletion()`. Every transition saves first, in this order:
+  - **Start:** write the new run, clear the game slot, then open the hub with
+    no game.
+  - **Node start:** write the run with the committed node, attempt number and
+    seed, clear the game slot, then call
+    `createInitialGame(attemptSeed, deckPair)`.
+  - A refused write leaves the previous state, the same controls and the
+    attempt number unchanged, and shows the storage warning as the status.
+  - Repeated or stale activations are ignored once an encounter has started.
+- **Completion.**
+  - A non-terminal result writes the next run.
+  - A terminal result writes the highest of the stored, in-memory and new
+    scores, then removes the run key.
+  - If any write fails, memory keeps the run from before the result, the
+    game-over board and the exact outcome as pending. **Retry Saving Result**
+    applies that outcome again to a fresh copy of the same run, so counters
+    and the score change only once.
+  - While a result is pending, Back to Lobby, Pause, Start, Resume, other modes
+    and recording import show "Save the encounter result first". Reset still
+    works.
+- **Resume.** Resume restores a mid-game save only when all of these hold:
+  - the run is paused at its encounter;
+  - the save's envelope matches the run, node, attempt number and seed;
+  - the saved game has not finished;
+  - the run write succeeds.
+
+  Otherwise Resume opens the map without writing. The committed node, attempt
+  number and seed are kept, so the encounter restarts without using a chance.
+  A lost mid-encounter game shows a recovery warning.
+- **View model.** `AdventureUiState` replaces `currentRound`, `opponentLineup`
+  and `currentOpponentIndex` with:
+  - a 1-based `currentTier`;
+  - frozen `tiers` of node summaries: ID, tier, lane, derived status, boss flag,
+    opponent label, kind and lands, but never decks;
+  - `pendingCompletion`, `lastResult` and `decisionKey`.
+
+  Tier summaries are cached per run object and route position.
+  `describeNextAdventureOpponent` names both fork choices.
+- **Browser.** Adventure mode with no game shows the Adventure map hub:
+  - **Layout:** the last result, progress statistics and an ordered seven-tier
+    route.
+  - **Actions:** Pause and Reset while the run is open; **Start New Adventure**
+    and **Back to Lobby** after it ends.
+  - **Nodes:** only `current` and `available` nodes are buttons. Each node shows
+    an icon and status text, and the current tier has `aria-current="step"`.
+  - **Focus:** moves to the result heading after a result and to the current
+    tier when the hub opens. A refused write keeps focus in place.
+  - **Pending result:** during an encounter, Retry Saving Result replaces Pause
+    in the menu, HUD and dock.
+- **Linear runs.** Saved Milestone 2 `linear` runs and converted
+  `legacy-linear` runs use the same hub and stay linear. Tiers after their
+  stored first seed use derived attempt seeds.
+
+**Deviations from the contract above**
+
+- A pending completion is kept in memory only, because storage just refused
+  it. After a reload, the stored run is still at its encounter, so Resume
+  restarts that encounter without using a chance.
+- A terminal completion writes the high score and then removes the run key.
+  It does not save a terminal run, so the lobby shows no saved run, as before.
+  If the high score was saved but removing the run failed, the result stays
+  pending. Retrying rewrites the same highest score.
+- Back to Lobby, other modes and recording import never write Adventure
+  progress. The stored run stays `active` and is shown as paused. Back to Lobby
+  or closing the tab mid-encounter loses the live game but keeps the committed
+  attempt. Resume warns and restarts it without using a chance. Only Pause
+  saves the live game.
+- Because Start saves first, an Adventure cannot start without working
+  storage.
+- After a saved result, the hub replaces the game-over board. The finished
+  encounter's recording stays exportable from the hub's Recording page.
+  Rematch is refused in Adventure. While an Adventure is open, replay is
+  refused and the replay control is hidden.
+- The lobby's Adventure mode button still starts a new run and replaces a saved
+  run once the write succeeds. **Resume Adventure** remains a separate button.
+- After a loss or draw, the fork stays committed and its sibling stays
+  `bypassed`. The hub labels the node **Retry encounter**.
 
 ### Milestone 4 — Pure reward and relic rules
 
