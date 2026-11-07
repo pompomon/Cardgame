@@ -131,8 +131,8 @@ establish actual zoom, font, and viewport behavior.
 
 - Strictly square (`width === height`).
 - ≥ 256×256.
-- Every Anime file differs byte-for-byte from its deterministic geometric
-  fallback.
+- Every Cats and Anime file differs byte-for-byte from its deterministic
+  geometric fallback.
 
 Replacement assets must satisfy those constraints; the
 `public/cards/README.md` docs match the test expectations.
@@ -151,7 +151,7 @@ npm run test -- src/test/card-art-generator.test.ts
 Classic intentionally renders procedural art. Deterministic PNG parity,
 dimensions, provenance hashes, or primary/fallback inequality do not establish
 visual acceptance. Use `cmp`, file metadata, or hashes to report asset identity
-without claiming image inspection. The Anime files still require browser
+without claiming image inspection. The Cats and Anime files still require browser
 verification as described below.
 Hosted-generation credentials matter only if an operator deliberately generates
 new replacements; they are not required to restore verified repository objects.

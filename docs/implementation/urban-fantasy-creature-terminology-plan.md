@@ -42,17 +42,19 @@ The following decisions are approved and are requirements for implementation:
     the Anime style, remove Monochrome as an image style, and provide a persisted
     Monochrome checkbox that applies grayscale to card artwork. This supersedes
     the earlier photoreal-HD style decision.
+13. **2026-11-07 follow-up:** keep those restored illustrations as the Cats
+    style, and use the five images from PR #137 for the Anime style.
 
 ### Follow-up acceptance status
 
-- [x] Historical provenance: the independent 1254×1254 HD files introduced by
-      `ace5d53921dcb7eab992fe94e083865334d10217` were recovered from
+- [x] Historical provenance: the independent 1254×1254 illustrations
+      introduced by `ace5d53921dcb7eab992fe94e083865334d10217` were recovered from
       `98dea673ceb7858c67ab126a8fcb0f26251e2250`, the last revision before the
-      slugged migration, and restored byte-for-byte under current catalog slugs.
-      [`public/cards/README.md`](../../public/cards/README.md#anime-artwork) records
-      the stable identity mapping and SHA-256 hashes.
-- [x] Automated HD separation: every primary HD file is required to differ
-      byte-for-byte from its deterministic HD fallback.
+      slugged migration, and restored byte-for-byte under current catalog slugs
+      for Cats. [`public/cards/README.md`](../../public/cards/README.md#cats-artwork)
+      records the stable identity mapping and SHA-256 hashes.
+- [x] Automated art separation: every Cats and Anime image is required to
+      differ byte-for-byte from its deterministic fallback.
 - [ ] Human art review and production-browser visual acceptance: pending
       maintainer verification, not established by provenance, hashes, dimensions,
       or the primary/fallback inequality test.
@@ -80,8 +82,9 @@ The following decisions are approved and are requirements for implementation:
       replay scenarios are synthetic characterization, not historical captures;
       they do not complete historical or manual acceptance gates.
 
-See the [Anime artwork provenance and operator replacement gate](../../public/cards/README.md#anime-artwork).
-The restored files do not require hosted generation. A future generated
+See the [Cats provenance](../../public/cards/README.md#cats-artwork) and
+[Anime artwork and operator replacement gate](../../public/cards/README.md#anime-artwork).
+The restored Cats files do not require hosted generation. A future generated
 replacement requires explicit `--force` and generation credentials, but neither
 condition substitutes for checkpointed browser inspection and human visual
 acceptance.
@@ -606,14 +609,16 @@ public/cards/
 │   └── echo-doppelganger.png
 ├── anime/
 │   └── (the same five slugs)
+├── cats/
+│   └── (the same five slugs)
 ├── hd-fallback/
 │   └── (the same five slugs)
 ```
 
 - **`src/app/card-art.ts`:** build base-path-safe URLs from
   `entry.assetSlug`, not `BasicLand` or display name. Preserve literal
-  `import.meta.env.BASE_URL` access and the `anime -> hd-fallback -> procedural`
-  chain.
+  `import.meta.env.BASE_URL` access and the Anime/Cats raster, HD fallback,
+  then procedural chain.
 - **`src/app/card-visuals.ts`:** key mechanics and palettes by legacy identity,
   but replace the per-land `TEMPLATE_*` procedural pixel icons with
   creature-appropriate fallbacks. Retain raster-failure suppression and cached
@@ -635,8 +640,8 @@ public/cards/
   and `--card` selection with catalog-aligned creature subjects and a slug/key
   selector; continue atomic writes and manual credential use. Never commit API
   keys or generated temporary files. Keep this as an optional future replacement
-  path; the current Anime files are restored repository objects rather than newly
-  generated output. Existing Anime slots are skipped without `--force`, so any
+  path; the current Cats files are restored repository objects and Anime uses
+  images from PR #137. Existing Anime slots are skipped without `--force`, so any
   deliberate generated replacement requires that explicit operator gate.
 - **`public/cards/README.md`:** document the new layout, exact slugs, dimensions,
   generation commands, review workflow, and fallback order.
@@ -649,11 +654,11 @@ public/cards/
 
 Artwork acceptance includes human review for readable silhouettes, urban-fantasy
 cohesion, absence of embedded text/logos, correct creature-to-ability mapping,
-color-role continuity, square crop safety, and contrast in Classic and Anime
-styles plus the internal `hd-fallback` assets. Monochrome is a checkbox filter,
-not a separate selectable style or asset directory. Valid PNG headers, matching
-slugs, or working fallbacks do not establish visual quality. Track art review
-and actual browser visual acceptance separately; do not claim this phase
+color-role continuity, square crop safety, and contrast in Classic, Cats, and
+Anime styles plus the internal `hd-fallback` assets. Monochrome is a checkbox
+filter, not a separate selectable style or asset directory. Valid PNG headers,
+matching slugs, or working fallbacks do not establish visual quality. Track art
+review and actual browser visual acceptance separately; do not claim this phase
 complete without them.
 
 ### Phase 5 — Persistence, recording, P2P, and compatibility verification
@@ -709,7 +714,7 @@ complete without them.
 | Three.js browser renderer | `three-assets.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Inline visible Hand/Board/Discard pile rules; full preview including Intercept; Summons attempted counter includes interceptions; approved title/copy; escaped markup; fallback order; wrapping; focus/retry/cancellation and resource cleanup |
 | CLI | `cli-session.test.ts` | Existing creature/zone/phase terms; hidden hand remains hidden except during Drain Memory; no new commands or rule/Discard pile inspection |
 | Saves and replay | `game-recording.test.ts`, `adventure-persistence.test.ts`, `adventure.test.ts`, `view-model.test.ts`, `controller.test.ts` | Existing fixtures load unchanged; legacy Adventure labels are not rendered verbatim; pending target states resume; v1/v2 recording compatibility; no schema/version churn |
-| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; restored Anime provenance and primary/fallback inequality; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; Anime still requires separate visual review |
+| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; restored Cats provenance and Anime PR #137 mapping; primary/fallback inequality; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; both raster styles require separate visual review |
 | P2P | controller/action-validation/P2P-related tests | Legacy action JSON remains accepted and emitted; mixed-version peers stay deterministic; no display copy enters packets |
 
 Final validation follows `AGENTS.md` and `docs/agent/validation-and-build.md`:
@@ -816,10 +821,10 @@ designed, versioned migration. Do not combine them with these PRs.
 - Hidden opponent cards, including names and art in structured or legacy draw
   logs, remain redacted except during the existing legal Drain Memory target
   decision.
-- Each approved slug exists under `classic`, `anime`, and `hd-fallback`;
+- Each approved slug exists under `classic`, `cats`, `anime`, and `hd-fallback`;
   missing/failed art reaches a playable fallback.
 - Monochrome uses the checkbox filter and no longer requires separate PNGs.
-- Classic remains intentionally procedural. Review Anime images in-browser;
+- Classic remains intentionally procedural. Review Cats and Anime images in-browser;
   automated provenance or fallback-separation checks cannot satisfy this
   criterion.
 - Browser-only rules/Discard pile discovery and full previews are usable without
@@ -872,8 +877,8 @@ context)**.
 - [ ] All four asset directories contain exactly one current file per catalog
       entry, with documented fallback behavior and no accidental runtime
       references to obsolete names.
-- [ ] Shipping-size deterministic output matches committed assets; Anime art is
-      reviewed and distinct from fallback copies. Keep this gate
+- [ ] Shipping-size deterministic output matches committed assets; Cats and
+      Anime art are reviewed and distinct from fallback copies. Keep this gate
       open while visual review is pending.
 - [ ] Hidden-hand tests prove no catalog lookup or target label unredacts an
       opponent's hand outside Drain Memory.

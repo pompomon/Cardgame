@@ -35,11 +35,11 @@ describe('controller card visual style', () => {
 
   it('persists selected style for new controller instances', () => {
     const first = new AppController()
-    first.setCardVisualStyle('anime')
+    first.setCardVisualStyle('cats')
     first.setMonochromeCards(true)
 
     const second = new AppController()
-    expect(second.getViewModel().cardVisualStyle).toBe('anime')
+    expect(second.getViewModel().cardVisualStyle).toBe('cats')
     expect(second.getViewModel().monochromeCards).toBe(true)
   })
 

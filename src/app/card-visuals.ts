@@ -41,6 +41,13 @@ const paletteByStyleAndLand: Record<CardVisualStyle, Record<BasicLand, CardVisua
     Plains: { cardFill: '#3a3216', cardStroke: '#f4d35e', cardText: '#fff7d6', iconPrimary: '#ffe89a', iconSecondary: '#f4d35e' },
     Swamp: { cardFill: '#1f1430', cardStroke: '#b075d8', cardText: '#f1e3ff', iconPrimary: '#d6b3f5', iconSecondary: '#b075d8' },
   },
+  cats: {
+    Forest: { cardFill: '#0d2f1d', cardStroke: '#5ed59a', cardText: '#dcffe9', iconPrimary: '#a8f4cb', iconSecondary: '#5ed59a' },
+    Island: { cardFill: '#0f2a52', cardStroke: '#5fb6ff', cardText: '#e7f4ff', iconPrimary: '#a8dcff', iconSecondary: '#5fb6ff' },
+    Mountain: { cardFill: '#3a1a12', cardStroke: '#ff8b62', cardText: '#ffe3d6', iconPrimary: '#ffbfa3', iconSecondary: '#ff8b62' },
+    Plains: { cardFill: '#3a3216', cardStroke: '#f4d35e', cardText: '#fff7d6', iconPrimary: '#ffe89a', iconSecondary: '#f4d35e' },
+    Swamp: { cardFill: '#1f1430', cardStroke: '#b075d8', cardText: '#f1e3ff', iconPrimary: '#d6b3f5', iconSecondary: '#b075d8' },
+  },
 }
 
 const rectCache = new Map<string, ReadonlyArray<PixelRect>>()
@@ -176,13 +183,13 @@ export interface CardArtSource {
    * when the primary (and any intermediate raster) asset fails to load.
    */
   readonly proceduralUrl: string
-  /** True when the primary asset is a rasterised image (`anime`). */
+  /** True when the primary asset is a raster image. */
   readonly isRaster: boolean
 }
 
 /**
  * Returns the best available card art source for a `(land, style, targetSize)`.
- * For raster styles (`anime`) the primary URL points at the shipped
+ * For raster styles the primary URL points at the shipped
  * PNG, with the procedural icon retained as an `onerror` fallback. For
  * procedural styles the two URLs are identical so callers can render the
  * pixel icon without any special-casing.

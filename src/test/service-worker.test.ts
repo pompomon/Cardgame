@@ -355,19 +355,21 @@ describe('service worker lifecycle', () => {
     expect(harness.skipWaiting).not.toHaveBeenCalled()
   })
 
-  it('preserves v1/v2/v3 board assets while retiring stale card art', async () => {
+  it('preserves v1-v4 board assets while retiring stale card art', async () => {
     const cardUrl = `${ORIGIN}${BASE_PATH}cards/anime/gravebloom-dryad.png`
     const boardUrl = `${ORIGIN}${BASE_PATH}boards/classic/background-hd.png`
     const legacyBoardUrl = `${ORIGIN}${BASE_PATH}boards/moonlit/background-hd.png`
     const v1Card = makeResponse('v1 cached card')
     const v2Card = makeResponse('v2 cached card')
     const v3Card = makeResponse('v3 cached card')
+    const v4Card = makeResponse('v4 cached card')
     const v1Board = makeResponse('v1 cached board')
     const v2Board = makeResponse('v2 cached board')
     const v3Board = makeResponse('v3 cached board')
+    const v4Board = makeResponse('v4 cached board')
     const legacyBoard = makeResponse('v1-only cached board')
     const harness = loadServiceWorkerLifecycle(
-      ['cardgame-assets-v8', 'cardgame-runtime-assets-v1', 'cardgame-runtime-assets-v2', 'cardgame-runtime-assets-v3'],
+      ['cardgame-assets-v8', 'cardgame-runtime-assets-v1', 'cardgame-runtime-assets-v2', 'cardgame-runtime-assets-v3', 'cardgame-runtime-assets-v4'],
       {
         'cardgame-runtime-assets-v1': [
           [cardUrl, v1Card],
@@ -382,6 +384,10 @@ describe('service worker lifecycle', () => {
           [cardUrl, v3Card],
           [boardUrl, v3Board],
         ],
+        'cardgame-runtime-assets-v4': [
+          [cardUrl, v4Card],
+          [boardUrl, v4Board],
+        ],
       },
     )
     mockInstallFetch(harness, {
@@ -391,13 +397,15 @@ describe('service worker lifecycle', () => {
 
     await dispatchLifecycle(harness.installListener)
 
-    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v4')
-    expect(currentAssets?.get(boardUrl)).toBe(v3Board)
+    const currentAssets = harness.cacheEntries.get('cardgame-runtime-assets-v5')
+    expect(currentAssets?.get(boardUrl)).toBe(v4Board)
     expect(currentAssets?.get(legacyBoardUrl)).toBe(legacyBoard)
     expect(currentAssets?.has(cardUrl)).toBe(false)
     expect(harness.cacheEntries.get('cardgame-runtime-assets-v1')?.get(cardUrl)).toBe(v1Card)
     expect(harness.cacheEntries.get('cardgame-runtime-assets-v2')?.get(cardUrl)).toBe(v2Card)
     expect(harness.cacheEntries.get('cardgame-runtime-assets-v3')?.get(cardUrl)).toBe(v3Card)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v4')?.get(cardUrl)).toBe(v4Card)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v4')?.get(boardUrl)).toBe(v4Board)
 
     await dispatchLifecycle(harness.activateListener)
 
@@ -405,8 +413,9 @@ describe('service worker lifecycle', () => {
     expect(harness.cacheEntries.has('cardgame-runtime-assets-v1')).toBe(false)
     expect(harness.cacheEntries.has('cardgame-runtime-assets-v2')).toBe(false)
     expect(harness.cacheEntries.has('cardgame-runtime-assets-v3')).toBe(false)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v4')?.get(boardUrl)).toBe(v3Board)
-    expect(harness.cacheEntries.get('cardgame-runtime-assets-v4')?.get(legacyBoardUrl)).toBe(legacyBoard)
+    expect(harness.cacheEntries.has('cardgame-runtime-assets-v4')).toBe(false)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v5')?.get(boardUrl)).toBe(v4Board)
+    expect(harness.cacheEntries.get('cardgame-runtime-assets-v5')?.get(legacyBoardUrl)).toBe(legacyBoard)
   })
 
   it('deletes only obsolete Cardgame caches during activation', async () => {
@@ -425,7 +434,7 @@ describe('service worker lifecycle', () => {
       'cardgame-runtime-assets-v1',
       'cardgame-runtime-assets-v2',
       'cardgame-runtime-assets-v3',
-      'cardgame-runtime-assets-v4',
+      'cardgame-runtime-assets-v5',
       'another-pages-app-v3',
     ])
 

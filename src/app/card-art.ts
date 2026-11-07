@@ -1,4 +1,4 @@
-import { CARD_VISUAL_STYLE_OPTIONS } from './card-visual-styles'
+import { CARD_VISUAL_STYLE_OPTIONS, isRasterCardVisualStyle } from './card-visual-styles'
 import { cardAssetSlug } from './card-catalog'
 import type { CardVisualStyle } from './types'
 import { BASIC_LANDS, type BasicLand } from '../game/types'
@@ -28,30 +28,29 @@ export function cardArtUrl(land: BasicLand, style: CardVisualStyle): string {
 /**
  * Texture key for the geometric HD-fallback raster shipped under
  * `public/cards/hd-fallback/<asset-slug>.png`. Preloaded alongside the primary
- * `hd` image so the Three.js native interface can fall back to deterministic
+ * raster image so the Three.js native interface can fall back to deterministic
  * creature art when the primary asset is missing.
  *
- * Only `'anime'` is accepted because it is the sole style that ships a backed
- * raster fallback layer. Use {@link cardArtFallbackUrl} (which returns
- * `null` for other styles) to guard whether a fallback exists before
- * constructing a key.
+ * Raster styles share the geometric fallback layer. Use
+ * {@link cardArtFallbackUrl} (which returns `null` for procedural styles) to
+ * guard whether a fallback exists before constructing a key.
  */
-export function cardArtFallbackKey(land: BasicLand, style: 'anime'): string {
+export function cardArtFallbackKey(land: BasicLand, style: CardVisualStyle): string {
   return `card-art:${style}-fallback:${cardAssetSlug(land)}`
 }
 
 /**
  * Returns the URL of the runtime raster fallback for `(land, style)`, or
- * `null` when no fallback is shipped. Currently only the `anime` style ships a
- * fallback — the deterministic creature PNGs at
+ * `null` when no fallback is shipped. Raster styles share the deterministic
+ * creature PNGs at
  * `public/cards/hd-fallback/<asset-slug>.png` produced by
- * `scripts/generate-card-art.mjs` — to back-stop the Anime art.
+ * `scripts/generate-card-art.mjs` to back-stop the illustrated art.
  */
 export function cardArtFallbackUrl(
   land: BasicLand,
   style: CardVisualStyle,
 ): string | null {
-  if (style !== 'anime') {
+  if (!isRasterCardVisualStyle(style)) {
     return null
   }
   return `${basePath()}cards/hd-fallback/${cardAssetSlug(land)}.png`
@@ -69,7 +68,7 @@ export interface CardArtEntry {
   readonly key: string
   readonly url: string
   /**
-   * Optional runtime raster fallback. Populated for `anime` (the geometric
+   * Optional runtime raster fallback. Populated for raster styles (the geometric
    * `hd-fallback/` PNG) and `undefined` for styles without a shipped raster
    * fallback layer. When present, both `fallbackKey` and `fallbackUrl` are
    * set in lock-step.
@@ -90,7 +89,7 @@ function buildAllCardArt(): ReadonlyArray<CardArtEntry> {
         url: cardArtUrl(land, styleOption.value),
         ...(fallbackUrl !== null
           ? {
-              fallbackKey: cardArtFallbackKey(land, 'anime'),
+              fallbackKey: cardArtFallbackKey(land, styleOption.value),
               fallbackUrl,
             }
           : {}),

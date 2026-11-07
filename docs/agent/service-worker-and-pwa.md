@@ -35,8 +35,8 @@ installation fails and the previous worker and cache set remain active.
 The active worker may return newer network HTML for a navigation, but it never
 stores that unverified response over its manifest-validated offline shell.
 Before activation, only explicitly compatible response prefixes are moved from
-legacy caches into the runtime-asset cache. Runtime cache v3 preserves
-`/boards/*` responses from v1/v2 but deliberately does not migrate `/cards/*`,
+legacy caches into the runtime-asset cache. Runtime cache v5 preserves
+`/boards/*` responses from v1-v4 but deliberately does not migrate `/cards/*`,
 because the primary artwork was replaced at the same paths. Removed card art,
 renderer chunks, sprite responses, and other obsolete entries are not migrated.
 Activation then deletes only older managed Cardgame caches; never delete
@@ -53,8 +53,8 @@ configured project path.
 Runtime source selection is shared by the WebGL Board and native HTML cards:
 
 - Classic uses the cached procedural creature source.
-- Anime tries `anime/<slug>.png`, then `hd-fallback/<slug>.png`, then the procedural
-  source.
+- Anime and Cats try their respective `<style>/<slug>.png` illustrations, then
+  `hd-fallback/<slug>.png`, then the procedural source.
 - Monochrome is a persisted checkbox that applies grayscale to the chosen
   style's card artwork; it does not select a separate asset directory.
 
