@@ -1,18 +1,17 @@
-// One-off operator script: generate photoreal HD card art for the five
-// Urban Creatures and write slugged 1024×1024 PNGs to `public/cards/hd/`.
+// One-off operator script: generate Anime-style card art for the five
+// Urban Creatures and write slugged 1024×1024 PNGs to `public/cards/anime/`.
 //
 // This script is *not* run by CI, `npm run build`, lint, or test. It is
 // invoked manually by a developer with an image-generation API key when
-// the photoreal art needs to be (re)generated. The geometric HD art
-// produced by `scripts/generate-card-art.mjs` is shipped at
-// `public/cards/hd-fallback/` and serves as the deterministic runtime
-// fallback when a photoreal asset is missing or fails to load.
+// the Anime art needs to be (re)generated. The geometric art produced by
+// `scripts/generate-card-art.mjs` is shipped at `public/cards/hd-fallback/`
+// and serves as the deterministic runtime fallback when an Anime asset fails.
 //
 // Usage:
-//   IMAGE_GEN_API_KEY=sk-... npm run generate:photoreal-card-art
-//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --force
-//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --card=gravebloom-dryad
-//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-photoreal-card-art.mjs --card=Forest
+//   IMAGE_GEN_API_KEY=sk-... npm run generate:anime-card-art
+//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-anime-card-art.mjs --force
+//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-anime-card-art.mjs --card=gravebloom-dryad
+//   IMAGE_GEN_API_KEY=sk-... node scripts/generate-anime-card-art.mjs --card=Forest
 //
 // Environment variables (all optional except the API key):
 //   IMAGE_GEN_API_KEY  Required. Falls back to OPENAI_API_KEY for convenience.
@@ -29,7 +28,7 @@
 //   --card=<selector>  Only (re)generate the exact catalog slug or legacy
 //                      serialized key. Repeatable and case-sensitive.
 //
-// Output files: `public/cards/hd/<asset-slug>.png`, 1024×1024 (or the requested
+// Output files: `public/cards/anime/<asset-slug>.png`, 1024×1024 (or the requested
 // size), one per creature in scope. The file is replaced atomically so a
 // partial write cannot corrupt a previously good asset.
 
@@ -40,7 +39,7 @@ import { fileURLToPath } from 'node:url'
 import { ORDERED_CARD_VISUAL_RECIPES } from '../src/app/card-visual-recipes.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const OUT_ROOT = resolve(HERE, '..', 'public', 'cards', 'hd')
+const OUT_ROOT = resolve(HERE, '..', 'public', 'cards', 'anime')
 
 const DEFAULT_MODEL = 'gpt-image-1'
 const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/images/generations'
@@ -58,7 +57,7 @@ const CREATURE_PROMPTS = Object.freeze(Object.fromEntries(
   ORDERED_CARD_VISUAL_RECIPES.map((recipe) => [
     recipe.serializedKey,
     [
-      `A painterly photorealistic urban-fantasy portrait of ${recipe.subject}.`,
+      `A polished anime-style urban-fantasy illustration of ${recipe.subject}.`,
       `${recipe.abilityCue}.`,
       `Use ${COLOR_DIRECTION[recipe.serializedKey]}.`,
       'One immediately readable centered silhouette, atmospheric modern-city background, square composition, safe crop around the subject, dramatic but high-contrast lighting, no embedded text, no logos, no branded symbols, no border, no UI.',
@@ -91,9 +90,9 @@ function parseArgs(argv) {
       // eslint-disable-next-line no-console
       console.log(
         [
-          'Usage: node scripts/generate-photoreal-card-art.mjs [--force] [--card=selector ...]',
+          'Usage: node scripts/generate-anime-card-art.mjs [--force] [--card=selector ...]',
           '',
-          'Generates photoreal HD card art at public/cards/hd/<asset-slug>.png.',
+          'Generates Anime-style card art at public/cards/anime/<asset-slug>.png.',
           `Selectors: ${EXPECTED_SELECTORS}`,
           'Requires IMAGE_GEN_API_KEY (or OPENAI_API_KEY) in the environment.',
         ].join('\n'),
@@ -184,7 +183,7 @@ async function main() {
       [
         'error: missing API key',
         'Set IMAGE_GEN_API_KEY (or OPENAI_API_KEY) in the environment.',
-        'Example: IMAGE_GEN_API_KEY=sk-... npm run generate:photoreal-card-art',
+        'Example: IMAGE_GEN_API_KEY=sk-... npm run generate:anime-card-art',
       ].join('\n'),
     )
     process.exit(2)

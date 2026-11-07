@@ -34,19 +34,12 @@ const paletteByStyleAndLand: Record<CardVisualStyle, Record<BasicLand, CardVisua
     Plains: { cardFill: '#695d31', cardStroke: '#c8b872', cardText: '#fff8dd', iconPrimary: '#fff2ba', iconSecondary: '#f2dc8b' },
     Swamp: { cardFill: '#362148', cardStroke: '#8a62af', cardText: '#f3e4ff', iconPrimary: '#d9bbff', iconSecondary: '#b694e6' },
   },
-  hd: {
+  anime: {
     Forest: { cardFill: '#0d2f1d', cardStroke: '#5ed59a', cardText: '#dcffe9', iconPrimary: '#a8f4cb', iconSecondary: '#5ed59a' },
     Island: { cardFill: '#0f2a52', cardStroke: '#5fb6ff', cardText: '#e7f4ff', iconPrimary: '#a8dcff', iconSecondary: '#5fb6ff' },
     Mountain: { cardFill: '#3a1a12', cardStroke: '#ff8b62', cardText: '#ffe3d6', iconPrimary: '#ffbfa3', iconSecondary: '#ff8b62' },
     Plains: { cardFill: '#3a3216', cardStroke: '#f4d35e', cardText: '#fff7d6', iconPrimary: '#ffe89a', iconSecondary: '#f4d35e' },
     Swamp: { cardFill: '#1f1430', cardStroke: '#b075d8', cardText: '#f1e3ff', iconPrimary: '#d6b3f5', iconSecondary: '#b075d8' },
-  },
-  monochrome: {
-    Forest: { cardFill: '#202020', cardStroke: '#929292', cardText: '#f0f0f0', iconPrimary: '#d0d0d0', iconSecondary: '#a8a8a8' },
-    Island: { cardFill: '#1d1d1d', cardStroke: '#858585', cardText: '#f2f2f2', iconPrimary: '#d7d7d7', iconSecondary: '#9f9f9f' },
-    Mountain: { cardFill: '#242424', cardStroke: '#989898', cardText: '#f3f3f3', iconPrimary: '#dadada', iconSecondary: '#a6a6a6' },
-    Plains: { cardFill: '#222222', cardStroke: '#949494', cardText: '#f4f4f4', iconPrimary: '#dbdbdb', iconSecondary: '#ababab' },
-    Swamp: { cardFill: '#1f1f1f', cardStroke: '#8f8f8f', cardText: '#efefef', iconPrimary: '#cecece', iconSecondary: '#9c9c9c' },
   },
 }
 
@@ -183,13 +176,13 @@ export interface CardArtSource {
    * when the primary (and any intermediate raster) asset fails to load.
    */
   readonly proceduralUrl: string
-  /** True when the primary asset is a rasterised image (`hd` and `monochrome`). */
+  /** True when the primary asset is a rasterised image (`anime`). */
   readonly isRaster: boolean
 }
 
 /**
  * Returns the best available card art source for a `(land, style, targetSize)`.
- * For raster styles (`hd` and `monochrome`) the primary URL points at the shipped
+ * For raster styles (`anime`) the primary URL points at the shipped
  * PNG, with the procedural icon retained as an `onerror` fallback. For
  * procedural styles the two URLs are identical so callers can render the
  * pixel icon without any special-casing.

@@ -1,5 +1,5 @@
-// Deterministic creature-art generator for the Classic, HD fallback, and
-// Monochrome assets. Node 24 loads the shared erasable TypeScript recipe module
+// Deterministic creature-art generator for the Classic and HD fallback assets.
+// Node 24 loads the shared erasable TypeScript recipe module
 // directly, so generated Classic PNGs and runtime procedural SVGs use the same
 // silhouettes without duplicating catalog slugs.
 
@@ -18,7 +18,7 @@ const DEFAULT_OUTPUT_ROOT = resolve(HERE, '..', 'public', 'cards')
 const DEFAULT_SIZE = 1024
 const MINIMUM_SIZE = 256
 const MAXIMUM_SIZE = 2048
-const GENERATED_STYLES = ['classic', 'hd-fallback', 'monochrome']
+const GENERATED_STYLES = ['classic', 'hd-fallback']
 
 const COLOR_ROLES = Object.freeze({
   Forest: {
@@ -320,27 +320,9 @@ function renderHdFallback(recipe, size) {
   return buffer
 }
 
-function renderMonochrome(recipe, size) {
-  const buffer = createBuffer(size)
-  fillGradient(buffer, rgb('#3b3b42'), rgb('#08090d'))
-  fillDisc(buffer, size * 0.5, size * 0.42, size * 0.32, rgb('#ffffff', 28))
-  drawSkyline(buffer, rgb('#050506', 235))
-  drawAbilityCue(buffer, recipe.serializedKey, rgb('#c8c8cf', 135))
-  drawSilhouette(
-    buffer,
-    recipe,
-    { x: size * 0.13, y: size * 0.08, width: size * 0.74, height: size * 0.76 },
-    rgb('#eeeeF2'),
-    rgb('#9f9fa8'),
-  )
-  drawFrame(buffer, rgb('#b8b8c0'))
-  return buffer
-}
-
 const RENDERERS = Object.freeze({
   classic: renderClassic,
   'hd-fallback': renderHdFallback,
-  monochrome: renderMonochrome,
 })
 
 export function generateCardArt({
@@ -373,7 +355,7 @@ function parseArguments(argv) {
       console.log([
         'Usage: node scripts/generate-card-art.mjs [--output <directory>] [--size <pixels>]',
         '',
-        'Generates deterministic Classic, HD-fallback, and Monochrome creature art.',
+        'Generates deterministic Classic and HD-fallback creature art.',
       ].join('\n'))
       return null
     }

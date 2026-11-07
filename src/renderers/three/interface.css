@@ -180,6 +180,44 @@
   width: 100%;
 }
 
+.three-interface .three-settings__style {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.three-interface .three-settings__style > label:first-child {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
+.three-interface .three-settings .three-settings__checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.three-interface .three-settings__checkbox input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: #75f9b3;
+}
+
+.three-interface .card-art--monochrome {
+  filter: grayscale(1);
+}
+
+.three-interface .three-card--monochrome img {
+  filter: grayscale(1);
+}
+
 .three-interface .three-target-panel {
   padding: 12px;
   border: 2px solid #ffda7b;

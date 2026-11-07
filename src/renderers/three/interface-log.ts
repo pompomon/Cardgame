@@ -11,13 +11,14 @@ function renderLogEntry(
   entry: PresentedLogEntry,
   game: GameUiState,
   style: AppViewModel['cardVisualStyle'],
+  monochromeCards: boolean,
 ): string {
   const badge = entry.actor === null
     ? ''
     : `<span class="three-log-actor" data-active="${entry.actor === game.actor}">P${entry.actor + 1}</span>`
   const icon = entry.card === null
     ? `<span class="three-log-glyph">${escapeHtml(entry.glyph)}</span>`
-    : renderLandIcon(entry.card.serializedKey, style, 32, 'three-log-art')
+    : renderLandIcon(entry.card.serializedKey, style, 32, 'three-log-art', { monochrome: monochromeCards })
   return `<li class="three-log-entry"><span class="three-log-visual" aria-hidden="true">${badge}${icon}<span>${escapeHtml(entry.label)}</span></span><span class="three-sr-only">${escapeHtml(entry.text)}</span></li>`
 }
 
@@ -25,6 +26,7 @@ export function renderThreeLog(
   game: GameUiState,
   style: AppViewModel['cardVisualStyle'],
   controllers: readonly [ControllerKind, ControllerKind],
+  monochromeCards = false,
 ): string {
   const events = game.events ?? []
   const total = events.length || game.log.length
@@ -33,11 +35,11 @@ export function renderThreeLog(
   const rows = events.length
     ? events
         .slice(-MAX_RENDERED_LOG_TILES)
-        .map((event) => renderLogEntry(presentLogEvent(event, viewer), game, style))
+        .map((event) => renderLogEntry(presentLogEvent(event, viewer), game, style, monochromeCards))
         .join('')
     : game.log
         .slice(-MAX_RENDERED_LOG_TILES)
-        .map((line) => renderLogEntry(presentLegacyLogLine(line, viewer), game, style))
+        .map((line) => renderLogEntry(presentLegacyLogLine(line, viewer), game, style, monochromeCards))
         .join('')
   return `<details data-detail-key="log"><summary>Replay Log (${Math.min(total, MAX_RENDERED_LOG_TILES)} latest)</summary>
     <div class="three-log-scroll" data-scroll-key="log" role="region" aria-label="Replay log entries" tabindex="0">

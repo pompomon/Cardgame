@@ -33,6 +33,12 @@ function imageRenderingValues(selector: string): string[] {
 }
 
 describe('CSS image-rendering declarations', () => {
+  it('applies the Monochrome setting as a grayscale image filter', () => {
+    expect(ruleBody('.three-interface .card-art--monochrome')).toContain('filter: grayscale(1)')
+    expect(ruleBody('.three-interface .three-card--monochrome img')).toContain('filter: grayscale(1)')
+    expect(ruleBody('.three-interface .three-settings .three-settings__checkbox')).toContain('min-height: 44px')
+  })
+
   it('keeps pixelated after crisp-edges for procedural icon fallbacks', () => {
     expect(imageRenderingValues('.three-interface .card-tile-icon')).toEqual(['crisp-edges', 'pixelated'])
   })
@@ -52,6 +58,13 @@ describe('CSS image-rendering declarations', () => {
 })
 
 describe('responsive Three.js copy', () => {
+  it('wraps the style selector and Monochrome checkbox instead of squeezing them into a narrow cell', () => {
+    expect(ruleBody('.three-interface .three-settings__style')).toContain('flex-wrap: wrap')
+    expect(ruleBody('.three-interface .three-settings__style > label:first-child')).toContain('flex: 1 1 12em')
+    expect(ruleBody('.three-interface .three-settings .three-settings__checkbox')).toContain('white-space: normal')
+    expect(ruleBody('.three-interface .three-settings__checkbox input')).toContain('flex-shrink: 0')
+  })
+
   it('keeps native controls touch-sized and allows long names and labels to wrap', () => {
     expect(ruleBody('.three-interface button, .three-interface select, .three-interface summary, .three-interface a'))
       .toMatch(/min-height:\s*44px/)

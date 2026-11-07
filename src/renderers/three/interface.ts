@@ -701,6 +701,10 @@ export class ThreeInterface {
 
   private readonly handleChange = (event: Event): void => {
     const target = event.target
+    if (target instanceof HTMLInputElement && target.id === 'monochrome-cards-checkbox') {
+      this.controller.setMonochromeCards(target.checked)
+      return
+    }
     if (!(target instanceof HTMLSelectElement)) return
     const value = target.value
     switch (target.id) {

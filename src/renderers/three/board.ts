@@ -459,7 +459,7 @@ export class ThreeBoard implements ThreeBoardApi {
           ? cardId === handSelection.cardId || cardId === handSelection.discardId
           : target && instanceId !== undefined && instanceId === selection.targetId
         descriptors.push({
-          hit, style, visible: true,
+          hit, style, monochromeCards: this.view?.monochromeCards, visible: true,
           x: placement?.x ?? cardSlotX(index, entries.length, this.layout),
           y: placement?.y ?? this.layout.rows[row].y,
           width: placement?.width ?? this.layout.cardWidth,
@@ -614,6 +614,7 @@ export class ThreeBoard implements ThreeBoardApi {
         ...cardIdentity(pending),
       },
       style: this.view?.cardVisualStyle ?? DEFAULT_CARD_VISUAL_STYLE,
+      monochromeCards: this.view?.monochromeCards,
       visible: true, target: false, shadows: this.quality.shadows, lifted: true,
     }
     if (this.pendingCard?.descriptor.hit.key !== descriptor.hit.key) this.clearPendingCard()
@@ -834,6 +835,7 @@ export class ThreeBoard implements ThreeBoardApi {
           playable: false,
         },
         style: effect.visualStyle,
+        monochromeCards: this.view?.monochromeCards,
         visible: true,
         target: false,
         response: null,

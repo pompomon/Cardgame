@@ -13,7 +13,7 @@ import { withFakeTimers } from './helpers/timers'
 function view(events: LogEvent[] = [], actor = 0): AppViewModel {
   return {
     seed: 1, mode: 'local-hvh', controllers: ['human', 'human'],
-    animationSpeed: 'normal', cardVisualStyle: 'hd',
+    animationSpeed: 'normal', cardVisualStyle: 'anime',
     game: { events, actor },
     replay: { active: false, step: 0 },
   } as unknown as AppViewModel
@@ -265,7 +265,7 @@ describe('Three.js event presentation', () => {
     } as unknown as ThreeAssets)
     const card = {
       hit: { key: boardCardKey('target-card', 1, 'destroyed'), cardId: 'target-card', instanceId: 'destroyed', name: 'Forest', owner: 1, zone: 'battlefield' as const, playable: false },
-      style: 'hd' as const, visible: true, target: false, shadows: false,
+      style: 'anime' as const, visible: true, target: false, shadows: false,
       x: 237, y: 81, width: 100, height: 140,
     }
     registry.reconcile([card])
@@ -314,7 +314,7 @@ describe('distinct Three effect recipes', () => {
   const source: CardAnchor = { x: -150, y: 20, width: 100, height: 140, owner: 0, zone: 'battlefield' }
   const target: CardAnchor = { x: 200, y: 180, width: 100, height: 140, owner: 1, zone: 'hand' }
 
-  function create(event: LogEvent, particles = 8, duration = 400, style: VisualEffectDescriptor['visualStyle'] = 'hd') {
+  function create(event: LogEvent, particles = 8, duration = 400, style: VisualEffectDescriptor['visualStyle'] = 'anime') {
     const geometry = new EffectGeometry()
     const descriptor = visualEffectForEvent(event, style)!
     const done = vi.fn()
@@ -430,7 +430,7 @@ describe('distinct Three effect recipes', () => {
       name,
     }))
     const registry = new ThreeCardRegistry({ acquireCard: acquire } as unknown as ThreeAssets)
-    const descriptor = visualEffectForEvent(recipeEvents[5], 'hd')!
+    const descriptor = visualEffectForEvent(recipeEvents[5], 'anime')!
     const cards = descriptor.counterCards!.map((name, index) => registry.createPresentation({
       hit: {
         key: boardCardKey(`counter-${index}`, descriptor.actor),
@@ -481,7 +481,7 @@ describe('distinct Three effect recipes', () => {
 
   it('retains all recipe meshes and uses all shared palette colors without per-frame allocations', () => {
     for (const event of recipeEvents) {
-      const effect = create(event, 4, 400, 'monochrome')
+      const effect = create(event, 4, 400, 'anime')
       const objects = [...effect.visual.group.children]
       const materials = new Set(objects.map((child) => (child as Mesh).material as MeshBasicMaterial))
       const colors = new Set([...materials].map((material) => `#${material.color.getHexString()}`))
@@ -525,14 +525,14 @@ describe('distinct Three effect recipes', () => {
     const registry = new ThreeCardRegistry({ acquireCard: acquire } as unknown as ThreeAssets)
     registry.reconcile([{
       hit: { key: boardCardKey('destroyed-card', 1, 'destroyed'), cardId: 'destroyed-card', instanceId: 'destroyed', name: 'Forest', owner: 1, zone: 'battlefield', playable: false },
-      style: 'hd', visible: true, target: true, shadows: false,
+      style: 'anime', visible: true, target: true, shadows: false,
       ...target,
     }])
     registry.reconcile([])
     const removed = registry.pinRemoved('destroyed')!
     const geometry = new EffectGeometry()
     const done = vi.fn()
-    const visual = new EffectVisual(geometry, visualEffectForEvent(mountain, 'hd')!, source, target, 400, 4, removed, done)
+    const visual = new EffectVisual(geometry, visualEffectForEvent(mountain, 'anime')!, source, target, 400, 4, removed, done)
     visual.advance(200)
     const body = removed.card.group.children[2] as Mesh
     const materials = removed.card.group.children.map((child) => (child as Mesh).material)
@@ -572,7 +572,7 @@ describe('distinct Three effect recipes', () => {
     } as unknown as ThreeAssets)
     registry.reconcile([{
       hit: { key: 'removed', cardId: 'destroyed-card', instanceId: 'destroyed', name: 'Forest', owner: 1, zone: 'battlefield', playable: false },
-      style: 'hd', visible: true, target: false, shadows: false, ...target,
+      style: 'anime', visible: true, target: false, shadows: false, ...target,
     }])
     registry.retainRemovedTargets(['destroyed'])
     registry.reconcile([])
@@ -581,7 +581,7 @@ describe('distinct Three effect recipes', () => {
     const safeRow = { ...target, x: 0, y: -90, width: 70, height: 98 }
     const geometry = new EffectGeometry()
     const done = vi.fn()
-    const visual = new EffectVisual(geometry, visualEffectForEvent(mountain, 'hd')!, source,
+    const visual = new EffectVisual(geometry, visualEffectForEvent(mountain, 'anime')!, source,
       registry.anchorFor('destroyed') ?? safeRow, 350, 4, removed, done)
     expect(removed.card.anchor()).toMatchObject({ x: 0, y: -90, width: 70, height: 98 })
     expect(visual.group.getObjectByName('mountain-flash')?.position).toMatchObject({ x: 0, y: -90 })
