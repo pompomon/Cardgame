@@ -97,26 +97,25 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
 - `npm run preview` — preview the production bundle locally.
 - `npm run build:cli` — build only the standalone Node terminal bundle.
 - `npm run cli -- --mode ai-vs-ai` — build and run the terminal game.
-- `npm run generate:card-art` — regenerates `public/cards/classic/*.png`,
-  `public/cards/hd-fallback/*.png`, and `public/cards/monochrome/*.png` from
+- `npm run generate:card-art` — regenerates `public/cards/classic/*.png`
+  and `public/cards/hd-fallback/*.png` from
   `scripts/generate-card-art.mjs`. Deterministic and CI-safe (no API
   keys). **Re-run after any change to that script or its creature recipes.**
   Commit the regenerated PNGs.
 - `npm run test -- src/test/card-art-generator.test.ts` — checks 256×256
   repeatability and byte-for-byte parity with all committed deterministic assets
   at the shipping 1024×1024 size, without changing tracked PNGs.
-- `npm run generate:photoreal-card-art` — one-off operator script that
+- `npm run generate:anime-card-art` — one-off operator script that
   calls a hosted image-generation API (default `gpt-image-1`) to (re)write
-  the photoreal HD PNGs at `public/cards/hd/*.png`. Requires an
+  the Anime PNGs at `public/cards/anime/*.png`. Requires an
   `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`). **Not** invoked by CI, lint,
   test, or build. Existing PNGs are skipped, so any intentional replacement
   requires the operator's explicit
-  `npm run generate:photoreal-card-art -- --force`. See
-  [`public/cards/README.md`](../../public/cards/README.md#hd-artwork) for
-  credentials, flags, and the photoreal review gate. The current HD files were
-  restored from repository history and do not require regeneration. Credentials
-  are relevant only if an operator chooses to generate new images. Hashes,
-  dimensions, and primary/fallback inequality do not establish visual quality;
+  `npm run generate:anime-card-art -- --force`. See
+  [`public/cards/README.md`](../../public/cards/README.md#anime-artwork) for
+  credentials, flags, and the visual review gate. Credentials are relevant only
+  if an operator chooses to generate new images. Hashes, dimensions, and
+  primary/fallback inequality do not establish visual quality;
   record actual browser visual acceptance separately after the text-first
   checkpoint and evidence procedure.
 

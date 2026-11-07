@@ -93,8 +93,8 @@ query parameters and the hash, then discards the old stored renderer preference.
   without document or card-row scrolling; dialogs scroll internally when
   space or enlarged text requires it. The camera stays fixed during dragging,
   and Deck/Discard pile stacks distinguish empty piles.
-- Card Style, Board Theme, Render Quality, and Animations use their existing
-  preferences. Startup does not force HD over a saved artwork style.
+- Card Visual Style, Monochrome, Board Theme, Render Quality, and Animations
+  use persisted preferences.
   Backgrounds use aspect-correct cropping and keep the previous theme visible
   while a replacement loads. Reduced motion, animation-off settings, and hidden
   pages suppress card movement, themed ambience, and cosmetic effects.
@@ -119,21 +119,19 @@ query parameters and the hash, then discards the old stored renderer preference.
 - The lobby includes a **Card Visual Style** selector under **Settings**.
 - Available styles:
   - **Classic**
-  - **HD**
-  - **Monochrome**
-- Style selection is a client-side presentation preference persisted in browser local storage.
+  - **Anime**
+- Monochrome is a separate checkbox beside the style selector. It applies a
+  grayscale filter to card artwork without changing the selected art style.
+- Style and Monochrome preferences are persisted in browser local storage.
 - Creature filenames use the exact ASCII slugs from `src/app/card-catalog.ts`;
   display names are never transformed into paths.
 - Classic uses cached procedural creature art and ships matching deterministic
-  PNG inventory. HD tries `hd/<slug>.png`, then `hd-fallback/<slug>.png`, then a
-  procedural fallback. Monochrome tries `monochrome/<slug>.png`, then a
-  procedural fallback.
-- Classic's procedural rendering is intentional. The primary HD files restore
-  independent pre-migration artwork from revision
-  `98dea673ceb7858c67ab126a8fcb0f26251e2250` under the current catalog slugs.
-  Automated checks prove that they differ from the deterministic fallbacks, not
-  that they satisfy the photoreal-quality gate; human browser visual acceptance
-  remains separate.
+  PNG inventory. Anime tries `anime/<slug>.png`, then `hd-fallback/<slug>.png`,
+  then a procedural fallback.
+- All five Anime images are the illustrations added in the latest repository
+  commit and are mapped to creatures through the catalog slugs. Automated tests
+  verify the inventory, dimensions, and fallback separation; browser visual
+  acceptance remains a separate check.
 - Three.js and its native interface share the same source policy, suppress
   repeatedly failed raster URLs for the session, and retry after online
   recovery. See [`public/cards/README.md`](public/cards/README.md).

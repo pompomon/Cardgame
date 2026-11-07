@@ -78,13 +78,14 @@ verification stays pending maintainer review under the
 10. **Status-message ordering.** A later unconditional status assignment can
    hide a storage-unavailable warning. Set warnings last or guard success
    messages when persistence may have failed.
-11. **Artwork acceptance.** Classic is intentionally procedural. HD requires
-   reviewed photoreal art, not deterministic seed/fallback copies. Historical
+11. **Artwork acceptance.** Classic is intentionally procedural. Anime requires
+   reviewed illustrated art, not deterministic seed/fallback copies. Monochrome
+   is an artwork filter, not a separate asset style. Historical
    provenance, dimensions, hashes, and primary/fallback inequality are automated
    checks, not visual acceptance. Hosted-generation credentials are required only
    when deliberately generating new replacements; record visual verification
    separately. See
-   [`public/cards/README.md`](public/cards/README.md#hd-artwork).
+   [`public/cards/README.md`](public/cards/README.md#anime-artwork).
 
 ## Topic index (`docs/agent/`)
 

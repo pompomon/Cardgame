@@ -128,6 +128,7 @@ export interface AppState {
   hasSavedRecording: boolean
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
+  monochromeCards: boolean
   animationSpeed: AnimationSpeed
   boardTheme: BoardTheme
   renderQualityPreference: RenderQualityPreference
@@ -263,6 +264,7 @@ export interface AppViewModel {
   controllers: [ControllerKind, ControllerKind]
   aiLevel: AiLevel
   cardVisualStyle: CardVisualStyle
+  monochromeCards: boolean
   animationSpeed: AnimationSpeed
   boardTheme: BoardTheme
   renderQualityPreference: RenderQualityPreference

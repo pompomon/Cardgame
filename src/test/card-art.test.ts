@@ -15,14 +15,12 @@ import { BASIC_LANDS } from '../game/types'
 describe('card-art', () => {
   it('produces a deterministic, namespaced texture key per catalog slug and style', () => {
     expect(cardArtKey('Forest', 'classic')).toBe('card-art:classic:gravebloom-dryad')
-    expect(cardArtKey('Plains', 'hd')).toBe('card-art:hd:echo-doppelganger')
-    expect(cardArtKey('Swamp', 'monochrome')).toBe('card-art:monochrome:memory-vampire')
+    expect(cardArtKey('Plains', 'anime')).toBe('card-art:anime:echo-doppelganger')
   })
 
   it('builds public URLs that follow the public/cards/<style>/<asset-slug>.png layout', () => {
     expect(cardArtUrl('Mountain', 'classic')).toBe('/cards/classic/rooftop-gargoyle.png')
-    expect(cardArtUrl('Island', 'hd')).toBe('/cards/hd/signal-siren.png')
-    expect(cardArtUrl('Plains', 'monochrome')).toBe('/cards/monochrome/echo-doppelganger.png')
+    expect(cardArtUrl('Island', 'anime')).toBe('/cards/anime/signal-siren.png')
   })
 
   it('exposes a card-back asset', () => {
@@ -30,13 +28,12 @@ describe('card-art', () => {
     expect(cardBackUrl()).toBe('/cards/card-back.png')
   })
 
-  it('ships a geometric hd-fallback raster only for the hd style', () => {
+  it('ships geometric fallback rasters only for Anime', () => {
     for (const land of BASIC_LANDS) {
       const slug = cardAssetSlug(land)
-      expect(cardArtFallbackUrl(land, 'hd')).toBe(`/cards/hd-fallback/${slug}.png`)
-      expect(cardArtFallbackKey(land, 'hd')).toBe(`card-art:hd-fallback:${slug}`)
+      expect(cardArtFallbackUrl(land, 'anime')).toBe(`/cards/hd-fallback/${slug}.png`)
+      expect(cardArtFallbackKey(land, 'anime')).toBe(`card-art:anime-fallback:${slug}`)
       expect(cardArtFallbackUrl(land, 'classic')).toBe(null)
-      expect(cardArtFallbackUrl(land, 'monochrome')).toBe(null)
     }
   })
 
@@ -52,8 +49,8 @@ describe('card-art', () => {
         expect(entry?.land).toBe(land)
         expect(entry?.style).toBe(styleOption.value)
         expect(entry?.url).toBe(cardArtUrl(land, styleOption.value))
-        if (styleOption.value === 'hd') {
-          expect(entry?.fallbackKey).toBe(cardArtFallbackKey(land, 'hd'))
+        if (styleOption.value === 'anime') {
+          expect(entry?.fallbackKey).toBe(cardArtFallbackKey(land, 'anime'))
           expect(entry?.fallbackUrl).toBe(`/cards/hd-fallback/${cardAssetSlug(land)}.png`)
         } else {
           expect(entry?.fallbackKey).toBeUndefined()

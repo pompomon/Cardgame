@@ -112,6 +112,7 @@ function createView(): AppViewModel {
     controllers: ['human', 'human'],
     aiLevel: 'basic',
     cardVisualStyle: DEFAULT_CARD_VISUAL_STYLE,
+    monochromeCards: false,
     animationSpeed: 'off',
     boardTheme: DEFAULT_BOARD_THEME,
     renderQualityPreference: DEFAULT_RENDER_QUALITY_PREFERENCE,

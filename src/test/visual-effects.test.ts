@@ -13,7 +13,7 @@ describe('visual effect descriptors', () => {
       sourceInstanceId: 'p0-2',
       targetInstanceId: 'p1-4',
     }
-    const result = visualEffectForEvent(event, 'monochrome')
+    const result = visualEffectForEvent(event, 'anime')
     expect(result).toMatchObject({
       kind: 'mountain_destroy',
       actor: 0,
@@ -25,25 +25,21 @@ describe('visual effect descriptors', () => {
       sourceDisplayName: 'Rooftop Gargoyle',
       targetDisplayName: 'Gravebloom Dryad',
       caption: 'Banished to discard pile',
-      visualStyle: 'monochrome',
+      visualStyle: 'anime',
     })
-    expect(result?.palette).toEqual({
-      primary: '#dadada',
-      secondary: '#a6a6a6',
-      glow: '#989898',
-    })
+    expect(result?.palette.secondary).toBe('#ff8b62')
   })
 
   it('returns null for events without a visual recipe', () => {
-    expect(visualEffectForEvent({ kind: 'turn_start', turn: 2, actor: 1 }, 'hd')).toBeNull()
-    expect(visualEffectForEvent({ kind: 'future_event' } as never, 'hd')).toBeNull()
+    expect(visualEffectForEvent({ kind: 'turn_start', turn: 2, actor: 1 }, 'anime')).toBeNull()
+    expect(visualEffectForEvent({ kind: 'future_event' } as never, 'anime')).toBeNull()
     expect(visualEffectCaption('future_effect' as never)).toBe('Action resolved')
   })
 
   it('uses the played land palette for land-entry effects', () => {
     const effect = visualEffectForEvent(
       { kind: 'play_land', actor: 0, cardName: 'Island', sourceInstanceId: 'p0-1' },
-      'hd',
+      'anime',
     )
     expect(effect?.land).toBe('Island')
     expect(effect?.sourceDisplayName).toBe('Signal Siren')
@@ -57,7 +53,7 @@ describe('visual effect descriptors', () => {
       actor: 1,
       cardName: 'Forest',
       discardCardName: 'Swamp',
-    }, 'hd')
+    }, 'anime')
     expect(effect?.counterCards).toEqual(['Island', 'Swamp'])
     expect(effect?.sourceDisplayName).toBe('Signal Siren')
     expect(effect?.targetDisplayName).toBe('Gravebloom Dryad')
@@ -66,7 +62,7 @@ describe('visual effect descriptors', () => {
       kind: 'counter_resolved',
       actor: 1,
       cardName: 'Forest',
-    }, 'hd')?.counterCards).toBeUndefined()
+    }, 'anime')?.counterCards).toBeUndefined()
   })
 
   it('supplies approved compact captions for every visual effect kind', () => {

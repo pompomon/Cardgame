@@ -35,7 +35,7 @@ import { withFakeTimers } from './helpers/timers'
 function makeView(): AppViewModel {
   return {
     mode: 'local-hvh', seed: 42, status: 'Ready', offer: '', answer: '',
-    controllers: ['human', 'human'], aiLevel: 'basic', cardVisualStyle: 'classic',
+    controllers: ['human', 'human'], aiLevel: 'basic', cardVisualStyle: 'classic', monochromeCards: false,
     animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
     p2pConnected: false, p2pStarted: false,
     tutorial: { active: false, stepId: null, hint: null },
@@ -142,6 +142,7 @@ class ElementStub {
   readonly children: ElementStub[] = []
   parent: ElementStub | null = null
   value = ''
+  checked = false
   selectionStart: number | null = null
   selectionEnd: number | null = null
   scrollTop = 0
@@ -259,7 +260,7 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   document.body.append(board, host)
   const controller = {
     subscribe: vi.fn(() => () => {}), getViewModel: vi.fn(() => current),
-    setAiLevel: vi.fn(), setCardVisualStyle: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
+    setAiLevel: vi.fn(), setCardVisualStyle: vi.fn(), setMonochromeCards: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
     startGame: vi.fn(), startAdventure: vi.fn(), startAdventureNode: vi.fn(), retryAdventureCompletion: vi.fn(),
     resumeAdventure: vi.fn(), pauseAdventure: vi.fn(), abandonAdventure: vi.fn(), backToLobby: vi.fn(),
     createOffer: vi.fn(async () => {}), acceptAnswer: vi.fn(async () => {}), createAnswer: vi.fn(async () => {}), startP2PGame: vi.fn(),
@@ -343,6 +344,7 @@ beforeEach(() => {
   vi.stubGlobal('Node', ElementStub)
   vi.stubGlobal('HTMLTextAreaElement', ElementStub)
   vi.stubGlobal('HTMLSelectElement', ElementStub)
+  vi.stubGlobal('HTMLInputElement', ElementStub)
 })
 
 afterEach(() => { resetRasterCardArtLoadFailuresForTests(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -857,7 +859,7 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     h.document.emit('keydown', { key: 'Escape', preventDefault: vi.fn() })
     expect(h.content.querySelector('[data-scroll-key="discard-0"]')!.scrollTop).toBe(29)
     expect(h.document.activeElement).toBe(h.content.querySelector(selector))
-    h.update({ ...view, status: 'Saved', cardVisualStyle: 'hd' })
+    h.update({ ...view, status: 'Saved', cardVisualStyle: 'anime' })
     expect(h.content.innerHTML).toContain('data-card-art="echo-doppelganger"')
     const next = structuredClone(view)
     next.game!.players[0].graveyardCards = []
@@ -876,7 +878,7 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     const hand = h.content.querySelector('[data-scroll-key="hand-0"]')!
     hand.scrollLeft = 37
     hand.scrollTop = 19
-    h.update({ ...view, cardVisualStyle: 'hd' })
+    h.update({ ...view, cardVisualStyle: 'anime' })
     expect(h.content.querySelector('[data-scroll-key="hand-0"]')!.scrollLeft).toBe(37)
     expect(h.content.querySelector('[data-scroll-key="hand-0"]')!.scrollTop).toBe(19)
 
@@ -1428,13 +1430,13 @@ describe('Three native interface behavior', () => {
     })
   })
 
-  it.each(['hd', 'monochrome'] as const)('retains %s fallbacks through preview rerenders and reopening', (style) => {
+  it('retains Anime fallbacks through preview rerenders and reopening', () => {
     const view = makeView()
-    view.cardVisualStyle = style
+    view.cardVisualStyle = 'anime'
     const h = setup(view)
     h.ui.activate(hit())
-    const primary = cardArtUrl('Forest', style)
-    const fallback = cardArtFallbackUrl('Forest', style)
+    const primary = cardArtUrl('Forest', 'anime')
+    const fallback = cardArtFallbackUrl('Forest', 'anime')
     noteRasterCardArtLoadFailure(primary)
     h.update({ ...view, status: 'Updated while previewing' })
     let dialog = h.content.querySelector('[data-modal="preview"]')!
@@ -1456,9 +1458,9 @@ describe('Three native interface behavior', () => {
 
   it('retries failed native raster art after online recovery and removes the listener on disposal', () => {
     const view = makeView()
-    view.cardVisualStyle = 'hd'
-    const primary = cardArtUrl('Forest', 'hd')
-    const fallback = cardArtFallbackUrl('Forest', 'hd')!
+    view.cardVisualStyle = 'anime'
+    const primary = cardArtUrl('Forest', 'anime')
+    const fallback = cardArtFallbackUrl('Forest', 'anime')!
     const h = setup(view)
     h.ui.activate(hit())
     const image = h.content.querySelector('[data-modal="preview"]')?.querySelector('img')
@@ -1481,9 +1483,9 @@ describe('Three native interface behavior', () => {
 
   it('retries failed hovered raster art after online recovery', () => {
     const view = makeView()
-    view.cardVisualStyle = 'hd'
-    const primary = cardArtUrl('Forest', 'hd')
-    const fallback = cardArtFallbackUrl('Forest', 'hd')!
+    view.cardVisualStyle = 'anime'
+    const primary = cardArtUrl('Forest', 'anime')
+    const fallback = cardArtFallbackUrl('Forest', 'anime')!
     const h = setup(view)
     h.ui.setHover(hit())
     const hoverContent = h.host.children[2]
@@ -1617,7 +1619,7 @@ describe('Three native interface behavior', () => {
     h.click('[data-action="lobby-settings"]')
     const expected = [
       ['ai-level-select', 'hard', h.controller.setAiLevel],
-      ['card-visual-style-select', 'hd', h.controller.setCardVisualStyle],
+      ['card-visual-style-select', 'anime', h.controller.setCardVisualStyle],
       ['animation-speed-select', 'off', h.controller.setAnimationSpeed],
       ['board-theme-select', 'moonlit', h.controller.setBoardTheme],
       ['render-quality-select', 'low', h.controller.setRenderQualityPreference],
@@ -1631,6 +1633,10 @@ describe('Three native interface behavior', () => {
       h.host.emit('change', { target: select })
       expect(spy).toHaveBeenCalledExactlyOnceWith(value)
     }
+    const monochrome = h.content.querySelector('#monochrome-cards-checkbox')!
+    monochrome.checked = true
+    h.host.emit('change', { target: monochrome })
+    expect(h.controller.setMonochromeCards).toHaveBeenCalledExactlyOnceWith(true)
     h.click('[data-action="lobby-root"]')
     h.click('[data-mode="adventure-hvai"]')
     expect(h.controller.startAdventure).toHaveBeenCalledTimes(1)

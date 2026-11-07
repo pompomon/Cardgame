@@ -13,7 +13,7 @@ import { MAX_EFFECT_MS } from '../app/animation-settings'
 function descriptor(cardId: string, instanceId?: string, x = 100): CardDescriptor {
   return {
     hit: { key: boardCardKey(cardId, 0, instanceId), cardId, instanceId, name: 'Mountain', owner: 0, zone: instanceId ? 'battlefield' : 'hand', playable: !instanceId },
-    style: 'hd', visible: true, target: false, shadows: true, x, y: 30, width: 100, height: 140,
+    style: 'anime', visible: true, target: false, shadows: true, x, y: 30, width: 100, height: 140,
   }
 }
 
@@ -329,7 +329,7 @@ describe('bounded cosmetic Three.js effects', () => {
     const done = vi.fn()
     const anchor = registry.anchorFor('removed')!
     const effect: VisualEffectDescriptor = {
-      kind: 'mountain_destroy', actor: 0, land: 'Mountain', visualStyle: 'hd',
+      kind: 'mountain_destroy', actor: 0, land: 'Mountain', visualStyle: 'anime',
       targetInstanceId: 'removed', palette: { primary: '#ff8800', secondary: '#a30000', glow: '#ffcc66' },
     }
     const visual = new EffectVisual(geometry, effect, { ...anchor, x: -50 }, anchor, 300, 8, removed, done)

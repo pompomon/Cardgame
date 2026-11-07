@@ -38,7 +38,10 @@ import {
 import { displayAdventureOpponentLabel } from './game-presentation'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
-import { readStoredCardVisualStyle, persistCardVisualStyle } from './card-visual-style-selection'
+import {
+  readStoredCardVisualStyle, persistCardVisualStyle,
+  readStoredMonochromeCards, persistMonochromeCards,
+} from './card-visual-style-selection'
 import {
   persistRenderQualityPreference,
   readStoredRenderQualityPreference,
@@ -109,6 +112,7 @@ export interface ControllerApi {
   getViewModel(): AppViewModel
   setAiLevel(level: AiLevel): void
   setCardVisualStyle(style: CardVisualStyle): void
+  setMonochromeCards(enabled: boolean): void
   setAnimationSpeed(speed: AnimationSpeed): void
   setBoardTheme(theme: BoardTheme): void
   setRenderQualityPreference(preference: RenderQualityPreference): void
@@ -163,6 +167,7 @@ export class AppController implements ControllerApi {
       hasSavedRecording: this.hasSavedRecording(),
       aiLevel: 'basic',
       cardVisualStyle: readStoredCardVisualStyle(),
+      monochromeCards: readStoredMonochromeCards(),
       animationSpeed: resolveInitialAnimationSpeed(),
       boardTheme: readStoredBoardTheme(),
       renderQualityPreference: readStoredRenderQualityPreference(),
@@ -676,6 +681,12 @@ export class AppController implements ControllerApi {
   setCardVisualStyle(style: CardVisualStyle): void {
     this.state.cardVisualStyle = style
     persistCardVisualStyle(style)
+    this.notify()
+  }
+
+  setMonochromeCards(enabled: boolean): void {
+    this.state.monochromeCards = enabled
+    persistMonochromeCards(enabled)
     this.notify()
   }
 
