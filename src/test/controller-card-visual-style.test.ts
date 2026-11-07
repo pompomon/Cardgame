@@ -90,4 +90,26 @@ describe('controller card visual style', () => {
     expect(writes).not.toHaveBeenCalledWith('cardgame.monochrome-cards', expect.anything())
     writes.mockRestore()
   })
+
+  it('preserves Monochrome through a style change while migration is quota-blocked', () => {
+    localStorage.setItem('cardgame.card-visual-style', 'monochrome')
+    const setItem = localStorage.setItem.bind(localStorage)
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+      if (key === 'cardgame.monochrome-cards') throw new Error('quota')
+      setItem(key, value)
+    })
+    const controller = new AppController()
+    controller.setCardVisualStyle('classic')
+    expect(controller.getViewModel().cardVisualStyle).toBe('classic')
+    expect(controller.getViewModel().monochromeCards).toBe(true)
+    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('monochrome')
+    expect(new AppController().getViewModel().monochromeCards).toBe(true)
+    spy.mockRestore()
+
+    controller.setCardVisualStyle('classic')
+    expect(localStorage.getItem('cardgame.monochrome-cards')).toBe('true')
+    const restored = new AppController().getViewModel()
+    expect(restored.cardVisualStyle).toBe('classic')
+    expect(restored.monochromeCards).toBe(true)
+  })
 })
