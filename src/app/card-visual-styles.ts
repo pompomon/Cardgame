@@ -10,7 +10,7 @@
 // style requires only an entry in `CARD_VISUAL_STYLES`, a label below,
 // and (for raster styles) inclusion in `RASTER_CARD_VISUAL_STYLE_SET`.
 
-export const CARD_VISUAL_STYLES = ['classic', 'anime'] as const
+export const CARD_VISUAL_STYLES = ['classic', 'cats', 'anime'] as const
 
 export type CardVisualStyle = typeof CARD_VISUAL_STYLES[number]
 
@@ -18,6 +18,7 @@ export const DEFAULT_CARD_VISUAL_STYLE: CardVisualStyle = 'anime'
 
 const CARD_VISUAL_STYLE_LABELS: Record<CardVisualStyle, string> = {
   classic: 'Classic',
+  cats: 'Cats',
   anime: 'Anime',
 }
 
@@ -38,7 +39,7 @@ export function isCardVisualStyle(value: unknown): value is CardVisualStyle {
 // pixel template. Callers use this to choose CSS
 // `image-rendering` and whether to draw the palette card frame behind the
 // art. Keep in sync with the contents of `public/cards/<style>/*.png`.
-const RASTER_CARD_VISUAL_STYLE_SET: ReadonlySet<CardVisualStyle> = new Set(['anime'])
+const RASTER_CARD_VISUAL_STYLE_SET: ReadonlySet<CardVisualStyle> = new Set(['cats', 'anime'])
 
 export function isRasterCardVisualStyle(style: CardVisualStyle): boolean {
   return RASTER_CARD_VISUAL_STYLE_SET.has(style)

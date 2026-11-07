@@ -22,6 +22,7 @@ They appear under:
 public/cards/
 ├── card-back.png
 ├── anime/
+├── cats/
 ├── classic/
 ├── hd-fallback/
 ```
@@ -29,8 +30,8 @@ public/cards/
 - Art must be square and at least 256×256.
 - `classic/` contains deterministic 1024×1024 pixel-art counterparts to the
   procedural Classic fallback.
-- `anime/` contains the five illustrated creature images reviewed for this
-  style.
+- `anime/` contains the five new illustrated creature images from PR #137.
+- `cats/` contains the five illustrations previously used by the Anime style.
 - `hd-fallback/` contains deterministic 1024×1024 geometric creature artwork.
 - The canonical key-to-slug mapping is in `src/app/card-catalog.ts`; never
   derive a path from a display name or serialized key.
@@ -42,8 +43,8 @@ public/cards/
 - `classic` renders the cached procedural SVG; its shipped PNG provides
   deterministic recipe parity and asset inventory. This procedural rendering
   is intentional, not a missing raster integration.
-- `anime` tries `anime/<slug>.png`, then `hd-fallback/<slug>.png`, then the
-  procedural icon.
+- `anime` and `cats` try their own `<style>/<slug>.png`, then
+  `hd-fallback/<slug>.png`, then the procedural icon.
 - Monochrome is a persisted checkbox that applies grayscale to the selected
   style's card artwork; it does not select separate image files.
 - Small glyphs may force the procedural source to avoid downloading a large
@@ -82,15 +83,15 @@ shipping-size check compares all 10 generated files byte-for-byte with the
 committed Classic and HD-fallback assets. Test output stays in
 project-local scratch directories and is removed afterward.
 
-## Anime artwork
+## Cats artwork
 
-The current Anime files are restored byte-for-byte from
+The Cats files are the former Anime files, restored byte-for-byte from
 `98dea673ceb7858c67ab126a8fcb0f26251e2250`, the last revision before the
 slugged creature-art migration removed the legacy paths. They were introduced
 in `ace5d53921dcb7eab992fe94e083865334d10217` and are reused under the current
 catalog slugs according to the stable serialized identity:
 
-| Serialized identity | Current file | SHA-256 |
+| Serialized identity | Cats file | SHA-256 |
 | --- | --- | --- |
 | `Forest` | `gravebloom-dryad.png` | `b1bfa46f3ccebd04112e1e7e8ae1df9446922429f7b7fc399f4c0ec109546b72` |
 | `Island` | `signal-siren.png` | `50f856df06fc53b2f713ac8e1a7cf6f1fe6aeee28ab0bfcb9af4403a2aeb0b64` |
@@ -98,10 +99,27 @@ catalog slugs according to the stable serialized identity:
 | `Plains` | `echo-doppelganger.png` | `86a595aeaf25c16e867c9219d18bf3fab6f5a549703d99aa21f045dc18918a61` |
 | `Swamp` | `memory-vampire.png` | `97b17ba1c075476673f59a2bb87c8ac22843eb150efc796aa60b5b2399d5e926` |
 
-`src/test/card-art-assets.test.ts` verifies that each Anime file differs
+`src/test/card-art-assets.test.ts` verifies that each illustrated file differs
 from its deterministic fallback. The hashes, dimensions, and inequality check
 establish provenance and independence only; the rendered art still requires
 browser visual acceptance.
+
+## Anime artwork
+
+The Anime images were added in [PR #137](https://github.com/pompomon/Cardgame/pull/137)
+as `doppel.png`, `dryad.png`, `gargoyle.png`, `siren.png`, and `vampire.png`.
+They are installed under the catalog slugs as follows:
+
+| PR filename | Serialized identity | Installed file | SHA-256 |
+| --- | --- | --- | --- |
+| `dryad.png` | `Forest` | `gravebloom-dryad.png` | `b67669524463bab948759d1f0ca30646f0069e3420c44ffab27927b7c3291943` |
+| `siren.png` | `Island` | `signal-siren.png` | `8bd4baef644cdf0c0a214c77f397d45af91a133926cfa0fd59fc1c0ed3698e5f` |
+| `gargoyle.png` | `Mountain` | `rooftop-gargoyle.png` | `8a3c05fe4b13fd88d21462854f625124bd92b38bedd418220c98127015e7979a` |
+| `doppel.png` | `Plains` | `echo-doppelganger.png` | `78146f18e7249d3dde51befe7210173c298d9eceb926322060acbe7af890e87d` |
+| `vampire.png` | `Swamp` | `memory-vampire.png` | `766c7a9614a4e9be866cca6825273259ae53d3a5b3c81229809cbe4afcdb5c07` |
+
+`src/test/card-art-assets.test.ts` checks that all five images are valid,
+square, at least 256×256, and distinct from their runtime fallbacks.
 
 ### Optional future generation
 
@@ -111,7 +129,7 @@ Configure `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`) securely in the environment,
 never in committed files or logs.
 
 **Operator replacement gate:** existing PNGs are skipped unless `--force` is
-supplied. To replace the current restored files intentionally, run:
+supplied. To generate replacements for the Anime style intentionally, run:
 
 ```bash
 npm run generate:anime-card-art -- --force
@@ -129,8 +147,8 @@ temporary output, or an unreviewed image.
 
 ### Acceptance status
 
-Historical restoration and the automated primary/fallback separation check are
-complete. Human art review and production-browser visual acceptance remain
+Asset provenance and automated primary/fallback separation checks are
+documented. Human art review and production-browser visual acceptance remain
 separate requirements under the
 [browser evidence procedure](../../docs/agent/testing.md#browser-verification-and-evidence).
 Passing provenance, hash, inventory, dimension, or fallback tests does not close
@@ -141,7 +159,7 @@ those visual gates.
 1. Confirm the filename is one of the five exact catalog slugs.
 2. Confirm the PNG is square, at least 256×256, and contains no text, logos, or
    branded symbols.
-3. Confirm the Anime illustration is not a procedural/fallback copy; review the
+3. Confirm each illustration is not a procedural/fallback copy; review the
    readable silhouette, creature-to-ability mapping, color-role
    continuity, urban-fantasy cohesion, crop safety, and contrast.
 4. Check the image on the Three.js battlefield and in the native Cards dialog

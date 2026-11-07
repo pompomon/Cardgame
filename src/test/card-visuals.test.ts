@@ -78,7 +78,8 @@ describe('card-visuals', () => {
     expect(palette.iconSecondary).toMatch(/^#/)
   })
 
-  it('flags Anime as the raster card visual style', () => {
+  it('flags Cats and Anime as raster card visual styles', () => {
+    expect(isRasterCardVisualStyle('cats')).toBe(true)
     expect(isRasterCardVisualStyle('anime')).toBe(true)
     expect(isRasterCardVisualStyle('classic')).toBe(false)
   })
@@ -92,6 +93,13 @@ describe('card-visuals', () => {
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })
 
+    it('returns the former Anime artwork from the Cats style', () => {
+      const source = cardArtSourceFor('Forest', 'cats', 64)
+      expect(source.isRaster).toBe(true)
+      expect(source.primaryUrl).toBe('/cards/cats/gravebloom-dryad.png')
+      expect(source.rasterFallbackUrl).toBe('/cards/hd-fallback/gravebloom-dryad.png')
+    })
+
     it('returns the procedural SVG as the primary URL for classic', () => {
       const source = cardArtSourceFor('Mountain', 'classic', 64)
       expect(source.isRaster).toBe(false)
@@ -101,7 +109,7 @@ describe('card-visuals', () => {
     })
 
     it('forceProcedural: true keeps the procedural icon even for raster styles', () => {
-      for (const style of ['anime'] as const) {
+      for (const style of ['anime', 'cats'] as const) {
         const source = cardArtSourceFor('Island', style, 16, { forceProcedural: true })
         expect(source.isRaster).toBe(false)
         expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)

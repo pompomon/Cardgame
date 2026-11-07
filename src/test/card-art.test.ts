@@ -15,11 +15,13 @@ import { BASIC_LANDS } from '../game/types'
 describe('card-art', () => {
   it('produces a deterministic, namespaced texture key per catalog slug and style', () => {
     expect(cardArtKey('Forest', 'classic')).toBe('card-art:classic:gravebloom-dryad')
+    expect(cardArtKey('Forest', 'cats')).toBe('card-art:cats:gravebloom-dryad')
     expect(cardArtKey('Plains', 'anime')).toBe('card-art:anime:echo-doppelganger')
   })
 
   it('builds public URLs that follow the public/cards/<style>/<asset-slug>.png layout', () => {
     expect(cardArtUrl('Mountain', 'classic')).toBe('/cards/classic/rooftop-gargoyle.png')
+    expect(cardArtUrl('Forest', 'cats')).toBe('/cards/cats/gravebloom-dryad.png')
     expect(cardArtUrl('Island', 'anime')).toBe('/cards/anime/signal-siren.png')
   })
 
@@ -28,9 +30,11 @@ describe('card-art', () => {
     expect(cardBackUrl()).toBe('/cards/card-back.png')
   })
 
-  it('ships geometric fallback rasters only for Anime', () => {
+  it('ships geometric fallback rasters for both illustrated styles', () => {
     for (const land of BASIC_LANDS) {
       const slug = cardAssetSlug(land)
+      expect(cardArtFallbackUrl(land, 'cats')).toBe(`/cards/hd-fallback/${slug}.png`)
+      expect(cardArtFallbackKey(land, 'cats')).toBe(`card-art:cats-fallback:${slug}`)
       expect(cardArtFallbackUrl(land, 'anime')).toBe(`/cards/hd-fallback/${slug}.png`)
       expect(cardArtFallbackKey(land, 'anime')).toBe(`card-art:anime-fallback:${slug}`)
       expect(cardArtFallbackUrl(land, 'classic')).toBe(null)
@@ -49,8 +53,8 @@ describe('card-art', () => {
         expect(entry?.land).toBe(land)
         expect(entry?.style).toBe(styleOption.value)
         expect(entry?.url).toBe(cardArtUrl(land, styleOption.value))
-        if (styleOption.value === 'anime') {
-          expect(entry?.fallbackKey).toBe(cardArtFallbackKey(land, 'anime'))
+        if (styleOption.value === 'anime' || styleOption.value === 'cats') {
+          expect(entry?.fallbackKey).toBe(cardArtFallbackKey(land, styleOption.value))
           expect(entry?.fallbackUrl).toBe(`/cards/hd-fallback/${cardAssetSlug(land)}.png`)
         } else {
           expect(entry?.fallbackKey).toBeUndefined()
