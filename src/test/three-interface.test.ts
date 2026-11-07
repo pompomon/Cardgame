@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController, type ControllerApi } from '../app/controller'
-import type { AdventureNodeLane, AdventureNodeStatus } from '../app/adventure'
+import { ADVENTURE_GAME_STORAGE_KEY, type AdventureNodeLane, type AdventureNodeStatus } from '../app/adventure'
+import { ADVENTURE_RUN_STORAGE_KEY } from '../app/adventure-persistence'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import { createGameRecord } from '../app/game-recording'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
@@ -2555,6 +2556,48 @@ describe('Three Adventure hub', () => {
     expect(menu()).toBeNull()
     expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
     h.ui.dispose()
+  })
+
+  it.each([
+    ['game snapshot', ADVENTURE_GAME_STORAGE_KEY],
+    ['paused run', ADVENTURE_RUN_STORAGE_KEY],
+  ] as const)('keeps the Game Menu and Pause focus when the %s write is refused', (_write, failedKey) => {
+    withFakeTimers(() => {
+      const entries = new Map<string, string>()
+      let refusedKey: string | null = null
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => entries.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          if (key === refusedKey) throw new Error('storage unavailable')
+          entries.set(key, String(value))
+        },
+        removeItem: (key: string) => { entries.delete(key) },
+        clear: () => { entries.clear() },
+      })
+      const real = new AppController()
+      real.startAdventure()
+      const node = actionableAdventureNodes(real.getViewModel().adventure)[0]
+      if (!node) throw new Error('Missing Adventure node')
+      real.startAdventureNode(node.id)
+      const h = setup(real.getViewModel())
+      h.controller.getViewModel.mockImplementation(() => real.getViewModel())
+      h.controller.pauseAdventure.mockImplementation(() => real.pauseAdventure())
+      const unsubscribe = real.subscribe((view) => h.update(view))
+
+      h.click('[data-action="menu"]')
+      refusedKey = failedKey
+      h.click('[data-action="pause-adventure"]')
+
+      const menu = h.content.querySelector('[data-modal="menu"]')
+      expect(real.getViewModel().mode).toBe('adventure-hvai')
+      expect(real.getViewModel().game).not.toBeNull()
+      expect(menu).not.toBeNull()
+      expect(h.document.activeElement?.dataset.action).toBe('pause-adventure')
+      expect(menu!.contains(h.document.activeElement!)).toBe(true)
+
+      unsubscribe()
+      h.ui.dispose()
+    })
   })
 
   it('runs a real Adventure from the lobby through a node, Pause and Resume', () => {

@@ -831,7 +831,7 @@ export class ThreeInterface {
         break
       }
       case 'resume-adventure': this.reset(); this.controller.resumeAdventure(); break
-      case 'pause-adventure': this.reset(); this.controller.pauseAdventure(); break
+      case 'pause-adventure': this.controller.pauseAdventure(); break
       case 'abandon-adventure': this.reset(); this.controller.abandonAdventure(); break
       case 'adventure-node': {
         // Only a node the map offers right now can start; the controller
