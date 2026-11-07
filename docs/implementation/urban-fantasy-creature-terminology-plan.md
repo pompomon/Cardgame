@@ -816,8 +816,8 @@ designed, versioned migration. Do not combine them with these PRs.
 - Hidden opponent cards, including names and art in structured or legacy draw
   logs, remain redacted except during the existing legal Drain Memory target
   decision.
-- Each approved slug exists under `classic`, `hd`, `hd-fallback`, and
-  `anime`; missing/failed art reaches a playable fallback.
+- Each approved slug exists under `classic`, `anime`, and `hd-fallback`;
+  missing/failed art reaches a playable fallback.
 - Monochrome uses the checkbox filter and no longer requires separate PNGs.
 - Classic remains intentionally procedural. Review Anime images in-browser;
   automated provenance or fallback-separation checks cannot satisfy this
