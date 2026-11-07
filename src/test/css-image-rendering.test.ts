@@ -58,6 +58,13 @@ describe('CSS image-rendering declarations', () => {
 })
 
 describe('responsive Three.js copy', () => {
+  it('wraps the style selector and Monochrome checkbox instead of squeezing them into a narrow cell', () => {
+    expect(ruleBody('.three-interface .three-settings__style')).toContain('flex-wrap: wrap')
+    expect(ruleBody('.three-interface .three-settings__style > label:first-child')).toContain('flex: 1 1 12em')
+    expect(ruleBody('.three-interface .three-settings .three-settings__checkbox')).toContain('white-space: normal')
+    expect(ruleBody('.three-interface .three-settings__checkbox input')).toContain('flex-shrink: 0')
+  })
+
   it('keeps native controls touch-sized and allows long names and labels to wrap', () => {
     expect(ruleBody('.three-interface button, .three-interface select, .three-interface summary, .three-interface a'))
       .toMatch(/min-height:\s*44px/)

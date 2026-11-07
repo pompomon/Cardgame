@@ -181,10 +181,15 @@
 }
 
 .three-interface .three-settings__style {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: 10px;
+}
+
+.three-interface .three-settings__style > label:first-child {
+  flex: 1 1 12em;
+  min-width: 0;
 }
 
 .three-interface .three-settings .three-settings__checkbox {
@@ -193,13 +198,15 @@
   gap: 8px;
   width: auto;
   min-height: 44px;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .three-interface .three-settings__checkbox input {
   width: 20px;
   height: 20px;
   margin: 0;
+  flex-shrink: 0;
   accent-color: #75f9b3;
 }
 
