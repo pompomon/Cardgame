@@ -54,6 +54,7 @@ interface TrackedStorage {
   readonly calls: string[]
   readonly failingSets: Set<string>
   readonly failingRemoves: Set<string>
+  readonly failingGets: Set<string>
 }
 
 function installTrackedStorage(seed: Record<string, string> = {}): TrackedStorage {
@@ -62,11 +63,17 @@ function installTrackedStorage(seed: Record<string, string> = {}): TrackedStorag
     calls: [],
     failingSets: new Set(),
     failingRemoves: new Set(),
+    failingGets: new Set(),
   }
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
-      getItem: (key: string) => tracked.data.get(key) ?? null,
+      getItem: (key: string) => {
+        if (tracked.failingGets.has(key)) {
+          throw new Error('storage locked')
+        }
+        return tracked.data.get(key) ?? null
+      },
       setItem: (key: string, value: string) => {
         tracked.calls.push(`set:${key}`)
         if (tracked.failingSets.has(key)) {
@@ -1133,6 +1140,15 @@ describe('Adventure controller branching route', () => {
     expect(storage.data.get(RUN_KEY)).toBe(storedRun)
     expect(liveGame(controller)).toBe(board)
 
+    // An unreadable slot after a refused removal cannot confirm the run is gone.
+    storage.failingGets.add(RUN_KEY)
+    controller.retryAdventureCompletion()
+    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
+    expect(storage.data.get(RUN_KEY)).toBe(storedRun)
+    expect(liveGame(controller)).toBe(board)
+
+    storage.failingGets.delete(RUN_KEY)
     storage.failingRemoves.delete(RUN_KEY)
     controller.retryAdventureCompletion()
 
@@ -1154,6 +1170,30 @@ describe('Adventure controller branching route', () => {
     storage.calls.length = 0
     controller.retryAdventureCompletion()
     expect(storage.calls).toEqual([])
+  })
+
+  it('treats a refused run removal as reset only when a read confirms the slot is empty', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    const storedRun = storage.data.get(RUN_KEY)
+    storage.failingRemoves.add(RUN_KEY)
+    storage.failingGets.add(RUN_KEY)
+
+    controller.abandonAdventure()
+
+    expect(controller.getViewModel().status).toBe('Adventure run could not be reset (storage unavailable).')
+    expect(storage.data.get(RUN_KEY)).toBe(storedRun)
+
+    storage.failingGets.delete(RUN_KEY)
+    storage.data.delete(RUN_KEY)
+    controller.startAdventure()
+    storage.data.delete(RUN_KEY)
+
+    controller.abandonAdventure()
+
+    expect(controller.getViewModel().status).toBe('Adventure run reset.')
+    expect(controller.getViewModel().adventure).toMatchObject({ status: 'inactive', hasSavedRun: false })
   })
 
   it('resets the run while a result waits to be saved', () => {

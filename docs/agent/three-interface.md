@@ -90,7 +90,9 @@ Rules:
 - **Pending result.** While storage refuses a result, the finished board stays
   open. The Game Menu, the wide game-controls panel and the narrow dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
-  hub never opens over an unsaved result.
+  hub never opens over an unsaved result. Retry does not reset the
+  interface, so a refused write keeps the Game Menu open with focus on Retry;
+  a saved result leaves the encounter and the session change closes the menu.
 - **Replay** is refused while Adventure is open, so its controls are hidden in
   Adventure mode. The recording from the last encounter can still be exported.
 

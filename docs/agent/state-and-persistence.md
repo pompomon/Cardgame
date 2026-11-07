@@ -303,8 +303,9 @@ keep their names; only their formats changed.
   - **Completion.**
     - A non-terminal result writes the next run.
     - A terminal result writes the highest of the stored, in-memory and new
-      scores as the high score, then removes the run key. A failed removal
-      counts as success when no readable run remains.
+      scores as the high score, then removes the run key. A refused removal
+      counts as success only when a successful read confirms the key is
+      absent; an unreadable slot counts as failure (also for Reset).
     - If any write fails, memory keeps the pre-result run, the game-over
       board and `pendingCompletion` with the exact outcome. Retry applies
       the outcome again to a fresh candidate from the same run, so nothing

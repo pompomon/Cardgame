@@ -842,7 +842,9 @@ export class ThreeInterface {
         this.controller.startAdventureNode(nodeId)
         break
       }
-      case 'adventure-retry-completion': if (view.adventure.pendingCompletion) { this.reset(); this.controller.retryAdventureCompletion() }; break
+      // No reset, so a refused write keeps the menu and focus; a committed
+      // result leaves the encounter, which resets through the session change.
+      case 'adventure-retry-completion': if (view.adventure.pendingCompletion) this.controller.retryAdventureCompletion(); break
       case 'start-new-adventure': if (isThreeAdventureHub(view)) { this.reset(); this.controller.startAdventure() }; break
       case 'back-to-lobby': this.reset(); this.controller.backToLobby(); break
       case 'rematch': this.reset(); this.controller.rematch(); break

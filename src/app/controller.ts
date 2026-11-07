@@ -30,6 +30,7 @@ import {
   type AdventureRunState,
 } from './adventure'
 import {
+  ADVENTURE_RUN_STORAGE_KEY,
   clearStoredAdventureRun,
   persistAdventureRun,
   readStoredAdventureRunRecord,
@@ -302,10 +303,15 @@ export class AppController implements ControllerApi {
     this.initializeRecording('adventure-hvai')
   }
 
-  // The run key is gone when storage accepts the removal or no readable run
-  // remains, so refusing to remove an empty slot is not a failure.
+  // The run key is gone when storage accepts the removal or a successful read
+  // confirms the key is absent, so refusing to remove an empty slot is not a
+  // failure. An unreadable slot after a refused removal counts as a failure.
   private removeStoredAdventureRun(): boolean {
-    return clearStoredAdventureRun() || readStoredAdventureRunRecord() === null
+    if (clearStoredAdventureRun()) {
+      return true
+    }
+    const remaining = tryReadStorageItem(ADVENTURE_RUN_STORAGE_KEY)
+    return remaining.available && remaining.value === null
   }
 
   private onAdventureGameFinished(previousState: GameState): void {

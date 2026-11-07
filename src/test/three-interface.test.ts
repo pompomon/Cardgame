@@ -2523,6 +2523,40 @@ describe('Three Adventure hub', () => {
     h.ui.dispose()
   })
 
+  it('keeps the Game Menu and focus when a retry write is refused, and closes it once the result is saved', () => {
+    const view = makeView()
+    view.mode = 'adventure-hvai'
+    view.controllers = ['human', 'ai']
+    view.game = { ...view.game!, phase: 'gameOver', canInput: false, winnerText: 'Player 1 wins!' }
+    view.adventure = { ...view.adventure, runId: 'run-1', status: 'active', stage: 'encounter', currentTier: 2, pendingCompletion: 'win', decisionKey: 'run-1|left|0|win' }
+    const h = setup(view)
+    const refused = { ...view, status: 'The encounter result could not be saved (storage unavailable). Retry saving the result.' }
+    h.controller.retryAdventureCompletion.mockImplementation(() => h.update(refused))
+    const menu = (): ElementStub | null => h.content.querySelector('[data-modal="menu"]')
+    const retryFromMenu = (): void => {
+      const retry = menu()?.querySelector('[data-action="adventure-retry-completion"]')
+      if (!retry) throw new Error('Missing menu Retry Saving Result')
+      retry.focus()
+      h.host.emit('click', { target: retry })
+    }
+    h.click('[data-action="menu"]')
+    retryFromMenu()
+    expect(h.controller.retryAdventureCompletion).toHaveBeenCalledTimes(1)
+    expect(menu()).not.toBeNull()
+    expect(h.document.activeElement?.dataset.action).toBe('adventure-retry-completion')
+    expect(menu()!.contains(h.document.activeElement!)).toBe(true)
+
+    h.controller.retryAdventureCompletion.mockImplementation(() => h.update(hubView({
+      attemptOrdinal: 0, tiers: hubTiers(['completed', 'bypassed']), decisionKey: 'run-1|tier-3|0|',
+      lastResult: { outcome: 'win', tierIndex: 1, opponentLabel: 'Tier 2 left foe', score: null },
+    })))
+    retryFromMenu()
+    expect(h.controller.retryAdventureCompletion).toHaveBeenCalledTimes(2)
+    expect(menu()).toBeNull()
+    expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
+    h.ui.dispose()
+  })
+
   it('runs a real Adventure from the lobby through a node, Pause and Resume', () => {
     withFakeTimers(() => {
       const storage = installHubStorage()
