@@ -12,7 +12,7 @@ import { BASIC_LANDS } from '../game/types'
 
 const PUBLIC_ROOT = resolve(__dirname, '..', '..', 'public')
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const ART_STYLES = ['classic', 'hd', 'hd-fallback', 'monochrome'] as const
+const ART_STYLES = ['classic', 'anime', 'hd-fallback'] as const
 const EXPECTED_CREATURE_FILES = BASIC_LANDS.map((land) => `${cardAssetSlug(land)}.png`).sort()
 
 function publicPathFor(url: string): string {
@@ -76,7 +76,7 @@ describe('card art asset files', () => {
     const fallbackEntries = ALL_CARD_ART.filter(
       (entry) => entry.fallbackUrl !== undefined,
     )
-    // Sanity: at least the 5 HD lands ship a hd-fallback PNG.
+    // Sanity: the five Anime cards share the geometric runtime fallback.
     expect(fallbackEntries.length).toBeGreaterThanOrEqual(5)
     for (const entry of fallbackEntries) {
       const fallbackUrl = entry.fallbackUrl as string
@@ -90,10 +90,10 @@ describe('card art asset files', () => {
     }
   })
 
-  it('ships primary HD artwork that differs from every deterministic HD fallback', () => {
+  it('ships Anime artwork that differs from every deterministic fallback', () => {
     for (const land of BASIC_LANDS) {
       const filename = `${cardAssetSlug(land)}.png`
-      const primary = readFileSync(resolve(PUBLIC_ROOT, 'cards', 'hd', filename))
+      const primary = readFileSync(resolve(PUBLIC_ROOT, 'cards', 'anime', filename))
       const fallback = readFileSync(resolve(PUBLIC_ROOT, 'cards', 'hd-fallback', filename))
       expect(bytesEqual(primary, fallback), filename).toBe(false)
     }

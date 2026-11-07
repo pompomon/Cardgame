@@ -15,6 +15,7 @@ export const EFFECT_RENDER_ORDER = 2000
 export interface CardDescriptor extends BoardRect {
   readonly hit: BoardHit
   readonly style: CardVisualStyle
+  readonly monochromeCards?: boolean
   readonly visible: boolean
   readonly target: boolean
   readonly response?: 'required' | 'discard' | null
@@ -79,9 +80,9 @@ export class RetainedCard {
     const previous = this.descriptor
     const from = this.anchor()
     this.descriptor = descriptor
-    const signature = `${descriptor.style}:${cardTextureIdentity(descriptor.hit)}`
+    const signature = `${descriptor.style}:${cardTextureIdentity(descriptor.hit)}:${descriptor.monochromeCards ?? false}`
     if (signature !== this.signature) {
-      const next = this.assets.acquireCard(descriptor.hit, descriptor.style)
+      const next = this.assets.acquireCard(descriptor.hit, descriptor.style, descriptor.monochromeCards)
       this.lease?.release()
       this.lease = next
       this.faceMaterial.map = next.texture

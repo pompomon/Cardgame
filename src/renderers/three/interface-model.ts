@@ -229,8 +229,12 @@ export function renderThreeSettings(view: AppViewModel): string {
     ['render-quality-select', 'Render quality', view.renderQualityPreference, RENDER_QUALITY_PREFERENCE_OPTIONS],
   ] as const
   return `<section aria-label="Settings"><h3>Settings</h3><div class="three-settings">${fields.map(([id, label, value, options]) =>
-    `<label for="${id}">${label}<select id="${id}">${options.map((option) =>
-      `<option value="${option.value}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>`,
+    id === 'card-visual-style-select'
+      ? `<div class="three-settings__style"><label for="${id}">${label}<select id="${id}">${options.map((option) =>
+        `<option value="${option.value}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>
+        <label class="three-settings__checkbox" for="monochrome-cards-checkbox"><input type="checkbox" id="monochrome-cards-checkbox"${view.monochromeCards ? ' checked' : ''}>Monochrome</label></div>`
+      : `<label for="${id}">${label}<select id="${id}">${options.map((option) =>
+        `<option value="${option.value}"${option.value === value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>`,
   ).join('')}</div><p>Animation default follows the system reduced-motion preference.</p></section>`
 }
 
@@ -269,7 +273,7 @@ function renderMenu(view: AppViewModel): string {
     ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
     : button('back-to-lobby', view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby')
       + (view.mode === 'tutorial' || view.replay.active ? '' : button('rematch', 'Rematch'))}</div>
-    ${renderThreeLog(view.game!, view.cardVisualStyle, logControllers)}
+    ${renderThreeLog(view.game!, view.cardVisualStyle, logControllers, view.monochromeCards)}
     ${renderThreeSettings(view)}${renderInstallControls()}${renderRecorder(view)}${renderReplay(view)}`)
 }
 
@@ -310,7 +314,7 @@ function renderTargets(view: AppViewModel, ui: InterfaceUi, target: TargetModel)
       displayName: option.displayName,
       ...(option.serializedKey ? { serializedKey: option.serializedKey } : {}),
       ...(option.assetSlug ? { assetSlug: option.assetSlug } : {}),
-    }, view.cardVisualStyle)}<span>${escapeHtml(option.label)}</span></button>`,
+    }, view.cardVisualStyle, view.monochromeCards)}<span>${escapeHtml(option.label)}</span></button>`,
   ).join('') || '<p>No legal targets available.</p>'}</div>`
   const close = button('close', ui.pendingCardId ? 'Cancel Target Selection' : 'Close Target Selection')
   return target.battlefield
@@ -366,7 +370,7 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
           <div class="three-native-cards" data-scroll-key="discard-${owner}">${player.graveyardCards.map((card) => {
             const presentation = cardPresentation(card)
             return presentation
-              ? `<div class="three-native-card">${renderCardTile(presentation, view.cardVisualStyle)}${renderCardRules(presentation)}</div>`
+              ? `<div class="three-native-card">${renderCardTile(presentation, view.cardVisualStyle, view.monochromeCards)}${renderCardRules(presentation)}</div>`
               : ''
           }).join('') || '<p>Discard pile empty.</p>'}</div></section></section>`
     }).join('')}`,
@@ -399,7 +403,7 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
 
 export function renderThreeHover(view: AppViewModel, hit: BoardHit | null): string {
   const card = view.game && hit ? threePreviewCard(view.game, hit) : null
-  return card ? `<aside class="three-hover-preview" aria-hidden="true">${renderCardTile(card, view.cardVisualStyle)}</aside>` : ''
+  return card ? `<aside class="three-hover-preview" aria-hidden="true">${renderCardTile(card, view.cardVisualStyle, view.monochromeCards)}</aside>` : ''
 }
 
 function pendingSummonName(game: GameUiState): string {
@@ -533,7 +537,7 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includ
     ${targets && !ui.menuOpen && !ui.cardsOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${ui.menuOpen ? renderMenu(view) : ''}
     ${ui.cardsOpen ? renderNativeCards(view, ui, nativeBlocked, response) : ''}
-    ${previewCard ? modal('preview', `${previewCard.displayName} card preview`, renderCardTile(previewCard, view.cardVisualStyle) + renderCardRules(previewCard),
+    ${previewCard ? modal('preview', `${previewCard.displayName} card preview`, renderCardTile(previewCard, view.cardVisualStyle, view.monochromeCards) + renderCardRules(previewCard),
     'close', ui.previewReturnToCards ? 'Back to Cards' : 'Close') : ''}
     </section>`
 }

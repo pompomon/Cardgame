@@ -37,7 +37,7 @@ stores that unverified response over its manifest-validated offline shell.
 Before activation, only explicitly compatible response prefixes are moved from
 legacy caches into the runtime-asset cache. Runtime cache v3 preserves
 `/boards/*` responses from v1/v2 but deliberately does not migrate `/cards/*`,
-because the primary HD files were replaced at the same paths. Removed card art,
+because the primary artwork was replaced at the same paths. Removed card art,
 renderer chunks, sprite responses, and other obsolete entries are not migrated.
 Activation then deletes only older managed Cardgame caches; never delete
 unrelated origin-wide Cache Storage entries.
@@ -53,9 +53,10 @@ configured project path.
 Runtime source selection is shared by the WebGL Board and native HTML cards:
 
 - Classic uses the cached procedural creature source.
-- HD tries `hd/<slug>.png`, then `hd-fallback/<slug>.png`, then the procedural
+- Anime tries `anime/<slug>.png`, then `hd-fallback/<slug>.png`, then the procedural
   source.
-- Monochrome tries `monochrome/<slug>.png`, then the procedural source.
+- Monochrome is a persisted checkbox that applies grayscale to the chosen
+  style's card artwork; it does not select a separate asset directory.
 
 Raster consumers must abandon a failed URL immediately, remember failed URLs for
 the session, and skip them on subsequent renders while continuing through the
@@ -69,9 +70,10 @@ five-file inventory, deterministic generation, and artwork review workflow.
 
 ## Versioning
 
-- Bump `RUNTIME_ASSET_VERSION` when replacing same-path card/board images or
-  intentionally invalidating their offline copies. A documentation-only change
-  or a new hashed application build does not require this bump.
+- Bump `RUNTIME_ASSET_VERSION` when replacing same-path card/board images,
+  removing card/board asset paths, or intentionally invalidating their offline
+  copies. A documentation-only change or a new hashed application build does
+  not require this bump.
 - Bump `CACHE_VERSION` when changing the worker's cache schema or migration
   behavior.
 - Normal deployments rotate shell/build caches automatically using the hashed

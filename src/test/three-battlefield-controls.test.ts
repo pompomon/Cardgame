@@ -124,7 +124,7 @@ function state(): AppState {
     mode: 'local-hvh', seed: 53, game: createInitialGame(53, [deck(0), deck(1)]),
     controllers: ['human', 'human'], offer: '', answer: '', status: '', recording: null,
     replay: null, hasSavedRecording: false, aiLevel: 'basic', cardVisualStyle: 'classic',
-    animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
+    monochromeCards: false, animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
     p2pStarted: false, pendingP2PStartSeed: null, pendingRematchSeed: null,
     adventure: createInactiveAdventureState(),
   }
@@ -603,7 +603,7 @@ describe('constructed Three battlefield controls', () => {
     const material = (pending.children[3] as Mesh).material as MeshBasicMaterial
     const dispose = vi.spyOn(material, 'dispose')
     const texture = material.map
-    h.app.cardVisualStyle = 'hd'
+    h.app.cardVisualStyle = 'anime'
     h.present()
     expect(h.pending()).toBe(pending)
     expect(material.map).not.toBe(texture)

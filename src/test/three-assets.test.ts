@@ -26,7 +26,7 @@ function metadataResponse(metadata: unknown = ambienceMetadata()): Response {
   return new Response(JSON.stringify(metadata))
 }
 
-describe('Three.js shared HD texture leases', () => {
+describe('Three.js shared texture leases', () => {
   installFakeTimerHooks()
   let assets: ThreeAssets
   let online: EventTarget
@@ -34,13 +34,18 @@ describe('Three.js shared HD texture leases', () => {
     drawImage: ReturnType<typeof vi.fn>
     fillText: ReturnType<typeof vi.fn>
     fillRect: ReturnType<typeof vi.fn>
+    save: ReturnType<typeof vi.fn>
+    restore: ReturnType<typeof vi.fn>
     measureText: ReturnType<typeof vi.fn>
     imageSmoothingEnabled: boolean
+    filter: string
   }>
+  let appliedFilters: string[]
   let invalidate: ReturnType<typeof vi.fn>
   beforeEach(() => {
     online = new EventTarget()
     contexts = []
+    appliedFilters = []
     FakeImage.images = []
     vi.stubGlobal('window', online)
     vi.stubGlobal('Image', FakeImage)
@@ -48,10 +53,16 @@ describe('Three.js shared HD texture leases', () => {
       createElement: () => {
         const context = {
           drawImage: vi.fn(), fillText: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(), clearRect: vi.fn(),
+          save: vi.fn(), restore: vi.fn(),
           measureText: vi.fn((text: string) => ({ width: Array.from(text).length * 30 })),
           imageSmoothingEnabled: true,
+          filter: 'none',
           createRadialGradient: () => ({ addColorStop: vi.fn() }),
         }
+        Object.defineProperty(context, 'filter', {
+          get: () => 'none',
+          set: (value: string) => { appliedFilters.push(value) },
+        })
         contexts.push(context)
         return { width: 0, height: 0, getContext: () => context }
       },
@@ -65,21 +76,21 @@ describe('Three.js shared HD texture leases', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses shared base-path helpers and HD → geometric → procedural routing', () => {
-    expect(cardAssetCandidates('Forest', 'hd')).toEqual(['/cards/hd/gravebloom-dryad.png', '/cards/hd-fallback/gravebloom-dryad.png'])
+  it('uses shared base-path helpers and Anime → geometric → procedural routing', () => {
+    expect(cardAssetCandidates('Forest', 'anime')).toEqual(['/cards/anime/gravebloom-dryad.png', '/cards/hd-fallback/gravebloom-dryad.png'])
     expect(cardAssetCandidates({
       name: 'Echo Doppelgänger',
       serializedKey: 'Plains',
       displayName: 'Echo Doppelgänger',
       assetSlug: 'untrusted-override',
-    }, 'hd')).toEqual(['/cards/hd/echo-doppelganger.png', '/cards/hd-fallback/echo-doppelganger.png'])
+    }, 'anime')).toEqual(['/cards/anime/echo-doppelganger.png', '/cards/hd-fallback/echo-doppelganger.png'])
     expect(cardTextureIdentity({
       name: 'Echo Doppelgänger',
       serializedKey: 'Plains',
       assetSlug: 'untrusted-override',
     })).toBe('echo-doppelganger')
     expect(cardAssetCandidates('Forest', 'classic')).toEqual([])
-    expect(cardAssetCandidates('unknown', 'hd')).toEqual([])
+    expect(cardAssetCandidates('unknown', 'anime')).toEqual([])
     expect(boardAssetCandidates('verdant', 'balanced')).toEqual([
       '/boards/verdant/background-balanced.png', '/boards/verdant/background-low.png', '/boards/verdant/background-fallback.png',
     ])
@@ -88,7 +99,7 @@ describe('Three.js shared HD texture leases', () => {
       serializedKey: 'Forest',
       displayName: 'Gravebloom Dryad',
       assetSlug: 'gravebloom-dryad',
-    }, 'hd')
+    }, 'anime')
     const version = lease.texture.version
     expect(contexts[0].fillText.mock.calls).toEqual([
       ['Gravebloom', 256, 619],
@@ -107,7 +118,7 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('cover-fits raster art across the full face with only a compact readable name strip', () => {
-    const lease = assets.acquireCard('Island', 'hd')
+    const lease = assets.acquireCard('Island', 'anime')
     expect(lease.texture.minFilter).toBe(NearestFilter)
     expect(lease.texture.magFilter).toBe(NearestFilter)
     expect(contexts[0].imageSmoothingEnabled).toBe(false)
@@ -124,13 +135,21 @@ describe('Three.js shared HD texture leases', () => {
     expect(lease.texture.generateMipmaps).toBe(false)
   })
 
+  it('grayscales card art in the texture when Monochrome is enabled', () => {
+    const lease = assets.acquireCard('Forest', 'anime', true)
+    FakeImage.images[0].onload!()
+    expect(appliedFilters).toContain('grayscale(1)')
+    expect(lease.texture.version).toBeGreaterThan(0)
+    lease.release()
+  })
+
   it('keeps geometric raster fallbacks smooth and failed raster procedural art crisp', () => {
-    const forest = assets.acquireCard('Forest', 'hd')
+    const forest = assets.acquireCard('Forest', 'anime')
     FakeImage.images[0].onerror!()
     expect(forest.texture.magFilter).toBe(NearestFilter)
     FakeImage.images[1].onload!()
     expect(forest.texture.magFilter).toBe(LinearFilter)
-    const swamp = assets.acquireCard('Swamp', 'hd')
+    const swamp = assets.acquireCard('Swamp', 'anime')
     FakeImage.images[2].onerror!()
     FakeImage.images[3].onerror!()
     expect(swamp.texture.magFilter).toBe(NearestFilter)
@@ -139,7 +158,7 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('restores a readable crisp procedural surface if raster drawing fails', () => {
-    const forest = assets.acquireCard('Forest', 'hd')
+    const forest = assets.acquireCard('Forest', 'anime')
     contexts[0].drawImage.mockImplementation(() => { throw new Error('Unusable raster') })
     FakeImage.images[0].onload!()
     FakeImage.images[1].onload!()
@@ -291,27 +310,27 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('suppresses failed URLs across reacquisition and retries live textures when online', () => {
-    const forest = assets.acquireCard('Forest', 'hd')
+    const forest = assets.acquireCard('Forest', 'anime')
     FakeImage.images[0].onerror!()
     FakeImage.images[1].onerror!()
     forest.release()
     const island = assets.acquireCard('Island', 'classic')
     island.release()
-    const again = assets.acquireCard('Forest', 'hd')
+    const again = assets.acquireCard('Forest', 'anime')
     expect(FakeImage.images).toHaveLength(2)
     online.dispatchEvent(new Event('online'))
     expect(FakeImage.images).toHaveLength(3)
-    expect(FakeImage.images[2].src).toBe('/cards/hd/gravebloom-dryad.png')
+    expect(FakeImage.images[2].src).toBe('/cards/anime/gravebloom-dryad.png')
     again.release()
   })
 
   it('upgrades a loaded raster fallback after online recovery without reloading healthy primary art', () => {
-    const lease = assets.acquireCard('Plains', 'hd')
+    const lease = assets.acquireCard('Plains', 'anime')
     FakeImage.images[0].onerror!()
     FakeImage.images[1].onload!()
     expect(lease.ready).toBe(true)
     online.dispatchEvent(new Event('online'))
-    expect(FakeImage.images[2].src).toBe('/cards/hd/echo-doppelganger.png')
+    expect(FakeImage.images[2].src).toBe('/cards/anime/echo-doppelganger.png')
     expect(lease.ready).toBe(true)
     FakeImage.images[2].onload!()
     online.dispatchEvent(new Event('online'))
@@ -371,7 +390,7 @@ describe('Three.js shared HD texture leases', () => {
       serializedKey: 'Forest',
       displayName: 'Gravebloom Dryad',
       assetSlug: 'gravebloom-dryad',
-    }, 'hd')
+    }, 'anime')
     expect(FakeImage.images[0].src).toBe('/cards/card-back.png')
     expect(contexts[0].fillText).toHaveBeenCalledWith('URBAN CREATURES', 256, 368, 440)
     expect(contexts[0].fillText).not.toHaveBeenCalledWith(HIDDEN_HAND_CARD_NAME, expect.anything(), expect.anything(), expect.anything())
@@ -379,7 +398,7 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('timeouts remain bounded and fall back without a new render subscription', () => {
-    assets.acquireCard('Mountain', 'hd')
+    assets.acquireCard('Mountain', 'anime')
     vi.advanceTimersByTime(15000)
     expect(FakeImage.images).toHaveLength(2)
     vi.advanceTimersByTime(15000)
@@ -388,7 +407,7 @@ describe('Three.js shared HD texture leases', () => {
   })
 
   it('invalidates stale callbacks after disposal, online restart, and eviction', () => {
-    const first = assets.acquireCard('Forest', 'hd')
+    const first = assets.acquireCard('Forest', 'anime')
     const beforeOnline = FakeImage.images[0].onload!
     online.dispatchEvent(new Event('online'))
     const beforeDispose = FakeImage.images[1].onload!
@@ -405,6 +424,6 @@ describe('Three.js shared HD texture leases', () => {
     online.dispatchEvent(new Event('online'))
     expect(FakeImage.images).toHaveLength(2)
     first.release()
-    expect(() => assets.acquireCard('Forest', 'hd')).toThrow('disposed')
+    expect(() => assets.acquireCard('Forest', 'anime')).toThrow('disposed')
   })
 })

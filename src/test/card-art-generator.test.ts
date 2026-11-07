@@ -7,8 +7,8 @@ import { BASIC_LANDS } from '../game/types'
 
 const REPO_ROOT = resolve(__dirname, '..', '..')
 const GENERATOR = resolve(REPO_ROOT, 'scripts', 'generate-card-art.mjs')
-const PHOTOREAL_GENERATOR = resolve(REPO_ROOT, 'scripts', 'generate-photoreal-card-art.mjs')
-const GENERATED_STYLES = ['classic', 'hd-fallback', 'monochrome'] as const
+const ANIME_GENERATOR = resolve(REPO_ROOT, 'scripts', 'generate-anime-card-art.mjs')
+const GENERATED_STYLES = ['classic', 'hd-fallback'] as const
 const EXPECTED_FILES = BASIC_LANDS.map((land) => `${cardAssetSlug(land)}.png`).sort()
 const SHIPPING_SIZE = 1024
 const temporaryDirectories: string[] = []
@@ -75,8 +75,8 @@ describe('card art generators', () => {
     }
   }, 120_000)
 
-  it('documents the catalog slug/key selector for manual HD generation', () => {
-    const result = spawnSync(process.execPath, [PHOTOREAL_GENERATOR, '--help'], {
+  it('documents the catalog slug/key selector for manual Anime generation', () => {
+    const result = spawnSync(process.execPath, [ANIME_GENERATOR, '--help'], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
     })

@@ -38,6 +38,10 @@ The following decisions are approved and are requirements for implementation:
     summons, and the serialized `totalCardsPlayed` field.
 11. Improve agent investigation/checkpoint/recovery guidance for the observed
     managed Copilot failure; do not speculate about Pages or edit Actions YAML.
+12. **2026-11-07 follow-up:** use all five restored creature illustrations as
+    the Anime style, remove Monochrome as an image style, and provide a persisted
+    Monochrome checkbox that applies grayscale to card artwork. This supersedes
+    the earlier photoreal-HD style decision.
 
 ### Follow-up acceptance status
 
@@ -45,7 +49,7 @@ The following decisions are approved and are requirements for implementation:
       `ace5d53921dcb7eab992fe94e083865334d10217` were recovered from
       `98dea673ceb7858c67ab126a8fcb0f26251e2250`, the last revision before the
       slugged migration, and restored byte-for-byte under current catalog slugs.
-      [`public/cards/README.md`](../../public/cards/README.md#hd-artwork) records
+      [`public/cards/README.md`](../../public/cards/README.md#anime-artwork) records
       the stable identity mapping and SHA-256 hashes.
 - [x] Automated HD separation: every primary HD file is required to differ
       byte-for-byte from its deterministic HD fallback.
@@ -76,7 +80,7 @@ The following decisions are approved and are requirements for implementation:
       replay scenarios are synthetic characterization, not historical captures;
       they do not complete historical or manual acceptance gates.
 
-See the [HD provenance and operator replacement gate](../../public/cards/README.md#hd-artwork).
+See the [Anime artwork provenance and operator replacement gate](../../public/cards/README.md#anime-artwork).
 The restored files do not require hosted generation. A future generated
 replacement requires explicit `--force` and generation credentials, but neither
 condition substitutes for checkpointed browser inspection and human visual
@@ -600,17 +604,15 @@ public/cards/
 │   ├── rooftop-gargoyle.png
 │   ├── memory-vampire.png
 │   └── echo-doppelganger.png
-├── hd/
+├── anime/
 │   └── (the same five slugs)
 ├── hd-fallback/
 │   └── (the same five slugs)
-└── monochrome/
-    └── (the same five slugs)
 ```
 
 - **`src/app/card-art.ts`:** build base-path-safe URLs from
   `entry.assetSlug`, not `BasicLand` or display name. Preserve literal
-  `import.meta.env.BASE_URL` access and the `hd -> hd-fallback -> procedural`
+  `import.meta.env.BASE_URL` access and the `anime -> hd-fallback -> procedural`
   chain.
 - **`src/app/card-visuals.ts`:** key mechanics and palettes by legacy identity,
   but replace the per-land `TEMPLATE_*` procedural pixel icons with
@@ -623,18 +625,18 @@ public/cards/
   through shared helpers; attempt each failed URL at most once and end on a
   playable procedural fallback.
 - **`scripts/generate-card-art.mjs`:** generate deterministic,
-  creature-appropriate `classic`, `hd-fallback`, and `monochrome` files under
+  creature-appropriate `classic` and `hd-fallback` files under
   the approved slugs. The `classic` PNGs and procedural classic fallback must
   use the same creature-specific visual recipes rather than the existing
   palette swatches. Keep output byte-stable and execution Node-stdlib-only.
   Preserve 256×256 repeatability coverage and compare generated output at the
-  shipping 1024×1024 size against all 15 committed deterministic PNGs.
-- **`scripts/generate-photoreal-card-art.mjs`:** replace land prompts and
-  `--land` selection with catalog-aligned creature subjects and a slug/key
+  shipping 1024×1024 size against all 10 committed deterministic PNGs.
+- **`scripts/generate-anime-card-art.mjs`:** use Anime-style creature prompts
+  and `--card` selection with catalog-aligned creature subjects and a slug/key
   selector; continue atomic writes and manual credential use. Never commit API
   keys or generated temporary files. Keep this as an optional future replacement
-  path; the current HD files are restored repository objects rather than newly
-  generated output. Existing HD slots are skipped without `--force`, so any
+  path; the current Anime files are restored repository objects rather than newly
+  generated output. Existing Anime slots are skipped without `--force`, so any
   deliberate generated replacement requires that explicit operator gate.
 - **`public/cards/README.md`:** document the new layout, exact slugs, dimensions,
   generation commands, review workflow, and fallback order.
@@ -647,12 +649,12 @@ public/cards/
 
 Artwork acceptance includes human review for readable silhouettes, urban-fantasy
 cohesion, absence of embedded text/logos, correct creature-to-ability mapping,
-color-role continuity, square crop safety, and contrast in all three selectable
-styles plus the internal `hd-fallback` assets.
-It also requires photoreal HD, not merely valid PNG headers, matching slugs, or
-working fallbacks. Historical provenance and primary/fallback inequality do not
-establish visual quality. Track art review and actual browser visual acceptance
-separately; do not claim this phase complete without them.
+color-role continuity, square crop safety, and contrast in Classic and Anime
+styles plus the internal `hd-fallback` assets. Monochrome is a checkbox filter,
+not a separate selectable style or asset directory. Valid PNG headers, matching
+slugs, or working fallbacks do not establish visual quality. Track art review
+and actual browser visual acceptance separately; do not claim this phase
+complete without them.
 
 ### Phase 5 — Persistence, recording, P2P, and compatibility verification
 
@@ -707,7 +709,7 @@ separately; do not claim this phase complete without them.
 | Three.js browser renderer | `three-assets.test.ts`, `three-native-html.test.ts`, `three-interface.test.ts`, `three-battlefield-controls.test.ts`, `three-interaction.test.ts`, `three-effects.test.ts`, `three-renderer.test.ts` | Inline visible Hand/Board/Discard pile rules; full preview including Intercept; Summons attempted counter includes interceptions; approved title/copy; escaped markup; fallback order; wrapping; focus/retry/cancellation and resource cleanup |
 | CLI | `cli-session.test.ts` | Existing creature/zone/phase terms; hidden hand remains hidden except during Drain Memory; no new commands or rule/Discard pile inspection |
 | Saves and replay | `game-recording.test.ts`, `adventure-persistence.test.ts`, `adventure.test.ts`, `view-model.test.ts`, `controller.test.ts` | Existing fixtures load unchanged; legacy Adventure labels are not rendered verbatim; pending target states resume; v1/v2 recording compatibility; no schema/version churn |
-| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; restored HD provenance and primary/fallback inequality; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; photoreal HD still requires separate visual review |
+| Assets and offline | `card-art.test.ts`, `card-art-base-path.test.ts`, `card-art-assets.test.ts`, `card-art-generator.test.ts`, `card-visuals.test.ts`, `service-worker.test.ts`, `cache-version-check.test.ts` | Exact slug inventory; 256 repeatability and 1024 committed deterministic parity; restored Anime provenance and primary/fallback inequality; square/dimension checks; non-root URLs; fallback order; network-first cards; cache bump; Anime still requires separate visual review |
 | P2P | controller/action-validation/P2P-related tests | Legacy action JSON remains accepted and emitted; mixed-version peers stay deterministic; no display copy enters packets |
 
 Final validation follows `AGENTS.md` and `docs/agent/validation-and-build.md`:
@@ -788,7 +790,7 @@ designed, versioned migration. Do not combine them with these PRs.
 | Engine imports presentation catalog | Keep catalog in `src/app/`; engine emits stable mechanical events and app/renderers format them |
 | Banish sounds like deletion rather than zone movement | Every rule, prompt, log, and accessible description states that the target goes to its owner's discard pile |
 | Old saves are rejected by renamed validators | Do not rename or narrow current accepted keys/fields; keep recording version and Adventure guards stable and test current fixtures before changing copy |
-| Art generator output or hosted generation introduces bad assets/secrets | Keep deterministic fallback generation local, photoreal generation manual and atomic, review binaries, scan changed files, and never commit credentials or temporary responses |
+| Art generator output or hosted generation introduces bad assets/secrets | Keep deterministic fallback generation local, Anime generation manual and atomic, review binaries, scan changed files, and never commit credentials or temporary responses |
 
 ## Acceptance criteria
 
@@ -815,10 +817,11 @@ designed, versioned migration. Do not combine them with these PRs.
   logs, remain redacted except during the existing legal Drain Memory target
   decision.
 - Each approved slug exists under `classic`, `hd`, `hd-fallback`, and
-  `monochrome`; missing/failed art reaches a playable fallback.
-- Classic remains intentionally procedural. Every final HD image is reviewed
-  photoreal artwork; automated provenance or fallback-separation checks cannot
-  satisfy this criterion.
+  `anime`; missing/failed art reaches a playable fallback.
+- Monochrome uses the checkbox filter and no longer requires separate PNGs.
+- Classic remains intentionally procedural. Review Anime images in-browser;
+  automated provenance or fallback-separation checks cannot satisfy this
+  criterion.
 - Browser-only rules/Discard pile discovery and full previews are usable without
   adding CLI access. The Adventure label accurately includes both players'
   intercepted summons.
@@ -869,8 +872,8 @@ context)**.
 - [ ] All four asset directories contain exactly one current file per catalog
       entry, with documented fallback behavior and no accidental runtime
       references to obsolete names.
-- [ ] Shipping-size deterministic output matches committed assets; final HD is
-      reviewed photoreal art rather than seed/fallback copies. Keep this gate
+- [ ] Shipping-size deterministic output matches committed assets; Anime art is
+      reviewed and distinct from fallback copies. Keep this gate
       open while visual review is pending.
 - [ ] Hidden-hand tests prove no catalog lookup or target label unredacts an
       opponent's hand outside Drain Memory.

@@ -3,6 +3,7 @@ import { readStorageItem, writeStorageItem } from './safe-storage'
 import type { CardVisualStyle } from './types'
 
 const STORAGE_KEY = 'cardgame.card-visual-style'
+const MONOCHROME_STORAGE_KEY = 'cardgame.monochrome-cards'
 
 export function persistCardVisualStyle(style: CardVisualStyle): void {
   writeStorageItem(STORAGE_KEY, style)
@@ -10,12 +11,22 @@ export function persistCardVisualStyle(style: CardVisualStyle): void {
 
 export function readStoredCardVisualStyle(): CardVisualStyle {
   const value = readStorageItem(STORAGE_KEY)
-  if (value === 'neon') {
-    // Migration: the legacy 'neon' slot was replaced by the high-resolution
-    // 'hd' style. Upgrade the persisted preference in place so users who
-    // previously picked Neon keep landing on the new style across sessions.
-    writeStorageItem(STORAGE_KEY, 'hd')
-    return 'hd'
+  if (value === 'monochrome') {
+    writeStorageItem(STORAGE_KEY, 'anime')
+    persistMonochromeCards(true)
+    return 'anime'
+  }
+  if (value === 'hd' || value === 'neon') {
+    writeStorageItem(STORAGE_KEY, 'anime')
+    return 'anime'
   }
   return isCardVisualStyle(value) ? value : DEFAULT_CARD_VISUAL_STYLE
+}
+
+export function persistMonochromeCards(enabled: boolean): void {
+  writeStorageItem(MONOCHROME_STORAGE_KEY, String(enabled))
+}
+
+export function readStoredMonochromeCards(): boolean {
+  return readStorageItem(MONOCHROME_STORAGE_KEY) === 'true'
 }

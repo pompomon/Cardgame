@@ -31,6 +31,7 @@ function createState(seed: number): AppState {
     hasSavedRecording: false,
     aiLevel: 'basic',
     cardVisualStyle: 'classic',
+    monochromeCards: false,
     animationSpeed: 'normal',
     boardTheme: 'classic',
     renderQualityPreference: 'auto',

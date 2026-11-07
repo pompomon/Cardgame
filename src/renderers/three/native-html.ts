@@ -153,16 +153,20 @@ export function renderLandIcon(
   style: AppViewModel['cardVisualStyle'],
   size: number,
   className: string,
-  options: { forceProcedural?: boolean } = {},
+  options: { forceProcedural?: boolean; monochrome?: boolean } = {},
 ): string {
   const source = cardArtSourceFor(name, style, size, options)
   const stage = resolveRasterRenderStage(source)
   const onError = stage.isRaster ? rasterOnErrorHandler(stage, `${className}--raster`, null) : ''
-  const finalClassName = stage.isRaster ? `${className} ${className}--raster` : className
+  const finalClassName = `${className}${stage.isRaster ? ` ${className}--raster` : ''}${options.monochrome ? ' card-art--monochrome' : ''}`
   return `<img class="${finalClassName}" src="${stage.src}" alt="" role="presentation" width="${size}" height="${size}"${onError} />`
 }
 
-export function renderCardTile(card: string | RendererCardIdentity, style: AppViewModel['cardVisualStyle']): string {
+export function renderCardTile(
+  card: string | RendererCardIdentity,
+  style: AppViewModel['cardVisualStyle'],
+  monochrome = false,
+): string {
   const value: RendererCardIdentity = typeof card === 'string' ? { name: card } : card
   if (value.name === HIDDEN_HAND_CARD_NAME) {
     return '<span class="card-tile card-tile--hidden three-card three-card--hidden" aria-label="Hidden card" title="Hidden card"><span class="three-card__back">?</span><span class="three-card__name">Hidden card</span></span>'
@@ -179,7 +183,7 @@ export function renderCardTile(card: string | RendererCardIdentity, style: AppVi
   const stage = resolveRasterRenderStage(source)
   const raster = isRasterCardVisualStyle(style) && stage.isRaster
   const safeName = escapeHtml(displayName)
-  const landClass = `three-card--${serializedKey.toLowerCase()}`
+  const landClass = `three-card--${serializedKey.toLowerCase()}${monochrome ? ' three-card--monochrome' : ''}`
   const tileStyleAttr = ` style="--tile-fill:${palette.cardFill};--tile-stroke:${palette.cardStroke};--tile-text:${palette.cardText}"`
   const assetIdentity = ` data-card-art="${escapeHtml(assetSlug)}"`
 
@@ -188,7 +192,7 @@ export function renderCardTile(card: string | RendererCardIdentity, style: AppVi
     return `<span class="card-tile card-tile--raster three-card three-card--raster ${landClass}"${assetIdentity}${tileStyleAttr}><span class="three-card__art-frame"><img class="card-tile-bg three-card__art" src="${stage.src}" alt="" role="presentation"${onError} /></span><span class="card-tile-label three-card__name">${safeName}</span></span>`
   }
 
-  return `<span class="card-tile three-card three-card--procedural ${landClass}"${assetIdentity}${tileStyleAttr}><span class="three-card__art-frame">${renderLandIcon(serializedKey, style, 64, 'card-tile-icon')}</span><span class="three-card__name">${safeName}</span></span>`
+  return `<span class="card-tile three-card three-card--procedural ${landClass}"${assetIdentity}${tileStyleAttr}><span class="three-card__art-frame">${renderLandIcon(serializedKey, style, 64, 'card-tile-icon', { monochrome })}</span><span class="three-card__name">${safeName}</span></span>`
 }
 
 export function renderCardRules(card: RendererCardIdentity): string {

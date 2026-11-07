@@ -33,6 +33,12 @@ function imageRenderingValues(selector: string): string[] {
 }
 
 describe('CSS image-rendering declarations', () => {
+  it('applies the Monochrome setting as a grayscale image filter', () => {
+    expect(ruleBody('.three-interface .card-art--monochrome')).toContain('filter: grayscale(1)')
+    expect(ruleBody('.three-interface .three-card--monochrome img')).toContain('filter: grayscale(1)')
+    expect(ruleBody('.three-interface .three-settings .three-settings__checkbox')).toContain('min-height: 44px')
+  })
+
   it('keeps pixelated after crisp-edges for procedural icon fallbacks', () => {
     expect(imageRenderingValues('.three-interface .card-tile-icon')).toEqual(['crisp-edges', 'pixelated'])
   })

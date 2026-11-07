@@ -28,25 +28,30 @@ describe('controller card visual style', () => {
 
   it('updates card visual style in view model', () => {
     const controller = new AppController()
-    expect(controller.getViewModel().cardVisualStyle).toBe('hd')
-    controller.setCardVisualStyle('hd')
-    expect(controller.getViewModel().cardVisualStyle).toBe('hd')
+    expect(controller.getViewModel().cardVisualStyle).toBe('anime')
+    controller.setCardVisualStyle('anime')
+    expect(controller.getViewModel().cardVisualStyle).toBe('anime')
   })
 
   it('persists selected style for new controller instances', () => {
     const first = new AppController()
-    first.setCardVisualStyle('monochrome')
+    first.setCardVisualStyle('anime')
+    first.setMonochromeCards(true)
 
     const second = new AppController()
-    expect(second.getViewModel().cardVisualStyle).toBe('monochrome')
+    expect(second.getViewModel().cardVisualStyle).toBe('anime')
+    expect(second.getViewModel().monochromeCards).toBe(true)
   })
 
-  it("migrates the legacy persisted 'neon' style to 'hd'", () => {
-    localStorage.setItem('cardgame.card-visual-style', 'neon')
-    const controller = new AppController()
-    expect(controller.getViewModel().cardVisualStyle).toBe('hd')
-    // Migration should also have rewritten the persisted value so later reads
-    // observe the new identifier directly.
-    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('hd')
+  it("migrates old HD and Monochrome styles to Anime and the checkbox setting", () => {
+    for (const style of ['hd', 'neon']) {
+      localStorage.setItem('cardgame.card-visual-style', style)
+      expect(new AppController().getViewModel().cardVisualStyle).toBe('anime')
+    }
+    localStorage.setItem('cardgame.card-visual-style', 'monochrome')
+    const monochromeController = new AppController()
+    expect(monochromeController.getViewModel().cardVisualStyle).toBe('anime')
+    expect(monochromeController.getViewModel().monochromeCards).toBe(true)
+    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('anime')
   })
 })

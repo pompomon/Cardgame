@@ -7,7 +7,7 @@ import { boardCardKey, ThreeCardRegistry, type CardDescriptor } from '../rendere
 function descriptor(cardId: string, instanceId?: string, x = 0): CardDescriptor {
   return {
     hit: { key: boardCardKey(cardId, 0, instanceId), cardId, instanceId, name: 'Forest', owner: 0, zone: instanceId ? 'battlefield' : 'hand', playable: !instanceId },
-    style: 'hd', visible: true, target: false, shadows: true, x, y: 0, width: 80, height: 112,
+    style: 'anime', visible: true, target: false, shadows: true, x, y: 0, width: 80, height: 112,
   }
 }
 

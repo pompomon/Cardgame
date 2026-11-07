@@ -197,9 +197,9 @@ export class ThreeAssets {
     window.addEventListener('online', this.onOnline)
   }
 
-  acquireCard(card: string | RendererCardIdentity, style: CardVisualStyle): TextureLease {
+  acquireCard(card: string | RendererCardIdentity, style: CardVisualStyle, monochrome = false): TextureLease {
     const identity = resolveCardIdentity(card)
-    return this.acquire(`card:${style}:${cardTextureIdentity(card)}`, 512, 704, cardAssetCandidates(card, style), (ctx, image) => {
+    return this.acquire(`card:${style}:${cardTextureIdentity(card)}:${monochrome}`, 512, 704, cardAssetCandidates(card, style), (ctx, image) => {
       const palette = identity.serializedKey ? cardVisualPaletteFor(identity.serializedKey, style) : null
       ctx.fillStyle = palette?.cardFill ?? '#17283f'
       ctx.fillRect(0, 0, 512, 704)
@@ -221,12 +221,17 @@ export class ThreeAssets {
         }
         return
       }
-      if (image) coverImage(ctx, image, 16, 16, 480, 672)
-      else if (palette && identity.serializedKey) {
-        for (const pixel of landPixelRects(identity.serializedKey, 464)) {
-          ctx.fillStyle = pixel.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
-          ctx.fillRect(24 + pixel.x, 80 + pixel.y, pixel.size, pixel.size)
+      if (image || palette && identity.serializedKey) {
+        const previousFilter = ctx.filter
+        if (monochrome) ctx.filter = 'grayscale(1)'
+        if (image) coverImage(ctx, image, 16, 16, 480, 672)
+        else if (palette && identity.serializedKey) {
+          for (const pixel of landPixelRects(identity.serializedKey, 464)) {
+            ctx.fillStyle = pixel.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
+            ctx.fillRect(24 + pixel.x, 80 + pixel.y, pixel.size, pixel.size)
+          }
         }
+        ctx.filter = previousFilter
       }
       ctx.fillStyle = 'rgba(8, 18, 30, 0.88)'
       ctx.fillRect(16, 570, 480, 118)

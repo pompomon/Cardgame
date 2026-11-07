@@ -5,14 +5,14 @@ describe('card-visuals', () => {
   it('produces distinct icon data by card type and style', () => {
     const forestClassic = landIconDataUrl('Forest', 'classic', 32)
     const mountainClassic = landIconDataUrl('Mountain', 'classic', 32)
-    const forestHd = landIconDataUrl('Forest', 'hd', 32)
+    const forestHd = landIconDataUrl('Forest', 'anime', 32)
     expect(forestClassic).not.toBe(mountainClassic)
     expect(forestClassic).not.toBe(forestHd)
   })
 
   it('reuses cached icon outputs for equal style-land-size buckets', () => {
-    const first = landIconDataUrl('Swamp', 'monochrome', 37)
-    const second = landIconDataUrl('Swamp', 'monochrome', 38)
+    const first = landIconDataUrl('Swamp', 'anime', 37)
+    const second = landIconDataUrl('Swamp', 'anime', 38)
     expect(first).toBe(second)
   })
 
@@ -78,26 +78,17 @@ describe('card-visuals', () => {
     expect(palette.iconSecondary).toMatch(/^#/)
   })
 
-  it('flags hd and monochrome as raster card visual styles', () => {
-    expect(isRasterCardVisualStyle('hd')).toBe(true)
-    expect(isRasterCardVisualStyle('monochrome')).toBe(true)
+  it('flags Anime as the raster card visual style', () => {
+    expect(isRasterCardVisualStyle('anime')).toBe(true)
     expect(isRasterCardVisualStyle('classic')).toBe(false)
   })
 
   describe('cardArtSourceFor', () => {
-    it('returns the shipped PNG URL for HD and keeps the procedural SVG as fallback', () => {
-      const source = cardArtSourceFor('Forest', 'hd', 64)
+    it('returns the shipped Anime PNG URL and keeps procedural and geometric fallbacks', () => {
+      const source = cardArtSourceFor('Forest', 'anime', 64)
       expect(source.isRaster).toBe(true)
-      expect(source.primaryUrl).toBe('/cards/hd/gravebloom-dryad.png')
+      expect(source.primaryUrl).toBe('/cards/anime/gravebloom-dryad.png')
       expect(source.rasterFallbackUrl).toBe('/cards/hd-fallback/gravebloom-dryad.png')
-      expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
-    })
-
-    it('returns the shipped creature PNG URL for Monochrome and keeps the procedural SVG as fallback', () => {
-      const source = cardArtSourceFor('Forest', 'monochrome', 64)
-      expect(source.isRaster).toBe(true)
-      expect(source.primaryUrl).toBe('/cards/monochrome/gravebloom-dryad.png')
-      expect(source.rasterFallbackUrl).toBe(null)
       expect(source.proceduralUrl.startsWith('data:image/svg+xml')).toBe(true)
     })
 
@@ -110,7 +101,7 @@ describe('card-visuals', () => {
     })
 
     it('forceProcedural: true keeps the procedural icon even for raster styles', () => {
-      for (const style of ['hd', 'monochrome'] as const) {
+      for (const style of ['anime'] as const) {
         const source = cardArtSourceFor('Island', style, 16, { forceProcedural: true })
         expect(source.isRaster).toBe(false)
         expect(source.primaryUrl.startsWith('data:image/svg+xml')).toBe(true)

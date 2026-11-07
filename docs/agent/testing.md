@@ -131,9 +131,8 @@ establish actual zoom, font, and viewport behavior.
 
 - Strictly square (`width === height`).
 - ≥ 256×256.
-- Every primary HD file differs byte-for-byte from its deterministic HD fallback.
-- The current restored HD art is 1254×1254, but that exact size is not required
-  by the test.
+- Every Anime file differs byte-for-byte from its deterministic geometric
+  fallback.
 
 Replacement assets must satisfy those constraints; the
 `public/cards/README.md` docs match the test expectations.
@@ -141,7 +140,7 @@ Replacement assets must satisfy those constraints; the
 `src/test/card-art-generator.test.ts` keeps the fast 256×256 two-run
 repeatability check and separately generates at the shipping 1024×1024 size.
 It compares all five generated slugs byte-for-byte with the committed
-`classic`, `hd-fallback`, and `monochrome` inventories. Output is isolated in
+`classic` and `hd-fallback` inventories. Output is isolated in
 project-local scratch directories and removed after the suite; tracked PNGs
 are never overwritten by this check:
 
@@ -150,10 +149,10 @@ npm run test -- src/test/card-art-generator.test.ts
 ```
 
 Classic intentionally renders procedural art. Deterministic PNG parity,
-dimensions, provenance hashes, primary/fallback inequality, or a working HD
-fallback cannot establish photoreal HD quality. Use `cmp`, file metadata, or
-hashes to report asset identity without claiming image inspection. The restored
-historical HD files still require human review and the browser evidence below.
+dimensions, provenance hashes, or primary/fallback inequality do not establish
+visual acceptance. Use `cmp`, file metadata, or hashes to report asset identity
+without claiming image inspection. The Anime files still require browser
+verification as described below.
 Hosted-generation credentials matter only if an operator deliberately generates
 new replacements; they are not required to restore verified repository objects.
 Record actual browser visual verification separately, following the checkpoint
