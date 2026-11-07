@@ -835,6 +835,7 @@ export class ThreeBoard implements ThreeBoardApi {
           playable: false,
         },
         style: effect.visualStyle,
+        monochromeCards: this.view?.monochromeCards,
         visible: true,
         target: false,
         response: null,

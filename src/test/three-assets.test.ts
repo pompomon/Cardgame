@@ -143,6 +143,20 @@ describe('Three.js shared texture leases', () => {
     lease.release()
   })
 
+  it('grayscales pixels when the canvas has no filter support and restores the filter on failure', () => {
+    const lease = assets.acquireCard('Forest', 'anime', true)
+    const context = contexts[0] as unknown as Record<string, unknown>
+    const pixels = new Uint8ClampedArray([200, 100, 50, 255])
+    context.getImageData = vi.fn(() => ({ data: pixels }))
+    context.putImageData = vi.fn()
+    FakeImage.images[0].onload!()
+    expect(context.putImageData).toHaveBeenCalled()
+    expect(pixels[0]).toBe(pixels[1])
+    expect(pixels[1]).toBe(pixels[2])
+    expect(appliedFilters[appliedFilters.length - 1]).not.toBe('grayscale(1)')
+    lease.release()
+  })
+
   it('keeps geometric raster fallbacks smooth and failed raster procedural art crisp', () => {
     const forest = assets.acquireCard('Forest', 'anime')
     FakeImage.images[0].onerror!()

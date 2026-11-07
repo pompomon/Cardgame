@@ -105,6 +105,24 @@ async function atlasMetadata(url: string, signal: AbortSignal): Promise<Ambience
   return frame
 }
 
+// Canvas filters are unavailable in some browsers (e.g. Safari), so grayscale the pixels directly.
+function grayscalePixels(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number): void {
+  if (typeof ctx.getImageData !== 'function' || typeof ctx.putImageData !== 'function') return
+  try {
+    const data = ctx.getImageData(x, y, width, height)
+    const pixels = data.data
+    for (let index = 0; index < pixels.length; index += 4) {
+      const gray = Math.round(pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722)
+      pixels[index] = gray
+      pixels[index + 1] = gray
+      pixels[index + 2] = gray
+    }
+    ctx.putImageData(data, x, y)
+  } catch {
+    // Pixel access can be blocked; the filter path above remains the best effort.
+  }
+}
+
 function coverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number): void {
   const crop = computeCoverFitCrop(image.width, image.height, width, height)
   ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
@@ -223,15 +241,19 @@ export class ThreeAssets {
       }
       if (image || palette && identity.serializedKey) {
         const previousFilter = ctx.filter
-        if (monochrome) ctx.filter = 'grayscale(1)'
-        if (image) coverImage(ctx, image, 16, 16, 480, 672)
-        else if (palette && identity.serializedKey) {
-          for (const pixel of landPixelRects(identity.serializedKey, 464)) {
-            ctx.fillStyle = pixel.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
-            ctx.fillRect(24 + pixel.x, 80 + pixel.y, pixel.size, pixel.size)
+        try {
+          if (monochrome) ctx.filter = 'grayscale(1)'
+          if (image) coverImage(ctx, image, 16, 16, 480, 672)
+          else if (palette && identity.serializedKey) {
+            for (const pixel of landPixelRects(identity.serializedKey, 464)) {
+              ctx.fillStyle = pixel.tone === 'primary' ? palette.iconPrimary : palette.iconSecondary
+              ctx.fillRect(24 + pixel.x, 80 + pixel.y, pixel.size, pixel.size)
+            }
           }
+        } finally {
+          ctx.filter = previousFilter
         }
-        ctx.filter = previousFilter
+        if (monochrome) grayscalePixels(ctx, 16, 16, 480, 672)
       }
       ctx.fillStyle = 'rgba(8, 18, 30, 0.88)'
       ctx.fillRect(16, 570, 480, 118)

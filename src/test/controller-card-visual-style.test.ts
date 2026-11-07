@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController } from '../app/controller'
 
 function installMemoryStorage(): void {
@@ -53,5 +53,20 @@ describe('controller card visual style', () => {
     expect(monochromeController.getViewModel().cardVisualStyle).toBe('anime')
     expect(monochromeController.getViewModel().monochromeCards).toBe(true)
     expect(localStorage.getItem('cardgame.card-visual-style')).toBe('anime')
+  })
+
+  it('keeps the legacy Monochrome marker when the checkbox cannot be saved', () => {
+    localStorage.setItem('cardgame.card-visual-style', 'monochrome')
+    const setItem = localStorage.setItem.bind(localStorage)
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+      if (key === 'cardgame.monochrome-cards') throw new Error('quota')
+      setItem(key, value)
+    })
+    expect(new AppController().getViewModel().monochromeCards).toBe(true)
+    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('monochrome')
+    spy.mockRestore()
+    expect(new AppController().getViewModel().monochromeCards).toBe(true)
+    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('anime')
+    expect(localStorage.getItem('cardgame.monochrome-cards')).toBe('true')
   })
 })
