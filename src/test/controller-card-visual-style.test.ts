@@ -69,4 +69,25 @@ describe('controller card visual style', () => {
     expect(localStorage.getItem('cardgame.card-visual-style')).toBe('anime')
     expect(localStorage.getItem('cardgame.monochrome-cards')).toBe('true')
   })
+
+  it.each([true, false])('preserves an explicit %s checkbox value when retrying migration', (enabled) => {
+    localStorage.setItem('cardgame.card-visual-style', 'monochrome')
+    const setItem = localStorage.setItem.bind(localStorage)
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+      if (key === 'cardgame.monochrome-cards') throw new Error('quota')
+      setItem(key, value)
+    })
+    const controller = new AppController()
+    expect(controller.getViewModel().monochromeCards).toBe(true)
+    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('monochrome')
+    spy.mockRestore()
+
+    controller.setMonochromeCards(enabled)
+    const writes = vi.spyOn(localStorage, 'setItem')
+    expect(new AppController().getViewModel().monochromeCards).toBe(enabled)
+    expect(localStorage.getItem('cardgame.card-visual-style')).toBe('anime')
+    expect(localStorage.getItem('cardgame.monochrome-cards')).toBe(String(enabled))
+    expect(writes).not.toHaveBeenCalledWith('cardgame.monochrome-cards', expect.anything())
+    writes.mockRestore()
+  })
 })

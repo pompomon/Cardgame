@@ -12,8 +12,11 @@ export function persistCardVisualStyle(style: CardVisualStyle): void {
 export function readStoredCardVisualStyle(): CardVisualStyle {
   const value = readStorageItem(STORAGE_KEY)
   if (value === 'monochrome') {
+    const monochrome = readStorageItem(MONOCHROME_STORAGE_KEY)
     // Keep the legacy marker until the checkbox is saved so a quota failure cannot lose it.
-    if (persistMonochromeCards(true)) writeStorageItem(STORAGE_KEY, 'anime')
+    if (monochrome === 'true' || monochrome === 'false' || persistMonochromeCards(true)) {
+      writeStorageItem(STORAGE_KEY, 'anime')
+    }
     return 'anime'
   }
   if (value === 'hd' || value === 'neon') {
