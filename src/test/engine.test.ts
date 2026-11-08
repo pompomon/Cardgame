@@ -1,6 +1,15 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createTutorialDecks } from '../game/cards'
-import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
+import {
+  DEFAULT_OPENING_HAND_SIZE,
+  applyAction,
+  canAct,
+  createInitialGame,
+  getLegalActions,
+  type InitialGameOptions,
+} from '../game/engine'
 import type { BasicLand, Card, GameState } from '../game/types'
 import { compatibilityDecks, compatibilitySeed } from './fixtures/compatibility-scenario'
 
@@ -50,6 +59,15 @@ async function openingCharacterization(state: GameState) {
     deckSizes: state.players.map((player) => player.deck.length),
     log: state.log,
   }
+}
+
+/** Event kinds in order, with the drawing player for each draw. */
+function eventOrder(state: GameState): string[] {
+  return state.events.map((event) => (event.kind === 'draw' ? `draw ${event.actor}` : event.kind))
+}
+
+function hasShortDeck(entry: OpeningCase): boolean {
+  return entry.decks?.().some((deck) => deck.length < DEFAULT_OPENING_HAND_SIZE) ?? false
 }
 
 describe('engine', () => {
@@ -490,5 +508,134 @@ describe('createInitialGame opening hands', () => {
       },
       cases,
     }, null, 2)).toMatchFileSnapshot('./fixtures/engine-initial-game.characterization.json')
+  })
+
+  it('keeps the default opening when the options are omitted, empty or [5, 5]', () => {
+    expect(DEFAULT_OPENING_HAND_SIZE).toBe(5)
+    for (const entry of DEFAULT_OPENING_CASES) {
+      const expected = JSON.stringify(createInitialGame(entry.seed, entry.decks?.()))
+      expect(JSON.stringify(createInitialGame(entry.seed, entry.decks?.(), {})), entry.label).toBe(expected)
+      expect(JSON.stringify(createInitialGame(entry.seed, entry.decks?.(), { openingHandSizes: undefined })), entry.label)
+        .toBe(expected)
+      const explicit = () => createInitialGame(entry.seed, entry.decks?.(), { openingHandSizes: [5, 5] })
+      if (hasShortDeck(entry)) {
+        // Only the default keeps the historical loss from an empty deck; an
+        // explicit count must fit the deck.
+        expect(explicit, entry.label).toThrow(RangeError)
+      } else {
+        expect(JSON.stringify(explicit()), entry.label).toBe(expected)
+      }
+    }
+  })
+
+  it.each([6, 8])('changes only player 0 when the hand sizes are [%i, 5]', (size) => {
+    const extra = size - DEFAULT_OPENING_HAND_SIZE
+    const pairs = Array.from({ length: DEFAULT_OPENING_HAND_SIZE }, () => ['draw 0', 'draw 1']).flat()
+    for (const entry of DEFAULT_OPENING_CASES.filter((candidate) => !hasShortDeck(candidate))) {
+      const base = createInitialGame(entry.seed, entry.decks?.())
+      const state = createInitialGame(entry.seed, entry.decks?.(), { openingHandSizes: [size, 5] })
+      const extraCards = base.players[0].deck.slice(0, extra)
+
+      expect(state.players[0].hand, entry.label).toEqual([...base.players[0].hand, ...extraCards])
+      expect(state.players[0].deck, entry.label).toEqual(base.players[0].deck.slice(extra))
+      expect(state.players[1], entry.label).toEqual(base.players[1])
+      for (const key of ['turn', 'currentPlayer', 'nextInstanceId', 'phase', 'winner', 'pendingLandPlay', 'pendingPlainsReuse', 'pendingSwampDiscard'] as const) {
+        expect(state[key], `${entry.label}: ${key}`).toEqual(base[key])
+      }
+      expect(eventOrder(state), entry.label).toEqual([
+        'game_started',
+        ...pairs,
+        ...Array.from({ length: extra }, () => 'draw 0'),
+        'game_start_skip_draw',
+      ])
+      expect(state.events.slice(1 + pairs.length, 1 + pairs.length + extra), entry.label)
+        .toEqual(extraCards.map((card) => ({ kind: 'draw', actor: 0, cardName: card.name })))
+      expect(state.log, entry.label).toEqual([
+        ...base.log.slice(0, -1),
+        ...extraCards.map((card) => `Player 1 draws ${card.name}.`),
+        ...base.log.slice(-1),
+      ])
+    }
+  })
+
+  it("draws a larger hand's extra cards after the alternating draws", () => {
+    const state = createInitialGame(9, undefined, { openingHandSizes: [2, 4] })
+
+    expect(eventOrder(state)).toEqual([
+      'game_started', 'draw 0', 'draw 1', 'draw 0', 'draw 1', 'draw 1', 'draw 1', 'game_start_skip_draw',
+    ])
+    expect(state.players.map((player) => [player.hand.length, player.deck.length])).toEqual([[2, 48], [4, 46]])
+  })
+
+  it('accepts hand sizes from 0 up to each deck size', () => {
+    const empty = createInitialGame(9, undefined, { openingHandSizes: [0, 0] })
+    expect(empty.players.map((player) => [player.hand.length, player.deck.length])).toEqual([[0, 50], [0, 50]])
+    expect(empty.log).toEqual(['Game started.', 'Player 1 starts and skips first draw step.'])
+
+    const whole = createInitialGame(9, undefined, { openingHandSizes: [50, 50] })
+    expect(whole.players.map((player) => [player.hand.length, player.deck.length])).toEqual([[50, 0], [50, 0]])
+    expect([whole.phase, whole.winner]).toEqual(['main', null])
+
+    const fitted = createInitialGame(9, [landDeck('fit-p0', 'Island', 6), landDeck('fit-p1', 'Swamp', 2)], {
+      openingHandSizes: [6, 2],
+    })
+    expect(fitted.players.map((player) => [player.hand.length, player.deck.length])).toEqual([[6, 0], [2, 0]])
+    expect([fitted.phase, fitted.winner]).toEqual(['main', null])
+  })
+
+  it('rejects hand sizes that are not integers from 0 to each deck size', () => {
+    const invalid: unknown[] = [
+      [-1, 5], [5, -1], [5.5, 5], [5, 0.5], [Number.NaN, 5], [Number.POSITIVE_INFINITY, 5], [5, Number.NEGATIVE_INFINITY],
+      [51, 5], [5, 51], ['5', 5], [5, null], [5, undefined], new Array(2), [5], [5, 5, 5], [], 6, null, '5,5',
+      { 0: 5, 1: 5, length: 2 },
+    ]
+    invalid.forEach((openingHandSizes, index) => {
+      const options = { openingHandSizes } as unknown as InitialGameOptions
+      expect(() => createInitialGame(9, undefined, options), `case ${index}`).toThrow(RangeError)
+    })
+
+    const sixCardDeck = (): [Card[], Card[]] => [landDeck('six-p0', 'Island', 6), landDeck('six-p1', 'Swamp', 50)]
+    expect(() => createInitialGame(9, sixCardDeck(), { openingHandSizes: [7, 5] })).toThrow(RangeError)
+    expect(createInitialGame(9, sixCardDeck(), { openingHandSizes: [6, 5] }).players[0].hand).toHaveLength(6)
+  })
+
+  it('reads the decks and options without changing them', () => {
+    const decks: [Card[], Card[]] = [landDeck('frozen-p0', 'Forest', 50), landDeck('frozen-p1', 'Swamp', 50)]
+    const before = JSON.stringify(decks)
+    for (const deck of decks) {
+      deck.forEach((card) => Object.freeze(card))
+      Object.freeze(deck)
+    }
+    const options: InitialGameOptions = Object.freeze({ openingHandSizes: Object.freeze([8, 5] as const) })
+
+    const state = createInitialGame(9, decks, options)
+
+    expect(state.players.map((player) => player.hand.length)).toEqual([8, 5])
+    expect(JSON.stringify(decks)).toBe(before)
+    expect(options.openingHandSizes).toEqual([8, 5])
+    expect(state.players[0].hand[0]).not.toBe(decks[0][0])
+  })
+})
+
+describe('game engine boundary', () => {
+  const gameDir = resolve(__dirname, '..', 'game')
+  const sources = [gameDir, resolve(gameDir, 'ai-policies')].flatMap((dir) => readdirSync(dir)
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => ({ dir, name, source: readFileSync(resolve(dir, name), 'utf8') })))
+
+  it('imports only other game modules', () => {
+    expect(sources.length).toBeGreaterThanOrEqual(13)
+    for (const { dir, name, source } of sources) {
+      for (const [, specifier] of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)) {
+        expect(specifier, name).toMatch(/^\.\.?\//)
+        expect(resolve(dir, specifier).startsWith(gameDir), `${name} imports ${specifier}`).toBe(true)
+      }
+    }
+  })
+
+  it('names no Adventure, reward or relic concept, so setup stays generic', () => {
+    for (const { name, source } of sources) {
+      expect(source, name).not.toMatch(/adventure|relic|reward|\bboons?\b|charm/i)
+    }
   })
 })
