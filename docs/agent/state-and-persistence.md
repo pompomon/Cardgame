@@ -328,6 +328,48 @@ keep their names; only their formats changed.
     It is not part of the route key and does not affect the cached tiers.
     `decisionKey` (`runId|route|attempt|pending`) changes with every
     committed route decision and is part of `threeDecisionKey`.
+- **Milestone 4 rules.**
+  - **Not yet persisted.** The reward rules are pure, and nothing calls them
+    yet. Run guards still require empty `relics` and `rewardHistory` until
+    Milestone 5 relaxes them to `isAdventureRewardHoldings` plus run-level
+    checks.
+  - **Ownership.** `src/app/adventure-rewards.ts` owns the reward catalog,
+    reward guards, eligibility, offers, choose and skip, relic charges, and
+    loss protection. `src/app/adventure-setup.ts` owns opening-hand setup.
+    Both are leaf modules that never import `adventure.ts`, persistence, the
+    controller, storage, or the DOM; their tests check the imports.
+    `adventure-map.ts` adds `parseAdventureNodeId` and `adventureRewardSeed`
+    (the reserved `rewardOffer` purpose) and now owns
+    `AdventureEncounterOutcome`. The engine knows only the generic
+    `openingHandSizes` option and never sees a reward ID.
+  - **Catalog and version.** `ADVENTURE_REWARD_IDS` order, the offer seed
+    words, and the effects are rules version 1. Changing any of them changes
+    what a seed offers: bump `ADVENTURE_REWARD_RULES_VERSION` and repin the
+    offer tests. Store only IDs; reward names and rules text are display
+    copy.
+  - **Eligibility and offers.** Second Wind is offered until taken twice, a
+    unique relic until it is owned, and a charged relic while it holds fewer
+    than two charges. `generateAdventureRewardOffer` derives the offer from
+    the base seed, the source node, and the number of resolved offers, so
+    regenerating it gives the same choices. Persist the offer anyway: it
+    records its `rulesVersion`, and a later rules version would generate
+    different choices. There is no reroll.
+  - **Choose and skip.** `chooseAdventureReward` treats the choice as
+    untrusted. It returns null unless the offer is the run's next one and the
+    choice is exactly one of its IDs and still eligible. Skip records
+    `rewardId: null`. Both return fresh `remainingChances`, `relics`, and
+    `rewardHistory` only. Second Wind must never raise the score-eligible
+    chances.
+  - **Protection.** Apply `applyAdventureLossProtection` to the real chances
+    and streak only. On a loss, Guardian Sigil uses a charge only when a
+    chance would be lost, and Streak Anchor only when a positive streak would
+    reset. Other outcomes change nothing. The score-eligible shadows always
+    take the unprotected result.
+  - **Setup.** Call `planAdventureEncounterSetup` once per committed attempt,
+    because each call uses a Scout's Cache charge, and reuse the stored setup
+    on restarts. `adventureEncounterGameSetup` returns
+    `openingHandSizes: [H, 5]` with H from 5 to 8, never a shared count. The
+    creature guarantee only reorders a copy of the player's deck.
 - **Migration closure.** Every version 1 run the app could have written must
   convert into a run that passes the version 2 guard. When a version 2 limit
   is stricter than version 1, check that app-written data meets it and add a

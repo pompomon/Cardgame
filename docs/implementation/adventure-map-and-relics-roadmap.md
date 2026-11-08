@@ -35,7 +35,7 @@ The following product decisions are approved for implementation:
 - [x] Milestone 1 — Introduce the versioned Adventure aggregate and legacy migration
 - [x] Milestone 2 — Add deterministic two-branch map generation and route rules
 - [x] Milestone 3 — Deliver the branching map as an end-to-end browser flow
-- [ ] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
+- [x] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
 - [ ] Milestone 5 — Deliver reward selection and relic application end to end
 - [ ] Milestone 6 — Harden persistence, reentrant input, accessibility, and recovery
 - [ ] Milestone 7 — Complete documentation, compatibility, and release verification
@@ -807,6 +807,73 @@ generic lobby:
 
 - Reward policy has no DOM, controller, storage, or Three.js dependency.
 - The game engine exposes generic setup only and contains no Adventure/relic ID.
+
+**Delivery notes**
+
+- **Modules.** Two new leaf modules hold the rules. Nothing calls them yet, and
+  the run guard still requires empty `relics` and `rewardHistory`.
+  - `src/app/adventure-rewards.ts` owns the catalog, the guards, eligibility,
+    offers, choose and skip, charges, and loss protection. It imports only
+    `game/cards`, `game/types`, `adventure-map`, `card-catalog`, and
+    `validators`.
+  - `src/app/adventure-setup.ts` owns opening-hand setup. It imports only
+    `game/engine`, `game/types`, `adventure-rewards`, and `validators`.
+  - `adventure-map.ts` adds `parseAdventureNodeId` and `adventureRewardSeed`,
+    which uses the reserved `rewardOffer` purpose. It now owns
+    `AdventureEncounterOutcome`, which `adventure.ts` re-exports.
+- **Engine.** `createInitialGame(seed, decks?, options?)` accepts
+  `{ openingHandSizes: [player0, player1] }`. Each count is an integer from 0
+  to that player's deck size; anything else throws `RangeError`. Without the
+  option the output is byte-for-byte unchanged, which
+  `src/test/fixtures/engine-initial-game.characterization.json` pins.
+- **Rules version 1.** `ADVENTURE_REWARD_RULES_VERSION` covers the catalog
+  order in the table above, the offer seed words (tier index, lane number,
+  reward ordinal), and every effect. Changing any of them changes what a seed
+  offers, so bump the version and repin the offer tests.
+- **Offers.**
+  - The reward ordinal is the number of resolved offers, so a skip counts.
+  - The offer ID is `reward-<ordinal + 1>-<sourceNodeId>`.
+  - Generation shuffles all ten IDs with the reward seed, keeps the eligible
+    ones, and takes the first three.
+  - A search over every reachable inventory proves that at least three rewards
+    stay eligible for all six offers.
+- **Holding rewards.**
+  - Each pick of a charged relic adds one charge, up to two. A charged relic
+    is offered while it holds fewer than two charges.
+  - A charged relic is removed when its last charge is used and can be chosen
+    again later.
+  - A skip is recorded as `{ sourceNodeId, rewardId: null }`.
+  - Choose and skip return only `remainingChances`, `relics`, and
+    `rewardHistory`. Second Wind raises the real chances, never the
+    score-eligible ones. A rejected choice returns null and changes nothing.
+- **Protection.** Effects come from the catalog. On a loss, Guardian Sigil
+  uses a charge only when a chance would be lost, and Streak Anchor only when
+  a positive streak would reset. A win, a draw, or an unknown outcome changes
+  nothing.
+- **Setup.** The opening hand is 5 cards, plus 1 with Prepared Pack and 2 with
+  Scout's Cache, capped at 8. The opponent always draws 5, so
+  `openingHandSizes` is `[playerHandSize, 5]`.
+  - Charms reorder a copy of the player's deck. Each guaranteed creature
+    already in the opening window keeps its first copy there.
+  - Each missing creature, in `BASIC_LANDS` order, swaps its first later copy
+    with the unclaimed window card nearest the end of the window.
+  - Charm rules text names each creature with `displayCardName`.
+- Milestone 5 handoff:
+  - Add `pendingReward` and a per-attempt `encounterSetup` to the run, add the
+    `reward` stage, and relax the `relics` and `rewardHistory` guards to the
+    Milestone 4 guards plus run-level checks.
+  - Call `planAdventureEncounterSetup` once when an attempt is committed and
+    save the setup with it. Restarts reuse the saved setup, so Scout's Cache
+    uses one charge per attempt. A result clears it.
+  - Launch games with `adventureEncounterGameSetup(encounterSetup, deckPair)`
+    and pass its decks and options to `createInitialGame`.
+  - On a loss, apply `applyAdventureLossProtection` to the real counters and
+    keep the score-eligible counters unconditional. A non-boss win enters the
+    `reward` stage with `generateAdventureRewardOffer`.
+  - Save choose and skip before changing state, check the offer ID against
+    the decision key, and set any storage warning last.
+- Rules and pitfalls for contributors are in
+  [`docs/agent/state-and-persistence.md`](../agent/state-and-persistence.md#adventure-run-schema-version-2).
 
 ### Milestone 5 — Reward and relic vertical slice
 
