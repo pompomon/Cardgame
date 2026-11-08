@@ -11,7 +11,8 @@ import { BASIC_LANDS, isBasicLand, type BasicLand, type Card } from '../game/typ
 import { isIntegerInRange, isNonNegativeInteger, isRecordObject } from './validators'
 
 export const ADVENTURE_TIER_COUNT = 7
-export const ADVENTURE_NODE_ID_PATTERN = /^tier-[1-7]-(?:center|left|right)$/
+/** Node IDs; the groups capture the 1-based tier number and the lane. */
+export const ADVENTURE_NODE_ID_PATTERN = /^tier-([1-7])-(center|left|right)$/
 
 const ADVENTURE_DECK_SIZE = 50
 const ADVENTURE_MAX_ID_LENGTH = 128
@@ -30,6 +31,17 @@ export type AdventureRunStage = 'map' | 'encounter'
  */
 export type AdventureMapKind = 'linear' | 'legacy-linear' | 'branching'
 export type AdventureNodeLane = 'center' | 'left' | 'right'
+/**
+ * Result of an Adventure game for player 1. It lives in this leaf module so
+ * the map, reward and run modules share it without importing one another.
+ */
+export type AdventureEncounterOutcome = 'win' | 'loss' | 'draw'
+
+/** The tier and lane encoded in a node ID. */
+export interface AdventureNodePosition {
+  tierIndex: number
+  lane: AdventureNodeLane
+}
 
 export interface AdventureOpponentDeck {
   id: string
@@ -212,6 +224,23 @@ export function buildAdventureLineup(seed: number): AdventureOpponentDeck[] {
 
 export function adventureNodeId(tierIndex: number, lane: AdventureNodeLane): string {
   return `tier-${tierIndex + 1}-${lane}`
+}
+
+function isAdventureNodeLane(value: unknown): value is AdventureNodeLane {
+  return value === 'center' || value === 'left' || value === 'right'
+}
+
+/**
+ * Exact inverse of `adventureNodeId` for the seven tiers. Untrusted input
+ * that is not such an ID, including case or whitespace variants, gives null.
+ * It reads the ID's syntax only; whether a map holds the node is separate.
+ */
+export function parseAdventureNodeId(value: unknown): AdventureNodePosition | null {
+  const match = typeof value === 'string' ? ADVENTURE_NODE_ID_PATTERN.exec(value) : null
+  if (match === null) return null
+  const lane = match[2]
+  if (!isAdventureNodeLane(lane)) return null
+  return { tierIndex: Number(match[1]) - 1, lane }
 }
 
 function cloneAdventureOpponent(opponent: AdventureOpponentDeck): AdventureOpponentDeck {
@@ -399,7 +428,7 @@ export const ADVENTURE_SEED_PURPOSE = Object.freeze({
   bossPick: 3,
   deckOrder: 4,
   attempt: 5,
-  /** Reserved for Milestone 4 reward offers. */
+  /** Reward offers; see `adventureRewardSeed`. */
   rewardOffer: 6,
 } as const)
 
@@ -486,6 +515,29 @@ export function adventureAttemptSeed(
     adventureLaneNumber(lane),
     attemptOrdinal % UINT32_RANGE,
     Math.floor(attemptOrdinal / UINT32_RANGE),
+  ])
+}
+
+/**
+ * Seed for the reward offer earned on a node. It depends only on the base
+ * seed, the node's tier and lane, and the reward ordinal: the number of
+ * rewards the run resolved before this one. Reward policy, such as which
+ * tiers earn rewards and which ordinals are reachable, belongs to the
+ * rewards module.
+ */
+export function adventureRewardSeed(
+  baseSeed: number,
+  tierIndex: number,
+  lane: AdventureNodeLane,
+  rewardOrdinal: number,
+): number {
+  if (!isIntegerInRange(tierIndex, 0, ADVENTURE_TIER_COUNT - 1) || !isUint32(rewardOrdinal)) {
+    throw new RangeError('An Adventure reward seed needs a known tier and a 32-bit unsigned reward ordinal.')
+  }
+  return deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.rewardOffer, baseSeed, [
+    tierIndex,
+    adventureLaneNumber(lane),
+    rewardOrdinal,
   ])
 }
 

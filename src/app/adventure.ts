@@ -14,6 +14,7 @@ import {
   linearAdventureTiers,
   retryAdventureNode,
   selectAdventureNode,
+  type AdventureEncounterOutcome,
   type AdventureMap,
   type AdventureMapNode,
   type AdventureOpponentDeck,
@@ -37,6 +38,7 @@ import type { AdventureState } from './types'
 
 export { ADVENTURE_TIER_COUNT, adventureNodeId, adventureRouteNodes, buildAdventureLineup } from './adventure-map'
 export type {
+  AdventureEncounterOutcome,
   AdventureMap,
   AdventureMapKind,
   AdventureMapNode,
@@ -58,8 +60,6 @@ export const ADVENTURE_SCHEMA_VERSION = 2
 
 const ADVENTURE_STARTING_CHANCES = 3
 const ADVENTURE_RUN_ID_PATTERN = /^[0-9a-f]{32}$/
-
-export type AdventureEncounterOutcome = 'win' | 'loss' | 'draw'
 
 /**
  * Unversioned run written before schema version 2. It is only read and

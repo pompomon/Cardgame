@@ -17,6 +17,7 @@ import {
   ADVENTURE_TIER_COUNT,
   adventureAttemptSeed,
   adventureNodeId,
+  adventureRewardSeed,
   adventureRouteNodes,
   buildAdventureLineup,
   buildAdventureOpponentPools,
@@ -26,6 +27,7 @@ import {
   isAdventureMap,
   isAdventureRouteState,
   linearAdventureTiers,
+  parseAdventureNodeId,
   retryAdventureNode,
   selectAdventureNode,
   type AdventureMap,
@@ -243,7 +245,7 @@ function started(run: AdventureRunState, nodeId: string): AdventureRunState {
 }
 
 describe('Adventure seed derivation', () => {
-  it('uses fixed numeric purpose tags, including one reserved for reward offers', () => {
+  it('uses fixed numeric purpose tags, including the reward-offer tag', () => {
     expect(ADVENTURE_SEED_PURPOSE).toEqual({
       forkPattern: 1,
       nonBossPick: 2,
@@ -318,6 +320,93 @@ describe('Adventure attempt seeds', () => {
     expect(() => adventureAttemptSeed(CLOCK_SEED, 0, 'center', -1)).toThrow(RangeError)
     expect(() => adventureAttemptSeed(CLOCK_SEED, 0, 'center', 2 ** 53)).toThrow(RangeError)
     expect(() => adventureAttemptSeed(-1, 0, 'center', 0)).toThrow(RangeError)
+  })
+})
+
+describe('Adventure node ID parsing', () => {
+  it('inverts adventureNodeId for every tier and lane', () => {
+    for (let tierIndex = 0; tierIndex < ADVENTURE_TIER_COUNT; tierIndex += 1) {
+      for (const lane of ['center', 'left', 'right'] as const) {
+        expect(parseAdventureNodeId(adventureNodeId(tierIndex, lane))).toEqual({ tierIndex, lane })
+      }
+    }
+  })
+
+  it('returns null for anything that is not exactly a node ID', () => {
+    const strings = [
+      'tier-0-center',
+      'tier-8-center',
+      'tier-10-center',
+      'tier-01-center',
+      'tier-1.0-center',
+      'Tier-1-center',
+      'tier-1-Center',
+      'TIER-1-CENTER',
+      ' tier-1-center',
+      'tier-1-center ',
+      'tier-1-center\n',
+      '\ntier-1-center',
+      'tier-1-centre',
+      'tier-1-middle',
+      'tier-1-',
+      'tier--center',
+      'tier-1center',
+      'tier-1-center-left',
+      '',
+      '__proto__',
+      'constructor',
+    ]
+    for (const value of strings) {
+      expect(parseAdventureNodeId(value), JSON.stringify(value)).toBeNull()
+      expect(ADVENTURE_NODE_ID_PATTERN.test(value), JSON.stringify(value)).toBe(false)
+    }
+    for (const value of [0, 1, Number.NaN, null, undefined, true, {}, [], ['tier-1-center'], { toString: () => 'tier-1-center' }]) {
+      expect(parseAdventureNodeId(value), String(value)).toBeNull()
+    }
+  })
+})
+
+describe('Adventure reward seeds', () => {
+  it('derives pinned seeds from the base seed, the source tier and lane, and the reward ordinal', () => {
+    expect(adventureRewardSeed(0, 0, 'center', 0)).toBe(3_568_206_354)
+    expect(adventureRewardSeed(CLOCK_SEED, 1, 'left', 1)).toBe(2_734_881_378)
+    expect(adventureRewardSeed(Number.MAX_SAFE_INTEGER, 5, 'right', 5)).toBe(1_105_314_274)
+    expect(adventureRewardSeed(CLOCK_SEED, 1, 'left', 1)).toBe(
+      deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.rewardOffer, CLOCK_SEED, [1, 1, 1]),
+    )
+  })
+
+  it('separates tiers, lanes, reward ordinals and base seeds', () => {
+    for (const seed of EDGE_SEEDS) {
+      const seeds: number[] = []
+      for (let tierIndex = 0; tierIndex < ADVENTURE_TIER_COUNT; tierIndex += 1) {
+        for (const lane of ['center', 'left', 'right'] as const) {
+          for (let ordinal = 0; ordinal < ADVENTURE_TIER_COUNT; ordinal += 1) {
+            const derived = adventureRewardSeed(seed, tierIndex, lane, ordinal)
+            expect(Number.isInteger(derived) && derived >= 0 && derived < 2 ** 32).toBe(true)
+            expect(adventureRewardSeed(seed, tierIndex, lane, ordinal)).toBe(derived)
+            seeds.push(derived)
+          }
+        }
+      }
+      expect(new Set(seeds).size, `seed ${seed}`).toBe(seeds.length)
+    }
+    expect(adventureRewardSeed(2 ** 32, 0, 'center', 0)).not.toBe(adventureRewardSeed(0, 0, 'center', 0))
+    expect(adventureRewardSeed(CLOCK_SEED + 2 ** 32, 0, 'center', 0)).not.toBe(adventureRewardSeed(CLOCK_SEED, 0, 'center', 0))
+    expect(adventureRewardSeed(CLOCK_SEED, 0, 'center', 0)).not.toBe(adventureAttemptSeed(CLOCK_SEED, 0, 'center', 0))
+  })
+
+  it('rejects unknown tiers, lanes and reward ordinals', () => {
+    for (const tierIndex of [-1, ADVENTURE_TIER_COUNT, 0.5, Number.NaN]) {
+      expect(() => adventureRewardSeed(CLOCK_SEED, tierIndex, 'center', 0)).toThrow(RangeError)
+    }
+    expect(() => adventureRewardSeed(CLOCK_SEED, 0, 'middle' as AdventureNodeLane, 0)).toThrow(RangeError)
+    for (const ordinal of [-1, 0.5, 2 ** 32, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => adventureRewardSeed(CLOCK_SEED, 0, 'center', ordinal)).toThrow(RangeError)
+    }
+    expect(() => adventureRewardSeed(-1, 0, 'center', 0)).toThrow(RangeError)
+    expect(() => adventureRewardSeed(0.5, 0, 'center', 0)).toThrow(RangeError)
+    expect(Number.isInteger(adventureRewardSeed(CLOCK_SEED, 0, 'center', 2 ** 32 - 1))).toBe(true)
   })
 })
 
