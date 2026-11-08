@@ -1,6 +1,56 @@
 import { describe, expect, it } from 'vitest'
+import { createTutorialDecks } from '../game/cards'
 import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
-import type { BasicLand } from '../game/types'
+import type { BasicLand, Card, GameState } from '../game/types'
+import { compatibilityDecks, compatibilitySeed } from './fixtures/compatibility-scenario'
+
+interface OpeningCase {
+  readonly label: string
+  readonly seed: number
+  readonly decks?: () => [Card[], Card[]]
+}
+
+function landDeck(owner: string, land: BasicLand, length: number): Card[] {
+  return Array.from({ length }, (_, index) => ({ id: `${owner}-${index}`, name: land, type: 'land' }))
+}
+
+/**
+ * One case per kind of `createInitialGame` caller: starter decks (normal,
+ * CLI, P2P and AI games), tutorial decks, fixed decks (the compatibility
+ * replay scenario) and a short deck that runs out during the opening draws.
+ */
+const DEFAULT_OPENING_CASES: readonly OpeningCase[] = [
+  ...[0, 77, 2 ** 31, 2 ** 32 + 1, Number.MAX_SAFE_INTEGER, 1_760_000_000_000].map((seed) => ({
+    label: `starter decks, seed ${seed}`,
+    seed,
+  })),
+  { label: 'tutorial decks, seed 1', seed: 1, decks: createTutorialDecks },
+  { label: `compatibility decks, seed ${compatibilitySeed}`, seed: compatibilitySeed, decks: compatibilityDecks },
+  {
+    label: 'three-card opponent deck, seed 5',
+    seed: 5,
+    decks: () => [landDeck('short-p0', 'Forest', 50), landDeck('short-p1', 'Swamp', 3)],
+  },
+]
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function openingCharacterization(state: GameState) {
+  return {
+    sha256: await sha256Hex(JSON.stringify(state)),
+    phase: state.phase,
+    winner: state.winner,
+    turn: state.turn,
+    currentPlayer: state.currentPlayer,
+    nextInstanceId: state.nextInstanceId,
+    hands: state.players.map((player) => player.hand.map((card) => `${card.id}:${card.name}`)),
+    deckSizes: state.players.map((player) => player.deck.length),
+    log: state.log,
+  }
+}
 
 describe('engine', () => {
   it('allows one land play per turn', () => {
@@ -419,5 +469,26 @@ describe('engine', () => {
 
     state = applyAction(state, { type: 'resolve_plains_reuse', actor: 0 })
     expect(state.players[0].hand.some((card) => card.id === 'g-2')).toBe(true)
+  })
+})
+
+describe('createInitialGame opening hands', () => {
+  it('matches the default openings captured before opening-hand options existed', async () => {
+    const cases = []
+    for (const entry of DEFAULT_OPENING_CASES) {
+      cases.push({ label: entry.label, ...await openingCharacterization(createInitialGame(entry.seed, entry.decks?.())) })
+    }
+
+    // `sha256` covers the exact JSON of each state, key order included. The
+    // other fields make a change readable. Calls without options must keep
+    // matching this file byte for byte.
+    await expect(JSON.stringify({
+      provenance: {
+        kind: 'default-initial-game-characterization',
+        capturedRevision: 'ae4bd91',
+        note: 'Captured on the engine before createInitialGame accepted opening-hand options.',
+      },
+      cases,
+    }, null, 2)).toMatchFileSnapshot('./fixtures/engine-initial-game.characterization.json')
   })
 })

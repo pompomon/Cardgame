@@ -1,0 +1,394 @@
+{
+  "provenance": {
+    "kind": "default-initial-game-characterization",
+    "capturedRevision": "ae4bd91",
+    "note": "Captured on the engine before createInitialGame accepted opening-hand options."
+  },
+  "cases": [
+    {
+      "label": "starter decks, seed 0",
+      "sha256": "eae28eb63448462e3259f80b4787622776f215447cf4d227e1c3198f7ff37735",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "p0-mountain-2:Mountain",
+          "p0-forest-3:Forest",
+          "p0-forest-1:Forest",
+          "p0-forest-7:Forest",
+          "p0-plains-6:Plains"
+        ],
+        [
+          "p1-forest-5:Forest",
+          "p1-plains-4:Plains",
+          "p1-island-6:Island",
+          "p1-island-9:Island",
+          "p1-island-2:Island"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Mountain.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Island.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Island.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Island.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "starter decks, seed 77",
+      "sha256": "38851a1288764a2864ac9d923e81887066c6590defa364ddabd853bb3403c904",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "p0-swamp-7:Swamp",
+          "p0-plains-4:Plains",
+          "p0-island-9:Island",
+          "p0-forest-2:Forest",
+          "p0-mountain-7:Mountain"
+        ],
+        [
+          "p1-swamp-9:Swamp",
+          "p1-island-8:Island",
+          "p1-forest-5:Forest",
+          "p1-island-0:Island",
+          "p1-island-2:Island"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Island.",
+        "Player 1 draws Island.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Island.",
+        "Player 1 draws Mountain.",
+        "Player 2 draws Island.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "starter decks, seed 2147483648",
+      "sha256": "52981e438ad054930eead42f9650f566458e2eebee4392f16b3ac8e0b2801c50",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "p0-plains-5:Plains",
+          "p0-mountain-1:Mountain",
+          "p0-plains-0:Plains",
+          "p0-swamp-2:Swamp",
+          "p0-island-2:Island"
+        ],
+        [
+          "p1-island-8:Island",
+          "p1-swamp-3:Swamp",
+          "p1-plains-4:Plains",
+          "p1-swamp-6:Swamp",
+          "p1-island-2:Island"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Island.",
+        "Player 1 draws Mountain.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Island.",
+        "Player 2 draws Island.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "starter decks, seed 4294967297",
+      "sha256": "90804eea21d8ccb46425999ce31cc376bf7b6eae227e3a8e06a3722e877bc061",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "p0-swamp-2:Swamp",
+          "p0-island-9:Island",
+          "p0-plains-1:Plains",
+          "p0-swamp-9:Swamp",
+          "p0-swamp-1:Swamp"
+        ],
+        [
+          "p1-swamp-1:Swamp",
+          "p1-forest-3:Forest",
+          "p1-forest-2:Forest",
+          "p1-forest-8:Forest",
+          "p1-island-9:Island"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Island.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Island.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "starter decks, seed 9007199254740991",
+      "sha256": "e7f177a812e2c85947ec170e557ee8a893fd46dacac7ab8d974ca755f5a95e39",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "p0-mountain-2:Mountain",
+          "p0-swamp-7:Swamp",
+          "p0-forest-3:Forest",
+          "p0-forest-5:Forest",
+          "p0-island-7:Island"
+        ],
+        [
+          "p1-plains-7:Plains",
+          "p1-plains-2:Plains",
+          "p1-plains-0:Plains",
+          "p1-mountain-7:Mountain",
+          "p1-plains-4:Plains"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Mountain.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Mountain.",
+        "Player 1 draws Island.",
+        "Player 2 draws Plains.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "starter decks, seed 1760000000000",
+      "sha256": "edb48eb1ee3832587a237c73e8441bc36756d4e10d2236431262152a263efc23",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "p0-plains-4:Plains",
+          "p0-forest-4:Forest",
+          "p0-swamp-1:Swamp",
+          "p0-island-5:Island",
+          "p0-swamp-8:Swamp"
+        ],
+        [
+          "p1-swamp-7:Swamp",
+          "p1-plains-8:Plains",
+          "p1-plains-4:Plains",
+          "p1-swamp-6:Swamp",
+          "p1-forest-9:Forest"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Island.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Forest.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "tutorial decks, seed 1",
+      "sha256": "7358f07864a5f3f33128383bcfd6139b246899f2454f1209d9a765f8c4624e86",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "tutorial-p0-island-0:Island",
+          "tutorial-p0-forest-0:Forest",
+          "tutorial-p0-mountain-0:Mountain",
+          "tutorial-p0-swamp-0:Swamp",
+          "tutorial-p0-plains-0:Plains"
+        ],
+        [
+          "tutorial-p1-island-0:Island",
+          "tutorial-p1-plains-0:Plains",
+          "tutorial-p1-plains-1:Plains",
+          "tutorial-p1-plains-2:Plains",
+          "tutorial-p1-plains-3:Plains"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Island.",
+        "Player 2 draws Island.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Mountain.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Plains.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Plains.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "compatibility decks, seed 1700",
+      "sha256": "4bde208aa2d0660b4720c0640b9ace59837fe95115054c9500b77288b3661e90",
+      "phase": "main",
+      "winner": null,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "fixture-p0-card-0:Island",
+          "fixture-p0-card-1:Forest",
+          "fixture-p0-card-2:Mountain",
+          "fixture-p0-card-3:Swamp",
+          "fixture-p0-card-4:Plains"
+        ],
+        [
+          "fixture-p1-card-0:Island",
+          "fixture-p1-card-1:Forest",
+          "fixture-p1-card-2:Forest",
+          "fixture-p1-card-3:Mountain",
+          "fixture-p1-card-4:Swamp"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        45
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Island.",
+        "Player 2 draws Island.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Mountain.",
+        "Player 2 draws Forest.",
+        "Player 1 draws Swamp.",
+        "Player 2 draws Mountain.",
+        "Player 1 draws Plains.",
+        "Player 2 draws Swamp.",
+        "Player 1 starts and skips first draw step."
+      ]
+    },
+    {
+      "label": "three-card opponent deck, seed 5",
+      "sha256": "f54d523f45b5fe73912d6c251a1035b366f729c1da28f720c7246227fca93d8c",
+      "phase": "gameOver",
+      "winner": 0,
+      "turn": 1,
+      "currentPlayer": 0,
+      "nextInstanceId": 1,
+      "hands": [
+        [
+          "short-p0-0:Forest",
+          "short-p0-1:Forest",
+          "short-p0-2:Forest",
+          "short-p0-3:Forest",
+          "short-p0-4:Forest"
+        ],
+        [
+          "short-p1-0:Swamp",
+          "short-p1-1:Swamp",
+          "short-p1-2:Swamp"
+        ]
+      ],
+      "deckSizes": [
+        45,
+        0
+      ],
+      "log": [
+        "Game started.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Forest.",
+        "Player 2 draws Swamp.",
+        "Player 1 draws Forest.",
+        "Player 2 loses by drawing from empty deck.",
+        "Player 1 draws Forest.",
+        "Player 2 loses by drawing from empty deck.",
+        "Player 1 starts and skips first draw step."
+      ]
+    }
+  ]
+}
