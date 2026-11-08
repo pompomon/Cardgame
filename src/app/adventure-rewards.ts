@@ -6,10 +6,11 @@
 // catalog and the shared validators, never `adventure.ts`, persistence, the
 // controller, storage or the DOM. Run progression does not call it yet.
 
+import { shuffle } from '../game/cards'
 import type { BasicLand } from '../game/types'
-import { ADVENTURE_TIER_COUNT, parseAdventureNodeId } from './adventure-map'
+import { ADVENTURE_TIER_COUNT, adventureRewardSeed, parseAdventureNodeId } from './adventure-map'
 import { displayCardName } from './card-catalog'
-import { isIntegerInRange, isRecordObject } from './validators'
+import { isIntegerInRange, isNonNegativeInteger, isRecordObject } from './validators'
 
 /**
  * Version of the reward rules: the catalog and its order, offer seeds and
@@ -106,6 +107,18 @@ export interface AdventureRewardOffer {
   readonly rewardOrdinal: number
   /** Distinct reward IDs in offer order. */
   readonly choices: readonly AdventureRewardId[]
+}
+
+/** The run fields that choosing or skipping a reward reads. */
+export interface AdventureRewardState extends AdventureRewardHoldings {
+  readonly remainingChances: number
+}
+
+/** Fresh copies of the run fields after a reward is chosen or skipped. */
+export interface AdventureRewardProgress {
+  remainingChances: number
+  relics: AdventureRelic[]
+  rewardHistory: AdventureRewardHistoryEntry[]
 }
 
 function defineReward(entry: AdventureRewardCatalogEntry): AdventureRewardCatalogEntry {
@@ -393,4 +406,150 @@ function isRewardEligible(
 export function eligibleAdventureRewardIds(holdings: AdventureRewardHoldings): AdventureRewardId[] {
   const picks = rewardPickCounts(holdings.rewardHistory)
   return ADVENTURE_REWARD_IDS.filter((id) => isRewardEligible(id, holdings.relics, picks))
+}
+
+/** The lowest tier index the next reward may come from: past the last resolved source. */
+function nextRewardTierIndex(history: readonly AdventureRewardHistoryEntry[]): number {
+  const last = history.at(-1)
+  if (last === undefined) return 0
+  const source = parseAdventureNodeId(last.sourceNodeId)
+  // Only reached with a valid history; an unparseable source allows no tier.
+  return source === null ? ADVENTURE_TIER_COUNT : source.tierIndex + 1
+}
+
+/**
+ * The offer for the run's next reward, earned by winning `sourceNodeId`.
+ * The reward seed shuffles the whole catalog, and the first three rewards
+ * that are still eligible are offered, so equal inputs give equal offers.
+ * Throws `RangeError` for invalid holdings or base seed, a malformed or
+ * boss node, or a node that is not past the last resolved source's tier.
+ */
+export function generateAdventureRewardOffer(
+  baseSeed: number,
+  sourceNodeId: string,
+  holdings: AdventureRewardHoldings,
+): AdventureRewardOffer {
+  if (!isAdventureRewardHoldings(holdings)) {
+    throw new RangeError('An Adventure reward offer needs valid relics and reward history.')
+  }
+  const source = parseAdventureNodeId(sourceNodeId)
+  if (
+    source === null
+    || !isRewardTier(source.tierIndex)
+    || source.tierIndex < nextRewardTierIndex(holdings.rewardHistory)
+  ) {
+    throw new RangeError('An Adventure reward offer needs a non-boss node past the last rewarded tier.')
+  }
+  // History tiers strictly increase, so the ordinal never exceeds the source tier index.
+  const rewardOrdinal = holdings.rewardHistory.length
+  const eligible = eligibleAdventureRewardIds(holdings)
+  const choices = shuffle([...ADVENTURE_REWARD_IDS], adventureRewardSeed(baseSeed, source.tierIndex, source.lane, rewardOrdinal))
+    .filter((id) => eligible.includes(id))
+    .slice(0, ADVENTURE_REWARD_OFFER_SIZE)
+  if (choices.length < ADVENTURE_REWARD_OFFER_SIZE) {
+    // Unreachable: tests search every reachable inventory.
+    throw new RangeError('Too few Adventure rewards are eligible for an offer.')
+  }
+  return {
+    rulesVersion: ADVENTURE_REWARD_RULES_VERSION,
+    offerId: adventureRewardOfferId(sourceNodeId, rewardOrdinal),
+    sourceNodeId,
+    rewardOrdinal,
+    choices,
+  }
+}
+
+/** True when the state is valid and `offer` is the next offer it may resolve. */
+function isNextRewardOffer(state: AdventureRewardState, offer: AdventureRewardOffer): boolean {
+  if (!isAdventureRewardHoldings(state) || !isNonNegativeInteger(state.remainingChances)) return false
+  if (!isAdventureRewardOffer(offer) || offer.rewardOrdinal !== state.rewardHistory.length) return false
+  const source = parseAdventureNodeId(offer.sourceNodeId)
+  return source !== null && source.tierIndex >= nextRewardTierIndex(state.rewardHistory)
+}
+
+function withoutRelic(relics: readonly AdventureRelic[], id: AdventureRelicId): AdventureRelic[] {
+  return relics.filter((relic) => relic.id !== id).map(cloneRelic)
+}
+
+/** A copy of `relics` holding `relic` in catalog order, replacing any entry with its ID. */
+function withRelic(relics: readonly AdventureRelic[], relic: AdventureRelic): AdventureRelic[] {
+  return [...withoutRelic(relics, relic.id), relic].sort((left, right) => catalogRank(left.id) - catalogRank(right.id))
+}
+
+/** The chances and relics after taking an eligible reward, or null when its effect cannot apply. */
+function takeReward(
+  state: AdventureRewardState,
+  id: AdventureRewardId,
+): Omit<AdventureRewardProgress, 'rewardHistory'> | null {
+  if (isAdventureRelicId(id)) {
+    const relic: AdventureRelic = isAdventureChargedRelicId(id)
+      ? { id, charges: relicCharges(state.relics, id) + 1 }
+      : { id }
+    return { remainingChances: state.remainingChances, relics: withRelic(state.relics, relic) }
+  }
+  // A boon applies once, now. Second Wind is the only boon.
+  const remainingChances = state.remainingChances + 1
+  if (REWARDS[id].effect.kind !== 'gain-chance' || !Number.isSafeInteger(remainingChances)) return null
+  return { remainingChances, relics: cloneAdventureRelics(state.relics) }
+}
+
+function historyWith(
+  history: readonly AdventureRewardHistoryEntry[],
+  sourceNodeId: string,
+  rewardId: AdventureRewardId | null,
+): AdventureRewardHistoryEntry[] {
+  return [...cloneAdventureRewardHistory(history), { sourceNodeId, rewardId }]
+}
+
+/**
+ * Resolves the run's next offer with `choice`. Second Wind adds one chance,
+ * a unique relic joins the inventory, and a charged relic gains one charge
+ * or joins with one; the history records the choice. Returns fresh copies
+ * of exactly these three fields. Returns null, changing nothing, when the
+ * state or offer is invalid, the offer is not the run's next one, or the
+ * choice is not an eligible reward in the offer. A resolved offer is no
+ * longer the next one, so it cannot apply twice.
+ */
+export function chooseAdventureReward(
+  state: AdventureRewardState,
+  offer: AdventureRewardOffer,
+  choice: unknown,
+): AdventureRewardProgress | null {
+  if (!isNextRewardOffer(state, offer) || !isAdventureRewardId(choice) || !offer.choices.includes(choice)) return null
+  if (!eligibleAdventureRewardIds(state).includes(choice)) return null
+  const taken = takeReward(state, choice)
+  if (taken === null) return null
+  return { ...taken, rewardHistory: historyWith(state.rewardHistory, offer.sourceNodeId, choice) }
+}
+
+/**
+ * Resolves the run's next offer without a reward: only the history
+ * changes, recording the skip. Returns null under the same conditions as
+ * `chooseAdventureReward`, apart from the choice.
+ */
+export function skipAdventureReward(
+  state: AdventureRewardState,
+  offer: AdventureRewardOffer,
+): AdventureRewardProgress | null {
+  if (!isNextRewardOffer(state, offer)) return null
+  return {
+    remainingChances: state.remainingChances,
+    relics: cloneAdventureRelics(state.relics),
+    rewardHistory: historyWith(state.rewardHistory, offer.sourceNodeId, null),
+  }
+}
+
+/**
+ * The inventory after using one charge of a charged relic. The relic is
+ * removed with its last charge. Returns null when the inventory is invalid
+ * or holds no charge of `id`.
+ */
+export function consumeAdventureRelicCharge(
+  relics: readonly AdventureRelic[],
+  id: AdventureChargedRelicId,
+): AdventureRelic[] | null {
+  if (!isAdventureRelicInventory(relics) || !isAdventureChargedRelicId(id)) return null
+  const charges = relicCharges(relics, id)
+  if (charges === 0) return null
+  return charges > 1 ? withRelic(relics, { id, charges: charges - 1 }) : withoutRelic(relics, id)
 }
