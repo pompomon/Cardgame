@@ -37,6 +37,7 @@ import {
   type AdventureOpponentDeck,
   type AdventureRouteState,
 } from '../app/adventure-map'
+import { deepFreeze } from './helpers/deep-freeze'
 
 const RUN_ID = '0123456789abcdef0123456789abcdef'
 const CLOCK_SEED = 1_760_000_000_000
@@ -211,16 +212,6 @@ function progressOf(state: AdventureRouteState) {
     attemptOrdinal: state.attemptOrdinal,
     attemptSeed: state.attemptSeed,
   }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
-    Object.freeze(value)
-    for (const child of Object.values(value)) {
-      deepFreeze(child)
-    }
-  }
-  return value
 }
 
 function migratedRun(legacy: AdventureRunStateV1): AdventureRunState {
