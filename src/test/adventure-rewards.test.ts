@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { shuffle } from '../game/cards'
 import { BASIC_LANDS } from '../game/types'
-import { adventureNodeId, adventureRewardSeed, type AdventureNodeLane } from '../app/adventure-map'
+import { adventureNodeId, adventureRewardSeed, type AdventureEncounterOutcome, type AdventureNodeLane } from '../app/adventure-map'
 import {
   ADVENTURE_MAX_RELIC_CHARGES,
   ADVENTURE_MAX_REWARDS,
@@ -14,6 +14,7 @@ import {
   ADVENTURE_SECOND_WIND_LIMIT,
   adventureRewardCatalogEntry,
   adventureRewardOfferId,
+  applyAdventureLossProtection,
   chooseAdventureReward,
   cloneAdventureRelics,
   cloneAdventureRewardHistory,
@@ -30,6 +31,7 @@ import {
   isAdventureRewardOffer,
   skipAdventureReward,
   type AdventureChargedRelicId,
+  type AdventureLossProtectionState,
   type AdventureRelic,
   type AdventureRewardHistoryEntry,
   type AdventureRewardHoldings,
@@ -859,6 +861,98 @@ describe('Adventure relic charges', () => {
       [{ id: 'guardian-sigil', charges: 1 }, { id: 'guardian-sigil', charges: 1 }],
     ]) {
       expect(consumeAdventureRelicCharge(inventory as AdventureRelic[], 'guardian-sigil')).toBeNull()
+    }
+  })
+})
+
+describe('Adventure loss protection', () => {
+  /** Guardian Sigil and Streak Anchor charges, beside relics that never protect. */
+  function protectedRelics(guardianCharges: number, anchorCharges: number): AdventureRelic[] {
+    return [
+      ...(guardianCharges > 0 ? [{ id: 'guardian-sigil' as const, charges: guardianCharges }] : []),
+      ...(anchorCharges > 0 ? [{ id: 'streak-anchor' as const, charges: anchorCharges }] : []),
+      { id: 'scout-cache', charges: 2 },
+      { id: 'echo-charm' },
+    ]
+  }
+
+  it('prevents only losses that would happen, using one charge for each', () => {
+    const outcomes: AdventureEncounterOutcome[] = ['win', 'loss', 'draw']
+    for (const outcome of outcomes) {
+      for (const guardianCharges of [0, 1, 2]) {
+        for (const anchorCharges of [0, 1, 2]) {
+          for (const remainingChances of [0, 1, 3]) {
+            for (const winStreak of [0, 2]) {
+              const input = deepFreeze({ remainingChances, winStreak, relics: protectedRelics(guardianCharges, anchorCharges) })
+              const loss = outcome === 'loss'
+              const guarded = loss && remainingChances > 0 && guardianCharges > 0
+              const anchored = loss && winStreak > 0 && anchorCharges > 0
+              const result = applyAdventureLossProtection(input, outcome)
+
+              expect(result, JSON.stringify([outcome, input])).toEqual({
+                remainingChances: loss && !guarded ? Math.max(0, remainingChances - 1) : remainingChances,
+                winStreak: loss && !anchored ? 0 : winStreak,
+                relics: protectedRelics(guardianCharges - Number(guarded), anchorCharges - Number(anchored)),
+                preventedChanceLoss: guarded,
+                preventedStreakReset: anchored,
+              })
+              result.relics.forEach((relic) => expect(input.relics).not.toContain(relic))
+            }
+          }
+        }
+      }
+    }
+  })
+
+  it('keeps both a chance and the win streak, removing relics with their last charge', () => {
+    expect(applyAdventureLossProtection({
+      remainingChances: 1,
+      winStreak: 2,
+      relics: [{ id: 'guardian-sigil', charges: 1 }, { id: 'streak-anchor', charges: 1 }],
+    }, 'loss')).toEqual({
+      remainingChances: 1,
+      winStreak: 2,
+      relics: [],
+      preventedChanceLoss: true,
+      preventedStreakReset: true,
+    })
+  })
+
+  it('costs a chance and resets the streak without protection', () => {
+    expect(applyAdventureLossProtection({ remainingChances: 3, winStreak: 2, relics: [{ id: 'echo-charm' }] }, 'loss')).toEqual({
+      remainingChances: 2,
+      winStreak: 0,
+      relics: [{ id: 'echo-charm' }],
+      preventedChanceLoss: false,
+      preventedStreakReset: false,
+    })
+  })
+
+  it('treats unknown outcomes like a draw', () => {
+    const input = deepFreeze({ remainingChances: 1, winStreak: 2, relics: protectedRelics(1, 1) })
+
+    expect(applyAdventureLossProtection(input, 'forfeit' as AdventureEncounterOutcome)).toEqual({
+      ...input,
+      preventedChanceLoss: false,
+      preventedStreakReset: false,
+    })
+  })
+
+  it('rejects invalid counters and relics', () => {
+    const valid = { remainingChances: 1, winStreak: 2, relics: protectedRelics(1, 1) }
+    for (const value of [
+      null,
+      { ...valid, remainingChances: -1 },
+      { ...valid, remainingChances: 1.5 },
+      { ...valid, remainingChances: Number.NaN },
+      { ...valid, winStreak: -1 },
+      { ...valid, winStreak: Number.POSITIVE_INFINITY },
+      { ...valid, winStreak: '2' },
+      { ...valid, relics: [{ id: 'guardian-sigil', charges: 3 }] },
+      { ...valid, relics: [{ id: 'streak-anchor', charges: 1 }, { id: 'guardian-sigil', charges: 1 }] },
+      { ...valid, relics: undefined },
+    ]) {
+      expect(() => applyAdventureLossProtection(value as AdventureLossProtectionState, 'loss')).toThrow(RangeError)
     }
   })
 })

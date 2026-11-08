@@ -8,7 +8,7 @@
 
 import { shuffle } from '../game/cards'
 import type { BasicLand } from '../game/types'
-import { ADVENTURE_TIER_COUNT, adventureRewardSeed, parseAdventureNodeId } from './adventure-map'
+import { ADVENTURE_TIER_COUNT, adventureRewardSeed, parseAdventureNodeId, type AdventureEncounterOutcome } from './adventure-map'
 import { displayCardName } from './card-catalog'
 import { isIntegerInRange, isNonNegativeInteger, isRecordObject } from './validators'
 
@@ -119,6 +119,22 @@ export interface AdventureRewardProgress {
   remainingChances: number
   relics: AdventureRelic[]
   rewardHistory: AdventureRewardHistoryEntry[]
+}
+
+/** The run fields that loss protection reads. */
+export interface AdventureLossProtectionState {
+  readonly remainingChances: number
+  readonly winStreak: number
+  readonly relics: readonly AdventureRelic[]
+}
+
+/** Fresh copies of the protected run fields, and which losses relics prevented. */
+export interface AdventureLossProtectionResult {
+  remainingChances: number
+  winStreak: number
+  relics: AdventureRelic[]
+  preventedChanceLoss: boolean
+  preventedStreakReset: boolean
 }
 
 function defineReward(entry: AdventureRewardCatalogEntry): AdventureRewardCatalogEntry {
@@ -552,4 +568,66 @@ export function consumeAdventureRelicCharge(
   const charges = relicCharges(relics, id)
   if (charges === 0) return null
   return charges > 1 ? withRelic(relics, { id, charges: charges - 1 }) : withoutRelic(relics, id)
+}
+
+/** The relics after a charged relic with this effect uses a charge, or null when none holds one. */
+function useProtection(relics: readonly AdventureRelic[], kind: AdventureRewardEffect['kind']): AdventureRelic[] | null {
+  for (const relic of relics) {
+    if ('charges' in relic && REWARDS[relic.id].effect.kind === kind) {
+      return consumeAdventureRelicCharge(relics, relic.id)
+    }
+  }
+  return null
+}
+
+/**
+ * Applies relic protection to an encounter result. A loss costs one chance,
+ * never going below zero, unless Guardian Sigil uses a charge to keep it.
+ * It resets the win streak unless Streak Anchor uses a charge to keep it.
+ * A relic uses a charge only when it prevents something: Guardian Sigil
+ * while a chance remains, Streak Anchor while the streak is above zero.
+ * Any other outcome changes nothing here; the run applies its own win
+ * rules. Score-eligible counters are never protected, and whether the run
+ * fails stays with the run. Throws `RangeError` for invalid counters or
+ * relics.
+ */
+export function applyAdventureLossProtection(
+  state: AdventureLossProtectionState,
+  outcome: AdventureEncounterOutcome,
+): AdventureLossProtectionResult {
+  if (
+    !isRecordObject(state)
+    || !isNonNegativeInteger(state.remainingChances)
+    || !isNonNegativeInteger(state.winStreak)
+    || !isAdventureRelicInventory(state.relics)
+  ) {
+    throw new RangeError('Adventure loss protection needs valid chances, win streak and relics.')
+  }
+  const result: AdventureLossProtectionResult = {
+    remainingChances: state.remainingChances,
+    winStreak: state.winStreak,
+    relics: cloneAdventureRelics(state.relics),
+    preventedChanceLoss: false,
+    preventedStreakReset: false,
+  }
+  if (outcome !== 'loss') return result
+  if (result.remainingChances > 0) {
+    const guarded = useProtection(result.relics, 'prevent-chance-loss')
+    if (guarded === null) {
+      result.remainingChances -= 1
+    } else {
+      result.relics = guarded
+      result.preventedChanceLoss = true
+    }
+  }
+  if (result.winStreak > 0) {
+    const anchored = useProtection(result.relics, 'prevent-streak-reset')
+    if (anchored === null) {
+      result.winStreak = 0
+    } else {
+      result.relics = anchored
+      result.preventedStreakReset = true
+    }
+  }
+  return result
 }
