@@ -58,6 +58,44 @@ that produced it. Preserve:
 Opening Cards from Game Menu returns to the menu on Back/Escape. Opening a card
 preview from Cards returns to Cards with its focus and scroll restored.
 
+## Adventure hub
+
+`isThreeAdventureHub(view)` is true in Adventure mode when there is no game
+and no replay. In that state `renderThreeAdventureHub` replaces the lobby:
+
+- An encounter result section with a heading.
+- A progress list.
+- A seven-tier route.
+- The run actions:
+  - While the run is open: **Pause Adventure** and **Reset Adventure Run**.
+  - After it ends: **Start New Adventure** and **Back to Lobby**.
+- Settings and Recording pages.
+
+Rules:
+
+- **Node buttons.** Only `current` and `available` nodes render as
+  `button[data-action="adventure-node"][data-node-id]`, labeled **Choose this
+  path**, **Start encounter** or **Retry encounter**. The click handler checks
+  the node ID against `actionableAdventureNodes()` in the latest view before
+  calling `startAdventureNode()`, which checks again. Other nodes are plain
+  text.
+- **Not color alone.** Each node status has an `aria-hidden` icon and visible
+  text (Completed, Current, Available, Bypassed, Locked). Boss nodes also show
+  a text **Boss** label. The current tier has `aria-current="step"`.
+- **Focus.** Entering the hub, or a change of `adventure.decisionKey` (a
+  committed result or a new run), focuses the result heading if there is a
+  result, otherwise the current tier heading, falling back to the page
+  heading. A refused write keeps the decision key, so focus stays on the
+  activated control.
+- **Pending result.** While storage refuses a result, the finished board stays
+  open. The Game Menu, the wide game-controls panel and the narrow dock offer
+  **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
+  hub never opens over an unsaved result. Retry does not reset the
+  interface, so a refused write keeps the Game Menu open with focus on Retry;
+  a saved result leaves the encounter and the session change closes the menu.
+- **Replay** is refused while Adventure is open, so its controls are hidden in
+  Adventure mode. The recording from the last encounter can still be exported.
+
 ## IDs, actions, and focus
 
 - Keep every document `id` unique.

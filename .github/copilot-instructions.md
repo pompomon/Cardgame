@@ -73,7 +73,7 @@ See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-re
   `clamp` from `src/renderers/shared/math.ts`, `isBasicLand`. Do not
   hardcode `'classic'` as a fallback.
 - **Status messages:** a later unconditional `state.status = …` overwrites
-  the storage-unavailable warning emitted by `setAdventureRun(...)`. Either
+  the storage-unavailable warning from a refused Adventure write. Either
   surface the warning last or guard the success message.
 
 ## Native HTML / CSS

@@ -483,6 +483,130 @@
   margin: 18px 0;
 }
 
+/* Adventure hub. Status text and icons carry meaning; borders only echo it. */
+.three-interface .three-adventure-hub {
+  max-width: 900px;
+}
+
+.three-interface .three-adventure-result {
+  margin: 12px 0;
+  padding: 4px 12px;
+  border: 2px solid #b3a77d;
+  border-radius: 10px;
+  background: #132a37;
+}
+
+.three-interface .three-adventure-result[data-outcome="win"] {
+  border-color: #7fd49a;
+}
+
+.three-interface .three-adventure-result[data-outcome="loss"] {
+  border-color: #e59a9a;
+}
+
+.three-interface .three-adventure-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.three-interface .three-adventure-stats div {
+  padding: 6px 10px;
+  border: 1px solid #476478;
+  border-radius: 8px;
+}
+
+.three-interface .three-adventure-stats dt {
+  font-size: 0.85rem;
+  color: #c6d6e4;
+}
+
+.three-interface .three-adventure-stats dd {
+  margin: 0;
+  font-weight: bold;
+}
+
+.three-interface .three-adventure-route,
+.three-interface .three-adventure-nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.three-interface .three-adventure-route {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.three-interface .three-adventure-tier {
+  padding: 4px 12px 12px;
+  border: 1px solid #476478;
+  border-radius: 10px;
+}
+
+.three-interface .three-adventure-tier[data-tier-state="current"] {
+  border: 2px solid #ffda7b;
+}
+
+.three-interface .three-adventure-tier h3 {
+  font-size: 1rem;
+}
+
+.three-interface .three-adventure-nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 8px;
+}
+
+.three-interface .three-adventure-node {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  border: 1px solid #476478;
+  border-radius: 8px;
+  text-align: start;
+}
+
+.three-interface .three-adventure-node[data-status="available"] {
+  border: 2px solid #7bc9ff;
+}
+
+.three-interface .three-adventure-node[data-status="current"] {
+  border: 2px solid #ffda7b;
+}
+
+.three-interface .three-adventure-node[data-status="completed"] {
+  border-color: #7fd49a;
+}
+
+.three-interface .three-adventure-node[data-status="bypassed"],
+.three-interface .three-adventure-node[data-status="locked"] {
+  border-style: dashed;
+  color: #c6d6e4;
+}
+
+.three-interface .three-adventure-node-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.three-interface .three-adventure-node-opponent {
+  font-weight: bold;
+}
+
+.three-interface .three-adventure-node-action {
+  margin-top: 4px;
+  text-decoration: underline;
+}
+
 .three-interface .three-log-scroll {
   max-height: 320px;
   max-height: min(320px, 45svh);

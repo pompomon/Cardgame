@@ -1,4 +1,4 @@
-import type { AdventureUiState, Mode } from './types'
+import type { AdventureNodeSummary, AdventureUiState, Mode } from './types'
 
 export const LOBBY_MODE_OPTIONS: ReadonlyArray<{ readonly mode: Mode; readonly label: string }> = [
   { mode: 'local-hvh', label: 'Local Human vs Human' },
@@ -15,4 +15,22 @@ export function isAdventureResumable(adventure: AdventureUiState | undefined): b
 
 export function hasSavedAdventureRun(adventure: AdventureUiState | undefined): boolean {
   return !!adventure?.hasSavedRun
+}
+
+/** The current tier's actionable nodes: one retry/convergence node or two fork choices. */
+export function actionableAdventureNodes(adventure: AdventureUiState | undefined): readonly AdventureNodeSummary[] {
+  const tier = adventure?.tiers[adventure.currentTier - 1]
+  return tier ? tier.nodes.filter((node) => node.status === 'current' || node.status === 'available') : []
+}
+
+/** Player-facing next opponent, listing both labels at an uncommitted fork. */
+export function describeNextAdventureOpponent(adventure: AdventureUiState | undefined): string | null {
+  const nodes = actionableAdventureNodes(adventure)
+  if (nodes.length === 0) {
+    return null
+  }
+  if (nodes.length === 1) {
+    return nodes[0].opponent.label
+  }
+  return `Choose ${nodes.map((node) => node.opponent.label).join(' or ')}`
 }

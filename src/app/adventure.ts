@@ -3,18 +3,21 @@ import { isBasicLand, type Card, type GameState } from '../game/types'
 import {
   ADVENTURE_NODE_ID_PATTERN,
   ADVENTURE_TIER_COUNT,
-  buildAdventureLineup,
   cloneAdventureDeck,
   cloneAdventureMap,
+  completeAdventureNode,
+  generateBranchingAdventureMap,
   isAdventureAttemptOrdinal,
   isAdventureCard,
   isAdventureRouteState,
   isAdventureRunStatus,
   linearAdventureTiers,
+  retryAdventureNode,
+  selectAdventureNode,
   type AdventureMap,
-  type AdventureMapKind,
   type AdventureMapNode,
   type AdventureOpponentDeck,
+  type AdventureRouteProgress,
   type AdventureRunStage,
   type AdventureRunStatus,
 } from './adventure-map'
@@ -32,15 +35,17 @@ import {
 } from './safe-storage'
 import type { AdventureState } from './types'
 
-export { ADVENTURE_TIER_COUNT, adventureNodeId, buildAdventureLineup } from './adventure-map'
+export { ADVENTURE_TIER_COUNT, adventureNodeId, adventureRouteNodes, buildAdventureLineup } from './adventure-map'
 export type {
   AdventureMap,
   AdventureMapKind,
   AdventureMapNode,
   AdventureMapTier,
   AdventureNodeLane,
+  AdventureNodeStatus,
   AdventureOpponentDeck,
   AdventureOpponentKind,
+  AdventureRouteNode,
   AdventureRunStage,
   AdventureRunStatus,
 } from './adventure-map'
@@ -155,8 +160,9 @@ function checkedAdventureRun(run: AdventureRunState): AdventureRunState {
 }
 
 /**
- * Creates a schema version 2 run on a `linear` map. For the same seed, the
- * opponents, decks and first encounter seed match the version 1 run.
+ * Creates a schema version 2 run on a seeded `branching` map, open at the
+ * `map` stage. No node is selected and no attempt seed exists yet: selecting
+ * a node derives the seed for that node and attempt.
  */
 export function createAdventureRun(seed: number, runId: string): AdventureRunState {
   return checkedAdventureRun({
@@ -165,12 +171,12 @@ export function createAdventureRun(seed: number, runId: string): AdventureRunSta
     baseSeed: seed,
     status: 'active',
     stage: 'map',
-    map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
+    map: generateBranchingAdventureMap(seed),
     currentTierIndex: 0,
     completedNodeIds: [],
     selectedNodeId: null,
     attemptOrdinal: 0,
-    attemptSeed: seed,
+    attemptSeed: null,
     remainingChances: ADVENTURE_STARTING_CHANCES,
     scoreEligibleChances: ADVENTURE_STARTING_CHANCES,
     winStreak: 0,
@@ -184,7 +190,7 @@ export function createAdventureRun(seed: number, runId: string): AdventureRunSta
 
 /** Inactive baseline shared by the controller constructor, refresh and reset paths. */
 export function createInactiveAdventureState(highScore = 0, hasSavedRun = false): AdventureState {
-  return { run: null, highScore, hasSavedRun }
+  return { run: null, highScore, hasSavedRun, pendingCompletion: null, lastResult: null }
 }
 
 export function isResumableAdventureRun(run: AdventureRunState): boolean {
@@ -200,11 +206,25 @@ export function currentAdventureNode(run: AdventureRunState): AdventureMapNode |
   return nodes.length === 1 ? nodes[0] : null
 }
 
+/** The committed node of the current tier, or null before a node is selected. */
+export function selectedAdventureNode(run: AdventureRunState): AdventureMapNode | null {
+  if (run.selectedNodeId === null) {
+    return null
+  }
+  return run.map.tiers[run.currentTierIndex]?.nodes.find((node) => node.id === run.selectedNodeId) ?? null
+}
+
+/**
+ * Decks for the selected node's encounter: the player's starter deck for
+ * `seed` and a detached copy of the node's stored opponent deck. Throws when
+ * no node is selected rather than substituting another opponent.
+ */
 export function deckPairForAdventureGame(run: AdventureRunState, seed: number): [Card[], Card[]] {
-  const node = currentAdventureNode(run)
-  const playerDeck = createStarterDeck(0, seed)
-  const opponentDeck = node ? cloneAdventureDeck(node.opponent.deck) : createStarterDeck(1, seed + 1)
-  return [playerDeck, opponentDeck]
+  const node = selectedAdventureNode(run)
+  if (!node) {
+    throw new Error('An Adventure encounter needs a selected node.')
+  }
+  return [createStarterDeck(0, seed), cloneAdventureDeck(node.opponent.deck)]
 }
 
 /**
@@ -287,22 +307,12 @@ const ADVENTURE_COUNTER_KEYS = [
   'totalCardsPlayed',
 ] as const
 
-/**
- * Map kinds a run may use. Branching maps are valid map data, but runs on
- * them stay unavailable, like an unknown kind, until Milestone 3 wires up
- * the map flow.
- */
-function isLiveAdventureMapKind(kind: AdventureMapKind): boolean {
-  return kind === 'linear' || kind === 'legacy-linear'
-}
-
 /** Strict guard for schema version 2 runs. Unknown versions fail closed. */
 export function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (!isRecordObject(value)) return false
   if (value.schemaVersion !== ADVENTURE_SCHEMA_VERSION) return false
   if (!isAdventureRunId(value.runId)) return false
   if (!isAdventureRouteState(value)) return false
-  if (!isLiveAdventureMapKind(value.map.kind)) return false
   if (!ADVENTURE_COUNTER_KEYS.every((key) => isNonNegativeInteger(value[key]))) return false
   return isEmptyArray(value.relics) && isEmptyArray(value.rewardHistory)
 }
@@ -373,20 +383,54 @@ export function migrateLegacyAdventureRun(legacy: AdventureRunStateV1, runId: st
   })
 }
 
+function applyAdventureRouteProgress(run: AdventureRunState, progress: AdventureRouteProgress): void {
+  run.currentTierIndex = progress.currentTierIndex
+  run.completedNodeIds = [...progress.completedNodeIds]
+  run.selectedNodeId = progress.selectedNodeId
+  run.attemptOrdinal = progress.attemptOrdinal
+  run.attemptSeed = progress.attemptSeed
+}
+
 /**
- * Starts or continues the current tier's encounter. Selects the tier's node
- * (kept through retries), keeps the attempt seed or assigns `fallbackSeed`,
- * and marks the run active at the `encounter` stage.
+ * Commits a node choice from untrusted input and opens its encounter. The
+ * node must be `current` or `available` on a resumable run at the `map`
+ * stage. The attempt number and any stored seed are kept; otherwise the seed
+ * is derived for the node and attempt. Returns null, and changes nothing,
+ * when the choice is rejected.
  */
-export function beginAdventureEncounter(run: AdventureRunState, fallbackSeed: number): AdventureRunState {
-  const node = isResumableAdventureRun(run) ? currentAdventureNode(run) : null
-  if (!node) {
-    throw new Error('This Adventure run has no encounter to start.')
+export function startAdventureEncounter(run: AdventureRunState, nodeId: unknown): AdventureRunState | null {
+  const progress = selectAdventureNode(run, nodeId)
+  if (!progress) {
+    return null
   }
   const next = cloneAdventureRun(run)
-  next.selectedNodeId = node.id
-  next.attemptSeed = run.attemptSeed ?? fallbackSeed
+  applyAdventureRouteProgress(next, progress)
   next.stage = 'encounter'
+  next.status = 'active'
+  return checkedAdventureRun(next)
+}
+
+/**
+ * Opens the map hub for a resumable run: the `map` stage, active, with the
+ * committed node, attempt number and seed kept for a retry. A run saved
+ * mid-encounter whose game cannot be restored replays the same attempt.
+ */
+export function openAdventureMap(run: AdventureRunState): AdventureRunState {
+  if (!isResumableAdventureRun(run)) {
+    throw new Error('Only a resumable Adventure run can open the map.')
+  }
+  const next = cloneAdventureRun(run)
+  next.stage = 'map'
+  next.status = 'active'
+  return checkedAdventureRun(next)
+}
+
+/** Marks a run saved mid-encounter active again, for a restored game. */
+export function resumeAdventureEncounter(run: AdventureRunState): AdventureRunState {
+  if (!isResumableAdventureRun(run) || run.stage !== 'encounter') {
+    throw new Error('Only a saved Adventure encounter can be resumed.')
+  }
+  const next = cloneAdventureRun(run)
   next.status = 'active'
   return checkedAdventureRun(next)
 }
@@ -402,19 +446,18 @@ export function pauseAdventureRun(run: AdventureRunState): AdventureRunState {
 }
 
 /**
- * Applies a finished encounter. A win records the node, then advances to the
- * next tier or completes the run on the last tier. A loss costs a chance and
- * fails the run when none remain. Otherwise the same node is retried with a
- * new attempt number and `nextSeed`. Real and score-eligible counters change
- * separately.
+ * Applies a finished encounter with the route rules. A win completes the
+ * selected node, then opens the next tier's map or completes the run after
+ * the boss. A loss costs a chance and fails the run when none remain.
+ * Otherwise the same node is retried with the next attempt number and its
+ * derived seed. Real and score-eligible counters change separately.
+ * Non-terminal results return to the `map` stage as an active run.
  */
 export function applyAdventureEncounterResult(
   run: AdventureRunState,
   outcome: AdventureEncounterOutcome,
-  nextSeed: number,
 ): AdventureRunState {
-  const nodeId = run.selectedNodeId
-  if (run.status !== 'active' || run.stage !== 'encounter' || nodeId === null) {
+  if (run.status !== 'active' || run.stage !== 'encounter' || run.selectedNodeId === null) {
     throw new Error('Only an active Adventure encounter can finish.')
   }
   const next = cloneAdventureRun(run)
@@ -428,16 +471,13 @@ export function applyAdventureEncounterResult(
     if (next.scoreEligibleWinStreak % 3 === 0) {
       next.scoreEligibleChances += 1
     }
-    next.completedNodeIds.push(nodeId)
-    next.selectedNodeId = null
-    if (next.currentTierIndex >= ADVENTURE_TIER_COUNT - 1) {
+    const completion = completeAdventureNode(run)
+    applyAdventureRouteProgress(next, completion)
+    if (completion.finished) {
       next.status = 'completed'
       next.stage = null
-      next.attemptSeed = null
       return checkedAdventureRun(next)
     }
-    next.currentTierIndex += 1
-    next.attemptOrdinal = 0
   } else {
     if (outcome === 'loss') {
       next.remainingChances = Math.max(0, next.remainingChances - 1)
@@ -452,11 +492,10 @@ export function applyAdventureEncounterResult(
         return checkedAdventureRun(next)
       }
     }
-    next.attemptOrdinal = Math.min(next.attemptOrdinal + 1, Number.MAX_SAFE_INTEGER)
+    applyAdventureRouteProgress(next, retryAdventureNode(run))
   }
-  next.attemptSeed = nextSeed
   next.stage = 'map'
-  next.status = 'paused'
+  next.status = 'active'
   return checkedAdventureRun(next)
 }
 
@@ -469,8 +508,9 @@ export function readStoredAdventureHighScore(): number {
   return Number.isFinite(value) ? value : 0
 }
 
-export function persistAdventureHighScore(score: number): void {
-  writeStorageItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY, String(score))
+/** Returns whether the high score reached storage. */
+export function persistAdventureHighScore(score: number): boolean {
+  return writeStorageItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY, String(score))
 }
 
 /**

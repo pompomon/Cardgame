@@ -9,9 +9,7 @@ import { isGameAction, isLegalActionForState, isSeedPayload } from './action-val
 import { readStorageItem, tryReadStorageItem, writeStorageItem } from './safe-storage'
 import {
   applyAdventureEncounterResult,
-  beginAdventureEncounter,
   clearStoredAdventureGameSnapshot,
-  cloneAdventureRun,
   computeAdventureScore,
   createAdventureRun,
   createAdventureRunId,
@@ -19,20 +17,26 @@ import {
   deckPairForAdventureGame,
   isAdventureGameSnapshotForRun,
   isResumableAdventureRun,
+  openAdventureMap,
   pauseAdventureRun,
   persistAdventureGameSnapshot,
   persistAdventureHighScore,
   readStoredAdventureGameSnapshot,
   readStoredAdventureHighScore,
+  resumeAdventureEncounter,
+  selectedAdventureNode,
+  startAdventureEncounter,
   type AdventureEncounterOutcome,
   type AdventureRunState,
 } from './adventure'
 import {
+  ADVENTURE_RUN_STORAGE_KEY,
   clearStoredAdventureRun,
   persistAdventureRun,
   readStoredAdventureRunRecord,
   type StoredAdventureRunRecord,
 } from './adventure-persistence'
+import { displayAdventureOpponentLabel } from './game-presentation'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
 import {
@@ -58,6 +62,33 @@ const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
 const TUTORIAL_SEED = 1
 const ADVENTURE_STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
+const ADVENTURE_RESULT_WARNING = 'The encounter result could not be saved (storage unavailable). Retry saving the result.'
+const ADVENTURE_PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
+
+function adventureChancesText(chances: number): string {
+  return `${chances} ${chances === 1 ? 'chance' : 'chances'} left`
+}
+
+// The status after a committed encounter result. Only terminal runs carry a score.
+function adventureResultStatus(
+  run: AdventureRunState,
+  outcome: AdventureEncounterOutcome,
+  score: number | null,
+  highScore: number,
+): string {
+  if (run.status === 'completed' || run.status === 'failed') {
+    const heading = run.status === 'completed' ? 'Adventure completed!' : 'Adventure failed.'
+    return `${heading} Score: ${score ?? 0}. High score: ${highScore}.`
+  }
+  const tier = run.currentTierIndex + 1
+  if (outcome === 'win') {
+    return `Encounter won. Choose your Tier ${tier} encounter.`
+  }
+  if (outcome === 'loss') {
+    return `Encounter lost. ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
+  }
+  return `Encounter ended in a draw. Retry Tier ${tier}.`
+}
 
 // Adventure seeds come from the clock, as before. Clamp unusual clock values
 // so run changes always receive the non-negative integer they require.
@@ -88,6 +119,8 @@ export interface ControllerApi {
   setRenderQualityPreference(preference: RenderQualityPreference): void
   startGame(mode: Mode): void
   startAdventure(): void
+  startAdventureNode(nodeId: string): void
+  retryAdventureCompletion(): void
   resumeAdventure(): void
   pauseAdventure(): void
   abandonAdventure(): void
@@ -193,18 +226,21 @@ export class AppController implements ControllerApi {
     }
     if (!run) {
       // Reset adventure view-state to the inactive baseline so the lobby never
-      // shows stale round/lineup/status when storage is missing or corrupted.
+      // shows stale tier/route/status when storage is missing or corrupted.
       this.state.adventure = createInactiveAdventureState(highScore)
       return
     }
     // Show a stored 'active' run as 'paused'. A run is stored as 'active' if
-    // the user closed the tab mid-round; surfacing it as 'paused' lets them
-    // resume cleanly. Reading never writes: the normalization (and any
-    // version 1 conversion) is only saved by the next explicit run save.
+    // the user closed the tab mid-encounter or left from the map; surfacing
+    // it as 'paused' lets them resume cleanly. Reading never writes: the
+    // normalization (and any version 1 conversion) is only saved by the next
+    // committed transition.
     this.state.adventure = {
       run: run.status === 'active' ? pauseAdventureRun(run) : run,
       highScore,
       hasSavedRun: true,
+      pendingCompletion: null,
+      lastResult: null,
     }
   }
 
@@ -233,137 +269,106 @@ export class AppController implements ControllerApi {
     this.state.replay = null
   }
 
-  private setAdventureRun(run: AdventureRunState | null, statusMessage?: string): boolean {
-    const highScore = this.state.adventure.highScore
-    if (!run) {
-      this.unsavedConversionRunId = null
-      this.state.adventure = createInactiveAdventureState(highScore)
-      clearStoredAdventureRun()
-      if (statusMessage) {
-        this.state.status = statusMessage
-      }
+  // Leaves any replay, AI turn or peer session and shows Adventure mode with
+  // no game, which is the map hub. Callers set the Adventure state and status.
+  private enterAdventureHub(): void {
+    this.stopReplayInterval()
+    this.clearAiTimeout()
+    this.p2p?.close()
+    this.p2p = null
+    this.state.replay = null
+    this.state.mode = 'adventure-hvai'
+    this.state.game = null
+    this.state.recording = null
+    this.state.controllers = ['human', 'ai']
+    this.state.offer = ''
+    this.state.answer = ''
+    this.state.p2pStarted = false
+    this.state.pendingP2PStartSeed = null
+    this.state.pendingRematchSeed = null
+  }
+
+  // Launches the committed attempt: a restored game, or a new game from the
+  // attempt seed and the selected node's decks.
+  private launchAdventureGame(run: AdventureRunState, snapshot: GameState | null): void {
+    const seed = run.attemptSeed
+    if (seed === null) {
+      throw new Error('An Adventure encounter needs an attempt seed.')
+    }
+    this.clearAiTimeout()
+    this.state.mode = 'adventure-hvai'
+    this.state.seed = seed
+    this.state.game = snapshot ?? createInitialGame(seed, deckPairForAdventureGame(run, seed))
+    this.state.controllers = ['human', 'ai']
+    this.initializeRecording('adventure-hvai')
+  }
+
+  // The run key is gone when storage accepts the removal or a successful read
+  // confirms the key is absent, so refusing to remove an empty slot is not a
+  // failure. An unreadable slot after a refused removal counts as a failure.
+  private removeStoredAdventureRun(): boolean {
+    if (clearStoredAdventureRun()) {
       return true
     }
-    const next = cloneAdventureRun(run)
-    // Replace the in-memory run even when the write fails, so the current
-    // session keeps playing; hasSavedRun follows the write result because
-    // resumeAdventure() reads the run back from storage.
-    const persisted = persistAdventureRun(next)
-    if (persisted) {
-      this.unsavedConversionRunId = null
-    }
-    this.state.adventure = {
-      run: next,
-      highScore,
-      hasSavedRun: persisted,
-    }
-    if (!persisted) {
-      this.state.status = ADVENTURE_STORAGE_WARNING
-    } else if (statusMessage) {
-      this.state.status = statusMessage
-    }
-    return persisted
-  }
-
-  // A resumable run needs a write when it became active in this session or
-  // its last save failed. A run that was only loaded (or converted from
-  // version 1) is never written just because the lobby was shown.
-  private adventureRunNeedsSave(): boolean {
-    const run = this.state.adventure.run
-    return run !== null
-      && isResumableAdventureRun(run)
-      && (run.status === 'active' || !this.state.adventure.hasSavedRun)
-  }
-
-  private launchAdventureGameFromRun(run: AdventureRunState): void {
-    const seed = run.attemptSeed ?? adventureClockSeed()
-    const [playerDeck, opponentDeck] = deckPairForAdventureGame(run, seed)
-    this.state.mode = 'adventure-hvai'
-    this.state.seed = seed
-    this.state.game = createInitialGame(seed, [playerDeck, opponentDeck])
-    this.state.controllers = ['human', 'ai']
-    this.state.offer = ''
-    this.state.answer = ''
-    this.state.p2pStarted = false
-    this.state.pendingP2PStartSeed = null
-    this.state.pendingRematchSeed = null
-    this.initializeRecording('adventure-hvai')
-  }
-
-  private launchAdventureGameFromSnapshot(run: AdventureRunState, snapshot: GameState): void {
-    const seed = run.attemptSeed ?? adventureClockSeed()
-    this.state.mode = 'adventure-hvai'
-    this.state.seed = seed
-    this.state.game = snapshot
-    this.state.controllers = ['human', 'ai']
-    this.state.offer = ''
-    this.state.answer = ''
-    this.state.p2pStarted = false
-    this.state.pendingP2PStartSeed = null
-    this.state.pendingRematchSeed = null
-    this.initializeRecording('adventure-hvai')
-  }
-
-  private applyAdventureCompletion(run: AdventureRunState, message: string): void {
-    const score = computeAdventureScore(run)
-    const nextHighScore = Math.max(this.state.adventure.highScore, score)
-    this.state.adventure.highScore = nextHighScore
-    persistAdventureHighScore(nextHighScore)
-    const fullMessage = `${message} Score: ${score}. High score: ${nextHighScore}.`
-    // This helper is terminal-only and receives a 'completed' or 'failed'
-    // run. Clear stored run/snapshot and surface terminal status in memory
-    // without persisting and immediately removing the run.
-    clearStoredAdventureRun()
-    clearStoredAdventureGameSnapshot()
-    this.unsavedConversionRunId = null
-    this.state.adventure = {
-      run: cloneAdventureRun(run),
-      highScore: nextHighScore,
-      hasSavedRun: false,
-    }
-    this.state.status = fullMessage
-    this.state.mode = null
-    this.state.game = null
-    this.state.controllers = ['human', 'human']
+    const remaining = tryReadStorageItem(ADVENTURE_RUN_STORAGE_KEY)
+    return remaining.available && remaining.value === null
   }
 
   private onAdventureGameFinished(previousState: GameState): void {
-    if (this.state.mode !== 'adventure-hvai' || !this.state.game || previousState.phase === 'gameOver' || this.state.game.phase !== 'gameOver') {
+    const game = this.state.game
+    if (this.state.mode !== 'adventure-hvai' || !game || previousState.phase === 'gameOver' || game.phase !== 'gameOver') {
       return
     }
     const run = this.state.adventure.run
-    if (!run || run.status !== 'active' || run.stage !== 'encounter') {
+    if (!run || run.status !== 'active' || run.stage !== 'encounter' || this.state.adventure.pendingCompletion) {
       return
     }
+    const outcome: AdventureEncounterOutcome = game.winner === 0 ? 'win' : game.winner === 1 ? 'loss' : 'draw'
+    this.commitAdventureResult(run, outcome)
+  }
 
-    // Any in-progress mid-round snapshot is no longer valid once a round
-    // resolves; clear it so a future resume starts a fresh round from the
-    // run state rather than restoring a stale finished board. The new
-    // attempt or tier also stops any leftover snapshot from matching.
-    clearStoredAdventureGameSnapshot()
-
-    const winner = this.state.game.winner
-    const outcome: AdventureEncounterOutcome = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw'
-    const next = applyAdventureEncounterResult(run, outcome, adventureClockSeed())
-    if (next.status === 'completed') {
-      this.applyAdventureCompletion(next, 'Adventure completed!')
+  // Commits a finished encounter, storage first. A non-terminal result writes
+  // the next run. A terminal result writes the maximum high score, then
+  // removes the run. Until every write succeeds, memory keeps the pre-result
+  // run and the game-over board, and the outcome waits for Retry completion,
+  // which re-applies it to a fresh candidate from the same run.
+  private commitAdventureResult(run: AdventureRunState, outcome: AdventureEncounterOutcome): void {
+    const nodeId = run.selectedNodeId
+    if (nodeId === null) {
       return
     }
-    if (next.status === 'failed') {
-      this.applyAdventureCompletion(next, 'Adventure failed.')
-      return
-    }
-    const round = next.currentTierIndex + 1
-    if (outcome === 'win') {
-      this.setAdventureRun(next, `Round won. Resume adventure for Round ${round}.`)
-    } else if (outcome === 'loss') {
-      this.setAdventureRun(next, `Round lost. ${next.remainingChances} chances left. Resume adventure to retry Round ${round}.`)
+    const candidate = applyAdventureEncounterResult(run, outcome)
+    const terminal = !isResumableAdventureRun(candidate)
+    let score: number | null = null
+    let highScore = this.state.adventure.highScore
+    let committed: boolean
+    if (terminal) {
+      score = computeAdventureScore(candidate)
+      highScore = Math.max(readStoredAdventureHighScore(), highScore, score)
+      committed = persistAdventureHighScore(highScore) && this.removeStoredAdventureRun()
     } else {
-      this.setAdventureRun(next, `Round ended in a draw. Resume adventure to replay Round ${round}.`)
+      committed = persistAdventureRun(candidate)
     }
-    this.state.mode = null
+    if (!committed) {
+      this.state.adventure = { ...this.state.adventure, pendingCompletion: { outcome } }
+      this.state.status = ADVENTURE_RESULT_WARNING
+      return
+    }
+    // The next attempt or tier, or a removed run, no longer matches any saved
+    // game, so clearing the slot is only cleanup.
+    clearStoredAdventureGameSnapshot()
+    this.unsavedConversionRunId = null
+    this.clearAiTimeout()
+    this.state.adventure = {
+      run: candidate,
+      highScore,
+      hasSavedRun: !terminal,
+      pendingCompletion: null,
+      lastResult: { outcome, tierIndex: run.currentTierIndex, nodeId, score },
+    }
+    // The hub replaces the finished board; the recording stays exportable.
     this.state.game = null
-    this.state.controllers = ['human', 'human']
+    this.state.status = adventureResultStatus(candidate, outcome, score, highScore)
   }
 
   private initializeRecording(mode: Mode): void {
@@ -655,13 +660,16 @@ export class AppController implements ControllerApi {
     const previous = this.state.game
     const next = applyAction(previous, action)
     this.state.game = next
-    if (this.state.mode === 'adventure-hvai' && action.type === 'play_land' && this.state.adventure.run?.status === 'active') {
-      // Update the in-memory counter only. setAdventureRun() would
-      // synchronously JSON-stringify and write the entire run (including the
-      // 7×50-card opponent map) to localStorage on every play_land, which
-      // can introduce main-thread jank during gameplay. Persistence happens
-      // at round boundaries via setAdventureRun() in onAdventureGameFinished()
-      // and on pause/resume/abandon, which already capture totalCardsPlayed.
+    if (
+      this.state.mode === 'adventure-hvai'
+      && action.type === 'play_land'
+      && this.state.adventure.run?.status === 'active'
+      && this.state.adventure.run.stage === 'encounter'
+    ) {
+      // Update the in-memory counter only; writing the run (with its
+      // ten-deck map) on every summon would add main-thread jank. The next
+      // committed transition (result, pause) saves it. Route fields are
+      // never changed in place.
       this.state.adventure.run.totalCardsPlayed += 1
     }
 
@@ -712,21 +720,85 @@ export class AppController implements ControllerApi {
       this.notify()
       return
     }
-    this.stopReplayInterval()
-    this.clearAiTimeout()
-    this.p2p?.close()
-    this.p2p = null
-    this.state.replay = null
-    const seed = adventureClockSeed()
-    const run = beginAdventureEncounter(createAdventureRun(seed, createAdventureRunId()), seed)
-    clearStoredAdventureGameSnapshot()
-    const persisted = this.setAdventureRun(run)
-    this.launchAdventureGameFromRun(run)
-    if (persisted) {
-      this.state.status = 'Adventure started. Round 1 begins.'
+    if (this.state.adventure.pendingCompletion) {
+      this.state.status = ADVENTURE_PENDING_NOTICE
+      this.notify()
+      return
     }
+    const current = this.state.adventure.run
+    if (this.state.mode === 'adventure-hvai' && current && isResumableAdventureRun(current)) {
+      // A stale or repeated Start while a run is open must not replace it.
+      return
+    }
+    // Persistence first: the new run replaces any saved run only once the
+    // write succeeds, so a refused write keeps the previous state.
+    const run = createAdventureRun(adventureClockSeed(), createAdventureRunId())
+    if (!persistAdventureRun(run)) {
+      this.state.status = `${ADVENTURE_STORAGE_WARNING} The Adventure did not start.`
+      this.notify()
+      return
+    }
+    this.unsavedConversionRunId = null
+    clearStoredAdventureGameSnapshot()
+    this.enterAdventureHub()
+    this.state.adventure = {
+      run,
+      highScore: this.state.adventure.highScore,
+      hasSavedRun: true,
+      pendingCompletion: null,
+      lastResult: null,
+    }
+    this.state.status = 'Adventure started. Choose your first encounter.'
+    this.notify()
+  }
+
+  startAdventureNode(nodeId: string): void {
+    const adventure = this.state.adventure
+    const run = adventure.run
+    // Re-read the latest state: a stale or repeated activation after an
+    // encounter started (or while a result waits to be saved) does nothing.
+    if (
+      this.state.mode !== 'adventure-hvai'
+      || this.isReplayActive()
+      || this.state.game !== null
+      || adventure.pendingCompletion !== null
+      || !run
+      || !isResumableAdventureRun(run)
+    ) {
+      return
+    }
+    const candidate = startAdventureEncounter(run, nodeId)
+    const node = candidate ? selectedAdventureNode(candidate) : null
+    if (!candidate || !node) {
+      this.state.status = 'That encounter is not available. Choose a highlighted encounter.'
+      this.notify()
+      return
+    }
+    // Persistence first: a refused write keeps the map, the same choices and
+    // the attempt number.
+    if (!persistAdventureRun(candidate)) {
+      this.state.status = `${ADVENTURE_STORAGE_WARNING} The encounter did not start.`
+      this.notify()
+      return
+    }
+    this.unsavedConversionRunId = null
+    // Identity matching rejects older saved games; clearing is cleanup only.
+    clearStoredAdventureGameSnapshot()
+    this.state.adventure = { ...adventure, run: candidate, hasSavedRun: true, lastResult: null }
+    this.launchAdventureGame(candidate, null)
+    const opponent = displayAdventureOpponentLabel(node.opponent.kind, node.opponent.lands)
+    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.`
     this.notify()
     this.scheduleAiIfNeeded()
+  }
+
+  retryAdventureCompletion(): void {
+    const { run, pendingCompletion } = this.state.adventure
+    if (this.state.mode !== 'adventure-hvai' || !run || !pendingCompletion) {
+      return
+    }
+    this.commitAdventureResult(run, pendingCompletion.outcome)
+    this.notify()
   }
 
   resumeAdventure(): void {
@@ -735,8 +807,17 @@ export class AppController implements ControllerApi {
       this.notify()
       return
     }
-    // Read once. A version 1 run arrives converted in memory; this resume is
-    // its first version 2 write.
+    if (this.state.adventure.pendingCompletion) {
+      this.state.status = ADVENTURE_PENDING_NOTICE
+      this.notify()
+      return
+    }
+    if (this.state.mode === 'adventure-hvai') {
+      // A stale or repeated Resume after the run already opened.
+      return
+    }
+    // Read once. A version 1 run arrives converted in memory; its first
+    // version 2 write is the next committed transition.
     const record = this.readAdventureRunRecord()
     if (!record || !isResumableAdventureRun(record.run)) {
       this.state.status = 'No paused adventure run found.'
@@ -745,87 +826,142 @@ export class AppController implements ControllerApi {
       return
     }
     const stored = record.run
+    const tier = stored.currentTierIndex + 1
     const slot = readStoredAdventureGameSnapshot()
-    const resumed = beginAdventureEncounter(stored, adventureClockSeed())
-    const persisted = this.setAdventureRun(resumed)
-    const round = resumed.currentTierIndex + 1
-    let recovered = false
-    // Restore a mid-game save only when it belongs to this run's paused
-    // encounter: same run, node, attempt number and attempt seed. Anything
-    // else (a bare version 1 game, a corrupt slot, or a save from another
-    // run or attempt) is never restored; the encounter restarts from its
-    // seed without using a chance.
-    if (stored.stage === 'encounter' && slot.kind === 'envelope' && isAdventureGameSnapshotForRun(slot.envelope, resumed)) {
-      this.launchAdventureGameFromSnapshot(resumed, slot.envelope.game)
-      clearStoredAdventureGameSnapshot()
-    } else {
-      // Warn whenever a mid-encounter game was lost, including when the tab
-      // closed without pausing and so left no save at all. Stale saves from
-      // earlier attempts are cleaned up quietly.
-      recovered = stored.stage === 'encounter' || (record.migratedFromV1 && slot.kind === 'legacy')
-      if (slot.kind !== 'none') {
-        clearStoredAdventureGameSnapshot()
+    const highScore = readStoredAdventureHighScore()
+    // Restore a mid-game save only for a run paused at its encounter, when
+    // the save belongs to the same run, node, attempt number and attempt
+    // seed, and the game is still in progress. The run is marked active
+    // before launching, so the same save is never restored twice.
+    if (
+      stored.status === 'paused'
+      && stored.stage === 'encounter'
+      && slot.kind === 'envelope'
+      && slot.envelope.game.phase !== 'gameOver'
+      && isAdventureGameSnapshotForRun(slot.envelope, stored)
+    ) {
+      const resumed = resumeAdventureEncounter(stored)
+      if (!persistAdventureRun(resumed)) {
+        this.state.status = `${ADVENTURE_STORAGE_WARNING} The Adventure was not resumed.`
+        this.notify()
+        return
       }
-      this.launchAdventureGameFromRun(resumed)
+      this.unsavedConversionRunId = null
+      this.enterAdventureHub()
+      this.state.adventure = { run: resumed, highScore, hasSavedRun: true, pendingCompletion: null, lastResult: null }
+      this.launchAdventureGame(resumed, slot.envelope.game)
+      clearStoredAdventureGameSnapshot()
+      this.state.status = `Adventure resumed at Tier ${tier}.`
+      this.notify()
+      this.scheduleAiIfNeeded()
+      return
     }
-    // Message priority: storage warning (already set by setAdventureRun),
-    // then the recovery warning, then the success message.
-    if (persisted) {
-      this.state.status = recovered
-        ? `Adventure resumed at Round ${round}. The saved game could not be restored, so the round restarted without using a chance.`
-        : `Adventure resumed at Round ${round}.`
+    // Everything else opens the map without writing. A run saved mid-encounter
+    // keeps its committed node and attempt, so the encounter restarts from the
+    // same seed without using a chance. Warn whenever a game was lost,
+    // including a tab closed without pausing; other stale saves are cleaned up
+    // quietly.
+    const lostGame = stored.stage === 'encounter' || (record.migratedFromV1 && slot.kind === 'legacy')
+    if (slot.kind !== 'none') {
+      clearStoredAdventureGameSnapshot()
     }
+    this.enterAdventureHub()
+    this.state.adventure = {
+      run: openAdventureMap(stored),
+      highScore,
+      hasSavedRun: true,
+      pendingCompletion: null,
+      lastResult: null,
+    }
+    this.state.status = lostGame
+      ? `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
+      : `Adventure resumed at Tier ${tier}.`
     this.notify()
-    this.scheduleAiIfNeeded()
   }
 
   pauseAdventure(): void {
-    if (this.state.mode !== 'adventure-hvai') {
+    if (this.state.mode !== 'adventure-hvai' || this.isReplayActive()) {
       return
     }
-    const run = this.state.adventure.run
+    const adventure = this.state.adventure
+    const run = adventure.run
     if (!run || !isResumableAdventureRun(run)) {
       return
     }
-    // Pausing mid-round: save the live GameState, bound to this run's
-    // attempt identity, so resuming continues exactly where the player left
-    // off. Pausing after the round ended (gameOver) is handled by
-    // onAdventureGameFinished, which already wrote a paused run to storage
-    // and sent us back to the lobby — no game snapshot is needed then.
+    if (adventure.pendingCompletion) {
+      this.state.status = ADVENTURE_PENDING_NOTICE
+      this.notify()
+      return
+    }
     const game = this.state.game
-    if (game && game.phase !== 'gameOver' && run.stage === 'encounter') {
-      persistAdventureGameSnapshot(run, game)
-    } else {
-      clearStoredAdventureGameSnapshot()
+    if (run.stage === 'encounter' && (!game || game.phase === 'gameOver')) {
+      // A finished game is committed (or waiting to be saved) first.
+      return
     }
     const paused = pauseAdventureRun(run)
-    this.resetToLobby()
-    // The single run write for this pause. If it fails, drop the game save
-    // too; setAdventureRun() surfaces the storage warning last.
-    const persisted = this.setAdventureRun(paused, `Adventure paused at Round ${paused.currentTierIndex + 1}.`)
-    if (!persisted) {
-      clearStoredAdventureGameSnapshot()
+    // Mid-encounter, save the live game bound to this attempt, then the
+    // paused run. Leave for the lobby only after both writes succeed; a
+    // refused write keeps the encounter (or the map) open so Pause can be
+    // retried.
+    if (run.stage === 'encounter' && game) {
+      if (!persistAdventureGameSnapshot(run, game)) {
+        this.state.status = `${ADVENTURE_STORAGE_WARNING} The game was not paused.`
+        this.notify()
+        return
+      }
+      if (!persistAdventureRun(paused)) {
+        clearStoredAdventureGameSnapshot()
+        this.state.status = `${ADVENTURE_STORAGE_WARNING} The game was not paused.`
+        this.notify()
+        return
+      }
+    } else if (!persistAdventureRun(paused)) {
+      this.state.status = `${ADVENTURE_STORAGE_WARNING} The Adventure was not paused.`
+      this.notify()
+      return
+    }
+    this.unsavedConversionRunId = null
+    this.resetToLobby(`Adventure paused at Tier ${paused.currentTierIndex + 1}.`)
+    this.state.adventure = {
+      run: paused,
+      highScore: adventure.highScore,
+      hasSavedRun: true,
+      pendingCompletion: null,
+      lastResult: null,
     }
     this.notify()
   }
 
   abandonAdventure(): void {
-    const hadAdventure = this.state.adventure.run !== null || this.state.adventure.hasSavedRun
+    const adventure = this.state.adventure
+    const hadAdventure = adventure.run !== null || adventure.hasSavedRun || adventure.pendingCompletion !== null
+    // Reset is the explicit way out of every Adventure state, including a
+    // result waiting to be saved. A new run ID makes any leftover save stale,
+    // so clearing the game slot is cleanup only.
     clearStoredAdventureGameSnapshot()
-    this.setAdventureRun(null)
+    const removed = this.removeStoredAdventureRun()
+    this.unsavedConversionRunId = null
     if (this.state.mode === 'adventure-hvai') {
-      this.backToLobby(hadAdventure ? 'Adventure run reset.' : undefined)
-      return
+      this.resetToLobby()
     }
-    if (hadAdventure) {
+    // Show what storage now holds: a run that could not be removed reappears.
+    this.refreshAdventureFromStorage()
+    if (!removed) {
+      this.state.status = 'Adventure run could not be reset (storage unavailable).'
+    } else if (hadAdventure) {
       this.state.status = 'Adventure run reset.'
-      this.notify()
     }
+    this.notify()
   }
 
   startGame(mode: Mode): void {
     if (mode === 'adventure-hvai') {
       this.startAdventure()
+      return
+    }
+    if (this.state.adventure.pendingCompletion) {
+      this.state.status = ADVENTURE_PENDING_NOTICE
+      this.notify()
       return
     }
     this.stopReplayInterval()
@@ -843,55 +979,35 @@ export class AppController implements ControllerApi {
     this.state.p2pStarted = false
     this.state.pendingP2PStartSeed = null
     this.state.pendingRematchSeed = null
-    // If there's an in-memory active adventure (e.g. user navigated back to
-    // the lobby with state still active), demote it to 'paused' rather than
-    // clearing it. Starting a non-adventure mode should never silently delete
-    // saved adventure progress; the user can still resume the run from the
-    // lobby afterwards. A run that was only loaded from storage is not
-    // rewritten.
-    let adventurePersisted = true
-    const adventureRun = this.state.adventure.run
-    if (adventureRun && this.adventureRunNeedsSave()) {
-      // pauseAdventureRun() keeps the attempt seed and identity as-is.
-      adventurePersisted = this.setAdventureRun(pauseAdventureRun(adventureRun))
-    }
+    // Starting another mode never writes or deletes Adventure progress. Every
+    // Adventure transition is saved when it happens, so the lobby simply
+    // shows the stored run (an 'active' one as paused) for a later resume.
+    this.refreshAdventureFromStorage()
 
     if (mode === 'local-hvh') {
       this.state.controllers = ['human', 'human']
-      if (adventurePersisted) {
-        this.state.status = 'Local Human vs Human game started.'
-      }
+      this.state.status = 'Local Human vs Human game started.'
     } else if (mode === 'local-hvai') {
       this.state.controllers = ['human', 'ai']
-      if (adventurePersisted) {
-        this.state.status = 'Local Human vs AI game started.'
-      }
+      this.state.status = 'Local Human vs AI game started.'
     } else if (mode === 'local-aivai') {
       this.state.controllers = ['ai', 'ai']
-      if (adventurePersisted) {
-        this.state.status = 'Local AI vs AI simulation started.'
-      }
+      this.state.status = 'Local AI vs AI simulation started.'
     } else if (mode === 'tutorial') {
       this.state.controllers = ['human', 'ai']
-      if (adventurePersisted) {
-        this.state.status = 'Tutorial started. Follow the hint panel to learn each creature ability.'
-      }
+      this.state.status = 'Tutorial started. Follow the hint panel to learn each creature ability.'
       this.state.offer = ''
       this.state.answer = ''
     } else if (mode === 'p2p-host') {
       this.setupP2P()
       this.state.controllers = ['human', 'remote']
-      if (adventurePersisted) {
-        this.state.status = 'Host created. Exchange offer/answer to connect.'
-      }
+      this.state.status = 'Host created. Exchange offer/answer to connect.'
       this.state.offer = ''
       this.state.answer = ''
     } else {
       this.setupP2P()
       this.state.controllers = ['remote', 'human']
-      if (adventurePersisted) {
-        this.state.status = 'Joiner ready. Paste offer to generate answer.'
-      }
+      this.state.status = 'Joiner ready. Paste offer to generate answer.'
       this.state.offer = ''
       this.state.answer = ''
     }
@@ -924,20 +1040,17 @@ export class AppController implements ControllerApi {
   }
 
   backToLobby(statusMessage?: string): void {
-    this.resetToLobby(statusMessage)
-    const run = this.state.adventure.run
-    if (run && isResumableAdventureRun(run)) {
-      // Demote and save a run that became active in this session (or whose
-      // last save failed). A run that was only loaded stays as stored.
-      if (this.adventureRunNeedsSave()) {
-        const persisted = this.setAdventureRun(pauseAdventureRun(run))
-        if (!persisted) {
-          clearStoredAdventureGameSnapshot()
-        }
-      }
-    } else {
-      this.refreshAdventureFromStorage()
+    if (this.state.adventure.pendingCompletion) {
+      this.state.status = ADVENTURE_PENDING_NOTICE
+      this.notify()
+      return
     }
+    // Leaving never writes Adventure progress: each transition was saved when
+    // it happened, so the lobby shows the stored run. Leaving mid-encounter
+    // without Pause keeps no game, and the encounter restarts on resume
+    // without using a chance.
+    this.resetToLobby(statusMessage)
+    this.refreshAdventureFromStorage()
     this.notify()
   }
 
@@ -1022,7 +1135,7 @@ export class AppController implements ControllerApi {
       return
     }
     if (this.state.mode === 'adventure-hvai') {
-      this.state.status = 'Use Resume Adventure from lobby to continue the run.'
+      this.state.status = 'Rematch is unavailable in Adventure. Continue from the Adventure map.'
       this.notify()
       return
     }
@@ -1079,6 +1192,11 @@ export class AppController implements ControllerApi {
   }
 
   importRecordingJson(json: string): void {
+    if (this.state.adventure.pendingCompletion) {
+      this.state.status = ADVENTURE_PENDING_NOTICE
+      this.notify()
+      return
+    }
     this.stopReplayInterval()
     this.clearAiTimeout()
     const parsed = parseGameRecordJson(json)
@@ -1169,12 +1287,12 @@ export class AppController implements ControllerApi {
   }
 
   startReplay(): void {
-    // Only block replay while an adventure match is actively in progress.
-    // A merely-saved (paused) run should not prevent users from playing
+    // Only block replay while Adventure mode is open (an encounter or the
+    // map). A merely-saved (paused) run should not prevent users from playing
     // recordings; their adventure progress is preserved in storage and can
     // be resumed later from the lobby.
     if (this.state.mode === 'adventure-hvai') {
-      this.state.status = 'Replay is unavailable while an adventure match is in progress.'
+      this.state.status = 'Replay is unavailable while an Adventure is open. Pause or leave the Adventure first.'
       this.notify()
       return
     }

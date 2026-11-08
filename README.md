@@ -104,6 +104,12 @@ query parameters and the hash, then discards the old stored renderer preference.
   API is required.
 - Real-device performance varies. Lower Render Quality if interaction is slow;
   mobile Safari/Android hardware testing is recommended before wider rollout.
+- Adventure opens a map of seven tiers with three two-way forks and a shared
+  final boss. Choose a highlighted encounter to play it. A loss costs a
+  chance; after a draw, or a loss with chances left, you retry the same
+  encounter. **Pause Adventure** saves the run and any live game, and
+  **Resume Adventure** reopens them. Leaving an encounter without pausing ends
+  that game; the encounter then restarts without using a chance.
 - Adventure progress shows **Summons attempted (both players)**, replacing
   “Cards Played.” It counts both players' submitted summons, including those
   intercepted before reaching the Board, not only successful summons.

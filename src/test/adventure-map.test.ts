@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 import { createStarterDeck } from '../game/cards'
 import { BASIC_LANDS } from '../game/types'
 import {
-  beginAdventureEncounter,
   createAdventureRun,
   migrateLegacyAdventureRun,
+  startAdventureEncounter,
   type AdventureRunState,
   type AdventureRunStateV1,
 } from '../app/adventure'
@@ -225,6 +225,21 @@ function migratedRun(legacy: AdventureRunStateV1): AdventureRunState {
   const run = migrateLegacyAdventureRun(legacy, RUN_ID)
   if (run === null) throw new Error('Expected the version 1 run to migrate.')
   return run
+}
+
+/** A run saved by Milestone 2, which created linear maps with the first seed stored. */
+function savedLinearRun(seed = CLOCK_SEED): AdventureRunState {
+  return {
+    ...createAdventureRun(seed, RUN_ID),
+    map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
+    attemptSeed: seed,
+  }
+}
+
+function started(run: AdventureRunState, nodeId: string): AdventureRunState {
+  const next = startAdventureEncounter(run, nodeId)
+  if (next === null) throw new Error(`Expected ${nodeId} to start.`)
+  return next
 }
 
 describe('Adventure seed derivation', () => {
@@ -508,12 +523,13 @@ describe('Adventure map validation', () => {
 
   it('keeps the linear and legacy-linear rules unchanged', () => {
     const lineup = buildAdventureLineup(CLOCK_SEED)
-    const linear = createAdventureRun(CLOCK_SEED, RUN_ID).map
+    const linear = savedLinearRun().map
     const nonMonoFinal = linearAdventureTiers([...lineup.slice(0, 6), lineup[0]])
     const repeated = linearAdventureTiers([lineup[0], ...lineup.slice(0, 6)].slice(0, 6).concat(lineup[6]))
     const forked = linearAdventureTiers(lineup)
     forked[2].nodes = [mapNode(2, 'left', lineup[2]), mapNode(2, 'right', lineup[3])]
 
+    expect(linear.kind).toBe('linear')
     expect(isAdventureMap(linear)).toBe(true)
     expect(isAdventureMap({ kind: 'legacy-linear', tiers: linearAdventureTiers(v1Run().opponentLineup) })).toBe(true)
     expect(isAdventureMap({ kind: 'legacy-linear', tiers: nonMonoFinal })).toBe(true)
@@ -871,9 +887,9 @@ describe('Adventure retries and completion', () => {
 })
 
 describe('linear and legacy-linear routes', () => {
-  it('derives statuses and selection on a new linear run like beginAdventureEncounter', () => {
-    const run = deepFreeze(createAdventureRun(CLOCK_SEED, RUN_ID))
-    const begun = beginAdventureEncounter(run, 1)
+  it('derives statuses and selection on a saved linear run like startAdventureEncounter', () => {
+    const run = deepFreeze(savedLinearRun())
+    const begun = started(run, 'tier-1-center')
 
     expect(statuses(run)).toEqual(Object.fromEntries(
       Array.from({ length: ADVENTURE_TIER_COUNT }, (_, tierIndex) => [
@@ -905,7 +921,7 @@ describe('linear and legacy-linear routes', () => {
 
   it.each(['closedMidRound', 'pausedMidRound'] as const)('derives statuses and selection on the %s version 1 conversion', (name) => {
     const run = deepFreeze(migratedRun(v1Run(name)))
-    const begun = beginAdventureEncounter(run, 1)
+    const begun = started(run, 'tier-3-center')
     const unseeded = migratedRun({ ...v1Run(name), activeGameSeed: null })
 
     expect(run.map.kind).toBe('legacy-linear')

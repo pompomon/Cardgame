@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
+  applyAdventureEncounterResult,
   createAdventureRun,
   createInactiveAdventureState,
   migrateLegacyAdventureRun,
+  startAdventureEncounter,
   type AdventureOpponentDeck,
   type AdventureRunState,
   type AdventureRunStateV1,
@@ -30,6 +32,25 @@ function runWithOpponents(opponents: Record<number, Omit<AdventureOpponentDeck, 
     node.opponent = { ...opponent, deck: node.opponent.deck }
   }
   return run
+}
+
+function started(run: AdventureRunState, nodeId = run.map.tiers[run.currentTierIndex].nodes[0].id): AdventureRunState {
+  const next = startAdventureEncounter(run, nodeId)
+  if (!next) throw new Error(`Expected ${nodeId} to start.`)
+  return next
+}
+
+/** Wins the first node of each tier until the map stage of `tierIndex`. */
+function mapAt(tierIndex: number, run: AdventureRunState): AdventureRunState {
+  let current = run
+  while (current.currentTierIndex < tierIndex) {
+    current = applyAdventureEncounterResult(started(current), 'win')
+  }
+  return current
+}
+
+function withRun(run: AdventureRunState, highScore = 0): AppState['adventure'] {
+  return { ...createInactiveAdventureState(highScore, true), run }
 }
 
 function createState(seed: number): AppState {
@@ -205,7 +226,7 @@ describe('buildViewModel', () => {
     const run = runWithOpponents({
       0: { id: 'opponent-1', label: 'Opponent 1', kind: 'dual', lands: ['Forest', 'Swamp'] },
     })
-    state.adventure = { run, highScore: 0, hasSavedRun: true }
+    state.adventure = withRun(run)
     const source = run.map.tiers[0].nodes[0].opponent
 
     const vm = buildViewModel(state, false)
@@ -247,72 +268,91 @@ describe('buildViewModel', () => {
     expect(vm.game?.events[0]).not.toBe(state.game!.events[0])
 
     expect(vm.adventure).not.toBe(state.adventure)
-    expect(vm.adventure.opponentLineup).not.toBe(run.map.tiers)
-    expect(vm.adventure.opponentLineup[0]).not.toBe(source)
-    expect(vm.adventure.opponentLineup[0].label).toBe(
+    expect(vm.adventure.tiers).not.toBe(run.map.tiers)
+    expect(vm.adventure.tiers[0]).not.toBe(run.map.tiers[0])
+    expect(vm.adventure.tiers[0].nodes).not.toBe(run.map.tiers[0].nodes)
+    const node = vm.adventure.tiers[0].nodes[0]
+    expect(node).not.toBe(run.map.tiers[0].nodes[0])
+    expect(node.opponent).not.toBe(source)
+    expect(node.opponent.label).toBe(
       'Duo: Gravebloom Dryad + Memory Vampire',
     )
-    expect(vm.adventure.opponentLineup[0].label).not.toBe(source.label)
-    expect(vm.adventure.opponentLineup[0].lands).toEqual(['Forest', 'Swamp'])
-    expect(vm.adventure.opponentLineup[0].lands).not.toBe(source.lands)
+    expect(node.opponent.label).not.toBe(source.label)
+    expect(node.opponent.lands).toEqual(['Forest', 'Swamp'])
+    expect(node.opponent.lands).not.toBe(source.lands)
+    expect(JSON.stringify(vm.adventure)).not.toContain('"deck"')
   })
 
   it('never exposes pre-migration Adventure opponent labels', () => {
     const state = createState(58)
-    state.adventure = {
-      run: runWithOpponents({
-        0: {
-          id: 'legacy-standard',
-          label: 'Standard Deck (10 of each land)',
-          kind: 'standard',
-          lands: ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'],
-        },
-        6: {
-          id: 'legacy-boss',
-          label: 'Boss: Mono Forest Deck',
-          kind: 'mono',
-          lands: ['Forest'],
-        },
-      }),
-      highScore: 0,
-      hasSavedRun: true,
-    }
+    state.adventure = withRun(runWithOpponents({
+      0: {
+        id: 'legacy-standard',
+        label: 'Standard Deck (10 of each land)',
+        kind: 'standard',
+        lands: ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'],
+      },
+      6: {
+        id: 'legacy-boss',
+        label: 'Boss: Mono Forest Deck',
+        kind: 'mono',
+        lands: ['Forest'],
+      },
+    }))
 
-    const lineup = buildViewModel(state, false).adventure.opponentLineup
+    const tiers = buildViewModel(state, false).adventure.tiers
 
-    expect([lineup[0].label, lineup[6].label]).toEqual([
+    expect([tiers[0].nodes[0].opponent.label, tiers[6].nodes[0].opponent.label]).toEqual([
       'Balanced roster (10 of each creature)',
       'Boss: Gravebloom Dryad specialist',
     ])
-    expect(JSON.stringify(lineup)).not.toMatch(/Standard Deck|Mono Forest|each land|Deck/)
+    expect(JSON.stringify(tiers)).not.toMatch(/Standard Deck|Mono Forest|each land|Deck/)
   })
 
-  it('projects a migrated version 1 run exactly like the version 1 Adventure view', () => {
+  it('projects a migrated version 1 run on its legacy-linear route', () => {
     const legacy = v1FixtureRun()
     const run = migrateLegacyAdventureRun(legacy, TEST_RUN_ID)
     expect(run).not.toBeNull()
     const state = createState(59)
-    state.adventure = { run: run!, highScore: 321, hasSavedRun: true }
+    state.adventure = withRun(run!, 321)
 
-    expect(buildViewModel(state, false).adventure).toEqual({
+    const adventure = buildViewModel(state, false).adventure
+
+    expect(adventure).toMatchObject({
+      runId: TEST_RUN_ID,
       baseSeed: legacy.baseSeed,
-      currentRound: legacy.currentRound,
+      status: legacy.status,
+      stage: 'map',
+      currentTier: legacy.currentOpponentIndex + 1,
+      attemptOrdinal: 0,
       remainingChances: legacy.remainingChances,
       winStreak: legacy.winStreak,
       totalRoundsPlayed: legacy.totalRoundsPlayed,
       totalCardsPlayed: legacy.totalCardsPlayed,
-      opponentLineup: legacy.opponentLineup.map((entry) => ({
-        id: entry.id,
-        label: displayAdventureOpponentLabel(entry.kind, entry.lands),
-        kind: entry.kind,
-        lands: entry.lands,
-      })),
-      currentOpponentIndex: legacy.currentOpponentIndex,
       activeGameSeed: legacy.activeGameSeed,
-      status: legacy.status,
+      pendingCompletion: null,
+      lastResult: null,
       highScore: 321,
       hasSavedRun: true,
     })
+    expect(adventure.tiers).toEqual(legacy.opponentLineup.map((entry, tierIndex) => ({
+      tierIndex,
+      nodes: [{
+        id: `tier-${tierIndex + 1}-center`,
+        tierIndex,
+        lane: 'center',
+        status: tierIndex < legacy.currentOpponentIndex
+          ? 'completed'
+          : tierIndex === legacy.currentOpponentIndex ? 'current' : 'locked',
+        boss: tierIndex === 6,
+        opponent: {
+          id: entry.id,
+          label: displayAdventureOpponentLabel(entry.kind, entry.lands),
+          kind: entry.kind,
+          lands: entry.lands,
+        },
+      }],
+    })))
   })
 
   it('projects the inactive Adventure baseline when no run is loaded', () => {
@@ -322,42 +362,54 @@ describe('buildViewModel', () => {
     const adventure = buildViewModel(state, false).adventure
 
     expect(adventure).toEqual({
+      runId: null,
       baseSeed: 0,
-      currentRound: 0,
+      status: 'inactive',
+      stage: null,
+      currentTier: 0,
+      attemptOrdinal: 0,
       remainingChances: 0,
       winStreak: 0,
       totalRoundsPlayed: 0,
       totalCardsPlayed: 0,
-      opponentLineup: [],
-      currentOpponentIndex: 0,
+      tiers: [],
       activeGameSeed: null,
-      status: 'inactive',
+      pendingCompletion: null,
+      lastResult: null,
       highScore: 77,
       hasSavedRun: false,
+      decisionKey: 'none',
     })
     expect(Object.isFrozen(adventure)).toBe(true)
-    expect(Object.isFrozen(adventure.opponentLineup)).toBe(true)
+    expect(Object.isFrozen(adventure.tiers)).toBe(true)
   })
 
   it('returns frozen deck-free Adventure snapshots that ignore later run changes', () => {
     const state = createState(61)
     const run = createAdventureRun(61, TEST_RUN_ID)
-    state.adventure = { run, highScore: 5, hasSavedRun: true }
+    state.adventure = withRun(run, 5)
 
     const adventure = buildViewModel(state, false).adventure
     const before = JSON.stringify(adventure)
 
     expect(Object.isFrozen(adventure)).toBe(true)
-    expect(Object.isFrozen(adventure.opponentLineup)).toBe(true)
-    expect(adventure.opponentLineup).toHaveLength(7)
-    for (const entry of adventure.opponentLineup) {
-      expect(Object.isFrozen(entry)).toBe(true)
-      expect(Object.isFrozen(entry.lands)).toBe(true)
-      expect(Object.keys(entry).sort()).toEqual(['id', 'kind', 'label', 'lands'])
+    expect(Object.isFrozen(adventure.tiers)).toBe(true)
+    expect(adventure.tiers).toHaveLength(7)
+    expect(adventure.tiers.flatMap((tier) => tier.nodes)).toHaveLength(10)
+    for (const tier of adventure.tiers) {
+      expect(Object.isFrozen(tier)).toBe(true)
+      expect(Object.isFrozen(tier.nodes)).toBe(true)
+      for (const node of tier.nodes) {
+        expect(Object.isFrozen(node)).toBe(true)
+        expect(Object.isFrozen(node.opponent)).toBe(true)
+        expect(Object.isFrozen(node.opponent.lands)).toBe(true)
+        expect(Object.keys(node).sort()).toEqual(['boss', 'id', 'lane', 'opponent', 'status', 'tierIndex'])
+        expect(Object.keys(node.opponent).sort()).toEqual(['id', 'kind', 'label', 'lands'])
+      }
     }
-    expect(adventure.currentRound).toBe(1)
-    expect(adventure.currentOpponentIndex).toBe(0)
-    expect(adventure.activeGameSeed).toBe(run.attemptSeed)
+    expect(adventure.currentTier).toBe(1)
+    expect(adventure.stage).toBe('map')
+    expect(adventure.activeGameSeed).toBeNull()
     expect(adventure.status).toBe('active')
 
     run.totalCardsPlayed += 9
@@ -366,6 +418,93 @@ describe('buildViewModel', () => {
     run.map.tiers[0].nodes[0].opponent.id = 'changed'
 
     expect(JSON.stringify(adventure)).toBe(before)
+  })
+
+  it('derives fork statuses before a choice, after a committed choice, and for its retry', () => {
+    const state = createState(62)
+    const created = createAdventureRun(62, TEST_RUN_ID)
+    const fork = created.map.tiers.findIndex((tier) => tier.nodes.length === 2)
+    const run = mapAt(fork, created)
+    state.adventure = withRun(run)
+
+    const open = buildViewModel(state, false).adventure
+
+    expect(open.currentTier).toBe(fork + 1)
+    expect(open.tiers[fork].nodes.map((node) => [node.lane, node.status])).toEqual([
+      ['left', 'available'],
+      ['right', 'available'],
+    ])
+    expect(open.tiers.slice(0, fork).map((tier) => tier.nodes.find((node) => node.status === 'completed')?.id))
+      .toEqual(run.completedNodeIds)
+    expect(open.tiers.slice(fork + 1).flatMap((tier) => tier.nodes).every((node) => node.status === 'locked')).toBe(true)
+    expect(open.tiers.map((tier) => tier.nodes.some((node) => node.boss))).toEqual([false, false, false, false, false, false, true])
+
+    const right = run.map.tiers[fork].nodes[1]
+    state.adventure = withRun(applyAdventureEncounterResult(started(run, right.id), 'loss'))
+    const retry = buildViewModel(state, false).adventure
+
+    expect(retry.tiers[fork].nodes.map((node) => [node.lane, node.status])).toEqual([
+      ['left', 'bypassed'],
+      ['right', 'current'],
+    ])
+    expect(retry.attemptOrdinal).toBe(1)
+    expect(retry.activeGameSeed).not.toBeNull()
+    expect(retry.decisionKey).not.toBe(open.decisionKey)
+  })
+
+  it('reuses the frozen route for the same run and changes the decision key on every transition', () => {
+    const state = createState(63)
+    const run = createAdventureRun(63, TEST_RUN_ID)
+    state.adventure = withRun(run)
+
+    const first = buildViewModel(state, false).adventure
+    const again = buildViewModel(state, false).adventure
+
+    expect(again).not.toBe(first)
+    expect(again.tiers).toBe(first.tiers)
+    expect(again.decisionKey).toBe(first.decisionKey)
+
+    const begun = started(run)
+    const lost = applyAdventureEncounterResult(begun, 'draw')
+    const keys = new Set([first.decisionKey])
+    for (const next of [begun, lost, started(lost)]) {
+      state.adventure = withRun(next)
+      const adventure = buildViewModel(state, false).adventure
+      expect(adventure.tiers).not.toBe(first.tiers)
+      keys.add(adventure.decisionKey)
+    }
+    state.adventure = { ...withRun(begun), pendingCompletion: { outcome: 'win' } }
+    keys.add(buildViewModel(state, false).adventure.decisionKey)
+
+    expect(keys.size).toBe(5)
+  })
+
+  it('projects a pending outcome and the last result without controller references', () => {
+    const state = createState(64)
+    const begun = started(createAdventureRun(64, TEST_RUN_ID))
+    const node = begun.map.tiers[0].nodes[0]
+    const lastResult = { outcome: 'loss' as const, tierIndex: 0, nodeId: node.id, score: null }
+    state.adventure = { ...withRun(begun), pendingCompletion: { outcome: 'draw' }, lastResult }
+
+    const adventure = buildViewModel(state, false).adventure
+
+    expect(adventure.pendingCompletion).toBe('draw')
+    expect(adventure.lastResult).toEqual({
+      outcome: 'loss',
+      tierIndex: 0,
+      opponentLabel: displayAdventureOpponentLabel(node.opponent.kind, node.opponent.lands),
+      score: null,
+    })
+    expect(adventure.lastResult).not.toBe(lastResult)
+    expect(Object.isFrozen(adventure.lastResult)).toBe(true)
+
+    state.adventure = { ...withRun(begun), lastResult: { ...lastResult, nodeId: 'tier-9-center', score: 12 } }
+    expect(buildViewModel(state, false).adventure.lastResult).toEqual({
+      outcome: 'loss',
+      tierIndex: 0,
+      opponentLabel: 'Adventure opponent',
+      score: 12,
+    })
   })
 })
 

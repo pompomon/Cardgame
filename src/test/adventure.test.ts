@@ -7,8 +7,8 @@ import {
   ADVENTURE_SCHEMA_VERSION,
   ADVENTURE_TIER_COUNT,
   adventureNodeId,
+  adventureRouteNodes,
   applyAdventureEncounterResult,
-  beginAdventureEncounter,
   buildAdventureLineup,
   cloneAdventureRun,
   computeAdventureScore,
@@ -22,12 +22,22 @@ import {
   isResumableAdventureRun,
   migrateLegacyAdventureRun,
   normalizeAdventureRun,
+  openAdventureMap,
   pauseAdventureRun,
+  resumeAdventureEncounter,
+  selectedAdventureNode,
+  startAdventureEncounter,
   type AdventureRunState,
   type AdventureRunStateV1,
   type AdventureRunStatus,
 } from '../app/adventure'
-import { generateBranchingAdventureMap, isAdventureMap, isAdventureRouteState } from '../app/adventure-map'
+import {
+  adventureAttemptSeed,
+  generateBranchingAdventureMap,
+  isAdventureMap,
+  isAdventureRouteState,
+  linearAdventureTiers,
+} from '../app/adventure-map'
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -142,16 +152,37 @@ function migrated(legacy: AdventureRunStateV1 = v1Run()): AdventureRunState {
   return run
 }
 
+/** Starts a node, by default the first node of the current tier (left at a fork). */
+function started(run: AdventureRunState, nodeId = run.map.tiers[run.currentTierIndex].nodes[0].id): AdventureRunState {
+  const next = startAdventureEncounter(run, nodeId)
+  if (!next) throw new Error(`Expected ${nodeId} to start.`)
+  return next
+}
+
+/** Wins the first node of each tier until the encounter on `tierIndex` is open. */
 function encounterAt(tierIndex: number, run = createAdventureRun(500, RUN_ID)): AdventureRunState {
-  let current = beginAdventureEncounter(run, 1)
+  let current = started(run)
   for (let tier = current.currentTierIndex; tier < tierIndex; tier += 1) {
-    current = beginAdventureEncounter(applyAdventureEncounterResult(current, 'win', 1000 + tier), 1)
+    current = started(applyAdventureEncounterResult(current, 'win'))
   }
   return current
 }
 
+/** A linear run as Milestone 2 wrote it, with the first attempt seed stored. */
+function savedLinearRun(seed: number): AdventureRunState {
+  return {
+    ...createAdventureRun(seed, RUN_ID),
+    map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
+    attemptSeed: seed,
+  }
+}
+
+function forkTiers(run: AdventureRunState): number[] {
+  return run.map.tiers.flatMap((tier, tierIndex) => (tier.nodes.length === 2 ? [tierIndex] : []))
+}
+
 describe('schema version 2 Adventure runs', () => {
-  it('wraps the unchanged lineup builder in seven linear tiers', () => {
+  it('creates new runs on the seeded branching map, open at the map stage without a seed', () => {
     const run = createAdventureRun(12345, RUN_ID)
 
     expect(run).toEqual({
@@ -160,17 +191,12 @@ describe('schema version 2 Adventure runs', () => {
       baseSeed: 12345,
       status: 'active',
       stage: 'map',
-      map: {
-        kind: 'linear',
-        tiers: buildAdventureLineup(12345).map((opponent, tierIndex) => ({
-          nodes: [{ id: `tier-${tierIndex + 1}-center`, lane: 'center', opponent }],
-        })),
-      },
+      map: generateBranchingAdventureMap(12345),
       currentTierIndex: 0,
       completedNodeIds: [],
       selectedNodeId: null,
       attemptOrdinal: 0,
-      attemptSeed: 12345,
+      attemptSeed: null,
       remainingChances: 3,
       scoreEligibleChances: 3,
       winStreak: 0,
@@ -184,55 +210,87 @@ describe('schema version 2 Adventure runs', () => {
     expect(isAdventureRunState(run)).toBe(true)
   })
 
-  it('builds the same opponents and decks as the version 1 run for the same seed', () => {
-    const legacy = v1Run()
-    const run = createAdventureRun(legacy.baseSeed, RUN_ID)
+  it('builds the same map for the same seed whatever the run ID', () => {
+    const run = createAdventureRun(1_760_000_000_000, RUN_ID)
+    const again = createAdventureRun(1_760_000_000_000, createAdventureRunId())
 
-    expect(run.map.tiers.map((tier) => tier.nodes[0].opponent)).toEqual(legacy.opponentLineup)
-    expect(createAdventureRun(legacy.baseSeed, createAdventureRunId()).map).toEqual(run.map)
+    expect(again.map).toEqual(run.map)
+    expect(again.map).not.toBe(run.map)
+    expect(again.map.tiers[0].nodes[0].opponent.deck).not.toBe(run.map.tiers[0].nodes[0].opponent.deck)
   })
 
-  it('keeps new runs on linear maps instead of the branching generator', () => {
+  it('puts every new run on three forks that converge on one mono boss', () => {
     for (const seed of [0, 12345, 2 ** 32 + 1, 1_760_000_000_000]) {
       const run = createAdventureRun(seed, RUN_ID)
 
-      expect(run.map.kind).toBe('linear')
-      expect(run.map.tiers.map((tier) => tier.nodes.map((node) => node.lane))).toEqual(
-        Array.from({ length: ADVENTURE_TIER_COUNT }, () => ['center']),
-      )
-      expect(run.map).not.toEqual(generateBranchingAdventureMap(seed))
+      expect(run.map.kind).toBe('branching')
+      expect(run.map.tiers).toHaveLength(ADVENTURE_TIER_COUNT)
+      expect(forkTiers(run)).toHaveLength(3)
+      expect(run.map.tiers[ADVENTURE_TIER_COUNT - 1].nodes).toHaveLength(1)
+      expect(run.map.tiers[ADVENTURE_TIER_COUNT - 1].nodes[0].opponent.kind).toBe('mono')
+      expect(isAdventureRunState(run)).toBe(true)
     }
   })
 
-  it('rejects runs on a branching map even when the map and route are valid', () => {
+  it('accepts branching runs and saved linear runs alike', () => {
     const seed = 1_760_000_000_000
-    const created = createAdventureRun(seed, RUN_ID)
     const runs = [
-      { ...created, map: generateBranchingAdventureMap(seed) },
-      { ...beginAdventureEncounter(created, 1), map: generateBranchingAdventureMap(seed) },
+      createAdventureRun(seed, RUN_ID),
+      started(createAdventureRun(seed, RUN_ID)),
+      savedLinearRun(seed),
+      started(savedLinearRun(seed)),
     ]
 
     for (const run of runs) {
       expect(isAdventureMap(run.map)).toBe(true)
       expect(isAdventureRouteState(run)).toBe(true)
-      expect(isAdventureRunState(run)).toBe(false)
-      expect(normalizeAdventureRun(run)).toBeNull()
+      expect(isAdventureRunState(run)).toBe(true)
+      expect(normalizeAdventureRun(run)).toEqual(run)
     }
   })
 
-  it('launches the version 1 deck pair from the current node without sharing decks', () => {
-    const run = beginAdventureEncounter(createAdventureRun(321, RUN_ID), 1)
-    const [playerDeck, opponentDeck] = deckPairForAdventureGame(run, 777)
+  it("launches the selected node's deck pair without sharing decks", () => {
+    const created = createAdventureRun(321, RUN_ID)
+    const fork = forkTiers(created)[0]
+    const map = fork === 0 ? created : applyAdventureEncounterResult(encounterAt(fork - 1, created), 'win')
 
-    expect(playerDeck).toEqual(createStarterDeck(0, 777))
-    expect(opponentDeck).toEqual(buildAdventureLineup(321)[0].deck)
-    expect(opponentDeck).not.toBe(run.map.tiers[0].nodes[0].opponent.deck)
-    expect(opponentDeck[0]).not.toBe(run.map.tiers[0].nodes[0].opponent.deck[0])
+    for (const node of map.map.tiers[fork].nodes) {
+      const chosen = started(map, node.id)
+      const [playerDeck, opponentDeck] = deckPairForAdventureGame(chosen, 777)
+
+      expect(selectedAdventureNode(chosen)?.id).toBe(node.id)
+      expect(playerDeck).toEqual(createStarterDeck(0, 777))
+      expect(opponentDeck).toEqual(node.opponent.deck)
+      expect(opponentDeck).not.toBe(selectedAdventureNode(chosen)?.opponent.deck)
+      expect(opponentDeck[0]).not.toBe(selectedAdventureNode(chosen)?.opponent.deck[0])
+    }
+  })
+
+  it('refuses a deck pair when no node is selected instead of substituting an opponent', () => {
+    const run = createAdventureRun(321, RUN_ID)
+    const migratedRun = migrated()
+
+    expect(selectedAdventureNode(run)).toBeNull()
+    expect(selectedAdventureNode(migratedRun)).toBeNull()
+    expect(() => deckPairForAdventureGame(run, 1)).toThrow()
+    expect(() => deckPairForAdventureGame(migratedRun, 1)).toThrow()
   })
 
   it('creates the inactive baseline without a run', () => {
-    expect(createInactiveAdventureState()).toEqual({ run: null, highScore: 0, hasSavedRun: false })
-    expect(createInactiveAdventureState(42, true)).toEqual({ run: null, highScore: 42, hasSavedRun: true })
+    expect(createInactiveAdventureState()).toEqual({
+      run: null,
+      highScore: 0,
+      hasSavedRun: false,
+      pendingCompletion: null,
+      lastResult: null,
+    })
+    expect(createInactiveAdventureState(42, true)).toEqual({
+      run: null,
+      highScore: 42,
+      hasSavedRun: true,
+      pendingCompletion: null,
+      lastResult: null,
+    })
   })
 })
 
@@ -274,7 +332,7 @@ describe('Adventure run IDs', () => {
 
 describe('Adventure run copies', () => {
   it('deep-copies known fields and drops unknown keys', () => {
-    const run = beginAdventureEncounter(createAdventureRun(44, RUN_ID), 1)
+    const run = started(createAdventureRun(44, RUN_ID))
     const tagged = run as unknown as Record<string, unknown>
     tagged.extra = 'top'
     ;(run.map as unknown as Record<string, unknown>).extra = 'map'
@@ -316,59 +374,97 @@ describe('Adventure run copies', () => {
 })
 
 describe('Adventure run changes', () => {
-  it('begins the current encounter without changing its input', () => {
+  it('starts a chosen node without changing its input', () => {
     const run = createAdventureRun(46, RUN_ID)
     const before = JSON.stringify(run)
+    const nodes = run.map.tiers[0].nodes
+    const node = nodes[nodes.length - 1]
 
-    const begun = beginAdventureEncounter(run, 999)
+    const begun = started(run, node.id)
 
     expect(JSON.stringify(run)).toBe(before)
     expect(begun).toMatchObject({
       status: 'active',
       stage: 'encounter',
-      selectedNodeId: 'tier-1-center',
+      currentTierIndex: 0,
+      selectedNodeId: node.id,
       attemptOrdinal: 0,
-      attemptSeed: 46,
+      attemptSeed: adventureAttemptSeed(46, 0, node.lane, 0),
     })
-    expect(currentAdventureNode(begun)).toBe(begun.map.tiers[0].nodes[0])
+    expect(selectedAdventureNode(begun)).toBe(begun.map.tiers[0].nodes[nodes.length - 1])
+    expect(currentAdventureNode(begun)).toBe(selectedAdventureNode(begun))
     expect(isAdventureRunState(begun)).toBe(true)
   })
 
-  it('assigns the fallback seed only when the attempt has none', () => {
+  it('rejects unknown, future, non-string and repeated choices without changing the run', () => {
+    const run = createAdventureRun(46, RUN_ID)
+    const before = JSON.stringify(run)
+
+    for (const nodeId of ['tier-9-center', 'tier-7-center', run.map.tiers[1].nodes[0].id, '', null, 7, {}, ['tier-1-left']]) {
+      expect(startAdventureEncounter(run, nodeId)).toBeNull()
+    }
+    expect(JSON.stringify(run)).toBe(before)
+
+    const begun = started(run)
+    expect(startAdventureEncounter(begun, begun.selectedNodeId)).toBeNull()
+    expect(startAdventureEncounter(pauseAdventureRun(begun), begun.selectedNodeId)).toBeNull()
+  })
+
+  it('keeps a stored seed and derives one only when the attempt has none', () => {
     const legacy = v1Run()
     legacy.activeGameSeed = null
     const run = migrated(legacy)
+    const nodeId = adventureNodeId(run.currentTierIndex, 'center')
 
     expect(run.attemptSeed).toBeNull()
-    expect(beginAdventureEncounter(run, 4321).attemptSeed).toBe(4321)
-    expect(beginAdventureEncounter(migrated(), 4321).attemptSeed).toBe(v1Run().activeGameSeed)
+    expect(started(run, nodeId).attemptSeed).toBe(adventureAttemptSeed(run.baseSeed, run.currentTierIndex, 'center', 0))
+    expect(started(migrated(), nodeId).attemptSeed).toBe(v1Run().activeGameSeed)
+    expect(started(savedLinearRun(4321)).attemptSeed).toBe(4321)
   })
 
   it('keeps the selected node and attempt identity while pausing', () => {
-    const begun = beginAdventureEncounter(createAdventureRun(47, RUN_ID), 1)
+    const begun = started(createAdventureRun(47, RUN_ID))
 
     const paused = pauseAdventureRun(begun)
 
     expect(paused).toEqual({ ...begun, status: 'paused' })
     expect(begun.status).toBe('active')
-    expect(beginAdventureEncounter(paused, 5)).toEqual(begun)
+    expect(resumeAdventureEncounter(paused)).toEqual(begun)
+    const map = openAdventureMap(paused)
+    expect(map).toEqual({ ...begun, stage: 'map' })
+    expect(started(map, begun.selectedNodeId!)).toEqual(begun)
+  })
+
+  it('opens the map and resumes encounters only for resumable runs at the right stage', () => {
+    const run = createAdventureRun(47, RUN_ID)
+    const failing = encounterAt(1)
+    failing.remainingChances = 1
+    const failed = applyAdventureEncounterResult(failing, 'loss')
+
+    expect(openAdventureMap(pauseAdventureRun(run))).toEqual(run)
+    expect(() => resumeAdventureEncounter(run)).toThrow()
+    expect(() => resumeAdventureEncounter(pauseAdventureRun(run))).toThrow()
+    expect(failed.status).toBe('failed')
+    expect(() => openAdventureMap(failed)).toThrow()
+    expect(() => resumeAdventureEncounter(failed)).toThrow()
+    expect(() => pauseAdventureRun(failed)).toThrow()
   })
 
   it('advances to the next tier after a win', () => {
-    const begun = beginAdventureEncounter(createAdventureRun(48, RUN_ID), 1)
+    const begun = started(createAdventureRun(48, RUN_ID))
     const before = JSON.stringify(begun)
 
-    const next = applyAdventureEncounterResult(begun, 'win', 2222)
+    const next = applyAdventureEncounterResult(begun, 'win')
 
     expect(JSON.stringify(begun)).toBe(before)
     expect(next).toMatchObject({
-      status: 'paused',
+      status: 'active',
       stage: 'map',
       currentTierIndex: 1,
-      completedNodeIds: ['tier-1-center'],
+      completedNodeIds: [begun.selectedNodeId],
       selectedNodeId: null,
       attemptOrdinal: 0,
-      attemptSeed: 2222,
+      attemptSeed: null,
       remainingChances: 3,
       scoreEligibleChances: 3,
       winStreak: 1,
@@ -382,7 +478,7 @@ describe('Adventure run changes', () => {
     let run = encounterAt(2)
     expect(run.winStreak).toBe(2)
 
-    run = applyAdventureEncounterResult(run, 'win', 3)
+    run = applyAdventureEncounterResult(run, 'win')
 
     expect(run.winStreak).toBe(3)
     expect(run.scoreEligibleWinStreak).toBe(3)
@@ -391,11 +487,11 @@ describe('Adventure run changes', () => {
   })
 
   it('applies the chance bonus to the real and score-eligible streaks separately', () => {
-    const run = beginAdventureEncounter(createAdventureRun(49, RUN_ID), 1)
+    const run = started(createAdventureRun(49, RUN_ID))
     run.winStreak = 2
     run.scoreEligibleWinStreak = 0
 
-    const next = applyAdventureEncounterResult(run, 'win', 3)
+    const next = applyAdventureEncounterResult(run, 'win')
 
     expect(next.remainingChances).toBe(4)
     expect(next.scoreEligibleChances).toBe(3)
@@ -405,42 +501,66 @@ describe('Adventure run changes', () => {
 
   it('retries the same node with a new attempt after a loss', () => {
     const run = encounterAt(2)
+    const node = selectedAdventureNode(run)!
     const before = JSON.stringify(run)
 
-    const next = applyAdventureEncounterResult(run, 'loss', 3333)
+    const next = applyAdventureEncounterResult(run, 'loss')
 
     expect(JSON.stringify(run)).toBe(before)
     expect(next).toMatchObject({
-      status: 'paused',
+      status: 'active',
       stage: 'map',
       currentTierIndex: 2,
-      completedNodeIds: ['tier-1-center', 'tier-2-center'],
-      selectedNodeId: 'tier-3-center',
+      completedNodeIds: run.completedNodeIds,
+      selectedNodeId: node.id,
       attemptOrdinal: 1,
-      attemptSeed: 3333,
+      attemptSeed: adventureAttemptSeed(500, 2, node.lane, 1),
       remainingChances: 2,
       scoreEligibleChances: 2,
       winStreak: 0,
       scoreEligibleWinStreak: 0,
       totalRoundsPlayed: 3,
     })
-    const retried = beginAdventureEncounter(next, 1)
-    expect(retried.selectedNodeId).toBe('tier-3-center')
+    const retried = started(next, node.id)
+    expect(retried.selectedNodeId).toBe(node.id)
     expect(retried.attemptOrdinal).toBe(1)
-    expect(retried.attemptSeed).toBe(3333)
+    expect(retried.attemptSeed).toBe(next.attemptSeed)
+    expect(retried.attemptSeed).not.toBe(run.attemptSeed)
     expect(isAdventureRunState(next)).toBe(true)
   })
 
+  it.each(['loss', 'draw'] as const)('locks the committed fork node after a %s and rejects its sibling', (outcome) => {
+    const created = createAdventureRun(500, RUN_ID)
+    const fork = forkTiers(created)[0]
+    const [left, right] = created.map.tiers[fork].nodes
+    const run = encounterAt(fork, created)
+    expect(run.selectedNodeId).toBe(left.id)
+
+    const next = applyAdventureEncounterResult(run, outcome)
+
+    expect(next.selectedNodeId).toBe(left.id)
+    expect(adventureRouteNodes(next)[fork].map((node) => [node.id, node.status])).toEqual([
+      [left.id, 'current'],
+      [right.id, 'bypassed'],
+    ])
+    expect(startAdventureEncounter(next, right.id)).toBeNull()
+    expect(startAdventureEncounter(pauseAdventureRun(next), right.id)).toBeNull()
+    const retried = started(next, left.id)
+    expect(retried.attemptOrdinal).toBe(1)
+    expect(retried.attemptSeed).toBe(adventureAttemptSeed(500, fork, 'left', 1))
+  })
+
   it('never lowers chance counters below zero', () => {
-    const run = beginAdventureEncounter(createAdventureRun(50, RUN_ID), 1)
+    const run = started(createAdventureRun(50, RUN_ID))
     run.remainingChances = 2
     run.scoreEligibleChances = 0
 
-    const next = applyAdventureEncounterResult(run, 'loss', 4)
+    const next = applyAdventureEncounterResult(run, 'loss')
 
     expect(next.remainingChances).toBe(1)
     expect(next.scoreEligibleChances).toBe(0)
-    expect(next.status).toBe('paused')
+    expect(next.status).toBe('active')
+    expect(next.stage).toBe('map')
   })
 
   it('fails the run when the last real chance is lost', () => {
@@ -448,13 +568,13 @@ describe('Adventure run changes', () => {
     run.remainingChances = 1
     run.scoreEligibleChances = 1
 
-    const next = applyAdventureEncounterResult(run, 'loss', 5)
+    const next = applyAdventureEncounterResult(run, 'loss')
 
     expect(next).toMatchObject({
       status: 'failed',
       stage: null,
       currentTierIndex: 1,
-      completedNodeIds: ['tier-1-center'],
+      completedNodeIds: run.completedNodeIds,
       selectedNodeId: null,
       attemptSeed: null,
       remainingChances: 0,
@@ -462,21 +582,25 @@ describe('Adventure run changes', () => {
     })
     expect(isResumableAdventureRun(next)).toBe(false)
     expect(isAdventureRunState(next)).toBe(true)
-    expect(() => beginAdventureEncounter(next, 1)).toThrow()
+    expect(run.completedNodeIds).toHaveLength(1)
+    expect(startAdventureEncounter(next, run.selectedNodeId)).toBeNull()
+    expect(adventureRouteNodes(next).flat().some((node) => node.status === 'current' || node.status === 'available')).toBe(false)
   })
 
   it('replays the same node with a new attempt after a draw', () => {
     const run = encounterAt(1)
+    const node = selectedAdventureNode(run)!
 
-    const next = applyAdventureEncounterResult(run, 'draw', 6666)
+    const next = applyAdventureEncounterResult(run, 'draw')
 
     expect(next).toMatchObject({
-      status: 'paused',
+      status: 'active',
       stage: 'map',
       currentTierIndex: 1,
-      selectedNodeId: 'tier-2-center',
+      completedNodeIds: run.completedNodeIds,
+      selectedNodeId: node.id,
       attemptOrdinal: 1,
-      attemptSeed: 6666,
+      attemptSeed: adventureAttemptSeed(500, 1, node.lane, 1),
       remainingChances: run.remainingChances,
       scoreEligibleChances: run.scoreEligibleChances,
       winStreak: run.winStreak,
@@ -488,20 +612,46 @@ describe('Adventure run changes', () => {
   it('completes the run after winning the final tier', () => {
     const run = encounterAt(6)
 
-    const next = applyAdventureEncounterResult(run, 'win', 7)
+    const next = applyAdventureEncounterResult(run, 'win')
 
     expect(next).toMatchObject({
       status: 'completed',
       stage: null,
       currentTierIndex: 6,
       selectedNodeId: null,
+      attemptOrdinal: 0,
       attemptSeed: null,
       totalRoundsPlayed: 7,
     })
-    expect(next.completedNodeIds).toEqual(
-      Array.from({ length: 7 }, (_, tierIndex) => adventureNodeId(tierIndex, 'center')),
-    )
+    expect(next.completedNodeIds).toEqual(run.map.tiers.map((tier) => tier.nodes[0].id))
     expect(isAdventureRunState(next)).toBe(true)
+  })
+
+  it('completes every route through the forks at the shared boss', () => {
+    const created = createAdventureRun(500, RUN_ID)
+    const forks = forkTiers(created)
+    const boss = created.map.tiers[ADVENTURE_TIER_COUNT - 1].nodes[0]
+    const routes = new Set<string>()
+
+    for (let route = 0; route < 2 ** forks.length; route += 1) {
+      let run = created
+      const chosen: string[] = []
+      while (run.status !== 'completed') {
+        const nodes = run.map.tiers[run.currentTierIndex].nodes
+        const forkIndex = forks.indexOf(run.currentTierIndex)
+        const node = forkIndex === -1 ? nodes[0] : nodes[(route >> forkIndex) & 1]
+        chosen.push(node.id)
+        run = applyAdventureEncounterResult(started(run, node.id), 'win')
+        expect(isAdventureRunState(run)).toBe(true)
+      }
+
+      expect(run.completedNodeIds).toEqual(chosen)
+      expect(chosen).toHaveLength(ADVENTURE_TIER_COUNT)
+      expect(chosen[ADVENTURE_TIER_COUNT - 1]).toBe(boss.id)
+      expect(adventureRouteNodes(run).flat().filter((node) => node.status === 'bypassed')).toHaveLength(forks.length)
+      routes.add(chosen.join(','))
+    }
+    expect(routes.size).toBe(2 ** forks.length)
   })
 
   it('completes a migrated run whose final opponent is not a mono boss', () => {
@@ -509,7 +659,7 @@ describe('Adventure run changes', () => {
     legacy.opponentLineup[6] = { ...legacy.opponentLineup[0], id: 'adventure-opponent-7-dual-final' }
     const run = encounterAt(6, migrated(legacy))
 
-    const next = applyAdventureEncounterResult(run, 'win', 8)
+    const next = applyAdventureEncounterResult(run, 'win')
 
     expect(next.status).toBe('completed')
     expect(next.map.tiers[6].nodes[0].opponent.kind).toBe('dual')
@@ -518,10 +668,11 @@ describe('Adventure run changes', () => {
 
   it('only finishes active encounters', () => {
     const run = createAdventureRun(51, RUN_ID)
-    const paused = pauseAdventureRun(beginAdventureEncounter(run, 1))
+    const paused = pauseAdventureRun(started(run))
 
-    expect(() => applyAdventureEncounterResult(run, 'win', 1)).toThrow()
-    expect(() => applyAdventureEncounterResult(paused, 'win', 1)).toThrow()
+    expect(() => applyAdventureEncounterResult(run, 'win')).toThrow()
+    expect(() => applyAdventureEncounterResult(paused, 'win')).toThrow()
+    expect(() => applyAdventureEncounterResult(openAdventureMap(paused), 'loss')).toThrow()
   })
 })
 
@@ -576,7 +727,9 @@ describe('version 1 Adventure migration', () => {
 
     expect(run.currentTierIndex).toBe(2)
     expect(run.completedNodeIds).toEqual(['tier-1-center', 'tier-2-center'])
-    expect(deckPairForAdventureGame(run, 1)[1]).toEqual(legacy.opponentLineup[2].deck)
+    const begun = started(run)
+    expect(begun.selectedNodeId).toBe('tier-3-center')
+    expect(deckPairForAdventureGame(begun, 1)[1]).toEqual(legacy.opponentLineup[2].deck)
   })
 
   it('accepts any known final opponent on legacy-linear maps only', () => {
@@ -629,7 +782,8 @@ describe('version 1 Adventure migration', () => {
             const run = migrateLegacyAdventureRun(legacy, RUN_ID)
             expect(run).not.toBeNull()
             expect(isAdventureRunState(run)).toBe(true)
-            expect(beginAdventureEncounter(run!, 1).selectedNodeId).toBe(adventureNodeId(index, 'center'))
+            expect(startAdventureEncounter(run!, adventureNodeId(index, 'center'))?.selectedNodeId)
+              .toBe(adventureNodeId(index, 'center'))
           }
         }
       }

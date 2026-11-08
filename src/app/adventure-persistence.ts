@@ -30,8 +30,9 @@ export function persistAdventureRun(run: AdventureRunState): boolean {
   return normalized !== null && writeJsonStorageItem(ADVENTURE_RUN_STORAGE_KEY, normalized)
 }
 
-export function clearStoredAdventureRun(): void {
-  removeStorageItem(ADVENTURE_RUN_STORAGE_KEY)
+/** Removes the stored run. Returns whether storage accepted the removal. */
+export function clearStoredAdventureRun(): boolean {
+  return removeStorageItem(ADVENTURE_RUN_STORAGE_KEY)
 }
 
 /**

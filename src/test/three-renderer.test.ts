@@ -35,6 +35,7 @@ function view(): AppViewModel {
     mode: 'local-hvai', seed: 1, controllers: ['human', 'ai'],
     game: { actor: 1, canInput: true, events: [] },
     replay: { active: false, step: 0 },
+    adventure: { decisionKey: 'none' },
     animationSpeed: 'off',
   } as unknown as AppViewModel
 }
