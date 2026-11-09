@@ -1,5 +1,5 @@
 import { buildAdventureOpponentPools } from '../../app/adventure-map'
-import { createAiRng } from '../../game/ai-random'
+import { createAiRng, deriveAiSeed } from '../../game/ai-random'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../../game/engine'
 import type { Card, GameAction, GameState } from '../../game/types'
 
@@ -8,27 +8,40 @@ export type TestDeckKind = 'starter' | 'standard' | 'dual' | 'random' | 'mono'
 
 export const TEST_DECK_KINDS: readonly TestDeckKind[] = ['starter', 'standard', 'dual', 'random', 'mono']
 
+const DECK_VARIANT_WORD = 0x64656b76
+
+/**
+ * The default mono or dual deck variant of `seed`. It is mixed rather than
+ * taken from the seed, because callers that cycle the five kinds with
+ * consecutive seeds would otherwise meet one mono deck and two dual decks.
+ */
+export function deckVariantOfSeed(seed: number): number {
+  return deriveAiSeed(seed, DECK_VARIANT_WORD)
+}
+
 /**
  * A deck of `kind` built from `seed`; `undefined` means the engine's seeded
- * starter deck. Adventure decks reuse the Adventure pools.
+ * starter deck. Adventure decks reuse the Adventure pools. `variant` picks the
+ * mono or dual deck; pass `seed` to cycle them evenly over consecutive seeds
+ * when the kind is fixed.
  */
-export function deckOfKind(kind: TestDeckKind, seed: number): Card[] | undefined {
+export function deckOfKind(kind: TestDeckKind, seed: number, variant = deckVariantOfSeed(seed)): Card[] | undefined {
   if (kind === 'starter') {
     return undefined
   }
   const pools = buildAdventureOpponentPools(seed)
-  const pick = Math.abs(seed) % 5
+  const pick = (count: number) => Math.abs(variant) % count
   switch (kind) {
     case 'standard':
       return pools.nonBoss.find((deck) => deck.kind === 'standard')!.deck
     case 'dual': {
       const duals = pools.nonBoss.filter((deck) => deck.kind === 'dual')
-      return duals[Math.abs(seed) % duals.length].deck
+      return duals[pick(duals.length)].deck
     }
     case 'random':
       return pools.nonBoss.find((deck) => deck.kind === 'random')!.deck
     case 'mono':
-      return pools.boss[pick].deck
+      return pools.boss[pick(pools.boss.length)].deck
     default:
       return undefined
   }

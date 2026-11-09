@@ -73,12 +73,17 @@ npm run test    # vitest run
   `src/test/helpers/ai-entrants.ts`) and, with
   `AI_TOURNAMENT_DIAGNOSTICS=1`, reports seed variety in calm and critical
   positions and a blunder audit against a 4×-budget search.
-  `npm run ai:tune` refits the evaluator weights on self-play. Both document
-  their environment variables in `src/test/tools/`. Run no more tools in
-  parallel than there are CPUs, or the latency columns are inflated. Paste
-  results into the PR.
-- **Promoting weights or settings.** Copy tuned weights into
-  `src/game/ai-weights.ts` and bump `HARD_AI_WEIGHTS_VERSION`. Any change to
+  `npm run ai:tune` refits the evaluator weights on self-play and reports
+  the held-out log-loss of the fit and of the frozen weights, overall and per
+  deck kind. Both document their environment variables in
+  `src/test/tools/`. Run no more tools in parallel than there are CPUs, or
+  the latency columns are inflated. Paste results into the PR.
+- **Promoting weights or settings.** Promote a refit only if it beats the
+  frozen weights on held-out log-loss and the `search-candidate` entrant
+  (`AI_CANDIDATE_WEIGHTS` set to the report) beats `search` in mirrored
+  tournaments on the starter, mono and dual decks, with the pooled 95%
+  interval above 50%. Copy the weights into `src/game/ai-weights.ts` and
+  bump `HARD_AI_WEIGHTS_VERSION`. Any change to
   the weights, `HARD_AI_DEFAULT_BUDGET`, `HARD_AI_DEFAULT_SELECTION`, or the
   personas changes Hard's choices: regenerate the CLI characterization with
   `npx vitest run src/test/cli-session.test.ts -u` and confirm that only

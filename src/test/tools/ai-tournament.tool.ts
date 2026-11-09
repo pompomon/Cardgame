@@ -88,7 +88,8 @@ describe('AI tournament', () => {
     const critical = (state: Parameters<typeof decisionCriticality>[0]) =>
       decisionCriticality(state) >= HARD_AI_DEFAULT_SELECTION.criticalThreshold
     for (const kind of decks) {
-      const decksFor = (seed: number): DeckPair => [undefined, deckOfKind(kind, seed)]
+      // A fixed kind cycles its mono or dual variants evenly over the seeds.
+      const decksFor = (seed: number): DeckPair => [undefined, deckOfKind(kind, seed, seed)]
       for (const [first, second] of pairs) {
         const label = `${first.name} vs ${second.name} (${kind})`
         const result = await drainYielding(matchGames(first, second, { seeds, decksFor, seating, recordDecisions: diagnostics }))

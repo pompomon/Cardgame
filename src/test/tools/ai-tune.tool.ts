@@ -1,20 +1,24 @@
 import { writeFileSync } from 'node:fs'
 import { describe, it } from 'vitest'
-import { AI_FEATURE_COUNT, AI_FEATURE_NAMES, featureDifferences, sigmoid } from '../../game/ai-features'
+import { AI_FEATURE_COUNT, AI_FEATURE_NAMES, featureDifferences, sigmoid, weightVector } from '../../game/ai-features'
 import { createAiRng } from '../../game/ai-random'
+import { HARD_AI_WEIGHTS, HARD_AI_WEIGHTS_VERSION } from '../../game/ai-weights'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../../game/engine'
 import type { GameState } from '../../game/types'
 import { resolveEntrant } from '../helpers/ai-entrants'
 import { drainYielding, type TournamentPolicy } from '../helpers/ai-tournament'
-import { TEST_DECK_KINDS, deckOfKind } from '../helpers/seeded-games'
+import { TEST_DECK_KINDS, deckOfKind, type TestDeckKind } from '../helpers/seeded-games'
 
 // Opt-in evaluator tuning: `npm run ai:tune`. It is not part of
 // `npm run test`. It plays seeded self-play games, records each turn's start
 // (scored for the player to act) and end (scored for the next player, before
 // the draw), and fits the logistic weights of `src/game/ai-features.ts` to the
-// final results with L2-regularized Newton steps. A fifth of the games,
-// spread across deck kinds, is held out. Settings come from environment
-// variables:
+// final results with L2-regularized Newton steps. Games cycle the deck kinds
+// of `src/test/helpers/seeded-games.ts`, whose mono and dual variants come
+// from a value mixed from the seed, so every variant is played. A fifth of
+// the games, spread across deck kinds, is held out, and the report compares
+// the fit with the frozen weights on the same positions, overall and per
+// held-out deck kind. Settings come from environment variables:
 //
 //   AI_TUNE_GAMES       games to play (default 4000)
 //   AI_TUNE_SEED_START  first seed (default 100000, away from tournament seeds)
@@ -63,9 +67,14 @@ function grow(dataset: Dataset): Dataset {
   return bigger
 }
 
+/** The deck kind of the `game`-th tuning game; kinds cycle with the game index. */
+function kindOfGame(game: number): TestDeckKind {
+  return TEST_DECK_KINDS[game % TEST_DECK_KINDS.length]
+}
+
 /** Plays one game and returns its positions as (state, player to move) pairs with the winner. */
-function playRecordedGame(seed: number, kindIndex: number, policies: [TournamentPolicy, TournamentPolicy]) {
-  const kind = TEST_DECK_KINDS[kindIndex % TEST_DECK_KINDS.length]
+function playRecordedGame(seed: number, game: number, policies: [TournamentPolicy, TournamentPolicy]) {
+  const kind = kindOfGame(game)
   let state: GameState = createInitialGame(seed, [undefined, deckOfKind(kind, seed)])
   state = { ...state, log: [], events: [] }
   const positions: Array<{ state: GameState; toMove: number }> = []
@@ -253,6 +262,14 @@ describe('AI evaluator tuning', () => {
     const train = logLoss(final, (row) => !isHoldout(row), weights)
     const holdout = logLoss(final, isHoldout, weights)
     const calibrationReport = calibration(final, isHoldout, weights)
+    const frozen = weightVector(HARD_AI_WEIGHTS)
+    const frozenTrain = logLoss(final, (row) => !isHoldout(row), frozen)
+    const frozenHoldout = logLoss(final, isHoldout, frozen)
+    const kindLines = TEST_DECK_KINDS.map((kind) => {
+      const include = (row: number) => isHoldout(row) && kindOfGame(final.games[row]) === kind
+      const fitted = logLoss(final, include, weights)
+      return `| ${kind} | ${fitted.rows} | ${fitted.loss.toFixed(4)} | ${logLoss(final, include, frozen).loss.toFixed(4)} |`
+    })
 
     const weightLines = AI_FEATURE_NAMES.map((name, index) => `  ${name}: ${Number(weights[index].toFixed(4))},`)
     const report = [
@@ -260,7 +277,12 @@ describe('AI evaluator tuning', () => {
       `Policies: ${specs.join(', ')}. L2 ${l2}.`,
       `Positions: ${train.rows} training, ${holdout.rows} held out (a fifth of the games).`,
       `Log-loss: training ${train.loss.toFixed(4)}, held out ${holdout.loss.toFixed(4)} (coin flip ${Math.log(2).toFixed(4)}).`,
+      `Frozen weights (version ${HARD_AI_WEIGHTS_VERSION}) on the same positions: training ${frozenTrain.loss.toFixed(4)}, held out ${frozenHoldout.loss.toFixed(4)}.`,
       `Held-out expected calibration error: ${calibrationReport.error.toFixed(4)}.`,
+      '',
+      '| Held-out deck kind | Positions | Log-loss, fit | Log-loss, frozen |',
+      '|---|---|---|---|',
+      ...kindLines,
       '',
       '| Predicted | Positions | Mean predicted | Observed |',
       '|---|---|---|---|',
