@@ -176,7 +176,7 @@ export async function runGameSession(
         io.write('Game exited.')
         return { status: 'quit', state, actions: Object.freeze([...transcript]) }
       }
-      const action = chooseAiAction(state, actor, { level: config.aiLevel })
+      const action = chooseAiAction(state, actor, { level: config.aiLevel, seed: config.seed })
       if (!action) {
         throw new Error(`AI Player ${actor + 1} returned no action despite having legal actions.`)
       }

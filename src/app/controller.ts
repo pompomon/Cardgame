@@ -676,7 +676,7 @@ export class AppController implements ControllerApi {
             },
           },
         })
-        : chooseAiAction(game, actor, { level: this.state.aiLevel })
+        : chooseAiAction(game, actor, { level: this.state.aiLevel, seed: this.state.seed })
       if (!action) {
         return
       }
