@@ -142,6 +142,10 @@ Rules:
   - Anything that lands on the hub goes to the hub's decision, in the order
     above.
 
+  Each destination takes focus without `preventScroll`, so the browser
+  scrolls it into view. The lobby keeps the page scroll of a long map, which
+  would otherwise leave its heading above the fold.
+
   Focus stays put when a write is refused, when nothing was focused before
   the command (Safari does not focus clicked buttons), while a modal or an
   inline target panel is open, and after disposal. The move runs after the

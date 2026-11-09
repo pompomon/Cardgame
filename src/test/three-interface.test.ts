@@ -237,7 +237,13 @@ class ElementStub {
   addEventListener(name: string, fn: (event: never) => unknown): void { this.listeners.set(name, fn) }
   removeEventListener(name: string): void { this.listeners.delete(name) }
   emit(name: string, event: unknown = {}): unknown { return this.listeners.get(name)?.(event as never) }
-  focus(): void { this.ownerDocument.activeElement = this }
+  // The options of the latest focus() call, so a test can tell whether the
+  // browser would scroll the element into view.
+  focusOptions: FocusOptions | undefined = undefined
+  focus(options?: FocusOptions): void {
+    this.focusOptions = options
+    this.ownerDocument.activeElement = this
+  }
   setSelectionRange(start: number, end: number): void { this.selectionStart = start; this.selectionEnd = end }
   showModal(): void { this.open = true; this.setAttribute('open', '') }
   close(): void { this.open = false; this.attributes.delete('open') }
@@ -3005,6 +3011,14 @@ const savedRewardHistory = (r: RealAdventure): unknown[] =>
   (JSON.parse(r.storage.data.get(ADVENTURE_RUN_STORAGE_KEY) ?? '{}') as { rewardHistory?: { rewardId: unknown }[] })
     .rewardHistory?.map((entry) => entry.rewardId) ?? []
 
+// A transition focuses its destination without preventScroll, so the browser
+// scrolls it into view even when the previous view left the page scrolled.
+const expectTransitionFocus = (r: RealAdventure, target: ElementStub | null): void => {
+  expect(target).not.toBeNull()
+  expect(r.document.activeElement).toBe(target)
+  expect(target?.focusOptions?.preventScroll).not.toBe(true)
+}
+
 // One decision control of the stateful UI matrix: how to reach it, where it
 // lands, and how the controller can move past it behind the interface.
 interface AdventureDecision {
@@ -3151,41 +3165,41 @@ describe('Three Adventure transition focus', () => {
       r.click('[data-mode="adventure-hvai"]')
       r.click('[data-action="pause-adventure"]')
       expect(r.real.getViewModel()).toMatchObject({ mode: null, adventure: { status: 'paused' } })
-      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expectTransitionFocus(r, r.lobbyHeading())
       expect(announcement(r.host)).toBe(r.real.getViewModel().status)
       r.click('[data-action="resume-adventure"]')
-      expect(r.document.activeElement).toBe(r.content.querySelector('[data-adventure-current-tier]'))
+      expectTransitionFocus(r, r.content.querySelector('[data-adventure-current-tier]'))
       // Hub Reset.
       r.click('[data-action="abandon-adventure"]')
       expect(r.real.getViewModel()).toMatchObject({ mode: null, adventure: { hasSavedRun: false } })
-      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expectTransitionFocus(r, r.lobbyHeading())
       expect(announcement(r.host)).toBe('Adventure run reset.')
       // A node starts its encounter at the Game Menu button.
       r.click('[data-mode="adventure-hvai"]')
       r.startFirstNode()
       expect(r.real.getViewModel().game).not.toBeNull()
-      expect(r.document.activeElement).toBe(r.content.querySelector('[data-action="menu"]'))
+      expectTransitionFocus(r, r.content.querySelector('[data-action="menu"]'))
       // In-game Pause wins over the closing Game Menu's fallback focus.
       r.click('[data-action="menu"]')
       r.click('[data-action="pause-adventure"]')
       expect(r.real.getViewModel().mode).toBeNull()
-      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expectTransitionFocus(r, r.lobbyHeading())
       // Resume restores the encounter at the Game Menu button.
       r.click('[data-action="resume-adventure"]')
       expect(r.real.getViewModel().game).not.toBeNull()
-      expect(r.document.activeElement).toBe(r.content.querySelector('[data-action="menu"]'))
+      expectTransitionFocus(r, r.content.querySelector('[data-action="menu"]'))
       // In-game Reset.
       r.click('[data-action="menu"]')
       r.click('[data-action="abandon-adventure"]')
       expect(r.real.getViewModel()).toMatchObject({ mode: null, game: null, adventure: { hasSavedRun: false } })
-      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expectTransitionFocus(r, r.lobbyHeading())
       // A lobby Reset stays in the lobby but removes the control that had focus.
       r.click('[data-mode="adventure-hvai"]')
       r.click('[data-action="pause-adventure"]')
       r.click('[data-action="abandon-adventure"]')
       expect(r.adventure().hasSavedRun).toBe(false)
       expect(r.content.querySelector('[data-action="abandon-adventure"]')).toBeNull()
-      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expectTransitionFocus(r, r.lobbyHeading())
       r.dispose()
     })
   })
@@ -3269,7 +3283,7 @@ describe('Three Adventure transition focus', () => {
       // Leaving the finished run focuses the lobby.
       r.click('[data-action="back-to-lobby"]')
       expect(r.real.getViewModel().mode).toBeNull()
-      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expectTransitionFocus(r, r.lobbyHeading())
       r.dispose()
     })
   })

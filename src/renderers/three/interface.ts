@@ -384,7 +384,9 @@ export class ThreeInterface {
   // screen when one returns. A transition (a new session, or a vanished
   // control) moves focus to its destination: the hub's decision, the Game
   // Menu button, or the lobby heading. A refused write keeps the session and
-  // the activated control, so focus stays where it was.
+  // the activated control, so focus stays where it was. The destination
+  // scrolls into view: the lobby keeps a long map's page scroll, which would
+  // otherwise leave its heading above the fold.
   private dispatchAdventure(dispatch: () => void): void {
     const session = this.session
     const focused = this.focusInRoots()
@@ -398,8 +400,8 @@ export class ThreeInterface {
     if (this.disposed || !view || this.modalKind !== null || this.inlineTargetOpen) return
     if (this.session === session && (!focused || this.focusInRoots())) return
     if (isThreeAdventureHub(view)) this.focusAdventureHub()
-    else if (isThreeInGame(view)) this.elements('[data-action="menu"]')[0]?.focus({ preventScroll: true })
-    else this.content.querySelector<HTMLElement>('[data-lobby-heading]')?.focus({ preventScroll: true })
+    else if (isThreeInGame(view)) this.elements('[data-action="menu"]')[0]?.focus()
+    else this.content.querySelector<HTMLElement>('[data-lobby-heading]')?.focus()
   }
 
   private focusInRoots(): boolean {
