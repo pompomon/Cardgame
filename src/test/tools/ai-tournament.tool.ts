@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { describe, it } from 'vitest'
-import { ADVANCED, BASIC, HARD, LEGACY_HARD } from '../helpers/ai-baselines'
+import { resolveEntrant } from '../helpers/ai-entrants'
 import {
   BEHAVIOUR_TABLE_HEADER,
   SEED_TABLE_HEADER,
@@ -15,7 +15,6 @@ import {
   playMatch,
   seedRange,
   type DeckPair,
-  type TournamentEntrant,
 } from '../helpers/ai-tournament'
 import { TEST_DECK_KINDS, deckOfKind, type TestDeckKind } from '../helpers/seeded-games'
 
@@ -24,7 +23,8 @@ import { TEST_DECK_KINDS, deckOfKind, type TestDeckKind } from '../helpers/seede
 //
 //   AI_TOURNAMENT_SEEDS        seeds per match (default 200; mirrored games are twice that)
 //   AI_TOURNAMENT_SEED_START   first seed (default 1); tuning uses seeds from 100000
-//   AI_TOURNAMENT_PAIRS        comma-separated `first:second` entrant names
+//   AI_TOURNAMENT_PAIRS        comma-separated `first:second` entrant specs
+//                              (see src/test/helpers/ai-entrants.ts)
 //   AI_TOURNAMENT_DECKS        comma-separated deck kinds (default `starter`)
 //   AI_TOURNAMENT_SEATING      `mirrored` (default) or `adventure`: the first
 //                              entrant always plays seat 1 with the deck kind
@@ -32,17 +32,7 @@ import { TEST_DECK_KINDS, deckOfKind, type TestDeckKind } from '../helpers/seede
 //   AI_TOURNAMENT_DIAGNOSTICS  `1` adds behaviour and seed diagnostics
 //   AI_TOURNAMENT_OUT          file for the markdown report
 
-const ENTRANTS: readonly TournamentEntrant[] = [HARD, LEGACY_HARD, ADVANCED, BASIC]
-
 const DEFAULT_PAIRS = 'hard:legacy-hard,hard:advanced,hard:basic,legacy-hard:advanced,legacy-hard:basic'
-
-function entrant(name: string): TournamentEntrant {
-  const found = ENTRANTS.find((candidate) => candidate.name === name)
-  if (!found) {
-    throw new Error(`Unknown entrant "${name}". Known: ${ENTRANTS.map((candidate) => candidate.name).join(', ')}`)
-  }
-  return found
-}
 
 function envInteger(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name]
@@ -72,7 +62,7 @@ describe('AI tournament', () => {
     )
     const pairs = envList('AI_TOURNAMENT_PAIRS', DEFAULT_PAIRS).map((pair) => {
       const [first, second] = pair.split(':')
-      return [entrant(first), entrant(second ?? '')] as const
+      return [resolveEntrant(first), resolveEntrant(second ?? '')] as const
     })
     const decks = envList('AI_TOURNAMENT_DECKS', 'starter').map((kind) => {
       if (!isDeckKind(kind)) {

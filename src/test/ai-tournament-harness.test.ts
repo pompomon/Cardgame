@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { AI_FEATURE_NAMES } from '../game/ai-features'
+import { HARD_AI_WEIGHTS } from '../game/ai-weights'
 import { createInitialGame } from '../game/engine'
 import type { BattlefieldCard, GameState } from '../game/types'
 import { ADVANCED, BASIC, LEGACY_HARD } from './helpers/ai-baselines'
 import { behaviourDiagnostics, boardProgress } from './helpers/ai-diagnostics'
+import { parseWeightsReport, resolveEntrant } from './helpers/ai-entrants'
 import { pendingLandWins, playGame, playMatch, seedRange, summarizeLatency, wilsonInterval, type DeckPair } from './helpers/ai-tournament'
 import { deckOfKind } from './helpers/seeded-games'
 
@@ -78,5 +81,29 @@ describe('AI tournament harness', () => {
     ])
     expect(diagnostics.counterWinning).toEqual({ total: 1, hits: 1 })
     expect(diagnostics.counterOther).toEqual({ total: 0, hits: 0 })
+  })
+
+  it('resolves entrant specs and rejects malformed ones', () => {
+    expect(resolveEntrant('one-ply').name).toBe('one-ply')
+    expect(resolveEntrant('advanced@0.25').name).toBe('advanced@0.25')
+    expect(() => resolveEntrant('nobody')).toThrow(/Unknown entrant/)
+    expect(() => resolveEntrant('advanced@2')).toThrow(/from 0 to 1/)
+    expect(() => resolveEntrant('advanced+budget=many')).toThrow(/key=number/)
+
+    const fullNoise = resolveEntrant('basic@1').policy
+    const state = createInitialGame(9)
+    const action = fullNoise(state, 0, 9)
+    expect(fullNoise(state, 0, 9)).toEqual(action)
+    const result = playMatch(resolveEntrant('one-ply'), resolveEntrant('random'), { seeds: seedRange(1, 2) })
+    expect(result.games).toBe(4)
+  })
+
+  it('reads the weights block of a tuning report', () => {
+    const block = AI_FEATURE_NAMES.map((name) => `  ${name}: ${HARD_AI_WEIGHTS[name]},`).join('\n')
+    const report = `Log-loss: 0.6\n\n\`\`\`ts\n${block}\n\`\`\`\n`
+    expect(parseWeightsReport(report)).toEqual(HARD_AI_WEIGHTS)
+    expect(() => parseWeightsReport('no block')).toThrow(/no weights block/)
+    expect(() => parseWeightsReport('```ts\n  unique: 1,\n```')).toThrow(/no weights for/)
+    expect(() => parseWeightsReport('```ts\n  unknownFeature: 1,\n```')).toThrow(/Bad weight line/)
   })
 })
