@@ -179,8 +179,20 @@ export function rolloutAction(meter: StepMeter, settings: RolloutSettings, state
   const actor = activeActor(state)
   const isRoot = actor === settings.root
   if (state.phase === 'swamp_target' && !isRoot && !settings.opponentSeesHand) {
+    // A uniformly random card, drawn by class so the order of the hand does not matter.
     const legal = getLegalActions(state, actor)
-    return legal.length === 0 ? null : legal[rng.nextInt(legal.length)]
+    if (legal.length === 0) {
+      return null
+    }
+    let pick = rng.nextInt(legal.length)
+    const classes = canonicalActionClasses(state, legal)
+    for (const entry of classes) {
+      if (pick < entry.size) {
+        return entry.representative
+      }
+      pick -= entry.size
+    }
+    return classes[classes.length - 1].representative
   }
   const weights = isRoot ? settings.rootWeights : settings.opponentWeights
   return chooseByValue(meter, state, actor, weights, chooserView(settings, actor), settings.epsilon, rng)

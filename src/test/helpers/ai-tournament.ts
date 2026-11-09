@@ -237,10 +237,10 @@ export function formatPercent(value: number): string {
 }
 
 export function formatMatchRow(label: string, result: MatchResult): string {
-  return `| ${label} | ${result.games} | ${result.wins}-${result.losses}-${result.draws} | ${formatPercent(result.score)} [${formatPercent(result.low)}, ${formatPercent(result.high)}] | ${result.averageTurns.toFixed(1)} | ${result.deckOuts} | ${result.latency.mean.toFixed(2)} / ${result.latency.p95.toFixed(2)} / ${result.latency.max.toFixed(2)} |`
+  return `| ${label} | ${result.games} | ${result.wins}-${result.losses}-${result.draws} | ${formatPercent(result.score)} [${formatPercent(result.low)}, ${formatPercent(result.high)}] | ${result.averageTurns.toFixed(1)} | ${result.deckOuts} | ${result.latency.mean.toFixed(2)} / ${result.latency.p95.toFixed(2)} / ${result.latency.p99.toFixed(2)} / ${result.latency.max.toFixed(2)} |`
 }
 
 export const MATCH_TABLE_HEADER = [
-  '| Match | Games | W-L-D | Score [95% Wilson] | Avg turns | Deck-outs | Latency ms mean / p95 / max |',
+  '| Match | Games | W-L-D | Score [95% Wilson] | Avg turns | Deck-outs | Latency ms mean / p95 / p99 / max |',
   '|---|---|---|---|---|---|---|',
 ].join('\n')

@@ -9,7 +9,8 @@
 //
 // Every zone is sorted by id. Order within a zone has no effect on play when
 // actions name their targets, so sorting makes search results independent of
-// it.
+// it. The one exception is a counter, which spends the first Island in hand:
+// take actions from the sorted state rather than from the original.
 
 import type { AiVisibilityProfile } from './ai-policy-types'
 import { shuffleInPlace, type AiRng } from './ai-random'

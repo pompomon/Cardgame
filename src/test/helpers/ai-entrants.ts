@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { AI_FEATURE_NAMES, FULL_VIEW, weightVector, type AiFeatureName, type AiWeights } from '../../game/ai-features'
-import { createAiRng, deriveAiSeed } from '../../game/ai-random'
+import { AI_RANDOM_STREAM, createAiRng, decisionFingerprint, deriveAiSeed } from '../../game/ai-random'
 import { chooseByValue } from '../../game/ai-rollout'
+import { bestClassIndex, resolveSearchBudget, searchActionValues, type AiSearchResult } from '../../game/ai-search'
 import { HARD_AI_WEIGHTS } from '../../game/ai-weights'
 import { getLegalActions } from '../../game/engine'
 import type { GameState } from '../../game/types'
@@ -97,6 +98,42 @@ function candidateWeights(): AiWeights {
   return parseWeightsReport(readFileSync(path, 'utf8'))
 }
 
+/** Search statistics of the latest decision of every search entrant, for tools. */
+export const searchTelemetry = { decisions: 0, steps: [] as number[], worlds: [] as number[] }
+
+/**
+ * Determinized search choosing the best mean. Settings: `d` worlds, `t`
+ * rollout turns, `e` rollout noise, `s` step cap, and `see=1` for an
+ * opponent model that sees the searching player's hand.
+ */
+export function searchArgmaxPolicy(params: ReadonlyMap<string, number>, weights: AiWeights = HARD_AI_WEIGHTS): TournamentPolicy {
+  const budget = resolveSearchBudget({
+    determinizations: params.get('d'),
+    rolloutTurns: params.get('t'),
+    rolloutEpsilon: params.get('e'),
+    maxEngineSteps: params.get('s'),
+  })
+  const vector = weightVector(weights)
+  const opponentSeesHand = params.get('see') === 1
+  return (state, actor, seed) => {
+    const actions = getLegalActions(state, actor)
+    if (actions.length === 0) return null
+    const result: AiSearchResult = searchActionValues(state, actor, actions, {
+      searchSeed: deriveAiSeed(seed, decisionFingerprint(state, actor), actor, AI_RANDOM_STREAM.search),
+      budget,
+      rootWeights: vector,
+      opponentWeights: vector,
+      opponentSeesHand,
+    })
+    if (result.outcome === 'searched') {
+      searchTelemetry.decisions += 1
+      searchTelemetry.steps.push(result.steps)
+      searchTelemetry.worlds.push(result.worlds)
+    }
+    return result.classes[bestClassIndex(result)]?.action ?? null
+  }
+}
+
 export type EntrantFactory = (params: ReadonlyMap<string, number>) => TournamentPolicy
 
 const FACTORIES = new Map<string, EntrantFactory>([
@@ -107,6 +144,8 @@ const FACTORIES = new Map<string, EntrantFactory>([
   ['random', () => RANDOM_POLICY],
   ['one-ply', () => onePlyPolicy()],
   ['one-ply-candidate', () => onePlyPolicy(candidateWeights())],
+  ['search', (params) => searchArgmaxPolicy(params)],
+  ['search-candidate', (params) => searchArgmaxPolicy(params, candidateWeights())],
 ])
 
 /** Adds or replaces an entrant factory, for tools that test candidate policies. */
