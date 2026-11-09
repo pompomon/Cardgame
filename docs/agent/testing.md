@@ -295,6 +295,8 @@ In each state, check that:
   (Pause, Reset, Back to Lobby, a node start);
 - the announcer's text matches the visible status, and nearby copy agrees
   with it, such as the relic list after a relic uses its last charge.
+  Opening or closing a dialog moves the announcer and empties it, so it
+  stays empty until the next status.
 
 `document.elementFromPoint` skips elements with `pointer-events: none`, so
 the board's focusable labels look covered by the canvas. Confirm those by

@@ -5,6 +5,7 @@ import {
   computeAdventureScore,
   isAdventureRunState,
   normalizeAdventureRun,
+  readStoredAdventureHighScore,
   type AdventureRunState,
 } from '../app/adventure'
 import { ADVENTURE_RUN_STORAGE_KEY, readStoredAdventureRun } from '../app/adventure-persistence'
@@ -123,7 +124,9 @@ function playStoredRun(raw: string, run: AdventureRunState, winner: 0 | 1 | 'dra
     finishEncounter(controller, winner)
     view = controller.getViewModel()
     if (view.adventure.pendingCompletion !== null || view.game !== null) problems.push(`the result was not saved: ${view.status}`)
-    if (!Number.isFinite(view.adventure.highScore)) problems.push(`the high score is ${view.adventure.highScore}`)
+    if (!Number.isSafeInteger(view.adventure.highScore) || readStoredAdventureHighScore() !== view.adventure.highScore) {
+      problems.push(`the high score ${view.adventure.highScore} does not read back`)
+    }
     const stored = storage.data.get(RUN_KEY)
     if (view.adventure.hasSavedRun) {
       if (stored === undefined || readStoredAdventureRun() === null) problems.push('the result left no readable run')
@@ -187,6 +190,36 @@ describe('malformed schema version 2 run fixtures', () => {
     expect(storage.calls).toEqual([])
     expect(playStoredRun(raw, run, 1)).toEqual([])
   })
+})
+
+// The guard accepts any safe integer, so a stored run can hold the largest
+// one in every counter. Counters stop there instead of growing past it, so
+// the run still finishes encounters, saves and keeps a readable high score.
+const RESUMABLE_BASE_NAMES = MALFORMED_BASE_NAMES.filter((name) => name !== 'completed' && name !== 'failed')
+
+describe('Adventure counters at the safe-integer limit', () => {
+  installFakeTimerHooks()
+
+  it.each(RESUMABLE_BASE_NAMES.flatMap((name) => ([0, 1, 'draw'] as const).map((winner) => [name, winner] as const)))(
+    'plays the %s base on with winner %s',
+    (name, winner) => {
+      const limit = Number.MAX_SAFE_INTEGER
+      const run: AdventureRunState = {
+        ...malformedBase(name),
+        remainingChances: limit,
+        scoreEligibleChances: limit,
+        winStreak: limit,
+        scoreEligibleWinStreak: limit,
+        totalRoundsPlayed: limit,
+        totalCardsPlayed: limit,
+      }
+      const raw = JSON.stringify(run)
+      installTrackedStorage({ [RUN_KEY]: raw })
+
+      expect(readStoredAdventureRun()).toEqual(run)
+      expect(playStoredRun(raw, run, winner)).toEqual([])
+    },
+  )
 })
 
 type Container = Record<string, unknown> | unknown[]

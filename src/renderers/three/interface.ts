@@ -9,6 +9,7 @@ import { isAiLevel } from '../../app/ai-levels'
 import { isAnimationSpeed } from '../../app/animation-settings'
 import { isBoardTheme } from '../../app/board-theme'
 import { isCardVisualStyle } from '../../app/card-visual-styles'
+import { replayStepStatus } from '../../app/game-presentation'
 import { promptInstall } from '../../app/install-support'
 import { actionableAdventureNodes } from '../../app/lobby-presentation'
 import { isRenderQualityPreference } from '../../app/render-quality'
@@ -172,7 +173,8 @@ export class ThreeInterface {
     this.fileInput.accept = 'application/json,.json'
     this.fileInput.hidden = true
     // Status paragraphs are rebuilt with their markup, which makes their
-    // announcements unreliable; this region persists outside every rebuilt root.
+    // announcements unreliable; this region persists outside every rebuilt
+    // root, apart from visits to an open dialog (see placeAnnouncer).
     this.announcer = this.document.createElement('p')
     this.announcer.classList.add('three-sr-only')
     this.announcer.setAttribute('id', THREE_STATUS_ANNOUNCER_ID)
@@ -312,8 +314,9 @@ export class ThreeInterface {
     // on the same control.
     const hubFocus = isThreeAdventureHub(view) && (!this.view || !isThreeAdventureHub(this.view)
       || this.view.adventure.decisionKey !== view.adventure.decisionKey)
-    // A playing replay steps every 700 ms; only starting and stopping it is announced.
-    const replayTick = view.replay.isPlaying && !!this.view?.replay.isPlaying
+    // A playing replay steps every 700 ms. Its step status stays silent, but
+    // any other status during playback, such as a refused save, is announced.
+    const replayStep = view.replay.isPlaying && view.status === replayStepStatus(view.replay.step, view.replay.totalSteps)
     if (this.session !== session) {
       this.menuOpen = false
       this.cardsOpen = false
@@ -356,19 +359,34 @@ export class ThreeInterface {
     this.session = session
     this.render()
     if (hubFocus) this.focusAdventureHub()
-    this.announce(view.status, replayTick)
+    this.announce(view.status, replayStep)
   }
 
-  private announce(status: string, replayTick: boolean): void {
+  private announce(status: string, silent: boolean): void {
     const repeat = this.announceRepeat
     this.announceRepeat = false
-    if (replayTick || status === this.announcedStatus && !repeat) return
+    if (status === this.announcedStatus && !repeat) return
+    // A silent status still counts as the latest one, so the next status is
+    // spoken even when it repeats one from before.
     this.announcedStatus = status
+    if (silent) return
     // A live region speaks only when its text changes: identical text toggles
     // a trailing no-break space, which screen readers do not read.
     const text = status !== '' && this.announcerText === status ? `${status}\u00a0` : status
     this.announcer.textContent = text
     this.announcerText = text
+  }
+
+  // A modal dialog makes everything outside it inert, which silences a live
+  // region there. The announcer therefore joins the open dialog and returns
+  // to the host before that dialog's markup is replaced. Each move clears
+  // it, so a screen reader neither repeats an old status nor reads one as
+  // part of the dialog.
+  private placeAnnouncer(parent: HTMLElement): void {
+    if (this.announcer.parentElement === parent) return
+    this.announcer.textContent = ''
+    this.announcerText = ''
+    parent.append(this.announcer)
   }
 
   private focusAdventureHub(): void {
@@ -603,6 +621,7 @@ export class ThreeInterface {
     const hostScroll = [this.host.scrollLeft, this.host.scrollTop]
     const oldDialog = this.content.querySelector<HTMLDialogElement>('dialog')
     if (markup !== this.markup) {
+      this.placeAnnouncer(this.host)
       if (oldDialog?.open && typeof oldDialog.close === 'function') oldDialog.close()
       this.content.innerHTML = markup
     }
@@ -629,6 +648,7 @@ export class ThreeInterface {
         if (typeof dialog.showModal === 'function') dialog.showModal()
         else dialog.setAttribute('open', '')
       }
+      this.placeAnnouncer(dialog)
       this.restoreScroll()
       if (oldModal === this.modalKind && focus && this.restoreFocus(focus) && dialog.contains(this.document.activeElement)) return
       ;(dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus({ preventScroll: true })

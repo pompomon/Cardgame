@@ -85,6 +85,14 @@ export function describeAdventureRelicChargeUses(uses: readonly AdventureRelicCh
   return uses.map((use) => describeAdventureRelicChargeUse(use)).join(' ')
 }
 
+/**
+ * The status a replay step sets, such as `Replay step 3/40.`. Renderers
+ * compare against it to stay quiet during playback ticks.
+ */
+export function replayStepStatus(step: number, totalSteps: number): string {
+  return `Replay step ${step}/${totalSteps}.`
+}
+
 export function displayGamePhase(phase: GamePhase): string {
   switch (phase) {
     case 'main':

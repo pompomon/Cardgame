@@ -1918,3 +1918,64 @@ describe('Adventure controller repeated refusals', () => {
     expect(controller.getViewModel().status).toBe(again)
   })
 })
+
+describe('Adventure controller counters at the safe-integer limit', () => {
+  installFakeTimerHooks()
+
+  const LIMIT = Number.MAX_SAFE_INTEGER
+
+  /** The run with every counter at the largest value the guard accepts. */
+  function atCounterLimit(run: AdventureRunState): AdventureRunState {
+    return {
+      ...run,
+      remainingChances: LIMIT,
+      scoreEligibleChances: LIMIT,
+      winStreak: LIMIT,
+      scoreEligibleWinStreak: LIMIT,
+      totalRoundsPlayed: LIMIT,
+      totalCardsPlayed: LIMIT,
+    }
+  }
+
+  const counters = (run: AdventureRunState): number[] => [
+    run.remainingChances, run.scoreEligibleChances, run.winStreak,
+    run.scoreEligibleWinStreak, run.totalRoundsPlayed, run.totalCardsPlayed,
+  ]
+
+  it('plays a land, pauses, resumes and saves a result without leaving the safe integers', () => {
+    const storage = installTrackedStorage({ [RUN_KEY]: JSON.stringify(atCounterLimit(pauseAdventureRun(malformedBase('map')))) })
+    const controller = new AppController()
+    controller.resumeAdventure()
+    startFirstNode(controller)
+    playFirstLand(controller)
+    expect(currentRun(controller).totalCardsPlayed).toBe(LIMIT)
+
+    controller.pauseAdventure()
+    expect(controller.getViewModel()).toMatchObject({ mode: null, adventure: { status: 'paused', stage: 'encounter' } })
+    expect(counters(storedJson<AdventureRunState>(storage, RUN_KEY))).toEqual(Array(6).fill(LIMIT))
+
+    controller.resumeAdventure()
+    expect(controller.getViewModel().game).not.toBeNull()
+    finishEncounter(controller, 0)
+    const view = controller.getViewModel()
+    expect(view.adventure).toMatchObject({ stage: 'reward', pendingCompletion: null, remainingChances: LIMIT, winStreak: LIMIT })
+    expect(counters(storedJson<AdventureRunState>(storage, RUN_KEY))).toEqual(Array(6).fill(LIMIT))
+    expect(new AppController().getViewModel().adventure).toMatchObject({ hasSavedRun: true, stage: 'reward' })
+  })
+
+  it('completes the run with the largest safe high score, which a reload reads back', () => {
+    const storage = installTrackedStorage({ [RUN_KEY]: JSON.stringify(atCounterLimit(malformedBase('bossEncounter'))) })
+    const controller = new AppController()
+    controller.resumeAdventure()
+    expect(startFirstNode(controller).boss).toBe(true)
+    playFirstLand(controller)
+    finishEncounter(controller, 0)
+
+    const view = controller.getViewModel()
+    expect(view.adventure).toMatchObject({ pendingCompletion: null, highScore: LIMIT, hasSavedRun: false })
+    expect(view.status).toContain(`Score: ${LIMIT}. High score: ${LIMIT}.`)
+    expect(storage.data.get(HIGH_SCORE_KEY)).toBe(String(LIMIT))
+    expect(storage.data.has(RUN_KEY)).toBe(false)
+    expect(new AppController().getViewModel().adventure.highScore).toBe(LIMIT)
+  })
+})

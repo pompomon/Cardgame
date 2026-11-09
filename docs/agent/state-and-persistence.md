@@ -453,6 +453,13 @@ keep their names; only their formats changed.
     counter can then neither make the score infinite nor make a seed lose
     precision. A version 1 run holding an unsafe value converts to null, so
     it is unavailable. An opponent may list at most five lands.
+  - **Counter limit.** Every counter that grows, in the run transitions
+    and in the in-place summon counter, goes through
+    `incrementAdventureCounter`. That function stops at
+    `Number.MAX_SAFE_INTEGER` instead of growing past it, so a run the guard
+    accepts can still finish an encounter, pause and save.
+    `computeAdventureScore` clamps to the safe integers, so the high score
+    it writes always reads back.
   - **High score.** `readStoredAdventureHighScore` accepts only the decimal
     digits `persistAdventureHighScore` writes, up to
     `Number.MAX_SAFE_INTEGER`. Anything else reads as 0.

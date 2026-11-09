@@ -6,6 +6,7 @@ import { ADVENTURE_GAME_STORAGE_KEY, type AdventureNodeLane, type AdventureNodeS
 import { ADVENTURE_RUN_STORAGE_KEY } from '../app/adventure-persistence'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import { createGameRecord } from '../app/game-recording'
+import { replayStepStatus } from '../app/game-presentation'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
 import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
 import { actionableAdventureNodes } from '../app/lobby-presentation'
@@ -176,6 +177,7 @@ class ElementStub {
     this.ownerDocument = ownerDocument
   }
   get id(): string { return this.getAttribute('id') ?? '' }
+  get parentElement(): ElementStub | null { return this.parent }
   get isConnected(): boolean { return this === this.ownerDocument.body || !!this.parent?.isConnected }
   get innerHTML(): string { return this.html }
   set innerHTML(value: string) {
@@ -209,7 +211,14 @@ class ElementStub {
   }
   getAttribute(name: string): string | null { return this.attributes.get(name) ?? null }
   hasAttribute(name: string): boolean { return this.attributes.has(name) }
-  append(...elements: ElementStub[]): void { for (const element of elements) { this.children.push(element); element.parent = this } }
+  // As in the DOM, appending a node moves it from its previous parent.
+  append(...elements: ElementStub[]): void {
+    for (const element of elements) {
+      element.remove()
+      this.children.push(element)
+      element.parent = this
+    }
+  }
   remove(): void {
     if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1)
     this.parent = null
@@ -3162,6 +3171,162 @@ describe('Three status announcer', () => {
     h.update(replay(10, false, 'Replay reached final state.'))
     expect(announcement(h.host)).toBe('Replay reached final state.')
     h.ui.dispose()
+  })
+
+  it('announces any other status during playback, such as a refused recording save', () => {
+    const base = makeView()
+    const playing = (step: number, status: string): AppViewModel => ({
+      ...base, status, replay: { active: true, step, totalSteps: 10, isPlaying: true },
+      game: { ...base.game!, isReplay: true, canInput: false },
+    })
+    const failed = 'Failed to save recording to local storage.'
+    const h = setup(playing(0, 'Replay playing from step 0/10.'))
+    h.update(playing(1, replayStepStatus(1, 10)))
+    h.update(playing(1, failed))
+    expect(announcement(h.host)).toBe(failed)
+    // The next tick, and a refresh that keeps it, stay silent.
+    h.update(playing(2, replayStepStatus(2, 10)))
+    h.update(playing(2, replayStepStatus(2, 10)))
+    expect(announcement(h.host)).toBe(failed)
+    // The same failure after a tick is spoken again.
+    h.update(playing(2, failed))
+    expect(announcement(h.host)).toBe(`${failed}\u00a0`)
+    h.ui.dispose()
+  })
+
+  it('moves the announcer into an open dialog, since a modal makes the rest of the page inert', () => {
+    const view = makeView()
+    view.mode = 'adventure-hvai'
+    view.adventure = { ...view.adventure, status: 'active', stage: 'encounter' }
+    const h = setup(view, true)
+    const region = h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+    expect(announcement(h.host)).toBe('Ready')
+    h.click('[data-action="menu"]')
+    const menu = h.content.querySelector('dialog')!
+    expect(menu.open).toBe(true)
+    // It joins the dialog empty, so the earlier status is neither repeated
+    // nor read as part of the menu.
+    expect(region.parent).toBe(menu)
+    expect(announcement(h.host)).toBe('')
+    const regions = h.host.querySelectorAll(`#${THREE_STATUS_ANNOUNCER_ID}`)
+    expect(regions).toHaveLength(1)
+    expect(regions[0]).toBe(region)
+    // A refused Pause keeps the menu open and is announced inside it.
+    const refused = { ...view, status: 'Adventure progress could not be saved (storage unavailable). The game was not paused.' }
+    h.controller.pauseAdventure.mockImplementation(() => h.update(refused))
+    h.click('[data-action="pause-adventure"]')
+    expect(h.content.querySelector('dialog')).toBe(menu)
+    expect(region.parent).toBe(menu)
+    expect(announcement(h.host)).toBe(refused.status)
+    // A rebuilt menu takes the announcer along before its markup is replaced.
+    h.update({ ...refused, adventure: { ...refused.adventure, highScore: refused.adventure.highScore + 1 } })
+    const rebuilt = h.content.querySelector('dialog')!
+    expect(rebuilt).not.toBe(menu)
+    expect(menu.contains(region)).toBe(false)
+    expect(region.parent).toBe(rebuilt)
+    h.click('[data-action="pause-adventure"]')
+    expect(region.parent).toBe(h.content.querySelector('dialog'))
+    expect(announcement(h.host)).toBe(refused.status)
+    // Closing the menu returns it to the host.
+    h.click('[data-action="close"]')
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(region.parent).toBe(h.host)
+    h.update({ ...refused, status: 'Turn 2 begins.' })
+    expect(announcement(h.host)).toBe('Turn 2 begins.')
+    // Disposing with a dialog open removes it too.
+    h.click('[data-action="menu"]')
+    expect(region.parent).toBe(h.content.querySelector('dialog'))
+    h.ui.dispose()
+    expect(region.parent).toBeNull()
+  })
+
+  it('announces refused Pause and Retry Saving Result inside the open Game Menu', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const region = r.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+      const menu = (): ElementStub => {
+        const dialog = r.content.querySelector('dialog')
+        if (dialog?.dataset.modal !== 'menu') throw new Error('Expected the open Game Menu')
+        return dialog
+      }
+      const clickInMenu = (action: string): void => {
+        const control = menu().querySelector(`[data-action="${action}"]`)
+        if (!control) throw new Error(`Missing Game Menu control ${action}`)
+        control.focus()
+        r.host.emit('click', { target: control })
+      }
+      const expectAnnouncedInMenu = (): void => {
+        expect(region.parent).toBe(menu())
+        expect(announcement(r.host)?.trim()).toBe(r.real.getViewModel().status)
+      }
+      r.click('[data-mode="adventure-hvai"]')
+      r.startFirstNode()
+      r.click('[data-action="menu"]')
+      expect(region.parent).toBe(menu())
+      r.storage.failingSets.add(ADVENTURE_RUN_STORAGE_KEY)
+      clickInMenu('pause-adventure')
+      expect(r.real.getViewModel().mode).toBe('adventure-hvai')
+      expect(r.real.getViewModel().status).toContain('The game was not paused.')
+      expectAnnouncedInMenu()
+      // A refused result keeps the menu open, which then offers Retry Saving Result.
+      r.finish(0)
+      expect(r.adventure().pendingCompletion).not.toBeNull()
+      expectAnnouncedInMenu()
+      clickInMenu('adventure-retry-completion')
+      expect(r.real.getViewModel().status).toContain('still could not be saved')
+      expectAnnouncedInMenu()
+      clickInMenu('adventure-retry-completion')
+      expectAnnouncedInMenu()
+      // Saving the result leaves the game, so the menu closes and the
+      // announcer speaks from the host again.
+      r.storage.failingSets.delete(ADVENTURE_RUN_STORAGE_KEY)
+      clickInMenu('adventure-retry-completion')
+      expect(r.real.getViewModel()).toMatchObject({ game: null, adventure: { pendingCompletion: null } })
+      expect(r.content.querySelector('dialog')).toBeNull()
+      expect(region.parent).toBe(r.host)
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.dispose()
+    })
+  })
+
+  it('announces a refused recording save from the Game Menu during playback, not the ticks', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      r.controller.saveRecordingToLocalStorage.mockImplementation(() => r.real.saveRecordingToLocalStorage())
+      const region = r.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+      // The controller's private recording key.
+      const recordingKey = 'cardgame.saved-recording'
+      r.real.startGame('local-hvh')
+      for (let turn = 0; turn < 3; turn += 1) {
+        const game = r.real.getViewModel().game!
+        expect(game.legal.canEndTurn).toBe(true)
+        r.real.submitAction({ type: 'end_turn', actor: game.actor })
+      }
+      r.real.startReplay()
+      expect(r.real.getViewModel().replay).toMatchObject({ isPlaying: true, step: 0, totalSteps: 3 })
+      expect(announcement(r.host)).toBe('Replay playing from step 0/3.')
+      r.click('[data-action="menu"]')
+      const tick = (): void => {
+        vi.advanceTimersByTime(700)
+        const view = r.real.getViewModel()
+        expect(view.status).toBe(replayStepStatus(view.replay.step, view.replay.totalSteps))
+        // Each tick rebuilds the menu, which keeps the announcer.
+        expect(region.parent).toBe(r.content.querySelector('dialog'))
+        expect(announcement(r.host)).not.toContain('Replay step')
+      }
+      tick()
+      r.storage.failingSets.add(recordingKey)
+      r.click('[data-action="save-recording-local"]')
+      expect(r.real.getViewModel().replay.isPlaying).toBe(true)
+      expect(announcement(r.host)).toBe('Failed to save recording to local storage.')
+      tick()
+      r.click('[data-action="save-recording-local"]')
+      expect(announcement(r.host)).toBe('Failed to save recording to local storage.')
+      vi.advanceTimersByTime(700)
+      expect(r.real.getViewModel().replay).toMatchObject({ isPlaying: false, step: 3 })
+      expect(announcement(r.host)).toBe('Replay reached final state.')
+      r.dispose()
+    })
   })
 })
 

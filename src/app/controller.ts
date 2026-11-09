@@ -15,6 +15,7 @@ import {
   createAdventureRun,
   createAdventureRunId,
   createInactiveAdventureState,
+  incrementAdventureCounter,
   isAdventureGameSnapshotForRun,
   isResumableAdventureRun,
   openAdventureMap,
@@ -40,7 +41,7 @@ import {
   readStoredAdventureRunRecord,
   type StoredAdventureRunRecord,
 } from './adventure-persistence'
-import { describeAdventureRelicChargeUses, displayAdventureOpponentLabel } from './game-presentation'
+import { describeAdventureRelicChargeUses, displayAdventureOpponentLabel, replayStepStatus } from './game-presentation'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
 import {
@@ -472,7 +473,7 @@ export class AppController implements ControllerApi {
       this.state.replay = { ...this.state.replay, isPlaying: false }
       this.state.status = 'Replay reached final state.'
     } else {
-      this.state.status = `Replay step ${boundedStep}/${this.state.replay.record.timeline.length}.`
+      this.state.status = replayStepStatus(boundedStep, this.state.replay.record.timeline.length)
     }
   }
 
@@ -727,7 +728,8 @@ export class AppController implements ControllerApi {
       // ten-deck map) on every summon would add main-thread jank. The next
       // committed transition (result, pause) saves it. Route fields are
       // never changed in place.
-      this.state.adventure.run.totalCardsPlayed += 1
+      const run = this.state.adventure.run
+      run.totalCardsPlayed = incrementAdventureCounter(run.totalCardsPlayed)
     }
 
     this.appendRecordingStep(action, next, source)

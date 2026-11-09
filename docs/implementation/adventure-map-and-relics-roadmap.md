@@ -1126,7 +1126,9 @@ Rules and pitfalls for contributors are in
   - Each player may hold at most 50 cards across zones.
   - Turn and instance counters must be safe integers.
   - Run counters, seeds and attempt numbers must pass the new
-    `isNonNegativeSafeInteger`.
+    `isNonNegativeSafeInteger`. Counters stop at `Number.MAX_SAFE_INTEGER`
+    instead of growing past it, and the score is clamped to the safe
+    integers.
   - An opponent may list at most five lands.
   - The high score reads back only as the decimal digits the app writes.
 - **Malformed saves.** `src/test/fixtures/adventure-malformed-v2.ts` builds
@@ -1135,7 +1137,9 @@ Rules and pitfalls for contributors are in
   and counter), plus variants that must still be accepted.
   `adventure-fuzz.test.ts` reads 2,000 edited runs and 400 edited mid-game
   saves from fixed seeds. Reading never throws or writes. Every accepted
-  run plays on through Resume, a reward, a node start and a result.
+  run plays on through Resume, a reward, a node start and a result, and its
+  high score reads back. Every resumable base also plays on with all six
+  counters at the limit, for a win, a loss and a draw.
 - **Measurements.** These were taken with Node 26 in a development
   container.
   - The largest run, a won route with six claimed rewards, is 33,364 bytes.
@@ -1157,9 +1161,11 @@ Rules and pitfalls for contributors are in
 - **Announcer and focus.**
   - One persistent, visually hidden `role="status"` region speaks lobby,
     hub and HUD status. The rebuilt status paragraphs lose their live
-    roles.
+    roles. While a modal dialog is open, the region sits inside it, because
+    `showModal()` makes the rest of the page inert. Each move clears it.
   - A retried Adventure command announces an unchanged status again.
-    Replay playback ticks stay quiet.
+    During replay playback only the step status stays quiet. Any other
+    status, such as a refused recording save, is announced.
   - Pause, Reset and Back to Lobby move focus to the lobby heading.
   - A node start or a restoring Resume moves focus to the Game Menu button.
   - Hub transitions follow the Milestone 5 focus order.
@@ -1210,7 +1216,9 @@ Rules and pitfalls for contributors are in
   infinite. Counters, seeds and attempt numbers are therefore limited to
   safe integers, which every app-written run meets. A version 1 run holding
   an unsafe value converts to null, so it is unavailable. A stored high
-  score outside the safe range reads as 0.
+  score outside the safe range reads as 0. Review then found that a counter
+  already at the limit made the next result fail the guard, so counters
+  now stop at the limit and the score is clamped.
 - Transition focus applies to Adventure commands only. Back to Lobby moves
   focus only in Adventure mode, and starting other modes is unchanged.
   Focus also moves when a command removes the activated control, such as a

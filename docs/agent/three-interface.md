@@ -68,6 +68,13 @@ and HUD status paragraphs are plain `<p>` elements with no live role. A live
 region created by an `innerHTML` rebuild is not reliably announced, and
 several regions would speak the same text twice.
 
+- `showModal()` makes everything outside the dialog inert, which silences a
+  live region there. While a dialog is open, `render()` moves the region
+  into it (`placeAnnouncer`). Before replacing that dialog's markup,
+  `render()` moves the region back to the host. Each move clears its text, so a
+  screen reader neither repeats an old status nor reads one as part of the
+  dialog. A status set while the Game Menu is open, such as a refused Pause
+  or Retry Saving Result, is therefore spoken.
 - `update()` sets the region's text after rendering and focus, and only
   when `view.status` changes.
 - A status that stays the same is spoken again only after a command routed
@@ -75,8 +82,11 @@ several regions would speak the same text twice.
   "still" for a second identical refusal. For any repeat after that, the
   interface toggles a trailing no-break space, which screen readers do not
   read, so the region's text still changes.
-- Replay playback ticks stay quiet. Starting, pausing, stepping and reaching
-  the final state are announced.
+- During playback, only the step status of each tick stays quiet. The
+  interface compares the status against `replayStepStatus(step,
+  totalSteps)` from `game-presentation.ts`, which the controller also uses.
+  Any other status is announced, such as a refused recording save, and so
+  are starting, pausing, stepping and reaching the final state.
 - Keep live regions persistent. Create them once, like this region, the
   board captions and the dock prompt, and never put a live role in markup
   that `render()` rebuilds. Send status-line text through `view.status`.

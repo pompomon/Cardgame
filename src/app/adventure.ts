@@ -293,7 +293,19 @@ export function adventureEncounterLaunch(run: AdventureRunState): AdventureEncou
  * real chances until rewards can add chances that must not raise the score.
  */
 export function computeAdventureScore(run: AdventureRunState): number {
-  return run.scoreEligibleChances * 100 - run.totalCardsPlayed + run.totalRoundsPlayed * 5
+  const score = run.scoreEligibleChances * 100 - run.totalCardsPlayed + run.totalRoundsPlayed * 5
+  // Counters near their limit can push the formula past the safe integers,
+  // which the high-score reader rejects.
+  return Math.max(Number.MIN_SAFE_INTEGER, Math.min(score, Number.MAX_SAFE_INTEGER))
+}
+
+/**
+ * Adds one to a run counter. Counters stop at `Number.MAX_SAFE_INTEGER`, the
+ * largest value the strict guard accepts, so every run it accepts can still
+ * finish an encounter and be saved.
+ */
+export function incrementAdventureCounter(value: number): number {
+  return Math.min(value + 1, Number.MAX_SAFE_INTEGER)
 }
 
 function isLegacyAdventureOpponentDeck(value: unknown): value is AdventureOpponentDeck {
@@ -610,7 +622,8 @@ export interface AdventureEncounterResolution {
  * the streak, then fails the run when no chance remains. A loss or draw
  * otherwise retries the same node with the next attempt number and its
  * derived seed, back at the `map` stage. The score-eligible counters follow
- * a reward-free run: relics never protect them.
+ * a reward-free run: relics never protect them. Counters that grow stop at
+ * `Number.MAX_SAFE_INTEGER`.
  */
 export function resolveAdventureEncounterResult(
   run: AdventureRunState,
@@ -620,18 +633,18 @@ export function resolveAdventureEncounterResult(
     throw new Error('Only an active Adventure encounter can finish.')
   }
   const next = cloneAdventureRun(run)
-  next.totalRoundsPlayed += 1
+  next.totalRoundsPlayed = incrementAdventureCounter(next.totalRoundsPlayed)
   next.encounterSetup = null
   let chanceLossPrevented = false
   let streakResetPrevented = false
   if (outcome === 'win') {
-    next.winStreak += 1
+    next.winStreak = incrementAdventureCounter(next.winStreak)
     if (next.winStreak % 3 === 0) {
-      next.remainingChances += 1
+      next.remainingChances = incrementAdventureCounter(next.remainingChances)
     }
-    next.scoreEligibleWinStreak += 1
+    next.scoreEligibleWinStreak = incrementAdventureCounter(next.scoreEligibleWinStreak)
     if (next.scoreEligibleWinStreak % 3 === 0) {
-      next.scoreEligibleChances += 1
+      next.scoreEligibleChances = incrementAdventureCounter(next.scoreEligibleChances)
     }
     const completion = completeAdventureNode(run)
     applyAdventureRouteProgress(next, completion)
