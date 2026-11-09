@@ -684,8 +684,10 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
       // A committed result replaces the board with the map at once, so a
       // finished Adventure game only stays while storage refuses its result.
       const pending = view.adventure.pendingCompletion !== null
+      const winner = game.winnerText || 'Game over.'
       return {
-        prompt: `${game.winnerText || 'Game over.'}${pending ? ' The result is not saved yet.' : ''}`,
+        // "Winner: Player 1" has no closing punctuation of its own.
+        prompt: pending ? `${/[.!?]$/.test(winner) ? winner : `${winner}.`} The result is not saved yet.` : winner,
         actions: pending
           ? button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
             + button('abandon-adventure', 'Reset', false, ' aria-label="Reset Adventure Run"')
