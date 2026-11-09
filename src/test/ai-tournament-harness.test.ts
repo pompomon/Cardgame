@@ -83,6 +83,23 @@ describe('AI tournament harness', () => {
     expect(diagnostics.counterOther).toEqual({ total: 0, hits: 0 })
   })
 
+  it('judges a Forest return with the played Forest in play', () => {
+    const graveForest = { id: 'p0-grave-forest', name: 'Forest', type: 'land' } as const
+    const graveSwamp = { id: 'p0-grave-swamp', name: 'Swamp', type: 'land' } as const
+    const forest = (graveyard: GameState['players'][number]['graveyard'], effectTargetId: string) => {
+      const state = createInitialGame(5)
+      state.players[0].hand = [{ id: 'p0-forest', name: 'Forest', type: 'land' }]
+      state.players[0].battlefield = battlefield(0, ['Island', 'Mountain', 'Plains'])
+      state.players[0].graveyard = graveyard
+      const action = { type: 'play_land', actor: 0, cardId: 'p0-forest', effectTargetId } as const
+      return behaviourDiagnostics([{ state, action, gameSeed: 5 }]).forestProgressCard
+    }
+    // A second Forest leaves the board at four kinds; only the Swamp completes five.
+    expect(forest([graveForest, graveSwamp], 'p0-grave-swamp')).toEqual({ total: 1, hits: 1 })
+    expect(forest([graveForest, graveSwamp], 'p0-grave-forest')).toEqual({ total: 1, hits: 0 })
+    expect(forest([graveForest], 'p0-grave-forest')).toEqual({ total: 0, hits: 0 })
+  })
+
   it('resolves entrant specs and rejects malformed ones', () => {
     expect(resolveEntrant('one-ply').name).toBe('one-ply')
     expect(resolveEntrant('advanced@0.25').name).toBe('advanced@0.25')

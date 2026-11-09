@@ -30,7 +30,7 @@ export interface BehaviourDiagnostics {
   readonly mountainBest: RateCounter
   /** Swamp discards of a card that would raise enemy progress, when one exists. */
   readonly swampProgressCard: RateCounter
-  /** Forest returns of a card that would raise own progress, when one exists. */
+  /** Forest returns of a card that would raise own progress with the Forest in play, when one exists. */
   readonly forestProgressCard: RateCounter
   /** Plains plays by reused land name. */
   readonly plainsReuse: Partial<Record<BasicLand, number>>
@@ -61,8 +61,7 @@ function battlefieldNames(player: PlayerState): BasicLand[] {
   return player.battlefield.map((entry) => entry.card.name)
 }
 
-function raisesProgress(player: PlayerState, card: Card): boolean {
-  const names = battlefieldNames(player)
+function raisesProgress(names: readonly BasicLand[], card: Card): boolean {
   return boardProgress([...names, card.name]) > boardProgress(names)
 }
 
@@ -107,7 +106,9 @@ function recordDecision(diagnostics: BehaviourDiagnostics, state: GameState, act
     if (card?.name === 'Mountain') {
       recordMountain(diagnostics, enemy, action.effectTargetId)
     } else if (card?.name === 'Forest' && action.effectTargetId !== undefined) {
-      const useful = own.graveyard.filter((entry) => raisesProgress(own, entry))
+      // The Forest is in play by the time its card returns.
+      const board: BasicLand[] = [...battlefieldNames(own), 'Forest']
+      const useful = own.graveyard.filter((entry) => raisesProgress(board, entry))
       if (useful.length > 0) {
         diagnostics.forestProgressCard.total += 1
         diagnostics.forestProgressCard.hits += useful.some((entry) => entry.id === action.effectTargetId) ? 1 : 0
@@ -123,7 +124,7 @@ function recordDecision(diagnostics: BehaviourDiagnostics, state: GameState, act
     recordMountain(diagnostics, enemy, action.effectTargetId)
   }
   if (action.type === 'resolve_swamp_discard') {
-    const useful = enemy.hand.filter((entry) => raisesProgress(enemy, entry))
+    const useful = enemy.hand.filter((entry) => raisesProgress(battlefieldNames(enemy), entry))
     if (useful.length > 0 && useful.length < enemy.hand.length) {
       diagnostics.swampProgressCard.total += 1
       diagnostics.swampProgressCard.hits += useful.some((entry) => entry.id === action.effectTargetId) ? 1 : 0
