@@ -2727,7 +2727,13 @@ describe('Three Adventure rewards', () => {
     expect(html).toContain('<li data-relic-id="rooftop-charm"><span><strong>Rooftop Charm</strong></span>')
     expect(html).toContain('Opening hands include a Rooftop creature.')
     expect(html).not.toContain('Relics: none yet')
-    expect(renderThreeInterface(hubView(), defaultUi)).toContain('Relics: none yet. Win an encounter to earn a reward.')
+    // The empty inventory points to rewards only while a non-boss win can earn one.
+    const empty = (adventure: Partial<AdventureUiState>) =>
+      renderThreeInterface(hubView(adventure), defaultUi).match(/<p class="three-adventure-relics-empty">([^<]*)<\/p>/)?.[1]
+    expect(empty({})).toBe('Relics: none yet. Win an encounter to earn a reward.')
+    expect(empty({ stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1' })).toBe('Relics: none yet.')
+    expect(empty({ currentTier: 7 })).toBe('Relics: none yet.')
+    expect(empty({ status: 'failed', stage: null })).toBe('Relics: none.')
     // The escaped offer ID still resolves exactly the offer on screen.
     const h = setup(view)
     h.click('[data-action="adventure-reward-skip"]')

@@ -374,9 +374,12 @@ function relicLabel(relic: AdventureRelicSummary): string {
   return charges === null ? relic.name : `${relic.name} (${charges})`
 }
 
-function renderAdventureRelics(adventure: AdventureUiState): string {
+// An empty inventory points to rewards only while a non-boss win can still earn one.
+function renderAdventureRelics(adventure: AdventureUiState, resumable: boolean): string {
   if (adventure.relics.length === 0) {
-    return '<p class="three-adventure-relics-empty">Relics: none yet. Win an encounter to earn a reward.</p>'
+    const canEarn = resumable && adventure.pendingReward === null && adventure.currentTier < ADVENTURE_TIER_COUNT
+    const text = resumable ? `Relics: none yet.${canEarn ? ' Win an encounter to earn a reward.' : ''}` : 'Relics: none.'
+    return `<p class="three-adventure-relics-empty">${text}</p>`
   }
   return `<div class="three-adventure-relics"><h3>Relics</h3><ul>${adventure.relics.map((relic) => {
     const charges = relicChargesText(relic)
@@ -524,7 +527,7 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
       <dl class="three-adventure-stats">${stats.map(([label, value]) =>
         `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>
       ${nextOpponent ? `<p>Next opponent: ${escapeHtml(nextOpponent)}</p>` : ''}
-      ${renderAdventureRelics(adventure)}
+      ${renderAdventureRelics(adventure, resumable)}
     </section>
     ${adventure.pendingReward ? renderAdventureReward(adventure.pendingReward)
     : `<section class="three-adventure-map" aria-label="Adventure route"><h2>Route</h2>
