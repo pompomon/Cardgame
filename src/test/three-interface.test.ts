@@ -2303,6 +2303,58 @@ describe('Three narrow profile', () => {
     w.ui.dispose()
   })
 
+  it('keeps the replay transport prompt out of speech, since the status line announces the replay', () => {
+    const over = makeView()
+    over.game!.phase = 'gameOver'
+    over.game!.winnerText = 'Player 1 wins!'
+    over.game!.legal.canEndTurn = false
+    const base = makeView()
+    const replay = (step: number, isPlaying: boolean, status: string): AppViewModel => ({
+      ...base, status, replay: { active: true, step, totalSteps: 10, isPlaying },
+      game: { ...base.game!, isReplay: true, canInput: false },
+    })
+    const narrow = { enabled: true }
+    const h = setup({ ...over, status: 'Player 1 wins!' }, true, narrow)
+    const prompt = h.dockPrompt!
+    // Each politeness change records the text it finds, which must still be the old text.
+    const changes: Array<[string, string]> = []
+    const setAttribute = prompt.setAttribute.bind(prompt)
+    vi.spyOn(prompt, 'setAttribute').mockImplementation((name, value) => {
+      if (name === 'aria-live') changes.push([value, promptText(h)])
+      setAttribute(name, value)
+    })
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    h.update(replay(0, true, 'Replay playing from step 0/10.'))
+    expect(promptText(h)).toBe('Replay · Step 0/10 · Playing')
+    expect(prompt.getAttribute('aria-live')).toBe('off')
+    expect(announcement(h.host)).toBe('Replay playing from step 0/10.')
+    h.update(replay(1, true, replayStepStatus(1, 10)))
+    h.update(replay(2, true, replayStepStatus(2, 10)))
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Playing')
+    expect(announcement(h.host)).toBe('Replay playing from step 0/10.')
+    h.update(replay(2, false, 'Replay paused at step 2/10.'))
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Paused')
+    expect(announcement(h.host)).toBe('Replay paused at step 2/10.')
+    // The prompt stays a status region that a reader can query on demand.
+    expect(prompt.getAttribute('role')).toBe('status')
+    expect(prompt.getAttribute('aria-live')).toBe('off')
+    h.update({ ...over, status: 'Exited replay at final recorded game state.' })
+    expect(promptText(h)).toBe('Player 1 wins!')
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    expect(changes).toEqual([['off', 'Player 1 wins!'], ['polite', 'Replay · Step 2/10 · Paused']])
+    // The wide layout empties the prompt politely; folding back silences it first.
+    h.update(replay(0, true, 'Replay playing from step 0/10.'))
+    narrow.enabled = false
+    h.update(replay(1, true, replayStepStatus(1, 10)))
+    expect(promptText(h)).toBe('')
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    narrow.enabled = true
+    h.update(replay(2, true, replayStepStatus(2, 10)))
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Playing')
+    expect(changes.slice(2)).toEqual([['off', 'Player 1 wins!'], ['polite', 'Replay · Step 0/10 · Playing'], ['off', '']])
+    h.ui.dispose()
+  })
+
   it('shows the tutorial as a dismissible banner with a Hint button to restore it', () => {
     const view = makeView()
     view.mode = 'tutorial'
@@ -2592,7 +2644,7 @@ describe('Three Adventure hub', () => {
     view.game = { ...view.game!, phase: 'gameOver', canInput: false, winnerText: 'Player 1 wins!' }
     view.adventure = { ...view.adventure, runId: 'run-1', status: 'active', stage: 'encounter', currentTier: 2, pendingCompletion: 'win', decisionKey: 'run-1|left|0|win' }
     const h = setup(view)
-    const refused = { ...view, status: 'The encounter result could not be saved (storage unavailable). Retry saving the result.' }
+    const refused = { ...view, status: 'Encounter won. The result could not be saved (storage unavailable). Retry saving the result.' }
     h.controller.retryAdventureCompletion.mockImplementation(() => h.update(refused))
     const menu = (): ElementStub | null => h.content.querySelector('[data-modal="menu"]')
     const retryFromMenu = (): void => {

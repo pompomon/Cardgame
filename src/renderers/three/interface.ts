@@ -629,9 +629,15 @@ export class ThreeInterface {
     const markup = renderThreeInterface(this.view, ui, !this.hudHost)
     const hudMarkup = this.hudHost ? renderThreeHud(this.view, ui) : ''
     const dock = ui.narrow ? renderThreeDock(this.view, ui) : EMPTY_THREE_DOCK
-    if (this.dockPrompt && dock.prompt !== this.dockPromptText) {
-      this.dockPrompt.textContent = dock.prompt
-      this.dockPromptText = dock.prompt
+    if (this.dockPrompt) {
+      // Politeness changes before the text: a replay's first prompt stays
+      // silent, and the first prompt after it, such as the winner, is spoken.
+      const live = dock.quiet ? 'off' : 'polite'
+      if (this.dockPrompt.getAttribute('aria-live') !== live) this.dockPrompt.setAttribute('aria-live', live)
+      if (dock.prompt !== this.dockPromptText) {
+        this.dockPrompt.textContent = dock.prompt
+        this.dockPromptText = dock.prompt
+      }
     }
     const dockChanged = this.dockActions !== null && dock.actions !== this.dockMarkup
     if (markup === this.markup && hudMarkup === this.hudMarkup && !dockChanged) return

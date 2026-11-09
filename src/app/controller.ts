@@ -68,8 +68,8 @@ const REPLAY_TICK_MS = 700
 const TUTORIAL_SEED = 1
 const ADVENTURE_STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
 const ADVENTURE_STORAGE_WARNING_AGAIN = 'Adventure progress still could not be saved (storage unavailable).'
-const ADVENTURE_RESULT_WARNING = 'The encounter result could not be saved (storage unavailable). Retry saving the result.'
-const ADVENTURE_RESULT_WARNING_AGAIN = 'The encounter result still could not be saved (storage unavailable). Retry saving the result.'
+const ADVENTURE_RESULT_WARNING = 'The result could not be saved (storage unavailable). Retry saving the result.'
+const ADVENTURE_RESULT_WARNING_AGAIN = 'The result still could not be saved (storage unavailable). Retry saving the result.'
 const ADVENTURE_RESET_WARNING = 'Adventure run could not be reset (storage unavailable).'
 const ADVENTURE_RESET_WARNING_AGAIN = 'Adventure run still could not be reset (storage unavailable).'
 const ADVENTURE_PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
@@ -104,6 +104,21 @@ function holdsChargedAdventureRelic(run: AdventureRunState): boolean {
   return run.relics.some((relic) => 'charges' in relic)
 }
 
+// The first sentence of every result status, including a refused one, so the
+// outcome is spoken even while the finished board waits for Retry.
+function adventureOutcomeText(outcome: AdventureEncounterOutcome): string {
+  switch (outcome) {
+    case 'win':
+      return 'Encounter won.'
+    case 'loss':
+      return 'Encounter lost.'
+    case 'draw':
+      return 'Encounter ended in a draw.'
+    default:
+      return 'Encounter finished.'
+  }
+}
+
 // The status after a committed encounter result. Only terminal runs carry a score.
 function adventureResultStatus(
   resolution: AdventureEncounterResolution,
@@ -118,15 +133,16 @@ function adventureResultStatus(
     return `${heading} Score: ${score ?? 0}. High score: ${highScore}.`
   }
   const tier = run.currentTierIndex + 1
+  const lead = adventureOutcomeText(outcome)
   if (outcome === 'win') {
     return run.stage === 'reward'
-      ? `Encounter won. Choose a reward or skip it to continue to Tier ${tier}.`
-      : `Encounter won. Choose your Tier ${tier} encounter.`
+      ? `${lead} Choose a reward or skip it to continue to Tier ${tier}.`
+      : `${lead} Choose your Tier ${tier} encounter.`
   }
   if (outcome === 'loss') {
-    return `Encounter lost.${adventureRelicUseText(relicsUsed)} ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
+    return `${lead}${adventureRelicUseText(relicsUsed)} ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
   }
-  return `Encounter ended in a draw. No chance was used. Retry Tier ${tier}.`
+  return `${lead} No chance was used. Retry Tier ${tier}.`
 }
 
 // Adventure seeds come from the clock, as before. Clamp unusual clock values
@@ -401,7 +417,12 @@ export class AppController implements ControllerApi {
     }
     if (!committed) {
       this.state.adventure = { ...this.state.adventure, pendingCompletion: { outcome } }
-      this.state.status = repeatedWarning(this.state.status, ADVENTURE_RESULT_WARNING, ADVENTURE_RESULT_WARNING_AGAIN)
+      const lead = adventureOutcomeText(outcome)
+      this.state.status = repeatedWarning(
+        this.state.status,
+        `${lead} ${ADVENTURE_RESULT_WARNING}`,
+        `${lead} ${ADVENTURE_RESULT_WARNING_AGAIN}`,
+      )
       return
     }
     // The next attempt or tier, or a removed run, no longer matches any saved

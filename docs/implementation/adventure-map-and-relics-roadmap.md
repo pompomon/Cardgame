@@ -1163,6 +1163,9 @@ Rules and pitfalls for contributors are in
   - A restart of the same attempt says it deals the same opening, and that
     no relic charge was used when the run holds a charged relic.
   - A draw says no chance was used.
+  - A refused result starts with its outcome, such as "Encounter lost. The
+    result could not be saved (storage unavailable).", because the
+    finished board's winner text is not a live region.
   - A successful Retry Saving Result starts with "Result saved."
   - A refusal straight after the same refusal says "still". This applies to
     start, node, reward, Pause, Resume, result and Reset.
@@ -1175,7 +1178,9 @@ Rules and pitfalls for contributors are in
     100 ms, since Safari can miss a change to a newly inserted live region.
   - A retried Adventure command announces an unchanged status again.
     During replay playback only the step status stays quiet. Any other
-    status, such as a refused recording save, is announced.
+    status, such as a refused recording save, is announced. The narrow
+    dock prompt, a second live region, is switched off while it shows the
+    replay transport, whose step count changes on every tick.
   - Pause, Reset and Back to Lobby move focus to the lobby heading.
   - A node start or a restoring Resume moves focus to the Game Menu button.
   - Hub transitions follow the Milestone 5 focus order.

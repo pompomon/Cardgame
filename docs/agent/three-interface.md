@@ -96,6 +96,15 @@ several regions would speak the same text twice.
   totalSteps)` from `game-presentation.ts`, which the controller also uses.
   Any other status is announced, such as a refused recording save, and so
   are starting, pausing, stepping and reaching the final state.
+- The narrow dock prompt (`#three-dock-prompt`, `role="status"`) is a
+  second persistent region. It speaks decisions that the status line does
+  not, such as the winner of a finished game. During replay it shows the
+  transport's step count, which changes on every playback tick and repeats
+  what the status line announces. `ThreeDockModel.quiet` marks that prompt,
+  and `render()` then sets `aria-live="off"`. Each politeness change comes
+  before the new text, so a replay's first prompt stays silent and the
+  first prompt after it, such as the winner, is spoken. The prompt keeps
+  its role, id and text, and still describes the docked primary button.
 - Keep live regions persistent. Create them once, like this region, the
   board captions and the dock prompt, and never put a live role in markup
   that `render()` rebuilds. Send status-line text through `view.status`.

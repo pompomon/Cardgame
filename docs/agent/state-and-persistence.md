@@ -497,6 +497,10 @@ keep their names; only their formats changed.
       without using a chance. It adds "or a relic charge" when the run holds
       a charged relic.
     - A draw says no chance was used.
+    - A refused result starts with its outcome, such as "Encounter lost.",
+      from `adventureOutcomeText`, which also starts each saved result.
+      The finished board's winner text is not a live region, so the status
+      is the only spoken outcome until Retry succeeds.
     - A successful Retry Saving Result starts with "Result saved."
     - A refusal straight after the same refusal says "still"
       (`repeatedWarning`), so the status text changes and is announced

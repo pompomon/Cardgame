@@ -51,8 +51,16 @@ const GAME_KEY = ADVENTURE_GAME_STORAGE_KEY
 const HIGH_SCORE_KEY = ADVENTURE_HIGH_SCORE_STORAGE_KEY
 const STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
 const STORAGE_WARNING_AGAIN = 'Adventure progress still could not be saved (storage unavailable).'
-const RESULT_WARNING = 'The encounter result could not be saved (storage unavailable). Retry saving the result.'
-const RESULT_WARNING_AGAIN = 'The encounter result still could not be saved (storage unavailable). Retry saving the result.'
+// A refused result still names its outcome first.
+const RESULT_LEADS: Record<AdventureEncounterOutcome, string> = {
+  win: 'Encounter won.',
+  loss: 'Encounter lost.',
+  draw: 'Encounter ended in a draw.',
+}
+const resultWarning = (outcome: AdventureEncounterOutcome): string =>
+  `${RESULT_LEADS[outcome]} The result could not be saved (storage unavailable). Retry saving the result.`
+const resultWarningAgain = (outcome: AdventureEncounterOutcome): string =>
+  `${RESULT_LEADS[outcome]} The result still could not be saved (storage unavailable). Retry saving the result.`
 const PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
 const UNAVAILABLE_NODE = 'That encounter is not available. Choose a highlighted encounter.'
 const RUN_ID_PATTERN = /^[0-9a-f]{32}$/
@@ -1333,7 +1341,7 @@ describe('Adventure controller branching route', () => {
 
     const board = liveGame(controller)
     expect(board.phase).toBe('gameOver')
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(controller.getViewModel().adventure).toMatchObject({
       status: 'active',
       stage: 'encounter',
@@ -1344,14 +1352,14 @@ describe('Adventure controller branching route', () => {
     expectPendingBlocksNavigation(controller, board)
 
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
     expect(liveGame(controller)).toBe(board)
     // A refusal straight after the same refusal changes the text, so it is announced again.
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING_AGAIN)
+    expect(controller.getViewModel().status).toBe(resultWarningAgain(outcome))
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING_AGAIN)
+    expect(controller.getViewModel().status).toBe(resultWarningAgain(outcome))
     expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
 
     storage.failingSets.delete(RUN_KEY)
@@ -1393,7 +1401,7 @@ describe('Adventure controller branching route', () => {
     finishEncounter(controller, winnerFor(outcome))
 
     const board = liveGame(controller)
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(controller.getViewModel().adventure).toMatchObject({
       status: 'active',
       stage: 'encounter',
@@ -1406,7 +1414,7 @@ describe('Adventure controller branching route', () => {
     storage.failingSets.delete(HIGH_SCORE_KEY)
     storage.failingRemoves.add(RUN_KEY)
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(storage.data.get(HIGH_SCORE_KEY)).toBe(String(highScore))
     expect(storage.data.get(RUN_KEY)).toBe(storedRun)
     expect(liveGame(controller)).toBe(board)
@@ -1414,7 +1422,7 @@ describe('Adventure controller branching route', () => {
     // An unreadable slot after a refused removal cannot confirm the run is gone.
     storage.failingGets.add(RUN_KEY)
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING_AGAIN)
+    expect(controller.getViewModel().status).toBe(resultWarningAgain(outcome))
     expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
     expect(storage.data.get(RUN_KEY)).toBe(storedRun)
     expect(liveGame(controller)).toBe(board)

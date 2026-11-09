@@ -64,6 +64,11 @@ export interface InterfaceUi {
 export interface ThreeDockModel {
   readonly prompt: string
   readonly actions: string
+  /**
+   * The prompt only repeats what the status announcer speaks, so its own
+   * live region stays off. Replay transport changes it on every playback tick.
+   */
+  readonly quiet?: boolean
 }
 
 export const EMPTY_THREE_DOCK: ThreeDockModel = Object.freeze({ prompt: '', actions: '' })
@@ -686,6 +691,7 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
         + button('replay-next', 'Next', step >= totalSteps, ' aria-label="Next Step"')
         + button('replay-end', 'End', step >= totalSteps, ' aria-label="Jump to End"')
         + button('replay-exit', 'Exit', false, ' aria-label="Exit Replay"'),
+      quiet: true,
     }
   }
   if (game.phase === 'gameOver') {

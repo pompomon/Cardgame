@@ -1116,7 +1116,7 @@ describe('controller recording and replay', () => {
         pendingCompletion: 'win',
         hasSavedRun: true,
       })
-      expect(view.status).toBe('The encounter result could not be saved (storage unavailable). Retry saving the result.')
+      expect(view.status).toBe('Encounter won. The result could not be saved (storage unavailable). Retry saving the result.')
       expect(storedAdventureRun()).toMatchObject({ stage: 'encounter', currentTierIndex: 0, selectedNodeId: nodeId })
 
       controller.backToLobby()
