@@ -2918,7 +2918,15 @@ function setupRealAdventure() {
   api.resumeAdventure.mockImplementation(() => real.resumeAdventure())
   api.abandonAdventure.mockImplementation(() => real.abandonAdventure())
   api.backToLobby.mockImplementation(() => real.backToLobby())
-  const unsubscribe = real.subscribe((next) => h.update(next))
+  // A held frame models a renderer that presents snapshots after the
+  // controller has moved on.
+  let holding = false
+  let held: AppViewModel | null = null
+  const present = (next: AppViewModel): void => {
+    if (holding) held = next
+    else h.update(next)
+  }
+  const subscriptions = [real.subscribe(present)]
   const internals = real as unknown as {
     state: { game: GameState | null }
     onAdventureGameFinished(previous: GameState): void
@@ -2944,9 +2952,93 @@ function setupRealAdventure() {
       h.click(`[data-node-id="${node.id}"]`)
       return node.id
     },
-    dispose: (): void => { unsubscribe(); h.ui.dispose() },
+    hold: (): void => { holding = true },
+    release: (): void => {
+      holding = false
+      const next = held
+      held = null
+      if (next) h.update(next)
+    },
+    // Adds a controller subscriber that runs before (or after) the interface's.
+    subscribe: (listener: (view: AppViewModel) => void, first = false): void => {
+      if (!first) {
+        subscriptions.push(real.subscribe(listener))
+        return
+      }
+      for (const unsubscribe of subscriptions.splice(0)) unsubscribe()
+      subscriptions.push(real.subscribe(listener), real.subscribe(present))
+    },
+    dispose: (): void => {
+      for (const unsubscribe of subscriptions.splice(0)) unsubscribe()
+      h.ui.dispose()
+    },
   }
 }
+
+type RealAdventure = ReturnType<typeof setupRealAdventure>
+
+const runWritesSince = (r: RealAdventure, from: number): number =>
+  r.storage.calls.slice(from).filter((call) => call === `set:${ADVENTURE_RUN_STORAGE_KEY}`).length
+
+const savedRewardHistory = (r: RealAdventure): unknown[] =>
+  (JSON.parse(r.storage.data.get(ADVENTURE_RUN_STORAGE_KEY) ?? '{}') as { rewardHistory?: { rewardId: unknown }[] })
+    .rewardHistory?.map((entry) => entry.rewardId) ?? []
+
+// One decision control of the stateful UI matrix: how to reach it, where it
+// lands, and how the controller can move past it behind the interface.
+interface AdventureDecision {
+  selector: string
+  command: ReturnType<typeof vi.fn>
+  applied(): void
+  focused(): void
+  advanceBehind(): void
+}
+
+function reachAdventureDecision(r: RealAdventure, kind: 'node' | 'choose' | 'skip'): AdventureDecision {
+  r.click('[data-mode="adventure-hvai"]')
+  if (kind === 'node') {
+    const node = actionableAdventureNodes(r.adventure())[0]
+    return {
+      selector: `[data-node-id="${node.id}"]`,
+      command: r.controller.startAdventureNode,
+      applied: () => expect(r.real.getViewModel()).toMatchObject({ game: { isReplay: false }, adventure: { stage: 'encounter' } }),
+      focused: () => expect(r.document.activeElement).toBe(r.content.querySelector('[data-action="menu"]')),
+      advanceBehind: () => r.real.startAdventureNode(node.id),
+    }
+  }
+  r.startFirstNode()
+  r.finish(0)
+  const offer = r.adventure().pendingReward!
+  const choice = offer.choices[0]
+  const resolved = (): void => expect(r.adventure()).toMatchObject({ stage: 'map', pendingReward: null })
+  const focused = (): void => expect(r.document.activeElement).toBe(r.content.querySelector('[data-adventure-current-tier]'))
+  return kind === 'choose'
+    ? {
+      selector: `[data-reward-id="${choice.id}"]`,
+      command: r.controller.chooseAdventureReward,
+      applied: () => {
+        resolved()
+        expect(savedRewardHistory(r)).toEqual([choice.id])
+        expect(r.real.getViewModel().status).toBe(`${choice.name} claimed. Choose your Tier 2 encounter.`)
+      },
+      focused,
+      advanceBehind: () => r.real.skipAdventureReward(offer.offerId),
+    }
+    : {
+      selector: '[data-action="adventure-reward-skip"]',
+      command: r.controller.skipAdventureReward,
+      applied: () => {
+        resolved()
+        expect(savedRewardHistory(r)).toEqual([null])
+        expect(r.real.getViewModel().status).toBe('Reward skipped. Choose your Tier 2 encounter.')
+      },
+      focused,
+      advanceBehind: () => r.real.chooseAdventureReward(offer.offerId, choice.id),
+    }
+}
+
+const decisionIdentity = (element: ElementStub | null | undefined): unknown[] =>
+  [element?.dataset.action, element?.dataset.nodeId, element?.dataset.offerId, element?.dataset.rewardId]
 
 describe('Three status announcer', () => {
   it('announces status through one persistent region outside the rebuilt markup', () => {
@@ -3188,5 +3280,163 @@ describe('Three Adventure transition focus', () => {
     expect(adventure.length).toBeGreaterThan(20)
     expect(adventure.filter(([, body]) => /\b(transition|animation)\b/.test(body)).map(([selector]) => selector)).toEqual([])
     expect(css).not.toContain('@keyframes')
+  })
+})
+
+// The stateful UI regression matrix (docs/agent/testing.md) for the hub's
+// decision controls. Each control has a single target, so target
+// cardinality does not apply.
+describe.each(['node', 'choose', 'skip'] as const)('Three Adventure %s control', (kind) => {
+  it('applies one synchronous transition with one run write and focuses the next decision', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const before = r.adventure().decisionKey
+      const from = r.storage.calls.length
+      r.click(decision.selector)
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      expect(r.adventure().decisionKey).not.toBe(before)
+      expect(runWritesSince(r, from)).toBe(1)
+      decision.applied()
+      decision.focused()
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.dispose()
+    })
+  })
+
+  it('keeps the decision and focus when storage refuses the write, then applies one retry', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const before = r.adventure().decisionKey
+      r.storage.failingSets.add(ADVENTURE_RUN_STORAGE_KEY)
+      const control = r.click(decision.selector)
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      expect(r.adventure().decisionKey).toBe(before)
+      expect(r.real.getViewModel().status).toContain('could not be saved')
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      expect(decisionIdentity(r.document.activeElement)).toEqual(decisionIdentity(control))
+      // Repeated refusals are announced again, on the same control, even
+      // once the status text stops changing.
+      r.click(decision.selector)
+      const still = r.real.getViewModel().status
+      expect(still).toContain('still could not be saved')
+      expect(announcement(r.host)).toBe(still)
+      r.click(decision.selector)
+      expect(r.real.getViewModel().status).toBe(still)
+      expect(announcement(r.host)).not.toBe(still)
+      expect(announcement(r.host)?.trim()).toBe(still)
+      expect(r.adventure().decisionKey).toBe(before)
+      expect(decisionIdentity(r.document.activeElement)).toEqual(decisionIdentity(control))
+      r.storage.failingSets.delete(ADVENTURE_RUN_STORAGE_KEY)
+      const from = r.storage.calls.length
+      r.click(decision.selector)
+      expect(decision.command).toHaveBeenCalledTimes(4)
+      expect(runWritesSince(r, from)).toBe(1)
+      decision.applied()
+      decision.focused()
+      r.dispose()
+    })
+  })
+
+  it('ignores the control once the decision has moved on behind the interface', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const control = r.content.querySelector(decision.selector)!
+      r.hold()
+      decision.advanceBehind()
+      const advanced = r.adventure().decisionKey
+      expect(control.isConnected).toBe(true)
+      control.focus()
+      r.host.emit('click', { target: control })
+      expect(decision.command).not.toHaveBeenCalled()
+      expect(r.adventure().decisionKey).toBe(advanced)
+      // The click refreshed the interface to the newer decision instead.
+      expect(control.isConnected).toBe(false)
+      expect(r.onChange).toHaveBeenCalled()
+      r.release()
+      r.dispose()
+    })
+  })
+
+  it('dispatches once for a repeated activation before and after the re-render', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      // Keyboard activation of a native button arrives as the same single click.
+      r.document.emit('keydown', { key: 'Enter', shiftKey: false, preventDefault: () => {} })
+      expect(decision.command).not.toHaveBeenCalled()
+      r.hold()
+      const control = r.click(decision.selector)
+      // Before the next frame, the second activation meets the newer decision.
+      r.host.emit('click', { target: control })
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      r.release()
+      // After it, the old control is gone and does nothing.
+      r.host.emit('click', { target: control })
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      decision.applied()
+      r.dispose()
+    })
+  })
+
+  it.each([true, false])('applies once and writes nothing more when a subscriber disposes the interface (first: %s)', (first) => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const region = r.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`) as unknown as ElementStub & { textContent?: string }
+      let disposedWith: { active: ElementStub | null, builds: number, announced: string | undefined } | null = null
+      // Subscribing delivers the current view at once; dispose on the next one.
+      let armed = false
+      r.subscribe(() => {
+        if (!armed || disposedWith) return
+        r.ui.dispose()
+        disposedWith = { active: r.document.activeElement, builds: r.content.builds, announced: region.textContent }
+      }, first)
+      armed = true
+      const from = r.storage.calls.length
+      expect(() => r.click(decision.selector)).not.toThrow()
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      expect(runWritesSince(r, from)).toBe(1)
+      decision.applied()
+      expect(disposedWith).not.toBeNull()
+      expect(r.document.activeElement).toBe(disposedWith!.active)
+      expect(r.content.builds).toBe(disposedWith!.builds)
+      expect(region.textContent).toBe(disposedWith!.announced)
+      expect(region.parent).toBeNull()
+      r.dispose()
+    })
+  })
+})
+
+describe('Three Adventure reward across Pause and Reset', () => {
+  it('keeps a waiting reward through Pause and Resume, and Reset drops it', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, 'choose')
+      const offer = r.adventure().pendingReward!
+      const choose = r.content.querySelector(decision.selector)!
+      r.click('[data-action="pause-adventure"]')
+      expect(r.real.getViewModel()).toMatchObject({ mode: null, adventure: { status: 'paused', stage: 'reward' } })
+      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      // The hub's Choose control is gone from the lobby and claims nothing.
+      r.host.emit('click', { target: choose })
+      expect(r.controller.chooseAdventureReward).not.toHaveBeenCalled()
+      expect(r.content.querySelector('[data-action="adventure-reward-choose"]')).toBeNull()
+      r.click('[data-action="resume-adventure"]')
+      expect(r.adventure().pendingReward).toEqual(offer)
+      expect(r.content.querySelectorAll('[data-action="adventure-reward-choose"]')
+        .map((element) => [element.dataset.offerId, element.dataset.rewardId]))
+        .toEqual(offer.choices.map((choice) => [offer.offerId, choice.id]))
+      expect(r.document.activeElement).toBe(r.content.querySelector('[data-adventure-reward-heading]'))
+      r.click('[data-action="abandon-adventure"]')
+      expect(r.adventure()).toMatchObject({ hasSavedRun: false, pendingReward: null })
+      expect(r.storage.data.has(ADVENTURE_RUN_STORAGE_KEY)).toBe(false)
+      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expect(r.controller.chooseAdventureReward).not.toHaveBeenCalled()
+      expect(r.controller.skipAdventureReward).not.toHaveBeenCalled()
+      r.dispose()
+    })
   })
 })
