@@ -22,9 +22,12 @@ import type { GameAction, GameState } from './types'
 // and their rollouts share what is left. A search therefore takes at most
 // max(maxEngineSteps, 16 × classes) steps plus about one rollout decision per
 // class.
+//
+// Twelve worlds rather than eight cost about 1.4 times the time and win 55% of
+// mirrored games against eight; see docs/agent/adr/0003-hard-ai-search.md.
 
 export const HARD_AI_DEFAULT_BUDGET: AiSearchBudget = Object.freeze({
-  determinizations: 8,
+  determinizations: 12,
   rolloutTurns: 4,
   rolloutEpsilon: 0.15,
   maxEngineSteps: 6000,

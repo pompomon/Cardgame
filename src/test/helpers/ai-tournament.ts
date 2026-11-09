@@ -152,6 +152,36 @@ export interface MatchOptions {
 
 /** Plays `first` against `second` and scores the games for `first`. */
 export function playMatch(first: TournamentEntrant, second: TournamentEntrant, options: MatchOptions): MatchResult {
+  return drain(matchGames(first, second, options))
+}
+
+/** Runs a stepwise computation to its result. */
+export function drain<T>(steps: Generator<void, T>): T {
+  for (;;) {
+    const next = steps.next()
+    if (next.done) return next.value
+  }
+}
+
+/**
+ * Runs a stepwise computation and lets the event loop run every 200 ms or so.
+ * Long measurements need it: the test runner's own messages time out after a
+ * minute without an answer.
+ */
+export async function drainYielding<T>(steps: Generator<void, T>): Promise<T> {
+  let last = performance.now()
+  for (;;) {
+    const next = steps.next()
+    if (next.done) return next.value
+    if (performance.now() - last >= 200) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      last = performance.now()
+    }
+  }
+}
+
+/** Plays the games of a match, one per step, and returns the match result. */
+export function* matchGames(first: TournamentEntrant, second: TournamentEntrant, options: MatchOptions): Generator<void, MatchResult> {
   const seating = options.seating ?? 'mirrored'
   const seatings: Array<0 | 1> = seating === 'mirrored' ? [0, 1] : [1]
   let wins = 0
@@ -184,6 +214,7 @@ export function playMatch(first: TournamentEntrant, second: TournamentEntrant, o
       } else {
         losses += 1
       }
+      yield
     }
   }
   const points = wins + draws / 2

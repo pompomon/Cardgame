@@ -5,7 +5,7 @@ import { createAiRng } from '../../game/ai-random'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../../game/engine'
 import type { GameState } from '../../game/types'
 import { resolveEntrant } from '../helpers/ai-entrants'
-import type { TournamentPolicy } from '../helpers/ai-tournament'
+import { drainYielding, type TournamentPolicy } from '../helpers/ai-tournament'
 import { TEST_DECK_KINDS, deckOfKind } from '../helpers/seeded-games'
 
 // Opt-in evaluator tuning: `npm run ai:tune`. It is not part of
@@ -196,44 +196,56 @@ function calibration(dataset: Dataset, include: (row: number) => boolean, weight
   return { error, lines }
 }
 
+interface SelfPlay {
+  readonly dataset: Dataset
+  readonly finished: number
+  readonly unfinished: number
+}
+
+/** Plays and records the self-play games, one per step. */
+function* recordSelfPlay(games: number, seedStart: number, policies: readonly TournamentPolicy[]): Generator<void, SelfPlay> {
+  let dataset = createDataset(1 << 16)
+  const scratch = new Float64Array(AI_FEATURE_COUNT)
+  let finished = 0
+  let unfinished = 0
+  for (let game = 0; game < games; game += 1) {
+    yield
+    const seed = seedStart + game
+    const pick = createAiRng(seed)
+    const seats: [TournamentPolicy, TournamentPolicy] = [
+      policies[pick.nextInt(policies.length)],
+      policies[pick.nextInt(policies.length)],
+    ]
+    const { positions, winner } = playRecordedGame(seed, game, seats)
+    if (winner === null) {
+      unfinished += 1
+      continue
+    }
+    finished += 1
+    const label = winner === 0 ? 1 : winner === 1 ? 0 : 0.5
+    for (const position of positions) {
+      if (dataset.count === dataset.labels.length) {
+        dataset = grow(dataset)
+      }
+      featureDifferences(position.state, 0, position.toMove, scratch)
+      dataset.features.set(scratch, dataset.count * AI_FEATURE_COUNT)
+      dataset.labels[dataset.count] = label
+      dataset.games[dataset.count] = game
+      dataset.count += 1
+    }
+  }
+  return { dataset, finished, unfinished }
+}
+
 describe('AI evaluator tuning', () => {
-  it('fits the evaluator weights to self-play results', () => {
+  it('fits the evaluator weights to self-play results', async () => {
     const games = envNumber('AI_TUNE_GAMES', 4000)
     const seedStart = envNumber('AI_TUNE_SEED_START', 100_000)
     const l2 = envNumber('AI_TUNE_L2', 5)
     const specs = (process.env.AI_TUNE_POLICIES || DEFAULT_POLICIES).split(',').map((spec) => spec.trim()).filter(Boolean)
     const policies = specs.map((spec) => resolveEntrant(spec).policy)
 
-    let dataset = createDataset(1 << 16)
-    const scratch = new Float64Array(AI_FEATURE_COUNT)
-    const outcomes = { finished: 0, unfinished: 0 }
-    for (let game = 0; game < games; game += 1) {
-      const seed = seedStart + game
-      const pick = createAiRng(seed)
-      const seats: [TournamentPolicy, TournamentPolicy] = [
-        policies[pick.nextInt(policies.length)],
-        policies[pick.nextInt(policies.length)],
-      ]
-      const { positions, winner } = playRecordedGame(seed, game, seats)
-      if (winner === null) {
-        outcomes.unfinished += 1
-        continue
-      }
-      outcomes.finished += 1
-      const label = winner === 0 ? 1 : winner === 1 ? 0 : 0.5
-      for (const position of positions) {
-        if (dataset.count === dataset.labels.length) {
-          dataset = grow(dataset)
-        }
-        featureDifferences(position.state, 0, position.toMove, scratch)
-        dataset.features.set(scratch, dataset.count * AI_FEATURE_COUNT)
-        dataset.labels[dataset.count] = label
-        dataset.games[dataset.count] = game
-        dataset.count += 1
-      }
-    }
-
-    const final = dataset
+    const { dataset: final, ...outcomes } = await drainYielding(recordSelfPlay(games, seedStart, policies))
     // Deck kinds cycle with the game index, so hold out every fifth cycle
     // rather than every fifth game to keep every kind on both sides.
     const isHoldout = (row: number) => Math.floor(final.games[row] / TEST_DECK_KINDS.length) % 5 === 4

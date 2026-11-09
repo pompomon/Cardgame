@@ -1,18 +1,23 @@
 import { writeFileSync } from 'node:fs'
 import { describe, it } from 'vitest'
+import { HARD_AI_DEFAULT_SELECTION, decisionCriticality } from '../../game/ai-selection'
 import { resolveEntrant } from '../helpers/ai-entrants'
 import {
   BEHAVIOUR_TABLE_HEADER,
+  BLUNDER_TABLE_HEADER,
   SEED_TABLE_HEADER,
   behaviourDiagnostics,
+  blunderDiagnosticSteps,
   formatBehaviourDiagnostics,
+  formatBlunderDiagnostics,
   formatSeedDiagnostics,
-  seedDiagnostics,
+  seedDiagnosticSteps,
 } from '../helpers/ai-diagnostics'
 import {
   MATCH_TABLE_HEADER,
+  drainYielding,
   formatMatchRow,
-  playMatch,
+  matchGames,
   seedRange,
   type DeckPair,
 } from '../helpers/ai-tournament'
@@ -29,7 +34,10 @@ import { TEST_DECK_KINDS, deckOfKind, type TestDeckKind } from '../helpers/seede
 //   AI_TOURNAMENT_SEATING      `mirrored` (default) or `adventure`: the first
 //                              entrant always plays seat 1 with the deck kind
 //                              against the second on the starter deck
-//   AI_TOURNAMENT_DIAGNOSTICS  `1` adds behaviour and seed diagnostics
+//   AI_TOURNAMENT_DIAGNOSTICS  `1` adds behaviour diagnostics, seed variety in
+//                              calm and critical positions, and a blunder
+//                              audit against a search with four times
+//                              Hard's budget
 //   AI_TOURNAMENT_OUT          file for the markdown report
 
 const DEFAULT_PAIRS = 'hard:legacy-hard,hard:advanced,hard:basic,legacy-hard:advanced,legacy-hard:basic'
@@ -55,7 +63,7 @@ function isDeckKind(value: string): value is TestDeckKind {
 }
 
 describe('AI tournament', () => {
-  it('plays the configured matches', () => {
+  it('plays the configured matches', async () => {
     const seeds = seedRange(
       envInteger('AI_TOURNAMENT_SEED_START', 1, 0, 2 ** 40),
       envInteger('AI_TOURNAMENT_SEEDS', 200, 1, 100_000),
@@ -76,15 +84,21 @@ describe('AI tournament', () => {
     const matchRows: string[] = []
     const behaviourRows: string[] = []
     const seedRows: string[] = []
+    const blunderRows: string[] = []
+    const critical = (state: Parameters<typeof decisionCriticality>[0]) =>
+      decisionCriticality(state) >= HARD_AI_DEFAULT_SELECTION.criticalThreshold
     for (const kind of decks) {
       const decksFor = (seed: number): DeckPair => [undefined, deckOfKind(kind, seed)]
       for (const [first, second] of pairs) {
         const label = `${first.name} vs ${second.name} (${kind})`
-        const result = playMatch(first, second, { seeds, decksFor, seating, recordDecisions: diagnostics })
+        const result = await drainYielding(matchGames(first, second, { seeds, decksFor, seating, recordDecisions: diagnostics }))
         matchRows.push(formatMatchRow(label, result))
         if (diagnostics) {
           behaviourRows.push(formatBehaviourDiagnostics(label, behaviourDiagnostics(result.decisions)))
-          seedRows.push(formatSeedDiagnostics(label, seedDiagnostics(first.policy, result.decisions, { stride: 4 })))
+          const calm = await drainYielding(seedDiagnosticSteps(first.policy, result.decisions, { stride: 4, include: (state) => !critical(state) }))
+          const tense = await drainYielding(seedDiagnosticSteps(first.policy, result.decisions, { stride: 4, include: critical }))
+          seedRows.push(formatSeedDiagnostics(`${label}, calm`, calm), formatSeedDiagnostics(`${label}, critical`, tense))
+          blunderRows.push(formatBlunderDiagnostics(label, await drainYielding(blunderDiagnosticSteps(result.decisions, { stride: 4 }))))
         }
       }
     }
@@ -96,7 +110,7 @@ describe('AI tournament', () => {
       ...matchRows,
     ]
     if (diagnostics) {
-      sections.push('', BEHAVIOUR_TABLE_HEADER, ...behaviourRows, '', SEED_TABLE_HEADER, ...seedRows)
+      sections.push('', BEHAVIOUR_TABLE_HEADER, ...behaviourRows, '', SEED_TABLE_HEADER, ...seedRows, '', BLUNDER_TABLE_HEADER, ...blunderRows)
     }
     const report = sections.join('\n')
     console.log(report)

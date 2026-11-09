@@ -1,7 +1,12 @@
 import { actionClassKey, canonicalActionClasses } from '../../game/ai-action-classes'
+import { weightVector } from '../../game/ai-features'
+import type { AiSearchBudget } from '../../game/ai-policy-types'
+import { decisionFingerprint, deriveAiSeed } from '../../game/ai-random'
+import { HARD_AI_DEFAULT_BUDGET, bestClassIndex, pairedDifference, searchActionValues } from '../../game/ai-search'
+import { HARD_AI_WEIGHTS } from '../../game/ai-weights'
 import { getLegalActions } from '../../game/engine'
 import type { BasicLand, Card, GameAction, GameState, PlayerState } from '../../game/types'
-import { pendingLandWins, type DecisionRecord, type TournamentPolicy } from './ai-tournament'
+import { drain, pendingLandWins, type DecisionRecord, type TournamentPolicy } from './ai-tournament'
 import { reverseZoneOrder } from './seeded-games'
 
 // Behaviour diagnostics over recorded decisions. Target quality compares the
@@ -161,6 +166,15 @@ export function seedDiagnostics(
   records: readonly DecisionRecord[],
   options: SeedDiagnosticsOptions = {},
 ): SeedDiagnostics {
+  return drain(seedDiagnosticSteps(policy, records, options))
+}
+
+/** `seedDiagnostics` one audited record per step, for `drainYielding`. */
+export function* seedDiagnosticSteps(
+  policy: TournamentPolicy,
+  records: readonly DecisionRecord[],
+  options: SeedDiagnosticsOptions = {},
+): Generator<void, SeedDiagnostics> {
   const seedsPerState = options.seedsPerState ?? 8
   const stride = Math.max(1, options.stride ?? 1)
   let states = 0
@@ -188,6 +202,7 @@ export function seedDiagnostics(
     if ((reversedChoice ? actionClassKey(reversed, reversedChoice) : 'none') !== recordedClass) {
       orderChanged += 1
     }
+    yield
   }
   return { states, varied, orderChanged }
 }
@@ -217,4 +232,91 @@ export function formatSeedDiagnostics(label: string, diagnostics: SeedDiagnostic
 export const SEED_TABLE_HEADER = [
   '| Policy | Re-run decisions | Varied across seeds | Changed by zone order |',
   '|---|---|---|---|',
+].join('\n')
+
+export interface BlunderDiagnostics {
+  /** Decisions with two or more action classes that the oracle searched. */
+  readonly states: number
+  /** Of those, choices the oracle confidently rates below its best by more than the threshold. */
+  readonly blunders: number
+}
+
+export interface BlunderDiagnosticsOptions {
+  /** Audits every `stride`-th decision only, to bound the cost. */
+  readonly stride?: number
+  /** A gap in win probability that counts as a blunder (default 0.05). */
+  readonly threshold?: number
+  /** The oracle's budget; by default four times Hard's worlds and steps. */
+  readonly budget?: AiSearchBudget
+}
+
+const ORACLE_SEED = 0x6f72636c
+const ORACLE_WEIGHTS = weightVector(HARD_AI_WEIGHTS)
+
+/**
+ * Compares recorded choices with a larger search. A choice is a blunder when
+ * the oracle rates it below its best class by more than `threshold` and by
+ * more than two standard errors of the paired difference, or when it misses
+ * a win the oracle finds at once.
+ */
+export function blunderDiagnostics(records: readonly DecisionRecord[], options: BlunderDiagnosticsOptions = {}): BlunderDiagnostics {
+  return drain(blunderDiagnosticSteps(records, options))
+}
+
+/** `blunderDiagnostics` one audited record per step, for `drainYielding`. */
+export function* blunderDiagnosticSteps(
+  records: readonly DecisionRecord[],
+  options: BlunderDiagnosticsOptions = {},
+): Generator<void, BlunderDiagnostics> {
+  const stride = Math.max(1, options.stride ?? 1)
+  const threshold = options.threshold ?? 0.05
+  const budget = options.budget ?? {
+    ...HARD_AI_DEFAULT_BUDGET,
+    determinizations: HARD_AI_DEFAULT_BUDGET.determinizations * 4,
+    maxEngineSteps: HARD_AI_DEFAULT_BUDGET.maxEngineSteps * 4,
+  }
+  let states = 0
+  let blunders = 0
+  for (let index = 0; index < records.length; index += stride) {
+    yield
+    const { state, action } = records[index]
+    const actor = action.actor
+    const legal = getLegalActions(state, actor)
+    const oracle = searchActionValues(state, actor, legal, {
+      searchSeed: deriveAiSeed(ORACLE_SEED, decisionFingerprint(state, actor), actor),
+      budget,
+      rootWeights: ORACLE_WEIGHTS,
+      opponentWeights: ORACLE_WEIGHTS,
+      opponentSeesHand: false,
+    })
+    if (oracle.outcome === 'single') {
+      continue
+    }
+    states += 1
+    const chosen = oracle.classes.findIndex((entry) => entry.key === actionClassKey(state, action))
+    if (oracle.outcome === 'win') {
+      blunders += oracle.classes[chosen]?.winsNow ? 0 : 1
+      continue
+    }
+    const best = bestClassIndex(oracle)
+    if (chosen < 0 || chosen === best) {
+      blunders += chosen < 0 ? 1 : 0
+      continue
+    }
+    const difference = pairedDifference(oracle, best, chosen)
+    if (difference.mean > threshold && difference.mean > 2 * difference.standardError) {
+      blunders += 1
+    }
+  }
+  return { states, blunders }
+}
+
+export function formatBlunderDiagnostics(label: string, diagnostics: BlunderDiagnostics): string {
+  const share = diagnostics.states === 0 ? 'n/a' : `${((diagnostics.blunders / diagnostics.states) * 100).toFixed(1)}%`
+  return `| ${label} | ${diagnostics.states} | ${share} (${diagnostics.blunders}) |`
+}
+
+export const BLUNDER_TABLE_HEADER = [
+  '| Policy | Audited decisions | Blunders vs 4× oracle |',
+  '|---|---|---|',
 ].join('\n')

@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { AI_FEATURE_NAMES, FULL_VIEW, weightVector, type AiFeatureName, type AiWeights } from '../../game/ai-features'
+import { explainHardDecision } from '../../game/ai-hard'
+import { AI_PERSONAS, type AiPersona } from '../../game/ai-personas'
 import { AI_RANDOM_STREAM, createAiRng, decisionFingerprint, deriveAiSeed } from '../../game/ai-random'
 import { chooseByValue } from '../../game/ai-rollout'
 import { bestClassIndex, resolveSearchBudget, searchActionValues, type AiSearchResult } from '../../game/ai-search'
+import { resolveSelectionSettings } from '../../game/ai-selection'
 import { HARD_AI_WEIGHTS } from '../../game/ai-weights'
 import { getLegalActions } from '../../game/engine'
 import type { GameState } from '../../game/types'
@@ -136,6 +139,45 @@ export function searchArgmaxPolicy(params: ReadonlyMap<string, number>, weights:
 
 export type EntrantFactory = (params: ReadonlyMap<string, number>) => TournamentPolicy
 
+/**
+ * The Hard decision (persona, search, seeded selection). Settings: the
+ * search budget as for `search`; `tau` temperature, `margin` and `cstar`
+ * critical threshold of the selection; `p` fixes the persona by its index in
+ * AI_PERSONAS.
+ */
+export function hardSearchEntrant(params: ReadonlyMap<string, number>): TournamentPolicy {
+  const budget = resolveSearchBudget({
+    determinizations: params.get('d'),
+    rolloutTurns: params.get('t'),
+    rolloutEpsilon: params.get('e'),
+    maxEngineSteps: params.get('s'),
+  })
+  const selection = resolveSelectionSettings({
+    temperature: params.get('tau'),
+    margin: params.get('margin'),
+    criticalThreshold: params.get('cstar'),
+  })
+  const personaIndex = params.get('p')
+  let persona: AiPersona | undefined
+  if (personaIndex !== undefined) {
+    persona = AI_PERSONAS[personaIndex]
+    if (!persona) {
+      throw new Error(`Persona index p=${personaIndex} must be from 0 to ${AI_PERSONAS.length - 1}.`)
+    }
+  }
+  return (state, actor, seed) => {
+    const actions = getLegalActions(state, actor)
+    if (actions.length === 0) return null
+    const decision = explainHardDecision(state, actor, actions, { seed, budget, selection, persona })
+    if (decision.search.outcome === 'searched') {
+      searchTelemetry.decisions += 1
+      searchTelemetry.steps.push(decision.search.steps)
+      searchTelemetry.worlds.push(decision.search.worlds)
+    }
+    return decision.action
+  }
+}
+
 const FACTORIES = new Map<string, EntrantFactory>([
   ['hard', () => HARD.policy],
   ['legacy-hard', () => LEGACY_HARD.policy],
@@ -146,6 +188,7 @@ const FACTORIES = new Map<string, EntrantFactory>([
   ['one-ply-candidate', () => onePlyPolicy(candidateWeights())],
   ['search', (params) => searchArgmaxPolicy(params)],
   ['search-candidate', (params) => searchArgmaxPolicy(params, candidateWeights())],
+  ['hard-search', (params) => hardSearchEntrant(params)],
 ])
 
 /** Adds or replaces an entrant factory, for tools that test candidate policies. */
