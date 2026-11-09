@@ -1179,8 +1179,27 @@ Rules and pitfalls for contributors are in
   - The hub's tab order is pinned.
   - The Adventure CSS has no transitions, animations or keyframes, so
     reduced motion needs no override.
-- **Browser evidence.** Recorded in the pull request, as interaction,
-  capture, inspection and attachment stages.
+- **Browser evidence.** A production preview was checked at the four
+  viewports, each at 100% and 200% text. The run covered the paused lobby,
+  the map, a pending reward, a protected loss, Retry Saving Result, the
+  completed run and a fresh run, plus reloads and keyboard transitions from
+  scrolled pages. The pull request records the interaction, capture,
+  inspection and attachment stages. The check found four defects, each now
+  fixed with a test:
+  - With the result unsaved, the narrow dock read "Winner: Player 1 The
+    result is not saved yet." The winner text now ends as a sentence
+    before the note.
+  - The wide HUD, a fixed-height row that scrolls, showed Retry Saving
+    Result and Reset Adventure Run below its fold at every wide viewport.
+    Both now sit in its header row beside Menu. They use the narrow dock's
+    short labels, Retry and Reset, and keep the full labels as accessible
+    names.
+  - Pause from a scrolled map focused the lobby heading above the fold.
+    The lobby heading and the Game Menu button are now focused without
+    `preventScroll`, so the browser scrolls them into view.
+  - After Guardian Sigil used its last charge, the relic list said
+    "Relics: none yet." It now says "Relics: none.", and still points to
+    winning an encounter while a reward can be earned.
 
 **Deviations from the contract above**
 

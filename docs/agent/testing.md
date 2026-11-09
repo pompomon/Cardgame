@@ -287,10 +287,18 @@ In each state, check that:
 
 - the page has no horizontal overflow;
 - every control is at least 44 CSS pixels in both dimensions;
+- every control can be reached: it is in view, or the page or its own
+  scroll container scrolls to it, and no other element covers it;
 - Tab reaches the controls in the documented hub order;
 - focus lands where [the focus rules](three-interface.md#adventure-hub)
-  say;
-- the announcer's text matches the visible status.
+  say, and stays in view when the command starts from a scrolled page
+  (Pause, Reset, Back to Lobby, a node start);
+- the announcer's text matches the visible status, and nearby copy agrees
+  with it, such as the relic list after a relic uses its last charge.
+
+`document.elementFromPoint` skips elements with `pointer-events: none`, so
+the board's focusable labels look covered by the canvas. Confirm those by
+their visible focus outline instead.
 
 Desktop emulation cannot show safe-area insets, a coarse pointer, reduced
 motion, or real phones and tablets. Record the CSS and unit coverage for
