@@ -243,6 +243,31 @@ export function adventureRelicCharges(relics: readonly AdventureRelic[], id: Adv
   return relic !== undefined && 'charges' in relic ? relic.charges : 0
 }
 
+/** A charged relic that used charges in a transition, and the charges it has left. */
+export interface AdventureRelicChargeUse {
+  readonly id: AdventureChargedRelicId
+  /** 0 when the relic used its last charge and left the run's relics. */
+  readonly chargesLeft: number
+}
+
+const ADVENTURE_CHARGED_RELIC_IDS: readonly AdventureChargedRelicId[] = Object.freeze(
+  ADVENTURE_REWARD_IDS.filter((id): id is AdventureChargedRelicId => isAdventureChargedRelicId(id)),
+)
+
+/**
+ * The charged relics holding fewer charges in `after` than in `before`, in
+ * catalog order, with the charges each has left.
+ */
+export function usedAdventureRelicCharges(
+  before: readonly AdventureRelic[],
+  after: readonly AdventureRelic[],
+): AdventureRelicChargeUse[] {
+  return ADVENTURE_CHARGED_RELIC_IDS.flatMap((id) => {
+    const chargesLeft = adventureRelicCharges(after, id)
+    return chargesLeft < adventureRelicCharges(before, id) ? [{ id, chargesLeft }] : []
+  })
+}
+
 /**
  * Most times one reward may appear in a history. A charged relic can be
  * chosen again after its charges are used, so only the reward count limits it.

@@ -17,6 +17,7 @@ import {
   createInactiveAdventureState,
   currentAdventureNode,
   deckPairForAdventureGame,
+  incrementAdventureCounter,
   isAdventureRunState,
   isLegacyAdventureRunState,
   isResumableAdventureRun,
@@ -127,6 +128,14 @@ describe('adventure deck generation', () => {
     run.totalCardsPlayed = 17
     run.totalRoundsPlayed = 6
     expect(computeAdventureScore(run)).toBe(2 * 100 - 17 + 6 * 5)
+  })
+
+  it('keeps the score within the safe integers, which the high-score reader accepts', () => {
+    const run = createAdventureRun(22, RUN_ID)
+    const limit = Number.MAX_SAFE_INTEGER
+    expect(computeAdventureScore({ ...run, scoreEligibleChances: limit, totalCardsPlayed: 0, totalRoundsPlayed: limit })).toBe(limit)
+    expect(computeAdventureScore({ ...run, scoreEligibleChances: 0, totalCardsPlayed: limit, totalRoundsPlayed: 0 })).toBe(-limit)
+    expect(computeAdventureScore({ ...run, scoreEligibleChances: 1, totalCardsPlayed: limit, totalRoundsPlayed: 0 })).toBe(100 - limit)
   })
 })
 
@@ -386,6 +395,35 @@ describe('Adventure run copies', () => {
 })
 
 describe('Adventure run changes', () => {
+  it('stops counters at the largest safe integer', () => {
+    const limit = Number.MAX_SAFE_INTEGER
+    expect(incrementAdventureCounter(0)).toBe(1)
+    expect(incrementAdventureCounter(limit - 1)).toBe(limit)
+    expect(incrementAdventureCounter(limit)).toBe(limit)
+  })
+
+  it.each(['win', 'loss', 'draw'] as const)('applies a %s to a run whose counters are all at the limit', (outcome) => {
+    const limit = Number.MAX_SAFE_INTEGER
+    const run: AdventureRunState = {
+      ...started(createAdventureRun(46, RUN_ID)),
+      remainingChances: limit,
+      scoreEligibleChances: limit,
+      winStreak: limit,
+      scoreEligibleWinStreak: limit,
+      totalRoundsPlayed: limit,
+      totalCardsPlayed: limit,
+    }
+    expect(isAdventureRunState(run)).toBe(true)
+
+    const next = applyAdventureEncounterResult(run, outcome)
+
+    expect(isAdventureRunState(next)).toBe(true)
+    expect(next.totalRoundsPlayed).toBe(limit)
+    expect(next.totalCardsPlayed).toBe(limit)
+    expect([next.remainingChances, next.scoreEligibleChances]).toEqual(outcome === 'loss' ? [limit - 1, limit - 1] : [limit, limit])
+    expect([next.winStreak, next.scoreEligibleWinStreak]).toEqual(outcome === 'loss' ? [0, 0] : [limit, limit])
+  })
+
   it('starts a chosen node without changing its input', () => {
     const run = createAdventureRun(46, RUN_ID)
     const before = JSON.stringify(run)

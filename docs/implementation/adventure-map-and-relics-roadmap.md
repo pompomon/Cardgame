@@ -37,7 +37,7 @@ The following product decisions are approved for implementation:
 - [x] Milestone 3 — Deliver the branching map as an end-to-end browser flow
 - [x] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
 - [x] Milestone 5 — Deliver reward selection and relic application end to end
-- [ ] Milestone 6 — Harden persistence, reentrant input, accessibility, and recovery
+- [x] Milestone 6 — Harden persistence, reentrant input, accessibility, and recovery
 - [ ] Milestone 7 — Complete documentation, compatibility, and release verification
 
 Each milestone is intended to be a separately reviewable change. It must include
@@ -1098,6 +1098,164 @@ Rules and pitfalls for contributors are in
 - All decisions remain usable after rejection and submit at most once after
   acceptance.
 - Automated tests and recorded browser evidence cover the complete state machine.
+
+**Delivery notes**
+
+- **Pause and reload boundaries.** `adventure-controller.test.ts` pins
+  these behaviors:
+  - If storage refuses the snapshot write or the run write, the next Pause
+    writes `[game, run]` exactly once. A repeated Pause writes nothing, and
+    Resume restores the game once.
+  - If the run write and then the envelope removal are both refused, the
+    game never restores, even after a reload. The stored run stays
+    `active`, and Resume restores only a run that is `paused` at
+    `encounter`.
+
+  Reloads are pinned at these points:
+  - the map after a fork win;
+  - a pending reward;
+  - a committed encounter that used a Scout's Cache charge, with and
+    without Pause;
+  - after a protected loss;
+  - after a loss retry;
+  - after the boss is beaten, including a stale boss save and a win still
+    waiting to be saved.
+
+  A save that starts with both game counters at their limit is resumed,
+  played for one turn of each player, paused and reloaded, over and over
+  until the game ends. A counter one past its limit restarts the encounter
+  instead.
+- **Storage boundary.**
+  - A mid-game save keeps the latest 1,000 `log` entries and `events`
+    (`ADVENTURE_GAME_LOG_CAP`).
+  - Each player may hold at most 50 cards across zones.
+  - Turn and instance counters must leave room for the rest of the game:
+    each plus `remainingCounterGrowth` must stay within
+    `Number.MAX_SAFE_INTEGER`, so play from an accepted save never makes
+    the next Pause unreadable.
+  - Run counters, seeds and attempt numbers must pass the new
+    `isNonNegativeSafeInteger`. Counters stop at `Number.MAX_SAFE_INTEGER`
+    instead of growing past it, and the score is clamped to the safe
+    integers.
+  - An opponent may list at most five lands.
+  - The high score reads back only as the decimal digits the app writes.
+- **Malformed saves.** `src/test/fixtures/adventure-malformed-v2.ts` builds
+  14 bases through real transitions. It holds 60 curated cases, each
+  breaking one rule, in six categories (map, offer, relic, history, attempt
+  and counter), plus variants that must still be accepted.
+  `adventure-fuzz.test.ts` reads 2,000 edited runs and 400 edited mid-game
+  saves from fixed seeds. Reading never throws or writes. Every accepted
+  run plays on through Resume, a reward, a node start and a result, and its
+  high score reads back. Every resumable base also plays on with all six
+  counters at the limit, for a win, a loss and a draw.
+- **Measurements.** These were taken with Node 26 in a development
+  container.
+  - The largest run, a won route with six claimed rewards, is 33,364 bytes.
+  - The largest saved finished AI game is 18,296 bytes.
+  - Reading and validating them takes about 0.17 ms and 0.07 ms.
+  - The fuzzers accept 244 of 2,000 runs in about 1.5 seconds, and restore
+    64 of 400 saves in about 0.3 seconds.
+  - A budget test keeps both slots under 64 KiB and seeded AI game logs
+    under half the cap.
+- **Status copy.** Each used relic charge gets a sentence from the reward
+  catalog: its name, what the charge did, and the charges left. Results
+  carry a frozen `relicsUsed` list, which the result panel shows.
+  - A restart of the same attempt says it deals the same opening, and that
+    no relic charge was used when the run holds a charged relic.
+  - A draw says no chance was used.
+  - A refused result starts with its outcome, such as "Encounter lost. The
+    result could not be saved (storage unavailable).", because the
+    finished board's winner text is not a live region.
+  - A successful Retry Saving Result starts with "Result saved."
+  - A refusal straight after the same refusal says "still". This applies to
+    start, node, reward, Pause, Resume, result and Reset.
+- **Announcer and focus.**
+  - One persistent, visually hidden `role="status"` region speaks lobby,
+    hub and HUD status. The rebuilt status paragraphs lose their live
+    roles. While a modal dialog is open, the region sits inside it, because
+    `showModal()` makes the rest of the page inert. Each move clears it,
+    and a status waits until the moved region has stayed in place for
+    100 ms, since Safari can miss a change to a newly inserted live region.
+  - A retried Adventure command announces an unchanged status again.
+    During replay playback only the step status stays quiet. Any other
+    status, such as a refused recording save, is announced. The narrow
+    dock prompt, a second live region, is switched off while it shows the
+    replay transport, whose step count changes on every tick.
+  - Pause, Reset and Back to Lobby move focus to the lobby heading.
+  - A node start or a restoring Resume moves focus to the Game Menu button.
+  - Hub transitions follow the Milestone 5 focus order.
+  - A refused write keeps focus on the activated control.
+  - The result heading is described by its detail paragraph.
+- **Stateful UI matrix.** The node, Choose and Skip controls run through
+  the matrix in [`docs/agent/testing.md`](../agent/testing.md#adventure-decision-controls),
+  against a real controller and tracked storage. The cases are:
+  synchronous notification, rejected retry, stale input, duplicate
+  activation, and disposal with the disposing subscriber before and after
+  the interface. A waiting reward is also tested through Pause, Resume and
+  Reset.
+- **Markup and motion.**
+  - A test plays a real run through the map, reward, paused lobby, result
+    and completion, and finds no opponent card IDs, deck order or seeds in
+    the markup.
+  - The hub's tab order is pinned.
+  - The Adventure CSS has no transitions, animations or keyframes, so
+    reduced motion needs no override.
+- **Browser evidence.** A production preview was checked at the four
+  viewports, each at 100% and 200% text. The run covered the paused lobby,
+  the map, a pending reward, a protected loss, Retry Saving Result, the
+  completed run and a fresh run, plus reloads and keyboard transitions from
+  scrolled pages. The pull request records the interaction, capture,
+  inspection and attachment stages. The check found four defects, each now
+  fixed with a test:
+  - With the result unsaved, the narrow dock read "Winner: Player 1 The
+    result is not saved yet." The winner text now ends as a sentence
+    before the note.
+  - The wide HUD, a fixed-height row that scrolls, showed Retry Saving
+    Result and Reset Adventure Run below its fold at every wide viewport.
+    Both now sit in its header row beside Menu. They use the narrow dock's
+    short labels, Retry and Reset, and keep the full labels as accessible
+    names.
+  - Pause from a scrolled map focused the lobby heading above the fold.
+    The lobby heading and the Game Menu button are now focused without
+    `preventScroll`, so the browser scrolls them into view.
+  - After Guardian Sigil used its last charge, the relic list said
+    "Relics: none yet." It now says "Relics: none.", and still points to
+    winning an encounter while a reward can be earned.
+
+**Deviations from the contract above**
+
+- Rules version and schema stay unchanged. Copy and caps alone needed no
+  `ADVENTURE_REWARD_RULES_VERSION` or schema bump. The caps apply on read,
+  and `relicsUsed` lives only in memory.
+- The fuzzer found that a hand-edited counter of `1e308` made the score
+  infinite. Counters, seeds and attempt numbers are therefore limited to
+  safe integers, which every app-written run meets. A version 1 run holding
+  an unsafe value converts to null, so it is unavailable. A stored high
+  score outside the safe range reads as 0. Review then found that a counter
+  already at the limit made the next result fail the guard, so counters
+  now stop at the limit and the score is clamped. A second review found
+  the same gap in mid-game saves: a game turn or instance counter at the
+  limit passed, the next End Turn or land pushed it past, and the save
+  Pause then wrote never read back. Game counters cannot simply stop, so
+  the guard instead requires room for every turn and land the rest of the
+  game can add.
+- Transition focus applies to Adventure commands only. Back to Lobby moves
+  focus only in Adventure mode, and starting other modes is unchanged.
+  Focus also moves when a command removes the activated control, such as a
+  successful lobby Reset. Focus stays put when nothing was focused before
+  the command.
+- Desktop emulation cannot show safe-area insets, a coarse pointer, reduced
+  motion or real devices. They are covered by CSS and unit tests, and stay
+  pending maintainer device verification.
+
+**Milestone 7 handoff**
+
+- Verify safe-area insets, coarse pointer and reduced motion on real phones
+  and tablets, and record which devices were used.
+- Update the README's Adventure rules: the map, rewards, relic copy and
+  retry outcomes.
+- Run the compatibility matrix with the malformed-save fixture and the
+  fuzzers in place.
 
 ### Milestone 7 — Compatibility and release gate
 

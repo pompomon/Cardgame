@@ -8,6 +8,7 @@ import {
   applyAdventureEncounterResult,
   computeAdventureScore,
   deckPairForAdventureGame,
+  pauseAdventureRun,
   type AdventureEncounterOutcome,
   type AdventureGameSnapshotEnvelope,
   type AdventureRunState,
@@ -30,9 +31,11 @@ import { AppController } from '../app/controller'
 import { actionableAdventureNodes } from '../app/lobby-presentation'
 import type { AdventureNodeSummary, AdventureRewardOfferSummary } from '../app/types'
 import { createStarterDeck } from '../game/cards'
-import { createInitialGame } from '../game/engine'
+import { canAct, createInitialGame, getLegalActions, remainingCounterGrowth } from '../game/engine'
 import type { GameState } from '../game/types'
+import { claimed, malformedBase } from './fixtures/adventure-malformed-v2'
 import { installFakeTimerHooks } from './helpers/timers'
+import { installTrackedStorage, type TrackedStorage } from './helpers/tracked-storage'
 
 interface V1Fixture {
   closedMidRound: Record<string, string>
@@ -47,61 +50,24 @@ const RUN_KEY = ADVENTURE_RUN_STORAGE_KEY
 const GAME_KEY = ADVENTURE_GAME_STORAGE_KEY
 const HIGH_SCORE_KEY = ADVENTURE_HIGH_SCORE_STORAGE_KEY
 const STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
-const RESULT_WARNING = 'The encounter result could not be saved (storage unavailable). Retry saving the result.'
+const STORAGE_WARNING_AGAIN = 'Adventure progress still could not be saved (storage unavailable).'
+// A refused result still names its outcome first.
+const RESULT_LEADS: Record<AdventureEncounterOutcome, string> = {
+  win: 'Encounter won.',
+  loss: 'Encounter lost.',
+  draw: 'Encounter ended in a draw.',
+}
+const resultWarning = (outcome: AdventureEncounterOutcome): string =>
+  `${RESULT_LEADS[outcome]} The result could not be saved (storage unavailable). Retry saving the result.`
+const resultWarningAgain = (outcome: AdventureEncounterOutcome): string =>
+  `${RESULT_LEADS[outcome]} The result still could not be saved (storage unavailable). Retry saving the result.`
 const PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
 const UNAVAILABLE_NODE = 'That encounter is not available. Choose a highlighted encounter.'
 const RUN_ID_PATTERN = /^[0-9a-f]{32}$/
 
-function recoveryMessage(tier: number): string {
-  return `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
-}
-
-interface TrackedStorage {
-  readonly data: Map<string, string>
-  /** Every write and removal, in order, as `set:<key>` / `remove:<key>`. */
-  readonly calls: string[]
-  readonly failingSets: Set<string>
-  readonly failingRemoves: Set<string>
-  readonly failingGets: Set<string>
-}
-
-function installTrackedStorage(seed: Record<string, string> = {}): TrackedStorage {
-  const tracked: TrackedStorage = {
-    data: new Map(Object.entries(seed)),
-    calls: [],
-    failingSets: new Set(),
-    failingRemoves: new Set(),
-    failingGets: new Set(),
-  }
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key: string) => {
-        if (tracked.failingGets.has(key)) {
-          throw new Error('storage locked')
-        }
-        return tracked.data.get(key) ?? null
-      },
-      setItem: (key: string, value: string) => {
-        tracked.calls.push(`set:${key}`)
-        if (tracked.failingSets.has(key)) {
-          throw new Error('quota exceeded')
-        }
-        tracked.data.set(key, String(value))
-      },
-      removeItem: (key: string) => {
-        tracked.calls.push(`remove:${key}`)
-        if (tracked.failingRemoves.has(key)) {
-          throw new Error('storage locked')
-        }
-        tracked.data.delete(key)
-      },
-      clear: () => {
-        tracked.data.clear()
-      },
-    },
-  })
-  return tracked
+function recoveryMessage(tier: number, holdsChargedRelic = false): string {
+  const relicCharge = holdsChargedRelic ? ' or a relic charge' : ''
+  return `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance${relicCharge}.`
 }
 
 /** Writes and removals of the Adventure run and mid-game keys. */
@@ -189,6 +155,27 @@ function playFirstLand(controller: AppController): void {
     throw new Error('Expected a playable land.')
   }
   controller.submitAction(action)
+}
+
+/**
+ * Plays Player 1's turn (a land when one is allowed, then End Turn) and lets
+ * the AI play its turn. True once Player 1 may act in a new turn, false when
+ * the game has ended.
+ */
+function playTurnAgainstAi(controller: AppController): boolean {
+  const startTurn = liveGame(controller).turn
+  for (let guard = 0; guard < 500; guard += 1) {
+    const game = internals(controller).state.game
+    if (!game || game.phase === 'gameOver') return false
+    if (!canAct(game, 0)) {
+      vi.runOnlyPendingTimers()
+      continue
+    }
+    if (game.phase === 'main' && game.turn > startTurn) return true
+    const legal = getLegalActions(game, 0)
+    controller.submitAction(legal.find((action) => action.type === 'play_land') ?? legal[0])
+  }
+  throw new Error('Expected the turn to finish.')
 }
 
 /** Wins encounters, skipping their rewards, until the current tier is an uncommitted fork. */
@@ -687,6 +674,56 @@ describe('Adventure controller persistence and recovery', () => {
     expect(controller.getViewModel().adventure).toMatchObject({ remainingChances: 3, attemptOrdinal: 0 })
   })
 
+  it('keeps restoring a save that starts at both counter limits, with a Pause and a reload after every turn', () => {
+    const storage = installTrackedStorage()
+    const first = new AppController()
+    first.startAdventure()
+    startFirstNode(first)
+    first.pauseAdventure()
+    const envelope = storedJson<AdventureGameSnapshotEnvelope>(storage, GAME_KEY)
+    const growth = remainingCounterGrowth(envelope.game)
+    envelope.game.turn = Number.MAX_SAFE_INTEGER - growth.turn
+    envelope.game.nextInstanceId = Number.MAX_SAFE_INTEGER - growth.nextInstanceId
+    storage.data.set(GAME_KEY, JSON.stringify(envelope))
+
+    let saved = envelope.game
+    let turns = 0
+    for (;;) {
+      const controller = new AppController()
+      controller.resumeAdventure()
+      expect(controller.getViewModel().status).toBe('Adventure resumed at Tier 1.')
+      expect(liveGame(controller)).toEqual(saved)
+      if (!playTurnAgainstAi(controller)) break
+      turns += 1
+      const paused = structuredClone(liveGame(controller))
+      expect([paused.turn, paused.nextInstanceId].every(Number.isSafeInteger)).toBe(true)
+      controller.pauseAdventure()
+      saved = storedJson<AdventureGameSnapshotEnvelope>(storage, GAME_KEY).game
+      expect(saved).toEqual(paused)
+    }
+
+    expect(turns).toBeGreaterThan(3)
+    expect(saved.turn).toBe(envelope.game.turn + turns * 2)
+    expect(saved.nextInstanceId).toBeGreaterThan(envelope.game.nextInstanceId)
+  })
+
+  it.each(['turn', 'nextInstanceId'] as const)('restarts the encounter when the saved %s has no room for the rest of the game', (counter) => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    startFirstNode(controller)
+    controller.pauseAdventure()
+    const envelope = storedJson<AdventureGameSnapshotEnvelope>(storage, GAME_KEY)
+    envelope.game[counter] = Number.MAX_SAFE_INTEGER - remainingCounterGrowth(envelope.game)[counter] + 1
+    storage.data.set(GAME_KEY, JSON.stringify(envelope))
+
+    controller.resumeAdventure()
+
+    expect(internals(controller).state.game).toBeNull()
+    expect(controller.getViewModel().status).toBe(recoveryMessage(1))
+    expect(controller.getViewModel().adventure).toMatchObject({ stage: 'map', remainingChances: 3, attemptOrdinal: 0 })
+  })
+
   const staleSources: Array<[string, (controller: AppController) => void]> = [
     ['a reset run', (controller) => {
       controller.abandonAdventure()
@@ -871,20 +908,23 @@ describe('Adventure controller persistence and recovery', () => {
   })
 
   it.each([
-    ['mid-game save', GAME_KEY],
-    ['run', RUN_KEY],
-  ] as const)('keeps the encounter open when the %s write fails, then pauses on retry', (_name, key) => {
+    ['mid-game save', GAME_KEY, [`set:${GAME_KEY}`]],
+    ['run', RUN_KEY, [`set:${GAME_KEY}`, `set:${RUN_KEY}`, `remove:${GAME_KEY}`]],
+  ] as const)('keeps the encounter open when the %s write fails, then pauses exactly once on retry', (_name, key, refusedCalls) => {
     const storage = installTrackedStorage()
     const controller = new AppController()
     controller.startAdventure()
     startFirstNode(controller)
     playFirstLand(controller)
     const game = liveGame(controller)
+    const paused = structuredClone(game)
     const storedRun = storage.data.get(RUN_KEY)
     storage.failingSets.add(key)
+    storage.calls.length = 0
 
     controller.pauseAdventure()
 
+    expect(adventureCalls(storage)).toEqual(refusedCalls)
     expect(controller.getViewModel().status).toBe(`${STORAGE_WARNING} The game was not paused.`)
     expect(controller.getViewModel().mode).toBe('adventure-hvai')
     expect(liveGame(controller)).toBe(game)
@@ -892,11 +932,74 @@ describe('Adventure controller persistence and recovery', () => {
     expect(storage.data.has(GAME_KEY)).toBe(false)
 
     storage.failingSets.delete(key)
+    storage.calls.length = 0
     controller.pauseAdventure()
+    expect(adventureCalls(storage)).toEqual([`set:${GAME_KEY}`, `set:${RUN_KEY}`])
     expect(controller.getViewModel().mode).toBeNull()
     expect(controller.getViewModel().status).toBe('Adventure paused at Tier 1.')
     expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({ status: 'paused', stage: 'encounter' })
     expect(storage.data.has(GAME_KEY)).toBe(true)
+
+    // A repeated Pause from a stale control changes nothing.
+    storage.calls.length = 0
+    controller.pauseAdventure()
+    expect(adventureCalls(storage)).toEqual([])
+    expect(controller.getViewModel().status).toBe('Adventure paused at Tier 1.')
+
+    // Resume restores the paused game exactly once.
+    controller.resumeAdventure()
+    expect(adventureCalls(storage)).toEqual([`set:${RUN_KEY}`, `remove:${GAME_KEY}`])
+    const restored = liveGame(controller)
+    expect(restored).toEqual(paused)
+    storage.calls.length = 0
+    controller.resumeAdventure()
+    expect(adventureCalls(storage)).toEqual([])
+    expect(liveGame(controller)).toBe(restored)
+  })
+
+  it('never restores the save left by a refused run write whose removal also failed, even after a reload', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    const node = startFirstNode(controller)
+    playFirstLand(controller)
+    const storedRun = storage.data.get(RUN_KEY)
+    storage.failingSets.add(RUN_KEY)
+    storage.failingRemoves.add(GAME_KEY)
+
+    controller.pauseAdventure()
+
+    expect(controller.getViewModel().status).toBe(`${STORAGE_WARNING} The game was not paused.`)
+    expect(controller.getViewModel().mode).toBe('adventure-hvai')
+    // The leftover save names this attempt, but the run was never saved as paused.
+    const leftover = storage.data.get(GAME_KEY)
+    expect(leftover).toBeDefined()
+    expect(storage.data.get(RUN_KEY)).toBe(storedRun)
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({ status: 'active', stage: 'encounter' })
+
+    const reloaded = new AppController()
+    reloaded.resumeAdventure()
+    expect(internals(reloaded).state.game).toBeNull()
+    expect(reloaded.getViewModel().status).toBe(recoveryMessage(1))
+    expect(storage.data.get(GAME_KEY)).toBe(leftover)
+    reloaded.backToLobby()
+    reloaded.resumeAdventure()
+    expect(internals(reloaded).state.game).toBeNull()
+    expect(reloaded.getViewModel().status).toBe(recoveryMessage(1))
+
+    // The committed attempt restarts, and a later Pause replaces the leftover save.
+    storage.failingSets.delete(RUN_KEY)
+    reloaded.startAdventureNode(node.id)
+    const fresh = structuredClone(liveGame(reloaded))
+    expect(fresh).toEqual(freshAttemptGame(currentRun(reloaded)))
+    expect(reloaded.getViewModel().adventure).toMatchObject({ remainingChances: 3, attemptOrdinal: 0 })
+    reloaded.pauseAdventure()
+    expect(storage.data.get(GAME_KEY)).not.toBe(leftover)
+
+    const again = new AppController()
+    again.resumeAdventure()
+    expect(again.getViewModel().status).toBe('Adventure resumed at Tier 1.')
+    expect(liveGame(again)).toEqual(fresh)
   })
 
   it('keeps the map open when the map pause write fails, then pauses on retry', () => {
@@ -915,6 +1018,135 @@ describe('Adventure controller persistence and recovery', () => {
     controller.pauseAdventure()
     expect(controller.getViewModel().mode).toBeNull()
     expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({ status: 'paused', stage: 'map' })
+  })
+
+  it('reopens the same map and decision after a fork win and a reload, without writing', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    const [won, bypassed] = advanceToFork(controller)
+    controller.startAdventureNode(won.id)
+    finishEncounter(controller, 0)
+    skipPendingReward(controller)
+    const before = controller.getViewModel().adventure
+    const open = actionableIds(controller)
+    storage.calls.length = 0
+
+    const reloaded = new AppController()
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'paused', stage: 'map' })
+    reloaded.resumeAdventure()
+
+    expect(adventureCalls(storage)).toEqual([])
+    expect(reloaded.getViewModel().status).toBe(`Adventure resumed at Tier ${before.currentTier}.`)
+    const after = reloaded.getViewModel().adventure
+    expect(after.tiers).toEqual(before.tiers)
+    expect(after).toMatchObject({
+      status: 'active',
+      stage: 'map',
+      currentTier: before.currentTier,
+      remainingChances: before.remainingChances,
+      winStreak: before.winStreak,
+      decisionKey: before.decisionKey,
+    })
+    const forkTier = after.tiers[before.currentTier - 2].nodes
+    expect(forkTier.map((node) => `${node.id}:${node.status}`)).toEqual([`${won.id}:completed`, `${bypassed.id}:bypassed`])
+    expect(actionableIds(reloaded)).toEqual(open)
+  })
+
+  it('starts the retry attempt after a loss and a reload, and never restores the lost attempt', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    const node = startFirstNode(controller)
+    playFirstLand(controller)
+    controller.pauseAdventure()
+    const lost = storage.data.get(GAME_KEY)
+    // Every removal fails, so the lost attempt's save stays in the slot.
+    storage.failingRemoves.add(GAME_KEY)
+    controller.resumeAdventure()
+    finishEncounter(controller, 1)
+    expect(storage.data.get(GAME_KEY)).toBe(lost)
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({ stage: 'map', attemptOrdinal: 1 })
+
+    const reloaded = new AppController()
+    reloaded.resumeAdventure()
+
+    expect(reloaded.getViewModel().status).toBe('Adventure resumed at Tier 1.')
+    expect(internals(reloaded).state.game).toBeNull()
+    expect(reloaded.getViewModel().adventure).toMatchObject({ remainingChances: 2, attemptOrdinal: 1 })
+    reloaded.startAdventureNode(node.id)
+    const run = currentRun(reloaded)
+    expect(run.attemptSeed).toBe(adventureAttemptSeed(run.baseSeed, 0, node.lane, 1))
+    expect(liveGame(reloaded)).toEqual(freshAttemptGame(run))
+  })
+
+  it('keeps no run and the high score after a reload once the boss is beaten, and never restores the boss save', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    reachBoss(controller)
+    controller.pauseAdventure()
+    const boss = storage.data.get(GAME_KEY)
+    expect(boss).toBeDefined()
+    controller.resumeAdventure()
+    finishEncounter(controller, 0)
+    const { highScore } = controller.getViewModel().adventure
+    expect(controller.getViewModel().adventure).toMatchObject({ status: 'completed', hasSavedRun: false })
+    expect(storage.data.has(RUN_KEY)).toBe(false)
+    expect(storage.data.get(HIGH_SCORE_KEY)).toBe(String(highScore))
+    // Simulate a removal that failed earlier: the boss save is back in the slot.
+    storage.data.set(GAME_KEY, boss!)
+    storage.calls.length = 0
+
+    const reloaded = new AppController()
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'inactive', hasSavedRun: false, highScore })
+    reloaded.resumeAdventure()
+    expect(reloaded.getViewModel().status).toBe('No paused adventure run found.')
+    expect(reloaded.getViewModel().mode).toBeNull()
+    expect(internals(reloaded).state.game).toBeNull()
+    expect(adventureCalls(storage)).toEqual([])
+
+    reloaded.startAdventure()
+    const node = startFirstNode(reloaded)
+    reloaded.pauseAdventure()
+    storage.data.set(GAME_KEY, boss!)
+    const again = new AppController()
+    again.resumeAdventure()
+    expect(internals(again).state.game).toBeNull()
+    expect(again.getViewModel().status).toBe(recoveryMessage(1))
+    again.startAdventureNode(node.id)
+    expect(liveGame(again)).toEqual(freshAttemptGame(currentRun(again)))
+    expect(again.getViewModel().adventure.highScore).toBe(highScore)
+  })
+
+  it('restarts the boss attempt after a reload while its win waits to be saved', () => {
+    const storage = installTrackedStorage({ [HIGH_SCORE_KEY]: '7' })
+    const controller = new AppController()
+    controller.startAdventure()
+    reachBoss(controller)
+    const committed = storage.data.get(RUN_KEY)
+    const counters = structuredClone(currentRun(controller))
+    const boss = structuredClone(liveGame(controller))
+    storage.failingSets.add(HIGH_SCORE_KEY)
+    finishEncounter(controller, 0)
+    expect(controller.getViewModel().adventure.pendingCompletion).toBe('win')
+
+    // Only memory held the result: the reload finds the committed boss attempt.
+    storage.failingSets.delete(HIGH_SCORE_KEY)
+    const reloaded = new AppController()
+    expect(storage.data.get(RUN_KEY)).toBe(committed)
+    expect(storage.data.get(HIGH_SCORE_KEY)).toBe('7')
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'paused', stage: 'encounter', highScore: 7 })
+    reloaded.resumeAdventure()
+    expect(reloaded.getViewModel().status).toBe(recoveryMessage(7))
+    reloaded.startAdventureNode(currentRun(reloaded).selectedNodeId!)
+    expect(liveGame(reloaded)).toEqual(boss)
+    expect(currentRun(reloaded)).toMatchObject({
+      currentTierIndex: 6,
+      attemptOrdinal: 0,
+      remainingChances: counters.remainingChances,
+      winStreak: counters.winStreak,
+    })
   })
 })
 
@@ -987,7 +1219,7 @@ describe('Adventure controller branching route', () => {
 
     expect(controller.getViewModel().status).toBe(outcome === 'loss'
       ? `Encounter lost. 2 chances left. Retry Tier ${tier}.`
-      : `Encounter ended in a draw. Retry Tier ${tier}.`)
+      : `Encounter ended in a draw. No chance was used. Retry Tier ${tier}.`)
     const expectRetryOnly = (target: AppController) => {
       expect(actionableIds(target)).toEqual([chosen.id])
       const statuses = target.getViewModel().adventure.tiers[tier - 1].nodes.map((node) => [node.id, node.status])
@@ -1095,7 +1327,7 @@ describe('Adventure controller branching route', () => {
   it.each([
     ['win', 'Encounter won. Choose a reward or skip it to continue to Tier 2.', 'reward'],
     ['loss', 'Encounter lost. 2 chances left. Retry Tier 1.', 'map'],
-    ['draw', 'Encounter ended in a draw. Retry Tier 1.', 'map'],
+    ['draw', 'Encounter ended in a draw. No chance was used. Retry Tier 1.', 'map'],
   ] as const)('keeps a %s pending until it is saved, then applies it exactly once', (outcome, status, stage) => {
     const storage = installTrackedStorage()
     const controller = new AppController()
@@ -1109,7 +1341,7 @@ describe('Adventure controller branching route', () => {
 
     const board = liveGame(controller)
     expect(board.phase).toBe('gameOver')
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(controller.getViewModel().adventure).toMatchObject({
       status: 'active',
       stage: 'encounter',
@@ -1120,15 +1352,21 @@ describe('Adventure controller branching route', () => {
     expectPendingBlocksNavigation(controller, board)
 
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
     expect(liveGame(controller)).toBe(board)
+    // A refusal straight after the same refusal changes the text, so it is announced again.
+    controller.retryAdventureCompletion()
+    expect(controller.getViewModel().status).toBe(resultWarningAgain(outcome))
+    controller.retryAdventureCompletion()
+    expect(controller.getViewModel().status).toBe(resultWarningAgain(outcome))
+    expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
 
     storage.failingSets.delete(RUN_KEY)
     controller.retryAdventureCompletion()
 
     const expected = applyAdventureEncounterResult(before, outcome)
-    expect(controller.getViewModel().status).toBe(status)
+    expect(controller.getViewModel().status).toBe(`Result saved. ${status}`)
     expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(expected)
     expect(currentRun(controller)).toEqual(expected)
     expect(internals(controller).state.game).toBeNull()
@@ -1163,7 +1401,7 @@ describe('Adventure controller branching route', () => {
     finishEncounter(controller, winnerFor(outcome))
 
     const board = liveGame(controller)
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(controller.getViewModel().adventure).toMatchObject({
       status: 'active',
       stage: 'encounter',
@@ -1176,7 +1414,7 @@ describe('Adventure controller branching route', () => {
     storage.failingSets.delete(HIGH_SCORE_KEY)
     storage.failingRemoves.add(RUN_KEY)
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarning(outcome))
     expect(storage.data.get(HIGH_SCORE_KEY)).toBe(String(highScore))
     expect(storage.data.get(RUN_KEY)).toBe(storedRun)
     expect(liveGame(controller)).toBe(board)
@@ -1184,7 +1422,7 @@ describe('Adventure controller branching route', () => {
     // An unreadable slot after a refused removal cannot confirm the run is gone.
     storage.failingGets.add(RUN_KEY)
     controller.retryAdventureCompletion()
-    expect(controller.getViewModel().status).toBe(RESULT_WARNING)
+    expect(controller.getViewModel().status).toBe(resultWarningAgain(outcome))
     expect(controller.getViewModel().adventure.pendingCompletion).toBe(outcome)
     expect(storage.data.get(RUN_KEY)).toBe(storedRun)
     expect(liveGame(controller)).toBe(board)
@@ -1194,7 +1432,7 @@ describe('Adventure controller branching route', () => {
     controller.retryAdventureCompletion()
 
     const heading = outcome === 'win' ? 'Adventure completed!' : 'Adventure failed.'
-    expect(controller.getViewModel().status).toBe(`${heading} Score: ${score}. High score: ${highScore}.`)
+    expect(controller.getViewModel().status).toBe(`Result saved. ${heading} Score: ${score}. High score: ${highScore}.`)
     expect(storage.data.has(RUN_KEY)).toBe(false)
     expect(storage.data.get(HIGH_SCORE_KEY)).toBe(String(highScore))
     expect(internals(controller).state.game).toBeNull()
@@ -1471,8 +1709,8 @@ describe('Adventure controller rewards', () => {
   })
 
   it.each([
-    ['guardian-sigil', 'Encounter lost. Guardian Sigil kept your chance. 3 chances left. Retry Tier 2.', true, false],
-    ['streak-anchor', 'Encounter lost. Streak Anchor kept your win streak. 2 chances left. Retry Tier 2.', false, true],
+    ['guardian-sigil', 'Encounter lost. Guardian Sigil used its last charge to keep your chance. 3 chances left. Retry Tier 2.', true, false],
+    ['streak-anchor', 'Encounter lost. Streak Anchor used its last charge to keep your win streak. 2 chances left. Retry Tier 2.', false, true],
   ] as const)('reports %s keeping a loss', (rewardId, status, chanceLossPrevented, streakResetPrevented) => {
     const { controller } = claimFirst(rewardId)
     expect(controller.getViewModel().adventure.relics).toEqual([
@@ -1484,7 +1722,9 @@ describe('Adventure controller rewards', () => {
 
     const view = controller.getViewModel()
     expect(view.status).toBe(status)
-    expect(view.adventure.lastResult).toMatchObject({ outcome: 'loss', chanceLossPrevented, streakResetPrevented })
+    expect(view.adventure.lastResult).toMatchObject({
+      outcome: 'loss', chanceLossPrevented, streakResetPrevented, relicsUsed: [{ id: rewardId, chargesLeft: 0 }],
+    })
     expect(view.adventure.relics).toEqual([])
   })
 
@@ -1527,7 +1767,7 @@ describe('Adventure controller rewards', () => {
     const game = structuredClone(liveGame(controller))
 
     expect(controller.getViewModel().status).toBe(
-      `Tier 2 encounter started against ${node.opponent.label}. Scout's Cache used a charge.`,
+      `Tier 2 encounter started against ${node.opponent.label}. Scout's Cache used its last charge to draw 2 extra opening cards.`,
     )
     expect(game.players[0].hand).toHaveLength(7)
     expect(game.players[1].hand).toHaveLength(5)
@@ -1540,9 +1780,121 @@ describe('Adventure controller rewards', () => {
     storage.calls.length = 0
     controller.startAdventureNode(node.id)
 
-    expect(controller.getViewModel().status).toBe(`Tier 2 encounter started against ${node.opponent.label}.`)
+    expect(controller.getViewModel().status).toBe(`Tier 2 encounter started against ${node.opponent.label}. Same opening as before.`)
     expect(liveGame(controller)).toEqual(game)
     expect(currentRun(controller).encounterSetup).toEqual({ playerOpeningHandSize: 7, guaranteedCreatures: [] })
+  })
+
+  it('reports the charges a relic has left and uses none for a restart', () => {
+    // Guardian Sigil taken after tiers 1 and 2 holds two charges at tier 3.
+    const run = pauseAdventureRun(claimed(applyAdventureEncounterResult(malformedBase('relicEncounter'), 'win'), 'guardian-sigil'))
+    expect(run.relics).toEqual([{ id: 'guardian-sigil', charges: 2 }])
+    const storage = installTrackedStorage({ [RUN_KEY]: JSON.stringify(run) })
+    const controller = new AppController()
+    controller.resumeAdventure()
+    const node = startFirstNode(controller)
+    const started = `Tier 3 encounter started against ${node.opponent.label}.`
+    expect(controller.getViewModel().status).toBe(started)
+
+    // Leaving without Pause loses the game; the restart uses no chance and no charge.
+    controller.backToLobby()
+    controller.resumeAdventure()
+    expect(controller.getViewModel().status).toBe(recoveryMessage(3, true))
+    controller.startAdventureNode(node.id)
+    expect(controller.getViewModel().status).toBe(`${started} Same opening as before; no relic charge used.`)
+    expect(currentRun(controller).relics).toEqual([{ id: 'guardian-sigil', charges: 2 }])
+
+    finishEncounter(controller, 1)
+    const view = controller.getViewModel()
+    expect(view.status).toBe('Encounter lost. Guardian Sigil used a charge to keep your chance (1 left). 3 chances left. Retry Tier 3.')
+    expect(view.adventure.lastResult).toMatchObject({
+      outcome: 'loss', chanceLossPrevented: true, relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 1 }],
+    })
+    expect(view.adventure.relics).toEqual([expect.objectContaining({ id: 'guardian-sigil', charges: 1 })])
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY).relics).toEqual([{ id: 'guardian-sigil', charges: 1 }])
+
+    // The retry after a loss is a new attempt, not a restart.
+    startFirstNode(controller)
+    expect(controller.getViewModel().status).toBe(started)
+  })
+
+  it('keeps a pending reward through a reload without Pause and claims it exactly once', () => {
+    const { storage, controller, offer } = firstOffer(clockOfferingFirst('guardian-sigil'))
+    const sourceNodeId = currentRun(controller).completedNodeIds[0]
+    storage.calls.length = 0
+
+    const reloaded = new AppController()
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'paused', stage: 'reward', pendingReward: offer })
+    reloaded.resumeAdventure()
+    expect(adventureCalls(storage)).toEqual([])
+    expect(reloaded.getViewModel().status).toBe('Adventure resumed. Choose a reward or skip it to continue to Tier 2.')
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'active', stage: 'reward', pendingReward: offer })
+
+    reloaded.chooseAdventureReward(offer.offerId, 'guardian-sigil')
+    reloaded.chooseAdventureReward(offer.offerId, 'guardian-sigil')
+    reloaded.skipAdventureReward(offer.offerId)
+    expect(adventureCalls(storage)).toEqual([`set:${RUN_KEY}`])
+
+    const again = new AppController()
+    expect(again.getViewModel().adventure).toMatchObject({ status: 'paused', stage: 'map', pendingReward: null })
+    expect(again.getViewModel().adventure.relics).toEqual([
+      expect.objectContaining({ id: 'guardian-sigil', charges: 1 }),
+    ])
+    expect(currentRun(again).rewardHistory).toEqual([{ sourceNodeId, rewardId: 'guardian-sigil' }])
+  })
+
+  it("keeps the deal of a used Scout's Cache charge through a reload, and a Pause and a reload", () => {
+    const { storage, controller } = claimFirst('scout-cache')
+    const node = startFirstNode(controller)
+    const committed = storedJson<AdventureRunState>(storage, RUN_KEY)
+    const opening = structuredClone(liveGame(controller))
+    expect(opening.players[0].hand).toHaveLength(7)
+    expect(committed).toMatchObject({ relics: [], encounterSetup: { playerOpeningHandSize: 7 } })
+
+    // Closing the tab without Pause loses the game; the attempt restarts with its deal.
+    const reloaded = new AppController()
+    reloaded.resumeAdventure()
+    expect(reloaded.getViewModel().status).toBe(recoveryMessage(2))
+    reloaded.startAdventureNode(node.id)
+    expect(liveGame(reloaded)).toEqual(opening)
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(committed)
+
+    playFirstLand(reloaded)
+    const paused = structuredClone(liveGame(reloaded))
+    reloaded.pauseAdventure()
+    const again = new AppController()
+    again.resumeAdventure()
+    expect(again.getViewModel().status).toBe('Adventure resumed at Tier 2.')
+    expect(liveGame(again)).toEqual(paused)
+    expect(currentRun(again)).toMatchObject({ relics: [], encounterSetup: committed.encounterSetup })
+  })
+
+  it.each([
+    ['guardian-sigil', { remainingChances: 3, winStreak: 0 }, { remainingChances: 2, winStreak: 0 }],
+    ['streak-anchor', { remainingChances: 2, winStreak: 1 }, { remainingChances: 1, winStreak: 0 }],
+  ] as const)('applies the %s protection exactly once across a reload', (rewardId, protectedCounters, nextCounters) => {
+    const { storage, controller } = claimFirst(rewardId)
+    const node = startFirstNode(controller)
+    finishEncounter(controller, 1)
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({
+      ...protectedCounters,
+      stage: 'map',
+      attemptOrdinal: 1,
+      relics: [],
+    })
+
+    const reloaded = new AppController()
+    expect(reloaded.getViewModel().adventure).toMatchObject({ ...protectedCounters, attemptOrdinal: 1, relics: [] })
+    reloaded.resumeAdventure()
+    reloaded.startAdventureNode(node.id)
+    expect(liveGame(reloaded)).toEqual(freshAttemptGame(currentRun(reloaded)))
+    finishEncounter(reloaded, 1)
+
+    expect(reloaded.getViewModel().adventure).toMatchObject({ ...nextCounters, attemptOrdinal: 2, relics: [] })
+    expect(reloaded.getViewModel().adventure.lastResult).toMatchObject({
+      chanceLossPrevented: false,
+      streakResetPrevented: false,
+    })
   })
 
   it('records a relic-modified encounter that replays from its own snapshot, without reward data', () => {
@@ -1572,5 +1924,137 @@ describe('Adventure controller rewards', () => {
     expect(internals(viewer).state.game).toEqual(opening)
     viewer.jumpReplayToEnd()
     expect(internals(viewer).state.game).toEqual(played)
+  })
+})
+
+describe('Adventure controller repeated refusals', () => {
+  installFakeTimerHooks()
+
+  interface Refusal {
+    readonly controller: AppController
+    readonly act: () => void
+  }
+
+  /** Starts a run and runs `prepare` with working storage, then `refuse` breaks it. */
+  function startedRun(refuse: (storage: TrackedStorage) => void, prepare: (controller: AppController) => void = () => {}): AppController {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    prepare(controller)
+    refuse(storage)
+    return controller
+  }
+
+  const cases: readonly (readonly [string, () => Refusal, string, string])[] = [
+    ['Start Adventure', () => {
+      const storage = installTrackedStorage()
+      storage.failingSets.add(RUN_KEY)
+      const controller = new AppController()
+      return { controller, act: () => controller.startAdventure() }
+    }, `${STORAGE_WARNING} The Adventure did not start.`, `${STORAGE_WARNING_AGAIN} The Adventure did not start.`],
+    ['a node start', () => {
+      const controller = startedRun((storage) => storage.failingSets.add(RUN_KEY))
+      return { controller, act: () => startFirstNode(controller) }
+    }, `${STORAGE_WARNING} The encounter did not start.`, `${STORAGE_WARNING_AGAIN} The encounter did not start.`],
+    ['a reward skip', () => {
+      const controller = startedRun((storage) => storage.failingSets.add(RUN_KEY), (started) => {
+        startFirstNode(started)
+        finishEncounter(started, 0)
+      })
+      const offerId = controller.getViewModel().adventure.pendingReward?.offerId ?? ''
+      return { controller, act: () => controller.skipAdventureReward(offerId) }
+    }, `${STORAGE_WARNING} The reward was not skipped.`, `${STORAGE_WARNING_AGAIN} The reward was not skipped.`],
+    ['a mid-game Pause', () => {
+      const controller = startedRun((storage) => storage.failingSets.add(GAME_KEY), (started) => startFirstNode(started))
+      return { controller, act: () => controller.pauseAdventure() }
+    }, `${STORAGE_WARNING} The game was not paused.`, `${STORAGE_WARNING_AGAIN} The game was not paused.`],
+    ['a map Pause', () => {
+      const controller = startedRun((storage) => storage.failingSets.add(RUN_KEY))
+      return { controller, act: () => controller.pauseAdventure() }
+    }, `${STORAGE_WARNING} The Adventure was not paused.`, `${STORAGE_WARNING_AGAIN} The Adventure was not paused.`],
+    ['Resume', () => {
+      startedRun((storage) => storage.failingSets.add(RUN_KEY), (started) => {
+        startFirstNode(started)
+        started.pauseAdventure()
+      })
+      const controller = new AppController()
+      return { controller, act: () => controller.resumeAdventure() }
+    }, `${STORAGE_WARNING} The Adventure was not resumed.`, `${STORAGE_WARNING_AGAIN} The Adventure was not resumed.`],
+    ['Reset', () => {
+      const controller = startedRun((storage) => storage.failingRemoves.add(RUN_KEY))
+      return { controller, act: () => controller.abandonAdventure() }
+    }, 'Adventure run could not be reset (storage unavailable).', 'Adventure run still could not be reset (storage unavailable).'],
+  ]
+
+  it.each(cases)('says "still" when %s is refused again, so the repeat is announced', (_name, arrange, first, again) => {
+    const { controller, act } = arrange()
+
+    act()
+    expect(controller.getViewModel().status).toBe(first)
+    act()
+    expect(controller.getViewModel().status).toBe(again)
+    act()
+    expect(controller.getViewModel().status).toBe(again)
+  })
+})
+
+describe('Adventure controller counters at the safe-integer limit', () => {
+  installFakeTimerHooks()
+
+  const LIMIT = Number.MAX_SAFE_INTEGER
+
+  /** The run with every counter at the largest value the guard accepts. */
+  function atCounterLimit(run: AdventureRunState): AdventureRunState {
+    return {
+      ...run,
+      remainingChances: LIMIT,
+      scoreEligibleChances: LIMIT,
+      winStreak: LIMIT,
+      scoreEligibleWinStreak: LIMIT,
+      totalRoundsPlayed: LIMIT,
+      totalCardsPlayed: LIMIT,
+    }
+  }
+
+  const counters = (run: AdventureRunState): number[] => [
+    run.remainingChances, run.scoreEligibleChances, run.winStreak,
+    run.scoreEligibleWinStreak, run.totalRoundsPlayed, run.totalCardsPlayed,
+  ]
+
+  it('plays a land, pauses, resumes and saves a result without leaving the safe integers', () => {
+    const storage = installTrackedStorage({ [RUN_KEY]: JSON.stringify(atCounterLimit(pauseAdventureRun(malformedBase('map')))) })
+    const controller = new AppController()
+    controller.resumeAdventure()
+    startFirstNode(controller)
+    playFirstLand(controller)
+    expect(currentRun(controller).totalCardsPlayed).toBe(LIMIT)
+
+    controller.pauseAdventure()
+    expect(controller.getViewModel()).toMatchObject({ mode: null, adventure: { status: 'paused', stage: 'encounter' } })
+    expect(counters(storedJson<AdventureRunState>(storage, RUN_KEY))).toEqual(Array(6).fill(LIMIT))
+
+    controller.resumeAdventure()
+    expect(controller.getViewModel().game).not.toBeNull()
+    finishEncounter(controller, 0)
+    const view = controller.getViewModel()
+    expect(view.adventure).toMatchObject({ stage: 'reward', pendingCompletion: null, remainingChances: LIMIT, winStreak: LIMIT })
+    expect(counters(storedJson<AdventureRunState>(storage, RUN_KEY))).toEqual(Array(6).fill(LIMIT))
+    expect(new AppController().getViewModel().adventure).toMatchObject({ hasSavedRun: true, stage: 'reward' })
+  })
+
+  it('completes the run with the largest safe high score, which a reload reads back', () => {
+    const storage = installTrackedStorage({ [RUN_KEY]: JSON.stringify(atCounterLimit(malformedBase('bossEncounter'))) })
+    const controller = new AppController()
+    controller.resumeAdventure()
+    expect(startFirstNode(controller).boss).toBe(true)
+    playFirstLand(controller)
+    finishEncounter(controller, 0)
+
+    const view = controller.getViewModel()
+    expect(view.adventure).toMatchObject({ pendingCompletion: null, highScore: LIMIT, hasSavedRun: false })
+    expect(view.status).toContain(`Score: ${LIMIT}. High score: ${LIMIT}.`)
+    expect(storage.data.get(HIGH_SCORE_KEY)).toBe(String(LIMIT))
+    expect(storage.data.has(RUN_KEY)).toBe(false)
+    expect(new AppController().getViewModel().adventure.highScore).toBe(LIMIT)
   })
 })

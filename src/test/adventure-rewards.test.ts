@@ -30,6 +30,7 @@ import {
   isAdventureRewardId,
   isAdventureRewardOffer,
   skipAdventureReward,
+  usedAdventureRelicCharges,
   type AdventureChargedRelicId,
   type AdventureLossProtectionState,
   type AdventureRelic,
@@ -872,6 +873,20 @@ describe('Adventure relic charges', () => {
     ]) {
       expect(consumeAdventureRelicCharge(inventory as AdventureRelic[], 'guardian-sigil')).toBeNull()
     }
+  })
+
+  it('lists the charged relics that used charges, in catalog order, with the charges left', () => {
+    expect(usedAdventureRelicCharges(relics, relics)).toEqual([])
+    expect(usedAdventureRelicCharges(relics, [{ id: 'echo-charm' }, { id: 'guardian-sigil', charges: 1 }])).toEqual([
+      { id: 'guardian-sigil', chargesLeft: 1 },
+      { id: 'scout-cache', chargesLeft: 0 },
+    ])
+    // A claimed relic or a gained charge is not a use, and passive relics never count.
+    expect(usedAdventureRelicCharges([], relics)).toEqual([])
+    expect(usedAdventureRelicCharges(
+      [{ id: 'guardian-sigil', charges: 1 }, { id: 'streak-anchor', charges: 1 }, { id: 'echo-charm' }],
+      [{ id: 'guardian-sigil', charges: 2 }],
+    )).toEqual([{ id: 'streak-anchor', chargesLeft: 0 }])
   })
 })
 

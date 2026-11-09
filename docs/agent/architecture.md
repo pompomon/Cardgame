@@ -22,7 +22,7 @@ src/
 │   ├── game-recording.ts       Versioned recording import/export
 │   ├── adventure*.ts           Adventure run, persistence, and pure map, reward, and setup rules (adventure-map.ts, adventure-rewards.ts, adventure-setup.ts)
 │   ├── card-catalog.ts         Stable keys to player copy and asset slugs
-│   ├── game-presentation.ts    Shared card, action, phase, and roster labels
+│   ├── game-presentation.ts    Shared card, action, phase, roster, and relic-charge labels
 │   ├── log-presentation.ts     Structured event labels and visual-log cap
 │   ├── lobby-presentation.ts   Lobby mode options and predicates
 │   ├── renderer-migration.ts   One-way cleanup of obsolete renderer choices

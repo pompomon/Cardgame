@@ -1,6 +1,8 @@
 import { createStarterDeck } from '../game/cards'
-import { isBasicLand, type Card, type GameState } from '../game/types'
+import { remainingCounterGrowth } from '../game/engine'
+import { isBasicLand, type Card, type GameState, type PlayerState } from '../game/types'
 import {
+  ADVENTURE_DECK_SIZE,
   ADVENTURE_NODE_ID_PATTERN,
   ADVENTURE_TIER_COUNT,
   cloneAdventureDeck,
@@ -50,8 +52,10 @@ import {
 } from './adventure-setup'
 import { sanitizeLogEvents } from './game-recording'
 import {
+  capTail,
   isFiniteInteger as validatorsIsFiniteInteger,
   isNonNegativeInteger as validatorsIsNonNegativeInteger,
+  isNonNegativeSafeInteger,
   isRecordObject,
 } from './validators'
 import {
@@ -290,7 +294,19 @@ export function adventureEncounterLaunch(run: AdventureRunState): AdventureEncou
  * real chances until rewards can add chances that must not raise the score.
  */
 export function computeAdventureScore(run: AdventureRunState): number {
-  return run.scoreEligibleChances * 100 - run.totalCardsPlayed + run.totalRoundsPlayed * 5
+  const score = run.scoreEligibleChances * 100 - run.totalCardsPlayed + run.totalRoundsPlayed * 5
+  // Counters near their limit can push the formula past the safe integers,
+  // which the high-score reader rejects.
+  return Math.max(Number.MIN_SAFE_INTEGER, Math.min(score, Number.MAX_SAFE_INTEGER))
+}
+
+/**
+ * Adds one to a run counter. Counters stop at `Number.MAX_SAFE_INTEGER`, the
+ * largest value the strict guard accepts, so every run it accepts can still
+ * finish an encounter and be saved.
+ */
+export function incrementAdventureCounter(value: number): number {
+  return Math.min(value + 1, Number.MAX_SAFE_INTEGER)
 }
 
 function isLegacyAdventureOpponentDeck(value: unknown): value is AdventureOpponentDeck {
@@ -419,7 +435,7 @@ export function isAdventureRunState(value: unknown): value is AdventureRunState 
   if (value.schemaVersion !== ADVENTURE_SCHEMA_VERSION) return false
   if (!isAdventureRunId(value.runId)) return false
   if (!isAdventureRouteState(value)) return false
-  if (!ADVENTURE_COUNTER_KEYS.every((key) => isNonNegativeInteger(value[key]))) return false
+  if (!ADVENTURE_COUNTER_KEYS.every((key) => isNonNegativeSafeInteger(value[key]))) return false
   if (!isAdventureRewardHoldings(value)) return false
   if (!isRewardHistoryOnRoute(value.rewardHistory, value.completedNodeIds, value.stage)) return false
   return isPendingRewardForRun(value.pendingReward, value) && isEncounterSetupForRun(value.encounterSetup, value)
@@ -607,7 +623,8 @@ export interface AdventureEncounterResolution {
  * the streak, then fails the run when no chance remains. A loss or draw
  * otherwise retries the same node with the next attempt number and its
  * derived seed, back at the `map` stage. The score-eligible counters follow
- * a reward-free run: relics never protect them.
+ * a reward-free run: relics never protect them. Counters that grow stop at
+ * `Number.MAX_SAFE_INTEGER`.
  */
 export function resolveAdventureEncounterResult(
   run: AdventureRunState,
@@ -617,18 +634,18 @@ export function resolveAdventureEncounterResult(
     throw new Error('Only an active Adventure encounter can finish.')
   }
   const next = cloneAdventureRun(run)
-  next.totalRoundsPlayed += 1
+  next.totalRoundsPlayed = incrementAdventureCounter(next.totalRoundsPlayed)
   next.encounterSetup = null
   let chanceLossPrevented = false
   let streakResetPrevented = false
   if (outcome === 'win') {
-    next.winStreak += 1
+    next.winStreak = incrementAdventureCounter(next.winStreak)
     if (next.winStreak % 3 === 0) {
-      next.remainingChances += 1
+      next.remainingChances = incrementAdventureCounter(next.remainingChances)
     }
-    next.scoreEligibleWinStreak += 1
+    next.scoreEligibleWinStreak = incrementAdventureCounter(next.scoreEligibleWinStreak)
     if (next.scoreEligibleWinStreak % 3 === 0) {
-      next.scoreEligibleChances += 1
+      next.scoreEligibleChances = incrementAdventureCounter(next.scoreEligibleChances)
     }
     const completion = completeAdventureNode(run)
     applyAdventureRouteProgress(next, completion)
@@ -725,11 +742,13 @@ export function skipAdventureRunReward(run: AdventureRunState, offerId: unknown)
 
 export function readStoredAdventureHighScore(): number {
   const raw = readStorageItem(ADVENTURE_HIGH_SCORE_STORAGE_KEY)
-  if (raw === null) {
+  // Only the decimal digits `persistAdventureHighScore` writes; anything
+  // else, including a negative, fractional or exponent form, reads as 0.
+  if (raw === null || !/^\d+$/.test(raw)) {
     return 0
   }
   const value = Number(raw)
-  return Number.isFinite(value) ? value : 0
+  return Number.isSafeInteger(value) ? value : 0
 }
 
 /** Returns whether the high score reached storage. */
@@ -772,6 +791,13 @@ export function isAdventureGameSnapshotForRun(
     && envelope.attemptSeed === run.attemptSeed
 }
 
+/**
+ * A saved game keeps at most this many of its latest `log` entries and
+ * `events`. The engine logs at most six entries a turn, and with 50-card
+ * decks a game ends within about 100 turns, so real games stay near 600.
+ */
+export const ADVENTURE_GAME_LOG_CAP = 1000
+
 function isBattlefieldCard(value: unknown): value is { instanceId: string; card: Card } {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -780,7 +806,21 @@ function isBattlefieldCard(value: unknown): value is { instanceId: string; card:
   return typeof entry.instanceId === 'string' && isAdventureCard(entry.card)
 }
 
-function isPlayerStateSnapshot(value: unknown, expectedId: 0 | 1): boolean {
+/** Checks the length first, so an oversized zone is rejected without walking it. */
+function isCardZone(value: unknown, isEntry: (entry: unknown) => boolean): value is unknown[] {
+  return Array.isArray(value) && value.length <= ADVENTURE_DECK_SIZE && value.every((entry) => isEntry(entry))
+}
+
+function zoneCardCount(player: PlayerState): number {
+  return player.deck.length + player.hand.length + player.battlefield.length + player.graveyard.length
+}
+
+/**
+ * Cards move only between their owner's zones and the pending land play,
+ * so each zone holds at most an Adventure deck's cards. The game guard
+ * bounds each player's total.
+ */
+function isPlayerStateSnapshot(value: unknown, expectedId: 0 | 1): value is PlayerState {
   if (typeof value !== 'object' || value === null) {
     return false
   }
@@ -793,10 +833,10 @@ function isPlayerStateSnapshot(value: unknown, expectedId: 0 | 1): boolean {
     landsPlayedThisTurn?: unknown
   }
   return player.id === expectedId
-    && Array.isArray(player.deck) && player.deck.every((entry) => isAdventureCard(entry))
-    && Array.isArray(player.hand) && player.hand.every((entry) => isAdventureCard(entry))
-    && Array.isArray(player.battlefield) && player.battlefield.every((entry) => isBattlefieldCard(entry))
-    && Array.isArray(player.graveyard) && player.graveyard.every((entry) => isAdventureCard(entry))
+    && isCardZone(player.deck, isAdventureCard)
+    && isCardZone(player.hand, isAdventureCard)
+    && isCardZone(player.battlefield, isBattlefieldCard)
+    && isCardZone(player.graveyard, isAdventureCard)
     && isNonNegativeInteger(player.landsPlayedThisTurn)
     && (player.landsPlayedThisTurn === 0 || player.landsPlayedThisTurn === 1)
 }
@@ -846,13 +886,22 @@ function isGameStateSnapshot(value: unknown): value is GameState {
     log?: unknown
   }
   if (!Array.isArray(candidate.players) || candidate.players.length !== 2) return false
-  if (!isPlayerStateSnapshot(candidate.players[0], 0)) return false
-  if (!isPlayerStateSnapshot(candidate.players[1], 1)) return false
-  if (!Number.isInteger(candidate.turn) || (candidate.turn as number) < 1) return false
+  const [player0, player1] = candidate.players as unknown[]
+  if (!isPlayerStateSnapshot(player0, 0)) return false
+  if (!isPlayerStateSnapshot(player1, 1)) return false
+  if (!Number.isSafeInteger(candidate.turn) || (candidate.turn as number) < 1) return false
   if (candidate.currentPlayer !== 0 && candidate.currentPlayer !== 1) return false
-  if (!Number.isInteger(candidate.nextInstanceId) || (candidate.nextInstanceId as number) < 1) return false
+  if (!Number.isSafeInteger(candidate.nextInstanceId) || (candidate.nextInstanceId as number) < 1) return false
   if (candidate.phase !== 'main' && candidate.phase !== 'respond' && candidate.phase !== 'plains_target' && candidate.phase !== 'swamp_target' && candidate.phase !== 'gameOver') return false
   if (!isPendingLandPlaySnapshot(candidate.pendingLandPlay)) return false
+  const pendingActor = (candidate.pendingLandPlay as { actor: 0 | 1 } | null)?.actor
+  if (zoneCardCount(player0) + (pendingActor === 0 ? 1 : 0) > ADVENTURE_DECK_SIZE) return false
+  if (zoneCardCount(player1) + (pendingActor === 1 ? 1 : 0) > ADVENTURE_DECK_SIZE) return false
+  // Each counter must leave room for the rest of the game. Play from an
+  // accepted save then keeps it safe, and Pause writes a save that reads back.
+  const growth = remainingCounterGrowth(candidate as GameState)
+  if ((candidate.turn as number) > Number.MAX_SAFE_INTEGER - growth.turn) return false
+  if ((candidate.nextInstanceId as number) > Number.MAX_SAFE_INTEGER - growth.nextInstanceId) return false
   if (candidate.phase === 'plains_target') {
     if (candidate.pendingPlainsReuse === null) return false
   } else if (candidate.pendingPlainsReuse !== null) {
@@ -866,7 +915,8 @@ function isGameStateSnapshot(value: unknown): value is GameState {
   }
   if (!isPendingSwampDiscardSnapshot(candidate.pendingSwampDiscard)) return false
   if (candidate.winner !== null && candidate.winner !== 'draw' && candidate.winner !== 0 && candidate.winner !== 1) return false
-  if (!Array.isArray(candidate.log) || !candidate.log.every((entry) => typeof entry === 'string')) return false
+  // Only the kept tail is checked; see `normalizeGameSnapshot`.
+  if (!Array.isArray(candidate.log) || !capTail(candidate.log, ADVENTURE_GAME_LOG_CAP).every((entry) => typeof entry === 'string')) return false
   return true
 }
 
@@ -876,15 +926,19 @@ function normalizeGameSnapshot(value: unknown): GameState | null {
   }
   // Back-fill / sanitize `events` for snapshots persisted before LogEvent
   // existed and for any user-edited localStorage payload. Use the same
-  // shape-check + cap as the recording loader so malformed/huge events
-  // arrays can't reach the renderers and crash `formatLogEventTile` or
-  // freeze the visual log on iteration. Keep raw `log` strings so the
-  // legacy fallback path can still render them.
+  // shape-check as the recording loader so malformed events can't reach the
+  // renderers and crash `formatLogEventTile`. Keep raw `log` strings so the
+  // legacy fallback path can still render them. Both keep only their latest
+  // `ADVENTURE_GAME_LOG_CAP` entries, so a huge payload can't freeze the
+  // visual log on iteration.
   const snapshot = value as GameState & { events?: unknown }
   return {
     ...snapshot,
     pendingSwampDiscard: snapshot.pendingSwampDiscard ?? null,
-    events: sanitizeLogEvents(snapshot.events),
+    log: capTail(snapshot.log, ADVENTURE_GAME_LOG_CAP),
+    events: sanitizeLogEvents(
+      Array.isArray(snapshot.events) ? capTail(snapshot.events, ADVENTURE_GAME_LOG_CAP) : snapshot.events,
+    ),
   }
 }
 

@@ -590,6 +590,12 @@ describe('Adventure map validation', () => {
     ['an invalid opponent deck', (map) => {
       map.tiers[1].nodes[0].opponent.deck = map.tiers[1].nodes[0].opponent.deck.slice(0, 49)
     }],
+    ['six opponent lands', (map) => {
+      map.tiers[0].nodes[0].opponent.lands = [...BASIC_LANDS, 'Forest']
+    }],
+    ['a repeated opponent land', (map) => {
+      map.tiers[0].nodes[0].opponent.lands = ['Forest', 'Forest']
+    }],
     ['an unknown map kind', (map) => { (map as unknown as Record<string, unknown>).kind = 'graph' }],
     ['a missing map kind', (map) => { delete (map as unknown as Record<string, unknown>).kind }],
   ])('rejects a branching map with %s', (_label, mutate) => {

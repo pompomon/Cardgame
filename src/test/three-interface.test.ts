@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppController, type ControllerApi } from '../app/controller'
 import { ADVENTURE_GAME_STORAGE_KEY, type AdventureNodeLane, type AdventureNodeStatus } from '../app/adventure'
 import { ADVENTURE_RUN_STORAGE_KEY } from '../app/adventure-persistence'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import { createGameRecord } from '../app/game-recording'
+import { replayStepStatus } from '../app/game-presentation'
 import { cardArtFallbackUrl, cardArtUrl } from '../app/card-art'
 import { CARD_VISUAL_STYLES, isRasterCardVisualStyle } from '../app/card-visual-styles'
 import { actionableAdventureNodes } from '../app/lobby-presentation'
@@ -20,7 +23,7 @@ import {
 import { createInitialGame } from '../game/engine'
 import { BASIC_LANDS, type BasicLand, type GameState } from '../game/types'
 import { escapeHtml, noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
-import { ThreeInterface } from '../renderers/three/interface'
+import { THREE_ANNOUNCER_SETTLE_MS, THREE_STATUS_ANNOUNCER_ID, ThreeInterface } from '../renderers/three/interface'
 import {
   canThreeInput,
   isThreeMode,
@@ -35,6 +38,7 @@ import {
 } from '../renderers/three/interface-model'
 import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit } from '../renderers/three/contracts'
 import { withFakeTimers } from './helpers/timers'
+import { createTrackedStorage, type TrackedStorage } from './helpers/tracked-storage'
 
 function makeView(): AppViewModel {
   return {
@@ -173,6 +177,7 @@ class ElementStub {
     this.ownerDocument = ownerDocument
   }
   get id(): string { return this.getAttribute('id') ?? '' }
+  get parentElement(): ElementStub | null { return this.parent }
   get isConnected(): boolean { return this === this.ownerDocument.body || !!this.parent?.isConnected }
   get innerHTML(): string { return this.html }
   set innerHTML(value: string) {
@@ -206,7 +211,14 @@ class ElementStub {
   }
   getAttribute(name: string): string | null { return this.attributes.get(name) ?? null }
   hasAttribute(name: string): boolean { return this.attributes.has(name) }
-  append(...elements: ElementStub[]): void { for (const element of elements) { this.children.push(element); element.parent = this } }
+  // As in the DOM, appending a node moves it from its previous parent.
+  append(...elements: ElementStub[]): void {
+    for (const element of elements) {
+      element.remove()
+      this.children.push(element)
+      element.parent = this
+    }
+  }
   remove(): void {
     if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1)
     this.parent = null
@@ -234,7 +246,13 @@ class ElementStub {
   addEventListener(name: string, fn: (event: never) => unknown): void { this.listeners.set(name, fn) }
   removeEventListener(name: string): void { this.listeners.delete(name) }
   emit(name: string, event: unknown = {}): unknown { return this.listeners.get(name)?.(event as never) }
-  focus(): void { this.ownerDocument.activeElement = this }
+  // The options of the latest focus() call, so a test can tell whether the
+  // browser would scroll the element into view.
+  focusOptions: FocusOptions | undefined = undefined
+  focus(options?: FocusOptions): void {
+    this.focusOptions = options
+    this.ownerDocument.activeElement = this
+  }
   setSelectionRange(start: number, end: number): void { this.selectionStart = start; this.selectionEnd = end }
   showModal(): void { this.open = true; this.setAttribute('open', '') }
   close(): void { this.open = false; this.attributes.delete('open') }
@@ -439,7 +457,8 @@ describe('Three native markup and decisions', () => {
     expect(html).toContain('id="start-p2p-game" disabled')
     expect(html).toContain('&lt;answer&gt;')
     expect(html).not.toContain('class="three-hud"')
-    expect(html.match(/role="status"/g)).toHaveLength(1)
+    // Status reads once as plain text; the persistent announcer speaks it.
+    expect(html).not.toContain('role="status"')
     expect(html.match(/Ready/g)).toHaveLength(1)
     view.p2pConnected = true
     expect(renderThreeInterface(view, defaultUi)).toContain('id="start-p2p-game">')
@@ -521,7 +540,7 @@ describe('Three native markup and decisions', () => {
     expect(html).toContain('class="three-log-art"')
     expect(html.match(/P2 summons Signal Siren/g)).toHaveLength(1)
     expect(html).not.toContain('role="log"')
-    expect(html.match(/aria-live="polite"/g)).toHaveLength(1)
+    expect(html).not.toContain('aria-live')
     const empty = renderThreeInterface(makeView(), { ...defaultUi, menuOpen: true })
     expect(empty).toContain('No log entries yet.')
   })
@@ -621,7 +640,7 @@ describe('Three native markup and decisions', () => {
       for (const html of [renderThreeHud(view, defaultUi), renderThreeInterface(view, defaultUi)]) {
         expect(html).not.toContain('Intercept the summon of Rooftop Gargoyle')
         expect(html).not.toContain('class="three-required-prompt"')
-        expect(html).toContain(`<p role="status" aria-live="polite">${status}</p>`)
+        expect(html).toContain(`<p>${status}</p>`)
         for (const text of ['☰ Menu', 'Turn 1 · Interception window', 'Player 1']) expect(html).toContain(text)
       }
     }
@@ -1702,7 +1721,8 @@ describe('Three native interface behavior', () => {
       expect(h.content.innerHTML).toContain(
         'Localized Signal Siren is included automatically; choose the other card to discard.',
       )
-      expect(h.content.innerHTML).toContain('aria-live="polite"')
+      expect(h.content.innerHTML).not.toContain('aria-live')
+      expect(h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)?.getAttribute('aria-live')).toBe('polite')
       expect(h.ui.response?.requiredIslandId).toBe('required-island')
       expect(h.ui.targetIds.size).toBe(0)
       expect(h.controller.submitAction).not.toHaveBeenCalled()
@@ -2283,6 +2303,58 @@ describe('Three narrow profile', () => {
     w.ui.dispose()
   })
 
+  it('keeps the replay transport prompt out of speech, since the status line announces the replay', () => {
+    const over = makeView()
+    over.game!.phase = 'gameOver'
+    over.game!.winnerText = 'Player 1 wins!'
+    over.game!.legal.canEndTurn = false
+    const base = makeView()
+    const replay = (step: number, isPlaying: boolean, status: string): AppViewModel => ({
+      ...base, status, replay: { active: true, step, totalSteps: 10, isPlaying },
+      game: { ...base.game!, isReplay: true, canInput: false },
+    })
+    const narrow = { enabled: true }
+    const h = setup({ ...over, status: 'Player 1 wins!' }, true, narrow)
+    const prompt = h.dockPrompt!
+    // Each politeness change records the text it finds, which must still be the old text.
+    const changes: Array<[string, string]> = []
+    const setAttribute = prompt.setAttribute.bind(prompt)
+    vi.spyOn(prompt, 'setAttribute').mockImplementation((name, value) => {
+      if (name === 'aria-live') changes.push([value, promptText(h)])
+      setAttribute(name, value)
+    })
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    h.update(replay(0, true, 'Replay playing from step 0/10.'))
+    expect(promptText(h)).toBe('Replay · Step 0/10 · Playing')
+    expect(prompt.getAttribute('aria-live')).toBe('off')
+    expect(announcement(h.host)).toBe('Replay playing from step 0/10.')
+    h.update(replay(1, true, replayStepStatus(1, 10)))
+    h.update(replay(2, true, replayStepStatus(2, 10)))
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Playing')
+    expect(announcement(h.host)).toBe('Replay playing from step 0/10.')
+    h.update(replay(2, false, 'Replay paused at step 2/10.'))
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Paused')
+    expect(announcement(h.host)).toBe('Replay paused at step 2/10.')
+    // The prompt stays a status region that a reader can query on demand.
+    expect(prompt.getAttribute('role')).toBe('status')
+    expect(prompt.getAttribute('aria-live')).toBe('off')
+    h.update({ ...over, status: 'Exited replay at final recorded game state.' })
+    expect(promptText(h)).toBe('Player 1 wins!')
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    expect(changes).toEqual([['off', 'Player 1 wins!'], ['polite', 'Replay · Step 2/10 · Paused']])
+    // The wide layout empties the prompt politely; folding back silences it first.
+    h.update(replay(0, true, 'Replay playing from step 0/10.'))
+    narrow.enabled = false
+    h.update(replay(1, true, replayStepStatus(1, 10)))
+    expect(promptText(h)).toBe('')
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    narrow.enabled = true
+    h.update(replay(2, true, replayStepStatus(2, 10)))
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Playing')
+    expect(changes.slice(2)).toEqual([['off', 'Player 1 wins!'], ['polite', 'Replay · Step 0/10 · Playing'], ['off', '']])
+    h.ui.dispose()
+  })
+
   it('shows the tutorial as a dismissible banner with a Hint button to restore it', () => {
     const view = makeView()
     view.mode = 'tutorial'
@@ -2316,8 +2388,9 @@ describe('Three narrow profile', () => {
     expect(h.hud!.innerHTML).not.toContain(summary)
     h.click('[data-action="menu"]')
     expect(h.content.innerHTML).toContain(summary)
-    const ids = [h.hud!, h.content, h.dock!].flatMap((root) => root.querySelectorAll('[id]').map((element) => element.id))
+    const ids = [h.hud!, h.host, h.dock!].flatMap((root) => root.querySelectorAll('[id]').map((element) => element.id))
     expect(ids).toContain(THREE_DOCK_PROMPT_ID)
+    expect(ids).toContain(THREE_STATUS_ANNOUNCER_ID)
     expect(new Set(ids).size).toBe(ids.length)
     h.ui.dispose()
   })
@@ -2351,20 +2424,16 @@ function hubView(adventure: Partial<AdventureUiState> = {}): AppViewModel {
   }
 }
 
-function hubResult(result: Omit<AdventureResultSummary, 'chanceLossPrevented' | 'streakResetPrevented'>
+function hubResult(result: Omit<AdventureResultSummary, 'chanceLossPrevented' | 'streakResetPrevented' | 'relicsUsed'>
   & Partial<AdventureResultSummary>): AdventureResultSummary {
-  return { chanceLossPrevented: false, streakResetPrevented: false, ...result }
+  return { chanceLossPrevented: false, streakResetPrevented: false, relicsUsed: [], ...result }
 }
 
-function installHubStorage(): Map<string, string> {
-  const entries = new Map<string, string>()
-  vi.stubGlobal('localStorage', {
-    getItem: (key: string) => entries.get(key) ?? null,
-    setItem: (key: string, value: string) => { entries.set(key, String(value)) },
-    removeItem: (key: string) => { entries.delete(key) },
-    clear: () => { entries.clear() },
-  })
-  return entries
+// A tracked store that can refuse chosen keys; stubbed, so each test restores it.
+function installHubStorage(): TrackedStorage {
+  const { tracked, storage } = createTrackedStorage()
+  vi.stubGlobal('localStorage', storage)
+  return tracked
 }
 
 describe('Three Adventure hub', () => {
@@ -2433,6 +2502,17 @@ describe('Three Adventure hub', () => {
     expect(result('draw', { currentTier: 1, tiers: hubTiers(['locked', 'locked'], undefined, 'locked', 'current') }))
       .toContain('No chance was used. Retry the same encounter.')
     expect(result('loss', { remainingChances: 1 })).toContain('1 chance left.')
+    const kept = renderThreeInterface(hubView({
+      remainingChances: 3,
+      lastResult: hubResult({
+        outcome: 'loss', tierIndex: 0, opponentLabel: 'First foe', score: null, chanceLossPrevented: true, streakResetPrevented: true,
+        relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 1 }, { id: 'streak-anchor', chargesLeft: 0 }],
+      }),
+    }), defaultUi)
+    // Focus lands on the heading, which reads the detail as its description.
+    expect(kept).toContain('<h2 tabindex="-1" data-adventure-result-heading aria-describedby="three-adventure-result-detail">Defeat at Tier 1</h2>')
+    expect(kept).toContain('<p id="three-adventure-result-detail">Guardian Sigil used a charge to keep your chance (1 left). '
+      + 'Streak Anchor used its last charge to keep your win streak. 3 chances left. Retry the same encounter.</p>')
   })
 
   it('ends a completed or failed run with a final score and new-run actions only', () => {
@@ -2473,7 +2553,10 @@ describe('Three Adventure hub', () => {
       attemptOrdinal: 1, remainingChances: 2, tiers: hubTiers(['bypassed', 'current']), decisionKey: 'run-1|right|1|',
       lastResult: hubResult({ outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null }),
     }))
-    expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
+    const heading = h.content.querySelector('[data-adventure-result-heading]')!
+    expect(h.document.activeElement).toBe(heading)
+    // The focused heading is described by exactly one detail paragraph.
+    expect(h.content.querySelectorAll(`#${heading.getAttribute('aria-describedby')}`).map((element) => element.tagName)).toEqual(['P'])
     h.ui.dispose()
   })
 
@@ -2521,11 +2604,32 @@ describe('Three Adventure hub', () => {
     expect(menu).not.toContain('data-action="rematch"')
     const hud = renderThreeHud(view, defaultUi)
     expect(hud).toContain('Retry Saving Result')
+    // The wide panel is a fixed-height row that scrolls: the only decision
+    // left shares the header row with Menu instead of falling below the fold.
+    const header = hud.slice(hud.indexOf('<header'), hud.indexOf('</header>'))
+    expect(header).toMatch(/data-action="menu"[\s\S]*data-action="adventure-retry-completion"[\s\S]*data-action="abandon-adventure"[\s\S]*<h2>/)
+    expect(hud.match(/data-action="adventure-retry-completion"/g)).toHaveLength(1)
+    expect(hud.match(/data-action="abandon-adventure"/g)).toHaveLength(1)
+    expect(renderThreeHud({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, defaultUi))
+      .not.toMatch(/adventure-retry-completion|abandon-adventure|pause-adventure/)
     expect(renderThreeHud(view, { ...defaultUi, menuOpen: true })).not.toContain('Retry Saving Result')
     const dock = renderThreeDock(view, { ...defaultUi, narrow: true })
     expect(dock.prompt).toBe('Player 1 wins! The result is not saved yet.')
+    // The view model's own winner text has no closing punctuation.
+    const winnerView = (winnerText: string): AppViewModel => ({ ...view, game: { ...view.game!, winnerText } })
+    expect(renderThreeDock(winnerView('Winner: Player 1'), { ...defaultUi, narrow: true }).prompt)
+      .toBe('Winner: Player 1. The result is not saved yet.')
+    expect(renderThreeDock(winnerView('Draw game.'), { ...defaultUi, narrow: true }).prompt)
+      .toBe('Draw game. The result is not saved yet.')
+    expect(renderThreeDock(winnerView(''), { ...defaultUi, narrow: true }).prompt)
+      .toBe('Game over. The result is not saved yet.')
+    expect(renderThreeDock({ ...winnerView('Winner: Player 1'), adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, narrow: true }).prompt)
+      .toBe('Winner: Player 1')
     expect(dock.actions).toContain('aria-label="Retry Saving Result"')
     expect(dock.actions).not.toContain('rematch')
+    // Both have no room for the full labels, which stay as accessible names.
+    expect(dock.actions).toMatch(/>Retry<\/button>[\s\S]*>Reset<\/button>/)
+    expect(header).toContain(dock.actions)
     expect(renderThreeDock({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, narrow: true }).actions).toBe('')
     const h = setup(view)
     h.click('[data-action="adventure-retry-completion"]')
@@ -2540,7 +2644,7 @@ describe('Three Adventure hub', () => {
     view.game = { ...view.game!, phase: 'gameOver', canInput: false, winnerText: 'Player 1 wins!' }
     view.adventure = { ...view.adventure, runId: 'run-1', status: 'active', stage: 'encounter', currentTier: 2, pendingCompletion: 'win', decisionKey: 'run-1|left|0|win' }
     const h = setup(view)
-    const refused = { ...view, status: 'The encounter result could not be saved (storage unavailable). Retry saving the result.' }
+    const refused = { ...view, status: 'Encounter won. The result could not be saved (storage unavailable). Retry saving the result.' }
     h.controller.retryAdventureCompletion.mockImplementation(() => h.update(refused))
     const menu = (): ElementStub | null => h.content.querySelector('[data-modal="menu"]')
     const retryFromMenu = (): void => {
@@ -2624,7 +2728,7 @@ describe('Three Adventure hub', () => {
       const hub = real.getViewModel()
       expect(hub.mode).toBe('adventure-hvai')
       expect(hub.game).toBeNull()
-      expect(storage.has('cardgame.adventure-run')).toBe(true)
+      expect(storage.data.has(ADVENTURE_RUN_STORAGE_KEY)).toBe(true)
       expect(h.content.querySelector('[aria-label="Adventure map"]')).not.toBeNull()
       expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-current-tier]'))
       const offered = actionableAdventureNodes(hub.adventure)
@@ -2726,14 +2830,22 @@ describe('Three Adventure rewards', () => {
     expect(html).toContain('<li data-relic-id="guardian-sigil"><span><strong>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</strong> · 1 of 2 charges</span>')
     expect(html).toContain('<li data-relic-id="rooftop-charm"><span><strong>Rooftop Charm</strong></span>')
     expect(html).toContain('Opening hands include a Rooftop creature.')
-    expect(html).not.toContain('Relics: none yet')
+    expect(html).not.toContain('three-adventure-relics-empty')
     // The empty inventory points to rewards only while a non-boss win can earn one.
     const empty = (adventure: Partial<AdventureUiState>) =>
       renderThreeInterface(hubView(adventure), defaultUi).match(/<p class="three-adventure-relics-empty">([^<]*)<\/p>/)?.[1]
-    expect(empty({})).toBe('Relics: none yet. Win an encounter to earn a reward.')
-    expect(empty({ stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1' })).toBe('Relics: none yet.')
-    expect(empty({ currentTier: 7 })).toBe('Relics: none yet.')
+    expect(empty({})).toBe('Relics: none. Win an encounter to earn a reward.')
+    expect(empty({ stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1' })).toBe('Relics: none.')
+    expect(empty({ currentTier: 7 })).toBe('Relics: none.')
     expect(empty({ status: 'failed', stage: null })).toBe('Relics: none.')
+    // A relic that used its last charge empties the inventory, so the copy must not say "none yet".
+    expect(empty({
+      remainingChances: 3,
+      lastResult: hubResult({
+        outcome: 'loss', tierIndex: 1, opponentLabel: 'Second foe', score: null, chanceLossPrevented: true,
+        relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 0 }],
+      }),
+    })).toBe('Relics: none. Win an encounter to earn a reward.')
     // The escaped offer ID still resolves exactly the offer on screen.
     const h = setup(view)
     h.click('[data-action="adventure-reward-skip"]')
@@ -2874,6 +2986,784 @@ describe('Three Adventure rewards', () => {
       expect(real.getViewModel().adventure.decisionKey).toBe(claimed.adventure.decisionKey)
       unsubscribe()
       h.ui.dispose()
+    })
+  })
+})
+
+function announcement(host: ElementStub): string | undefined {
+  return (host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`) as unknown as { textContent?: string } | null)?.textContent
+}
+
+// Keyboard tab stops, as the interface defines them.
+const TAB_STOPS = 'button:not([disabled]), a[href], input:not([hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]'
+
+// The stub harness driven by a real controller over tracked storage, so focus
+// and announcements follow real transitions and refused writes.
+function setupRealAdventure() {
+  const storage = installHubStorage()
+  const real = new AppController()
+  const h = setup(real.getViewModel())
+  const api = h.controller
+  api.getViewModel.mockImplementation(() => real.getViewModel())
+  api.startAdventure.mockImplementation(() => real.startAdventure())
+  api.startAdventureNode.mockImplementation((nodeId) => real.startAdventureNode(nodeId))
+  api.chooseAdventureReward.mockImplementation((offerId, rewardId) => real.chooseAdventureReward(offerId, rewardId))
+  api.skipAdventureReward.mockImplementation((offerId) => real.skipAdventureReward(offerId))
+  api.retryAdventureCompletion.mockImplementation(() => real.retryAdventureCompletion())
+  api.pauseAdventure.mockImplementation(() => real.pauseAdventure())
+  api.resumeAdventure.mockImplementation(() => real.resumeAdventure())
+  api.abandonAdventure.mockImplementation(() => real.abandonAdventure())
+  api.backToLobby.mockImplementation(() => real.backToLobby())
+  // A held frame models a renderer that presents snapshots after the
+  // controller has moved on.
+  let holding = false
+  let held: AppViewModel | null = null
+  const present = (next: AppViewModel): void => {
+    if (holding) held = next
+    else h.update(next)
+  }
+  const subscriptions = [real.subscribe(present)]
+  const internals = real as unknown as {
+    state: { game: GameState | null }
+    onAdventureGameFinished(previous: GameState): void
+    notify(): void
+  }
+  return {
+    ...h, real, storage,
+    adventure: (): AdventureUiState => real.getViewModel().adventure,
+    lobbyHeading: (): ElementStub | null => h.content.querySelector('[data-lobby-heading]'),
+    // Ends the live encounter the way the engine does, then presents it.
+    finish: (winner: 0 | 1 | 'draw'): void => {
+      const game = internals.state.game
+      if (!game) throw new Error('Expected a live Adventure game')
+      const previous = structuredClone(game)
+      game.winner = winner
+      game.phase = 'gameOver'
+      internals.onAdventureGameFinished(previous)
+      internals.notify()
+    },
+    startFirstNode: (): string => {
+      const node = actionableAdventureNodes(real.getViewModel().adventure)[0]
+      if (!node) throw new Error('Expected an offered Adventure node')
+      h.click(`[data-node-id="${node.id}"]`)
+      return node.id
+    },
+    hold: (): void => { holding = true },
+    release: (): void => {
+      holding = false
+      const next = held
+      held = null
+      if (next) h.update(next)
+    },
+    // Adds a controller subscriber that runs before (or after) the interface's.
+    subscribe: (listener: (view: AppViewModel) => void, first = false): void => {
+      if (!first) {
+        subscriptions.push(real.subscribe(listener))
+        return
+      }
+      for (const unsubscribe of subscriptions.splice(0)) unsubscribe()
+      subscriptions.push(real.subscribe(listener), real.subscribe(present))
+    },
+    dispose: (): void => {
+      for (const unsubscribe of subscriptions.splice(0)) unsubscribe()
+      h.ui.dispose()
+    },
+  }
+}
+
+type RealAdventure = ReturnType<typeof setupRealAdventure>
+
+const runWritesSince = (r: RealAdventure, from: number): number =>
+  r.storage.calls.slice(from).filter((call) => call === `set:${ADVENTURE_RUN_STORAGE_KEY}`).length
+
+const savedRewardHistory = (r: RealAdventure): unknown[] =>
+  (JSON.parse(r.storage.data.get(ADVENTURE_RUN_STORAGE_KEY) ?? '{}') as { rewardHistory?: { rewardId: unknown }[] })
+    .rewardHistory?.map((entry) => entry.rewardId) ?? []
+
+// A transition focuses its destination without preventScroll, so the browser
+// scrolls it into view even when the previous view left the page scrolled.
+const expectTransitionFocus = (r: RealAdventure, target: ElementStub | null): void => {
+  expect(target).not.toBeNull()
+  expect(r.document.activeElement).toBe(target)
+  expect(target?.focusOptions?.preventScroll).not.toBe(true)
+}
+
+// One decision control of the stateful UI matrix: how to reach it, where it
+// lands, and how the controller can move past it behind the interface.
+interface AdventureDecision {
+  selector: string
+  command: ReturnType<typeof vi.fn>
+  applied(): void
+  focused(): void
+  advanceBehind(): void
+}
+
+function reachAdventureDecision(r: RealAdventure, kind: 'node' | 'choose' | 'skip'): AdventureDecision {
+  r.click('[data-mode="adventure-hvai"]')
+  if (kind === 'node') {
+    const node = actionableAdventureNodes(r.adventure())[0]
+    return {
+      selector: `[data-node-id="${node.id}"]`,
+      command: r.controller.startAdventureNode,
+      applied: () => expect(r.real.getViewModel()).toMatchObject({ game: { isReplay: false }, adventure: { stage: 'encounter' } }),
+      focused: () => expect(r.document.activeElement).toBe(r.content.querySelector('[data-action="menu"]')),
+      advanceBehind: () => r.real.startAdventureNode(node.id),
+    }
+  }
+  r.startFirstNode()
+  r.finish(0)
+  const offer = r.adventure().pendingReward!
+  const choice = offer.choices[0]
+  const resolved = (): void => expect(r.adventure()).toMatchObject({ stage: 'map', pendingReward: null })
+  const focused = (): void => expect(r.document.activeElement).toBe(r.content.querySelector('[data-adventure-current-tier]'))
+  return kind === 'choose'
+    ? {
+      selector: `[data-reward-id="${choice.id}"]`,
+      command: r.controller.chooseAdventureReward,
+      applied: () => {
+        resolved()
+        expect(savedRewardHistory(r)).toEqual([choice.id])
+        expect(r.real.getViewModel().status).toBe(`${choice.name} claimed. Choose your Tier 2 encounter.`)
+      },
+      focused,
+      advanceBehind: () => r.real.skipAdventureReward(offer.offerId),
+    }
+    : {
+      selector: '[data-action="adventure-reward-skip"]',
+      command: r.controller.skipAdventureReward,
+      applied: () => {
+        resolved()
+        expect(savedRewardHistory(r)).toEqual([null])
+        expect(r.real.getViewModel().status).toBe('Reward skipped. Choose your Tier 2 encounter.')
+      },
+      focused,
+      advanceBehind: () => r.real.chooseAdventureReward(offer.offerId, choice.id),
+    }
+}
+
+const decisionIdentity = (element: ElementStub | null | undefined): unknown[] =>
+  [element?.dataset.action, element?.dataset.nodeId, element?.dataset.offerId, element?.dataset.rewardId]
+
+describe('Three status announcer', () => {
+  it('announces status through one persistent region outside the rebuilt markup', () => {
+    const view = makeView()
+    const h = setup(view, true, { enabled: true })
+    const regions = h.host.querySelectorAll(`#${THREE_STATUS_ANNOUNCER_ID}`)
+    expect(regions).toHaveLength(1)
+    const region = regions[0]
+    expect(region.tagName).toBe('P')
+    expect(region.parent).toBe(h.host)
+    expect(h.content.contains(region)).toBe(false)
+    expect(region.matches('.three-sr-only')).toBe(true)
+    expect([region.getAttribute('role'), region.getAttribute('aria-live'), region.getAttribute('aria-atomic')]).toEqual(['status', 'polite', 'true'])
+    expect(announcement(h.host)).toBe('Ready')
+    // The visible status is plain text, so it is not read twice.
+    expect(h.hud!.innerHTML).toContain('<p>Ready</p>')
+    h.update({ ...view, status: 'Recording saved.' })
+    expect(h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)).toBe(region)
+    expect(announcement(h.host)).toBe('Recording saved.')
+    // Refreshes that keep the status stay quiet; an empty status clears the region.
+    h.update({ ...view, status: 'Recording saved.', game: { ...view.game!, turn: 2 } })
+    expect(announcement(h.host)).toBe('Recording saved.')
+    h.update({ ...view, status: '' })
+    expect(announcement(h.host)).toBe('')
+    h.ui.dispose()
+    expect(region.parent).toBeNull()
+    expect(h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)).toBeNull()
+  })
+
+  it('re-announces an unchanged status only after a retried Adventure command', () => {
+    const h = setup(rewardView())
+    const refused = { ...rewardView(), status: 'Adventure progress could not be saved (storage unavailable). The reward was not claimed.' }
+    h.controller.chooseAdventureReward.mockImplementation(() => h.update(refused))
+    h.click('[data-reward-id="guardian-sigil"]')
+    expect(announcement(h.host)).toBe(refused.status)
+    // A trailing no-break space changes the region's text, not what is read.
+    h.click('[data-reward-id="guardian-sigil"]')
+    expect(announcement(h.host)).toBe(`${refused.status}\u00a0`)
+    h.click('[data-reward-id="guardian-sigil"]')
+    expect(announcement(h.host)).toBe(refused.status)
+    expect(h.controller.chooseAdventureReward).toHaveBeenCalledTimes(3)
+    expect(h.document.activeElement?.dataset.rewardId).toBe('guardian-sigil')
+    // Other refreshes, and a command that changes nothing, stay quiet.
+    h.update({ ...refused })
+    expect(announcement(h.host)).toBe(refused.status)
+    h.controller.chooseAdventureReward.mockImplementation(() => {})
+    h.click('[data-reward-id="guardian-sigil"]')
+    h.update({ ...refused })
+    expect(announcement(h.host)).toBe(refused.status)
+    // An empty status is never padded.
+    h.controller.skipAdventureReward.mockImplementation(() => h.update({ ...rewardView(), status: '' }))
+    h.click('[data-action="adventure-reward-skip"]')
+    h.click('[data-action="adventure-reward-skip"]')
+    expect(announcement(h.host)).toBe('')
+    h.ui.dispose()
+  })
+
+  it('announces starting, stopping and stepping a replay, not its playback ticks', () => {
+    const base = makeView()
+    const replay = (step: number, isPlaying: boolean, status: string): AppViewModel => ({
+      ...base, status, replay: { active: true, step, totalSteps: 10, isPlaying },
+      game: { ...base.game!, isReplay: true, canInput: false },
+    })
+    const h = setup(replay(0, false, 'Recording loaded.'))
+    expect(announcement(h.host)).toBe('Recording loaded.')
+    h.update(replay(0, true, 'Replay playing from step 0/10.'))
+    expect(announcement(h.host)).toBe('Replay playing from step 0/10.')
+    h.update(replay(1, true, 'Replay step 1/10.'))
+    h.update(replay(2, true, 'Replay step 2/10.'))
+    expect(announcement(h.host)).toBe('Replay playing from step 0/10.')
+    h.update(replay(2, false, 'Replay paused at step 2/10.'))
+    expect(announcement(h.host)).toBe('Replay paused at step 2/10.')
+    h.update(replay(3, false, 'Replay step 3/10.'))
+    expect(announcement(h.host)).toBe('Replay step 3/10.')
+    h.update(replay(3, true, 'Replay playing from step 3/10.'))
+    h.update(replay(9, true, 'Replay step 9/10.'))
+    expect(announcement(h.host)).toBe('Replay playing from step 3/10.')
+    h.update(replay(10, false, 'Replay reached final state.'))
+    expect(announcement(h.host)).toBe('Replay reached final state.')
+    h.ui.dispose()
+  })
+
+  it('announces any other status during playback, such as a refused recording save', () => {
+    const base = makeView()
+    const playing = (step: number, status: string): AppViewModel => ({
+      ...base, status, replay: { active: true, step, totalSteps: 10, isPlaying: true },
+      game: { ...base.game!, isReplay: true, canInput: false },
+    })
+    const failed = 'Failed to save recording to local storage.'
+    const h = setup(playing(0, 'Replay playing from step 0/10.'))
+    h.update(playing(1, replayStepStatus(1, 10)))
+    h.update(playing(1, failed))
+    expect(announcement(h.host)).toBe(failed)
+    // The next tick, and a refresh that keeps it, stay silent.
+    h.update(playing(2, replayStepStatus(2, 10)))
+    h.update(playing(2, replayStepStatus(2, 10)))
+    expect(announcement(h.host)).toBe(failed)
+    // The same failure after a tick is spoken again.
+    h.update(playing(2, failed))
+    expect(announcement(h.host)).toBe(`${failed}\u00a0`)
+    h.ui.dispose()
+  })
+
+  it('moves the announcer into an open dialog, since a modal makes the rest of the page inert', () => {
+    withFakeTimers(() => {
+      const view = makeView()
+      view.mode = 'adventure-hvai'
+      view.adventure = { ...view.adventure, status: 'active', stage: 'encounter' }
+      const h = setup(view, true)
+      const region = h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+      expect(announcement(h.host)).toBe('Ready')
+      h.click('[data-action="menu"]')
+      const menu = h.content.querySelector('dialog')!
+      expect(menu.open).toBe(true)
+      // It joins the dialog empty, so the earlier status is neither repeated
+      // nor read as part of the menu.
+      expect(region.parent).toBe(menu)
+      expect(announcement(h.host)).toBe('')
+      const regions = h.host.querySelectorAll(`#${THREE_STATUS_ANNOUNCER_ID}`)
+      expect(regions).toHaveLength(1)
+      expect(regions[0]).toBe(region)
+      // A refused Pause, clicked once the region has settled, keeps the menu
+      // open and is announced inside it at once.
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      const refused = { ...view, status: 'Adventure progress could not be saved (storage unavailable). The game was not paused.' }
+      h.controller.pauseAdventure.mockImplementation(() => h.update(refused))
+      h.click('[data-action="pause-adventure"]')
+      expect(h.content.querySelector('dialog')).toBe(menu)
+      expect(region.parent).toBe(menu)
+      expect(announcement(h.host)).toBe(refused.status)
+      // A rebuilt menu takes the announcer along before its markup is replaced.
+      const raised = { ...refused, adventure: { ...refused.adventure, highScore: refused.adventure.highScore + 1 } }
+      h.update(raised)
+      const rebuilt = h.content.querySelector('dialog')!
+      expect(rebuilt).not.toBe(menu)
+      expect(menu.contains(region)).toBe(false)
+      expect(region.parent).toBe(rebuilt)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      h.controller.pauseAdventure.mockImplementation(() => h.update(raised))
+      h.click('[data-action="pause-adventure"]')
+      expect(region.parent).toBe(rebuilt)
+      expect(announcement(h.host)).toBe(refused.status)
+      // Closing the menu returns it to the host.
+      h.click('[data-action="close"]')
+      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(region.parent).toBe(h.host)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      h.update({ ...raised, status: 'Turn 2 begins.' })
+      expect(announcement(h.host)).toBe('Turn 2 begins.')
+      // Disposing with a dialog open removes it too.
+      h.click('[data-action="menu"]')
+      expect(region.parent).toBe(h.content.querySelector('dialog'))
+      h.ui.dispose()
+      expect(region.parent).toBeNull()
+    })
+  })
+
+  it('speaks only once a moved announcer has settled, and then the latest status', () => {
+    withFakeTimers(() => {
+      const view = makeView()
+      view.mode = 'adventure-hvai'
+      view.adventure = { ...view.adventure, status: 'active', stage: 'encounter' }
+      const h = setup(view, true)
+      const region = h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`) as unknown as ElementStub & { textContent?: string }
+      // A higher score changes the Game Menu, so its dialog is rebuilt.
+      const inMenu = (status: string, highScore: number): void => {
+        h.update({ ...view, status, adventure: { ...view.adventure, highScore } })
+        expect(region.parent).toBe(h.content.querySelector('dialog'))
+      }
+      h.click('[data-action="menu"]')
+      // A status set in the same update as a rebuild waits for the new
+      // region, since a screen reader can miss it otherwise.
+      inMenu('First status.', 1)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS - 1)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(1)
+      expect(announcement(h.host)).toBe('First status.')
+      // Another move restarts the wait, and a newer status replaces a waiting one.
+      inMenu('Second status.', 2)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS - 1)
+      inMenu('Second status.', 3)
+      inMenu('Third status.', 3)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS - 1)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(1)
+      expect(announcement(h.host)).toBe('Third status.')
+      // Once settled, a status that leaves the menu unchanged is spoken at once.
+      h.update({ ...view, status: 'Failed to save recording to local storage.', adventure: { ...view.adventure, highScore: 3 } })
+      expect(announcement(h.host)).toBe('Failed to save recording to local storage.')
+      // Leaving the game closes the menu; its status speaks from the host after the wait.
+      h.update({ ...view, mode: null, game: null, status: 'Adventure paused at Tier 1.' })
+      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(region.parent).toBe(h.host)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(h.host)).toBe('Adventure paused at Tier 1.')
+      // A status still waiting at dispose is dropped, with no timer left behind.
+      h.update(view)
+      h.click('[data-action="menu"]')
+      inMenu('Dropped.', 4)
+      h.ui.dispose()
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(region.textContent).toBe('')
+      expect(region.parent).toBeNull()
+    })
+  })
+
+  it('announces refused Pause and Retry Saving Result inside the open Game Menu', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const region = r.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+      const menu = (): ElementStub => {
+        const dialog = r.content.querySelector('dialog')
+        if (dialog?.dataset.modal !== 'menu') throw new Error('Expected the open Game Menu')
+        return dialog
+      }
+      const clickInMenu = (action: string): void => {
+        const control = menu().querySelector(`[data-action="${action}"]`)
+        if (!control) throw new Error(`Missing Game Menu control ${action}`)
+        control.focus()
+        r.host.emit('click', { target: control })
+      }
+      const expectAnnouncedInMenu = (): void => {
+        // Here the HUD is part of the menu's markup, so each status rebuilds
+        // the menu, and the moved announcer speaks once it has settled.
+        vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+        expect(region.parent).toBe(menu())
+        expect(announcement(r.host)?.trim()).toBe(r.real.getViewModel().status)
+      }
+      r.click('[data-mode="adventure-hvai"]')
+      r.startFirstNode()
+      r.click('[data-action="menu"]')
+      expect(region.parent).toBe(menu())
+      r.storage.failingSets.add(ADVENTURE_RUN_STORAGE_KEY)
+      clickInMenu('pause-adventure')
+      expect(r.real.getViewModel().mode).toBe('adventure-hvai')
+      expect(r.real.getViewModel().status).toContain('The game was not paused.')
+      expectAnnouncedInMenu()
+      // A refused result keeps the menu open, which then offers Retry Saving Result.
+      r.finish(0)
+      expect(r.adventure().pendingCompletion).not.toBeNull()
+      expectAnnouncedInMenu()
+      clickInMenu('adventure-retry-completion')
+      expect(r.real.getViewModel().status).toContain('still could not be saved')
+      expectAnnouncedInMenu()
+      clickInMenu('adventure-retry-completion')
+      expectAnnouncedInMenu()
+      // Saving the result leaves the game, so the menu closes and the
+      // announcer speaks from the host again.
+      r.storage.failingSets.delete(ADVENTURE_RUN_STORAGE_KEY)
+      clickInMenu('adventure-retry-completion')
+      expect(r.real.getViewModel()).toMatchObject({ game: null, adventure: { pendingCompletion: null } })
+      expect(r.content.querySelector('dialog')).toBeNull()
+      expect(region.parent).toBe(r.host)
+      expect(announcement(r.host)).toBe('')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.dispose()
+    })
+  })
+
+  it('announces a refused recording save from the Game Menu during playback, not the ticks', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      r.controller.saveRecordingToLocalStorage.mockImplementation(() => r.real.saveRecordingToLocalStorage())
+      const region = r.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+      // The controller's private recording key.
+      const recordingKey = 'cardgame.saved-recording'
+      r.real.startGame('local-hvh')
+      for (let turn = 0; turn < 3; turn += 1) {
+        const game = r.real.getViewModel().game!
+        expect(game.legal.canEndTurn).toBe(true)
+        r.real.submitAction({ type: 'end_turn', actor: game.actor })
+      }
+      r.real.startReplay()
+      expect(r.real.getViewModel().replay).toMatchObject({ isPlaying: true, step: 0, totalSteps: 3 })
+      expect(announcement(r.host)).toBe('Replay playing from step 0/3.')
+      r.click('[data-action="menu"]')
+      const tick = (): void => {
+        vi.advanceTimersByTime(700)
+        const view = r.real.getViewModel()
+        expect(view.status).toBe(replayStepStatus(view.replay.step, view.replay.totalSteps))
+        // Each tick rebuilds the menu, which keeps the announcer.
+        expect(region.parent).toBe(r.content.querySelector('dialog'))
+        expect(announcement(r.host)).not.toContain('Replay step')
+      }
+      tick()
+      r.storage.failingSets.add(recordingKey)
+      r.click('[data-action="save-recording-local"]')
+      expect(r.real.getViewModel().replay.isPlaying).toBe(true)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(r.host)).toBe('Failed to save recording to local storage.')
+      tick()
+      r.click('[data-action="save-recording-local"]')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(r.host)).toBe('Failed to save recording to local storage.')
+      vi.advanceTimersByTime(700)
+      expect(r.real.getViewModel().replay).toMatchObject({ isPlaying: false, step: 3 })
+      expect(announcement(r.host)).toBe('Replay reached final state.')
+      r.dispose()
+    })
+  })
+})
+
+describe('Three Adventure transition focus', () => {
+  it('moves focus to the lobby heading, the Game Menu or the map as an Adventure moves', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      // Hub Pause, then Resume to the map.
+      r.click('[data-mode="adventure-hvai"]')
+      r.click('[data-action="pause-adventure"]')
+      expect(r.real.getViewModel()).toMatchObject({ mode: null, adventure: { status: 'paused' } })
+      expectTransitionFocus(r, r.lobbyHeading())
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.click('[data-action="resume-adventure"]')
+      expectTransitionFocus(r, r.content.querySelector('[data-adventure-current-tier]'))
+      // Hub Reset.
+      r.click('[data-action="abandon-adventure"]')
+      expect(r.real.getViewModel()).toMatchObject({ mode: null, adventure: { hasSavedRun: false } })
+      expectTransitionFocus(r, r.lobbyHeading())
+      expect(announcement(r.host)).toBe('Adventure run reset.')
+      // A node starts its encounter at the Game Menu button.
+      r.click('[data-mode="adventure-hvai"]')
+      r.startFirstNode()
+      expect(r.real.getViewModel().game).not.toBeNull()
+      expectTransitionFocus(r, r.content.querySelector('[data-action="menu"]'))
+      // In-game Pause wins over the closing Game Menu's fallback focus.
+      r.click('[data-action="menu"]')
+      r.click('[data-action="pause-adventure"]')
+      expect(r.real.getViewModel().mode).toBeNull()
+      expectTransitionFocus(r, r.lobbyHeading())
+      // Resume restores the encounter at the Game Menu button.
+      r.click('[data-action="resume-adventure"]')
+      expect(r.real.getViewModel().game).not.toBeNull()
+      expectTransitionFocus(r, r.content.querySelector('[data-action="menu"]'))
+      // In-game Reset.
+      r.click('[data-action="menu"]')
+      r.click('[data-action="abandon-adventure"]')
+      expect(r.real.getViewModel()).toMatchObject({ mode: null, game: null, adventure: { hasSavedRun: false } })
+      expectTransitionFocus(r, r.lobbyHeading())
+      // A lobby Reset stays in the lobby but removes the control that had focus.
+      r.click('[data-mode="adventure-hvai"]')
+      r.click('[data-action="pause-adventure"]')
+      r.click('[data-action="abandon-adventure"]')
+      expect(r.adventure().hasSavedRun).toBe(false)
+      expect(r.content.querySelector('[data-action="abandon-adventure"]')).toBeNull()
+      expectTransitionFocus(r, r.lobbyHeading())
+      r.dispose()
+    })
+  })
+
+  it('keeps focus on the activated control when an Adventure write is refused', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      r.click('[data-mode="adventure-hvai"]')
+      r.storage.failingSets.add(ADVENTURE_RUN_STORAGE_KEY)
+      const nodeId = r.startFirstNode()
+      expect(r.real.getViewModel().game).toBeNull()
+      expect(r.document.activeElement?.dataset.nodeId).toBe(nodeId)
+      expect(r.real.getViewModel().status).toContain('could not be saved')
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.click('[data-action="pause-adventure"]')
+      expect(r.real.getViewModel().mode).toBe('adventure-hvai')
+      expect(r.document.activeElement?.dataset.action).toBe('pause-adventure')
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      // A click that did not focus its button (as in Safari) leaves focus alone.
+      r.document.activeElement = r.document.body
+      r.host.emit('click', { target: r.content.querySelector('[data-action="pause-adventure"]') })
+      expect(r.document.activeElement).toBe(r.document.body)
+      // Once storage accepts the write, the same controls complete the transition.
+      r.storage.failingSets.delete(ADVENTURE_RUN_STORAGE_KEY)
+      r.host.emit('click', { target: r.content.querySelector('[data-action="pause-adventure"]') })
+      expect(r.real.getViewModel().mode).toBeNull()
+      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      // A refused lobby Reset keeps the run, its controls and the focus.
+      r.storage.failingRemoves.add(ADVENTURE_RUN_STORAGE_KEY)
+      r.click('[data-action="abandon-adventure"]')
+      expect(r.adventure().hasSavedRun).toBe(true)
+      expect(r.document.activeElement?.dataset.action).toBe('abandon-adventure')
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.dispose()
+    })
+  })
+
+  it('keeps opponent decks and seeds out of the lobby, map, reward, result and completion', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      r.click('[data-mode="adventure-hvai"]')
+      const run = JSON.parse(r.storage.data.get(ADVENTURE_RUN_STORAGE_KEY)!) as {
+        baseSeed: number
+        map: { tiers: Array<{ nodes: Array<{ opponent: { deck: Array<{ id: string, name: string }> } }> }> }
+      }
+      const decks = run.map.tiers.flatMap((tier) => tier.nodes.map((node) => node.opponent.deck))
+      expect(decks.length).toBeGreaterThanOrEqual(7)
+      const forbidden = new Set([String(run.baseSeed), ...decks.flatMap((deck) => {
+        const order = JSON.stringify(deck.map((card) => card.name))
+        return [...deck.map((card) => card.id), order, escapeHtml(order)]
+      })])
+      const leaks = (stage: string) => {
+        const html = r.content.innerHTML
+        return { stage, leaked: [...forbidden].filter((token) => html.includes(token)) }
+      }
+      const startEncounter = (): void => {
+        r.startFirstNode()
+        forbidden.add(String(r.adventure().activeGameSeed))
+      }
+      expect(leaks('map')).toEqual({ stage: 'map', leaked: [] })
+      startEncounter()
+      r.finish(0)
+      expect(r.adventure().stage).toBe('reward')
+      expect(leaks('reward')).toEqual({ stage: 'reward', leaked: [] })
+      r.click('[data-action="adventure-reward-skip"]')
+      r.click('[data-action="pause-adventure"]')
+      expect(r.adventure().status).toBe('paused')
+      expect(leaks('paused lobby')).toEqual({ stage: 'paused lobby', leaked: [] })
+      r.click('[data-action="resume-adventure"]')
+      startEncounter()
+      r.finish(1)
+      expect(r.adventure().lastResult?.outcome).toBe('loss')
+      expect(leaks('result')).toEqual({ stage: 'result', leaked: [] })
+      for (let guard = 0; guard < 12 && r.adventure().status !== 'completed'; guard += 1) {
+        startEncounter()
+        r.finish(0)
+        if (r.adventure().pendingReward) r.click('[data-action="adventure-reward-skip"]')
+      }
+      expect(r.adventure().status).toBe('completed')
+      expect(leaks('completion')).toEqual({ stage: 'completion', leaked: [] })
+      // Leaving the finished run focuses the lobby.
+      r.click('[data-action="back-to-lobby"]')
+      expect(r.real.getViewModel().mode).toBeNull()
+      expectTransitionFocus(r, r.lobbyHeading())
+      r.dispose()
+    })
+  })
+
+  it('orders hub tab stops: route or reward, then Pause and Reset, then options', () => {
+    const stops = (view: AppViewModel): string[] => {
+      const h = setup(view)
+      const order = h.content.querySelectorAll(TAB_STOPS)
+        .map((element) => element.dataset.nodeId ?? element.dataset.rewardId ?? element.dataset.action ?? element.tagName)
+      h.ui.dispose()
+      return order
+    }
+    const options = ['lobby-settings', 'lobby-recording']
+    expect(stops(hubView())).toEqual(['tier-2-left', 'tier-2-right', 'pause-adventure', 'abandon-adventure', ...options])
+    // Relics are listed before the reward but are text, not stops.
+    expect(stops(rewardView({ relics: [...HUB_RELICS] }))).toEqual([
+      'second-wind', 'guardian-sigil', 'prepared-pack', 'adventure-reward-skip', 'pause-adventure', 'abandon-adventure', ...options,
+    ])
+    expect(stops(hubView({
+      status: 'completed', stage: null, currentTier: 7, tiers: hubTiers(['completed', 'bypassed'], undefined, 'completed'),
+      lastResult: hubResult({ outcome: 'win', tierIndex: 6, opponentLabel: 'Boss', score: 9 }), decisionKey: 'run-1|completed|0|',
+    }))).toEqual(['start-new-adventure', 'back-to-lobby', ...options])
+  })
+
+  it('adds no motion to the announcer or the Adventure hub, reward and result', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'interface.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const rules = Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g), (match) => [match[1].trim(), match[2]] as const)
+    const adventure = rules.filter(([selector]) => /\.three-(adventure|sr-only)/.test(selector))
+    expect(adventure.length).toBeGreaterThan(20)
+    expect(adventure.filter(([, body]) => /\b(transition|animation)\b/.test(body)).map(([selector]) => selector)).toEqual([])
+    expect(css).not.toContain('@keyframes')
+  })
+})
+
+// The stateful UI regression matrix (docs/agent/testing.md) for the hub's
+// decision controls. Each control has a single target, so target
+// cardinality does not apply.
+describe.each(['node', 'choose', 'skip'] as const)('Three Adventure %s control', (kind) => {
+  it('applies one synchronous transition with one run write and focuses the next decision', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const before = r.adventure().decisionKey
+      const from = r.storage.calls.length
+      r.click(decision.selector)
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      expect(r.adventure().decisionKey).not.toBe(before)
+      expect(runWritesSince(r, from)).toBe(1)
+      decision.applied()
+      decision.focused()
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      r.dispose()
+    })
+  })
+
+  it('keeps the decision and focus when storage refuses the write, then applies one retry', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const before = r.adventure().decisionKey
+      r.storage.failingSets.add(ADVENTURE_RUN_STORAGE_KEY)
+      const control = r.click(decision.selector)
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      expect(r.adventure().decisionKey).toBe(before)
+      expect(r.real.getViewModel().status).toContain('could not be saved')
+      expect(announcement(r.host)).toBe(r.real.getViewModel().status)
+      expect(decisionIdentity(r.document.activeElement)).toEqual(decisionIdentity(control))
+      // Repeated refusals are announced again, on the same control, even
+      // once the status text stops changing.
+      r.click(decision.selector)
+      const still = r.real.getViewModel().status
+      expect(still).toContain('still could not be saved')
+      expect(announcement(r.host)).toBe(still)
+      r.click(decision.selector)
+      expect(r.real.getViewModel().status).toBe(still)
+      expect(announcement(r.host)).not.toBe(still)
+      expect(announcement(r.host)?.trim()).toBe(still)
+      expect(r.adventure().decisionKey).toBe(before)
+      expect(decisionIdentity(r.document.activeElement)).toEqual(decisionIdentity(control))
+      r.storage.failingSets.delete(ADVENTURE_RUN_STORAGE_KEY)
+      const from = r.storage.calls.length
+      r.click(decision.selector)
+      expect(decision.command).toHaveBeenCalledTimes(4)
+      expect(runWritesSince(r, from)).toBe(1)
+      decision.applied()
+      decision.focused()
+      r.dispose()
+    })
+  })
+
+  it('ignores the control once the decision has moved on behind the interface', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const control = r.content.querySelector(decision.selector)!
+      r.hold()
+      decision.advanceBehind()
+      const advanced = r.adventure().decisionKey
+      expect(control.isConnected).toBe(true)
+      control.focus()
+      r.host.emit('click', { target: control })
+      expect(decision.command).not.toHaveBeenCalled()
+      expect(r.adventure().decisionKey).toBe(advanced)
+      // The click refreshed the interface to the newer decision instead.
+      expect(control.isConnected).toBe(false)
+      expect(r.onChange).toHaveBeenCalled()
+      r.release()
+      r.dispose()
+    })
+  })
+
+  it('dispatches once for a repeated activation before and after the re-render', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      // Keyboard activation of a native button arrives as the same single click.
+      r.document.emit('keydown', { key: 'Enter', shiftKey: false, preventDefault: () => {} })
+      expect(decision.command).not.toHaveBeenCalled()
+      r.hold()
+      const control = r.click(decision.selector)
+      // Before the next frame, the second activation meets the newer decision.
+      r.host.emit('click', { target: control })
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      r.release()
+      // After it, the old control is gone and does nothing.
+      r.host.emit('click', { target: control })
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      decision.applied()
+      r.dispose()
+    })
+  })
+
+  it.each([true, false])('applies once and writes nothing more when a subscriber disposes the interface (first: %s)', (first) => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, kind)
+      const region = r.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`) as unknown as ElementStub & { textContent?: string }
+      let disposedWith: { active: ElementStub | null, builds: number, announced: string | undefined } | null = null
+      // Subscribing delivers the current view at once; dispose on the next one.
+      let armed = false
+      r.subscribe(() => {
+        if (!armed || disposedWith) return
+        r.ui.dispose()
+        disposedWith = { active: r.document.activeElement, builds: r.content.builds, announced: region.textContent }
+      }, first)
+      armed = true
+      const from = r.storage.calls.length
+      expect(() => r.click(decision.selector)).not.toThrow()
+      expect(decision.command).toHaveBeenCalledTimes(1)
+      expect(runWritesSince(r, from)).toBe(1)
+      decision.applied()
+      expect(disposedWith).not.toBeNull()
+      expect(r.document.activeElement).toBe(disposedWith!.active)
+      expect(r.content.builds).toBe(disposedWith!.builds)
+      expect(region.textContent).toBe(disposedWith!.announced)
+      expect(region.parent).toBeNull()
+      r.dispose()
+    })
+  })
+})
+
+describe('Three Adventure reward across Pause and Reset', () => {
+  it('keeps a waiting reward through Pause and Resume, and Reset drops it', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      const decision = reachAdventureDecision(r, 'choose')
+      const offer = r.adventure().pendingReward!
+      const choose = r.content.querySelector(decision.selector)!
+      r.click('[data-action="pause-adventure"]')
+      expect(r.real.getViewModel()).toMatchObject({ mode: null, adventure: { status: 'paused', stage: 'reward' } })
+      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      // The hub's Choose control is gone from the lobby and claims nothing.
+      r.host.emit('click', { target: choose })
+      expect(r.controller.chooseAdventureReward).not.toHaveBeenCalled()
+      expect(r.content.querySelector('[data-action="adventure-reward-choose"]')).toBeNull()
+      r.click('[data-action="resume-adventure"]')
+      expect(r.adventure().pendingReward).toEqual(offer)
+      expect(r.content.querySelectorAll('[data-action="adventure-reward-choose"]')
+        .map((element) => [element.dataset.offerId, element.dataset.rewardId]))
+        .toEqual(offer.choices.map((choice) => [offer.offerId, choice.id]))
+      expect(r.document.activeElement).toBe(r.content.querySelector('[data-adventure-reward-heading]'))
+      r.click('[data-action="abandon-adventure"]')
+      expect(r.adventure()).toMatchObject({ hasSavedRun: false, pendingReward: null })
+      expect(r.storage.data.has(ADVENTURE_RUN_STORAGE_KEY)).toBe(false)
+      expect(r.document.activeElement).toBe(r.lobbyHeading())
+      expect(r.controller.chooseAdventureReward).not.toHaveBeenCalled()
+      expect(r.controller.skipAdventureReward).not.toHaveBeenCalled()
+      r.dispose()
     })
   })
 })

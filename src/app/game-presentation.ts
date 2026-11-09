@@ -8,6 +8,11 @@ import type {
   PlayerState,
 } from '../game/types'
 import type { AdventureOpponentKind } from './adventure'
+import {
+  adventureRewardCatalogEntry,
+  type AdventureRelicChargeUse,
+  type AdventureRewardEffect,
+} from './adventure-rewards'
 import { cardCatalogEntry, displayCardName } from './card-catalog'
 import type { ControllerKind, UiBattlefieldCard, UiCard } from './types'
 import { HIDDEN_HAND_CARD_NAME } from './types'
@@ -47,6 +52,45 @@ export function displayAdventureOpponentLabel(
     default:
       return 'Mystery roster'
   }
+}
+
+// What a used relic charge did, from the relic's catalog effect.
+function adventureRelicChargePurpose(effect: AdventureRewardEffect): string {
+  switch (effect.kind) {
+    case 'prevent-chance-loss':
+      return ' to keep your chance'
+    case 'prevent-streak-reset':
+      return ' to keep your win streak'
+    case 'opening-hand-bonus':
+      return ` to draw ${effect.cards} extra opening ${effect.cards === 1 ? 'card' : 'cards'}`
+    default:
+      return ''
+  }
+}
+
+/**
+ * Status and result copy for a used relic charge: the catalog name, what
+ * the charge did and the charges left. Plain text that renderers escape.
+ */
+export function describeAdventureRelicChargeUse(use: AdventureRelicChargeUse): string {
+  const entry = adventureRewardCatalogEntry(use.id)
+  const purpose = adventureRelicChargePurpose(entry.effect)
+  return use.chargesLeft > 0
+    ? `${entry.name} used a charge${purpose} (${use.chargesLeft} left).`
+    : `${entry.name} used its last charge${purpose}.`
+}
+
+/** Every used relic charge, as sentences joined by spaces; '' when none. */
+export function describeAdventureRelicChargeUses(uses: readonly AdventureRelicChargeUse[]): string {
+  return uses.map((use) => describeAdventureRelicChargeUse(use)).join(' ')
+}
+
+/**
+ * The status a replay step sets, such as `Replay step 3/40.`. Renderers
+ * compare against it to stay quiet during playback ticks.
+ */
+export function replayStepStatus(step: number, totalSteps: number): string {
+  return `Replay step ${step}/${totalSteps}.`
 }
 
 export function displayGamePhase(phase: GamePhase): string {

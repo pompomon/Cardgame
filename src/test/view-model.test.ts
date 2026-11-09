@@ -504,6 +504,7 @@ describe('buildViewModel', () => {
       score: null,
       chanceLossPrevented: true,
       streakResetPrevented: false,
+      relicsUsed: [{ id: 'guardian-sigil' as const, chargesLeft: 0 }],
     }
     state.adventure = { ...withRun(begun), pendingCompletion: { outcome: 'draw' }, lastResult }
 
@@ -517,9 +518,15 @@ describe('buildViewModel', () => {
       score: null,
       chanceLossPrevented: true,
       streakResetPrevented: false,
+      relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 0 }],
     })
     expect(adventure.lastResult).not.toBe(lastResult)
     expect(Object.isFrozen(adventure.lastResult)).toBe(true)
+    const relicsUsed = adventure.lastResult?.relicsUsed ?? []
+    expect(relicsUsed).not.toBe(lastResult.relicsUsed)
+    expect(relicsUsed[0]).not.toBe(lastResult.relicsUsed[0])
+    expect(Object.isFrozen(relicsUsed)).toBe(true)
+    expect(Object.isFrozen(relicsUsed[0])).toBe(true)
 
     state.adventure = { ...withRun(begun), lastResult: { ...lastResult, nodeId: 'tier-9-center', score: 12 } }
     expect(buildViewModel(state, false).adventure.lastResult).toEqual({
@@ -529,6 +536,7 @@ describe('buildViewModel', () => {
       score: 12,
       chanceLossPrevented: true,
       streakResetPrevented: false,
+      relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 0 }],
     })
   })
 

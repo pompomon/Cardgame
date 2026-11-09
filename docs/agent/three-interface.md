@@ -58,6 +58,57 @@ that produced it. Preserve:
 Opening Cards from Game Menu returns to the menu on Back/Escape. Opening a card
 preview from Cards returns to Cards with its focus and scroll restored.
 
+## Status announcements
+
+One persistent, visually hidden region speaks the status line in every mode:
+`p#three-status-announcer.three-sr-only` with `role="status"`,
+`aria-live="polite"` and `aria-atomic="true"`. It is appended to the host
+after the rebuilt content, and only `dispose()` removes it. The lobby, hub
+and HUD status paragraphs are plain `<p>` elements with no live role. A live
+region created by an `innerHTML` rebuild is not reliably announced, and
+several regions would speak the same text twice.
+
+- `showModal()` makes everything outside the dialog inert, which silences a
+  live region there. While a dialog is open, `render()` moves the region
+  into it (`placeAnnouncer`). Before replacing that dialog's markup,
+  `render()` moves the region back to the host. Each move clears its text, so a
+  screen reader neither repeats an old status nor reads one as part of the
+  dialog. A status set while the Game Menu is open, such as a refused Pause
+  or Retry Saving Result, is therefore spoken.
+- A moved region is newly inserted. Safari can miss a change made soon after
+  a live region is inserted, and React Aria's announcer waits 100 ms for this
+  reason. After each move, `announce()` therefore holds the status until the
+  region has stayed in place for `THREE_ANNOUNCER_SETTLE_MS` (100 ms). A
+  further move restarts the wait, a newer status replaces a waiting one, and
+  `dispose()` drops it with the timer. This covers a status that arrives in
+  the same update as a move: Start Replay closing the menu, a replay control,
+  or the final step rebuilding the open menu, or Pause leaving the game. A
+  region that has not moved speaks at once.
+- `update()` sets the region's text after rendering and focus, and only
+  when `view.status` changes.
+- A status that stays the same is spoken again only after a command routed
+  through `dispatchAdventure`, such as a retried write. The controller says
+  "still" for a second identical refusal. For any repeat after that, the
+  interface toggles a trailing no-break space, which screen readers do not
+  read, so the region's text still changes.
+- During playback, only the step status of each tick stays quiet. The
+  interface compares the status against `replayStepStatus(step,
+  totalSteps)` from `game-presentation.ts`, which the controller also uses.
+  Any other status is announced, such as a refused recording save, and so
+  are starting, pausing, stepping and reaching the final state.
+- The narrow dock prompt (`#three-dock-prompt`, `role="status"`) is a
+  second persistent region. It speaks decisions that the status line does
+  not, such as the winner of a finished game. During replay it shows the
+  transport's step count, which changes on every playback tick and repeats
+  what the status line announces. `ThreeDockModel.quiet` marks that prompt,
+  and `render()` then sets `aria-live="off"`. Each politeness change comes
+  before the new text, so a replay's first prompt stays silent and the
+  first prompt after it, such as the winner, is spoken. The prompt keeps
+  its role, id and text, and still describes the docked primary button.
+- Keep live regions persistent. Create them once, like this region, the
+  board captions and the dock prompt, and never put a live role in markup
+  that `render()` rebuilds. Send status-line text through `view.status`.
+
 ## Adventure hub
 
 `isThreeAdventureHub(view)` is true in Adventure mode when there is no game
@@ -109,9 +160,44 @@ Rules:
   refused write keeps the decision key, so focus stays on the activated
   control. `focusKey` includes `data-reward-id`, so a re-render restores
   focus to the same choice.
+- **Transition focus.** Every Adventure command runs through
+  `dispatchAdventure`. Focus moves only when the command changes the session
+  or removes the activated control:
+  - Pause, Reset, and Back to Lobby in Adventure mode go to the lobby heading
+    (`[data-lobby-heading]`).
+  - A node start, or a Resume that restores a saved game, goes to the Game
+    Menu button (`[data-action="menu"]`).
+  - Anything that lands on the hub goes to the hub's decision, in the order
+    above.
+
+  Each destination takes focus without `preventScroll`, so the browser
+  scrolls it into view. The lobby keeps the page scroll of a long map, which
+  would otherwise leave its heading above the fold.
+
+  Focus stays put when a write is refused, when nothing was focused before
+  the command (Safari does not focus clicked buttons), while a modal or an
+  inline target panel is open, and after disposal. The move runs after the
+  controller call returns, so it wins over `render()` restoring focus as a
+  menu closes.
+- **Result description.** The result heading has
+  `aria-describedby="three-adventure-result-detail"`, so focusing it also
+  reads the detail: chances left, relic charges used, and what to do next.
+- **Tab order.** On the hub, Tab reaches the route's node buttons (or the
+  reward's Choose buttons and Skip), then Pause and Reset, then Settings
+  and Recording. A finished run offers Start New Adventure and Back to
+  Lobby instead of Pause and Reset. Headings take focus only from script
+  (`tabindex="-1"`), and the relic list has no tab stops.
+- **No motion.** The hub, reward panel, result and announcer use no CSS
+  transitions or animations, so reduced motion needs no override. A test
+  reads `interface.css` and fails if an Adventure or `three-sr-only` rule
+  adds a transition or animation, or if the file adds `@keyframes`.
 - **Pending result.** While storage refuses a result, the finished board stays
   open. The Game Menu, the wide game-controls panel and the narrow dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
+  wide panel is a fixed-height row that scrolls, so both buttons share its
+  header row with Menu instead of falling below the fold. There, as in the
+  dock, they show the short labels Retry and Reset and keep the full labels
+  as accessible names. The
   hub never opens over an unsaved result. Retry does not reset the
   interface, so a refused write keeps the Game Menu open with focus on Retry;
   a saved result leaves the encounter and the session change closes the menu.
@@ -120,7 +206,8 @@ Rules:
 
 ## IDs, actions, and focus
 
-- Keep every document `id` unique.
+- Keep every document `id` unique. The interface reserves
+  `three-status-announcer` and `three-adventure-result-detail`.
 - Use `data-action` for delegated repeated actions and `class` for repeated
   styling.
 - Avoid duplicate handlers after rerender or remount.

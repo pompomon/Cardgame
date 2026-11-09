@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import {
+  ADVENTURE_GAME_LOG_CAP,
   ADVENTURE_GAME_STORAGE_KEY,
+  ADVENTURE_HIGH_SCORE_STORAGE_KEY,
+  adventureEncounterLaunch,
   applyAdventureEncounterResult,
   chooseAdventureRunReward,
   clearStoredAdventureGameSnapshot,
@@ -13,6 +16,7 @@ import {
   isLegacyAdventureRunState,
   persistAdventureGameSnapshot,
   readStoredAdventureGameSnapshot,
+  readStoredAdventureHighScore,
   skipAdventureRunReward,
   startAdventureEncounter,
   type AdventureGameSnapshotEnvelope,
@@ -35,7 +39,10 @@ import {
   linearAdventureTiers,
 } from '../app/adventure-map'
 import { isLegalActionForState } from '../app/action-validation'
-import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
+import { chooseAiAction } from '../game/ai'
+import { AI_LEVELS } from '../game/ai-levels'
+import { lcg } from '../game/cards'
+import { applyAction, canAct, createInitialGame, getLegalActions, remainingCounterGrowth } from '../game/engine'
 import { BASIC_LANDS, type GameState, type LogEvent } from '../game/types'
 import { compatibilityDecisions, compatibilityTimeline } from './fixtures/compatibility-scenario'
 
@@ -169,6 +176,10 @@ function validOversizedEvents(): LogEvent[] {
 
 function playerOf(state: Record<string, unknown>, index: 0 | 1): Record<string, unknown> {
   return (state.players as Array<Record<string, unknown>>)[index]
+}
+
+function addCard(zone: unknown, id: string): void {
+  ;(zone as unknown[]).push({ id: `extra-${id}`, name: 'Forest', type: 'land' })
 }
 
 function envelopeFor(run: AdventureRunState, game: unknown): MutableRecord {
@@ -366,6 +377,8 @@ describe('adventure run persistence', () => {
     ['unsafe attemptOrdinal', (run) => { run.attemptOrdinal = 2 ** 53 }],
     ['negative attemptSeed', (run) => { run.attemptSeed = -1 }],
     ['fractional attemptSeed', (run) => { run.attemptSeed = 1.5 }],
+    ['unsafe attemptSeed', (run) => { run.attemptSeed = 2 ** 53 }],
+    ['unsafe baseSeed', (run) => { run.baseSeed = 2 ** 53 }],
     ['no attemptSeed at an encounter', (run) => {
       run.stage = 'encounter'
       run.selectedNodeId = 'tier-1-center'
@@ -377,6 +390,8 @@ describe('adventure run persistence', () => {
     ['fractional scoreEligibleWinStreak', (run) => { run.scoreEligibleWinStreak = 1.5 }],
     ['fractional totalRoundsPlayed', (run) => { run.totalRoundsPlayed = 1.5 }],
     ['fractional totalCardsPlayed', (run) => { run.totalCardsPlayed = 1.5 }],
+    ['unsafe scoreEligibleChances, which would make the score infinite', (run) => { run.scoreEligibleChances = 1e308 }],
+    ['unsafe totalRoundsPlayed', (run) => { run.totalRoundsPlayed = 2 ** 53 }],
     ['missing score counter', (run) => { delete asRecord(run).scoreEligibleChances }],
     ['relics', (run) => { asRecord(run).relics = ['lucky-coin'] }],
     ['reward history', (run) => { asRecord(run).rewardHistory = [{ kind: 'boon' }] }],
@@ -881,6 +896,28 @@ describe('adventure game snapshot envelope', () => {
       deck[0] = { ...deck[0], name: 'Bogus' }
     }],
     ['malformed battlefield entry', (state: Record<string, unknown>) => { playerOf(state, 0).battlefield = [{ instanceId: 'bf-1' }] }],
+    ['an unsafe turn', (state: Record<string, unknown>) => { state.turn = 2 ** 53 }],
+    ['an unsafe nextInstanceId', (state: Record<string, unknown>) => { state.nextInstanceId = 2 ** 53 }],
+    ['a turn with no room for the rest of the game', (state: Record<string, unknown>) => { state.turn = Number.MAX_SAFE_INTEGER }],
+    ['a nextInstanceId with no room for the rest of the game', (state: Record<string, unknown>) => {
+      state.nextInstanceId = Number.MAX_SAFE_INTEGER
+    }],
+    ['a 51st card in the deck', (state: Record<string, unknown>) => { addCard(playerOf(state, 0).deck, 'deck') }],
+    ['a 51st card in the hand', (state: Record<string, unknown>) => { addCard(playerOf(state, 1).hand, 'hand') }],
+    ['a 51st card in the graveyard', (state: Record<string, unknown>) => { addCard(playerOf(state, 0).graveyard, 'graveyard') }],
+    ['a 51st card on the battlefield', (state: Record<string, unknown>) => {
+      ;(playerOf(state, 1).battlefield as unknown[]).push({ instanceId: 'p1-1', card: { id: 'extra', name: 'Forest', type: 'land' } })
+    }],
+    ['a pending land play still in its player\'s hand', (state: Record<string, unknown>) => {
+      state.phase = 'respond'
+      state.pendingLandPlay = { actor: 0, card: (playerOf(state, 0).hand as unknown[])[0] }
+    }],
+    ['every zone over the deck size', (state: Record<string, unknown>) => {
+      const player = playerOf(state, 0)
+      const deck = player.deck as unknown[]
+      player.deck = [...deck, ...deck]
+      player.graveyard = [...deck, ...deck]
+    }],
   ])('rejects structurally corrupted adventure game snapshots: %s', (_label, mutate) => {
     const state = createInitialGame(99) as unknown as Record<string, unknown>
     mutate(state)
@@ -893,6 +930,54 @@ describe('adventure game snapshot envelope', () => {
     expect(readStoredAdventureGameSnapshot()).toEqual({ kind: 'invalid' })
   })
 
+  it.each(['turn', 'nextInstanceId'] as const)('accepts a %s exactly at its limit and rejects one more', (counter) => {
+    const state = createInitialGame(99)
+    const limit = Number.MAX_SAFE_INTEGER - remainingCounterGrowth(state)[counter]
+    const save = (value: number) => {
+      store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(envelopeFor(encounterRun(), { ...state, [counter]: value })))
+    }
+
+    save(limit)
+    expect(expectEnvelope(readStoredAdventureGameSnapshot()).game[counter]).toBe(limit)
+    save(limit + 1)
+    expect(readStoredAdventureGameSnapshot()).toEqual({ kind: 'invalid' })
+  })
+
+  it('reads back a save that starts at both counter limits after every legal action until the game ends', () => {
+    const random = lcg(0x5eed_06c1)
+    const problems: string[] = []
+    for (let game = 0; game < 6; game += 1) {
+      let state = createInitialGame(500 + game)
+      if (game % 2 === 1) {
+        // A hand-edited save: a land waits for a response while another is still allowed.
+        const card = state.players[0].hand.shift()
+        if (!card) throw new Error('Expected an opening hand.')
+        state.pendingLandPlay = { actor: 0, card }
+        state.phase = 'respond'
+      }
+      const growth = remainingCounterGrowth(state)
+      state = { ...state, turn: Number.MAX_SAFE_INTEGER - growth.turn, nextInstanceId: Number.MAX_SAFE_INTEGER - growth.nextInstanceId }
+      for (let step = 0; step < 3_000; step += 1) {
+        store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(envelopeFor(encounterRun(), state)))
+        const slot = readStoredAdventureGameSnapshot()
+        const where = `game ${game} step ${step} (${state.phase}, turn ${state.turn}, next instance ${state.nextInstanceId})`
+        if (slot.kind !== 'envelope') {
+          problems.push(`${where}: read as ${slot.kind}`)
+          break
+        }
+        const instanceIds = state.players.flatMap((player) => player.battlefield.map((entry) => entry.instanceId))
+        if (new Set(instanceIds).size !== instanceIds.length) problems.push(`${where}: repeated an instance ID`)
+        if (state.phase === 'gameOver') break
+        const actor = canAct(state, 0) ? 0 : 1
+        const legal = getLegalActions(state, actor)
+        state = applyAction(state, legal[Math.floor(random() * legal.length)])
+      }
+      if (state.phase !== 'gameOver') problems.push(`game ${game}: did not end`)
+    }
+
+    expect(problems).toEqual([])
+  })
+
   it('back-fills missing events on valid enveloped games', () => {
     const state = createInitialGame(100) as unknown as Record<string, unknown>
     delete state.events
@@ -903,7 +988,7 @@ describe('adventure game snapshot envelope', () => {
     expect(envelope.game.events).toEqual([])
   })
 
-  it('sanitizes oversized enveloped game events from the tail', () => {
+  it('keeps only the latest capped events and drops malformed ones', () => {
     const state = createInitialGame(101) as unknown as Record<string, unknown>
     const trailingMalformedEvents = Array.from({ length: 300 }, () => ({ kind: 'unknown_event' }))
     state.events = [
@@ -914,13 +999,58 @@ describe('adventure game snapshot envelope', () => {
 
     const envelope = expectEnvelope(readStoredAdventureGameSnapshot())
 
-    expect(envelope.game.events).toHaveLength(9700)
-    expect(envelope.game.events[0]).toEqual({ kind: 'turn_start', turn: 301, actor: 0 })
+    expect(envelope.game.events).toHaveLength(ADVENTURE_GAME_LOG_CAP - 300)
+    expect(envelope.game.events[0]).toEqual({ kind: 'turn_start', turn: 10301 - ADVENTURE_GAME_LOG_CAP, actor: 0 })
+    expect(envelope.game.events.at(-1)).toEqual({ kind: 'turn_start', turn: 10000, actor: 0 })
     expect(envelope.game.events).toEqual(
       expect.not.arrayContaining([
         expect.objectContaining({ kind: 'unknown_event' }),
       ]),
     )
+  })
+
+  it('keeps only the latest capped log entries and checks only those', () => {
+    const game = createInitialGame(102)
+    const tail = Array.from({ length: ADVENTURE_GAME_LOG_CAP }, (_value, index) => `Entry ${index + 1}.`)
+    const save = (log: unknown[]) => {
+      store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(envelopeFor(encounterRun(), { ...game, log })))
+    }
+
+    save(tail)
+    expect(expectEnvelope(readStoredAdventureGameSnapshot()).game.log).toEqual(tail)
+
+    save([7, null, { text: 'old' }, ...tail])
+    expect(expectEnvelope(readStoredAdventureGameSnapshot()).game.log).toEqual(tail)
+
+    save([...tail.slice(1), 7])
+    expect(readStoredAdventureGameSnapshot()).toEqual({ kind: 'invalid' })
+    expect(store.setCalls).toBe(0)
+    expect(store.removeCalls).toBe(0)
+  })
+
+  it.each<[string, (state: Record<string, unknown>) => void]>([
+    ['all 50 of a player\'s cards in the graveyard', (state) => {
+      const player = playerOf(state, 0)
+      player.graveyard = [...(player.deck as unknown[]), ...(player.hand as unknown[])]
+      player.deck = []
+      player.hand = []
+    }],
+    ['all 50 of a player\'s cards in the deck', (state) => {
+      const player = playerOf(state, 1)
+      player.deck = [...(player.hand as unknown[]), ...(player.deck as unknown[])]
+      player.hand = []
+    }],
+    ['a pending land play beside its player\'s other 49 cards', (state) => {
+      const hand = playerOf(state, 1).hand as unknown[]
+      state.phase = 'respond'
+      state.pendingLandPlay = { actor: 1, card: hand.shift() }
+    }],
+  ])('restores a saved game with %s', (_label, mutate) => {
+    const state = createInitialGame(103) as unknown as Record<string, unknown>
+    mutate(state)
+    store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(envelopeFor(encounterRun(), state)))
+
+    expect(expectEnvelope(readStoredAdventureGameSnapshot()).game).toEqual(state)
   })
 
   it('clears the slot on a best-effort basis', () => {
@@ -1051,5 +1181,130 @@ describe('adventure runs saved before rewards', () => {
     }
     expect(waiting.rewardHistory).toEqual([{ sourceNodeId: offer.sourceNodeId, rewardId: reward }])
     expect(waiting.pendingReward?.rewardOrdinal).toBe(1)
+  })
+})
+
+describe('adventure high score reads', () => {
+  let store: MemoryStore
+
+  beforeEach(() => {
+    store = installMemoryLocalStorage()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it.each([
+    ['0', 0],
+    ['15', 15],
+    ['007', 7],
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER],
+  ])('reads %s as %d', (raw, expected) => {
+    store.data.set(ADVENTURE_HIGH_SCORE_STORAGE_KEY, raw)
+
+    expect(readStoredAdventureHighScore()).toBe(expected)
+  })
+
+  it.each(['', ' 15', '15 ', '-5', '+15', '1.5', '1e3', '0x10', 'Infinity', 'NaN', '9007199254740992', 'fifteen', '[15]'])(
+    'reads %j as 0 without rewriting it',
+    (raw) => {
+      store.data.set(ADVENTURE_HIGH_SCORE_STORAGE_KEY, raw)
+
+      expect(readStoredAdventureHighScore()).toBe(0)
+      expect(store.data.get(ADVENTURE_HIGH_SCORE_STORAGE_KEY)).toBe(raw)
+      expect(store.setCalls).toBe(0)
+      expect(store.removeCalls).toBe(0)
+    },
+  )
+
+  it('reads a missing or unreadable high score as 0', () => {
+    expect(readStoredAdventureHighScore()).toBe(0)
+
+    store.data.set(ADVENTURE_HIGH_SCORE_STORAGE_KEY, '15')
+    store.shouldThrowOnGet = true
+    expect(readStoredAdventureHighScore()).toBe(0)
+  })
+})
+
+describe('adventure storage budget', () => {
+  // Each slot stays well inside the ~5 MB origin quota it shares with
+  // settings and recordings.
+  const BUDGET_BYTES = 64 * 1024
+  let store: MemoryStore
+
+  beforeEach(() => {
+    store = installMemoryLocalStorage()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function storedBytes(key: string): number {
+    return new TextEncoder().encode(store.data.get(key) ?? '').length
+  }
+
+  /** Every saved state of a won route that claims the first reward of each offer. */
+  function wonRoute(seed: number, lane: 'first' | 'last'): AdventureRunState[] {
+    const states: AdventureRunState[] = []
+    let run = createAdventureRun(seed, RUN_ID)
+    while (run.status === 'active') {
+      const nodes = run.map.tiers[run.currentTierIndex].nodes
+      run = started(run, nodes[lane === 'first' ? 0 : nodes.length - 1].id)
+      states.push(run)
+      run = applyAdventureEncounterResult(run, 'win')
+      states.push(run)
+      const offer = run.pendingReward
+      if (offer) {
+        const claimed = chooseAdventureRunReward(run, offer.offerId, offer.choices[0])
+        if (!claimed) throw new Error(`Expected ${offer.choices[0]} to be claimable.`)
+        run = claimed
+        states.push(run)
+      }
+    }
+    return states
+  }
+
+  it('keeps every saved run of a won route with claimed rewards under 64 KiB', () => {
+    let largest = 0
+    for (const seed of [123, 4567, 890_123]) {
+      for (const lane of ['first', 'last'] as const) {
+        const states = wonRoute(seed, lane)
+        expect(states.at(-1)?.status).toBe('completed')
+        expect(states.at(-1)?.relics.length).toBeGreaterThan(0)
+        for (const run of states) {
+          expect(persistAdventureRun(run)).toBe(true)
+          largest = Math.max(largest, storedBytes(ADVENTURE_RUN_STORAGE_KEY))
+        }
+      }
+    }
+
+    expect(largest).toBeGreaterThan(16 * 1024)
+    expect(largest).toBeLessThan(BUDGET_BYTES)
+  })
+
+  it('keeps saved games of finished seeded AI encounters under 64 KiB and their logs far below the cap', () => {
+    let largest = 0
+    let longestLog = 0
+    for (const seed of [11, 22, 33, 44]) {
+      for (const level of AI_LEVELS) {
+        const run = started(createAdventureRun(seed, RUN_ID))
+        const launch = adventureEncounterLaunch(run)
+        let game = createInitialGame(launch.seed, launch.decks, launch.options)
+        for (let step = 0; step < 2000 && game.phase !== 'gameOver'; step += 1) {
+          const action = chooseAiAction(game, canAct(game, 0) ? 0 : 1, { level })
+          if (!action) break
+          game = applyAction(game, action)
+        }
+        expect(game.phase, `seed ${seed} ${level}`).toBe('gameOver')
+        expect(persistAdventureGameSnapshot(run, game)).toBe(true)
+        largest = Math.max(largest, storedBytes(ADVENTURE_GAME_STORAGE_KEY))
+        longestLog = Math.max(longestLog, game.log.length, game.events.length)
+      }
+    }
+
+    expect(largest).toBeLessThan(BUDGET_BYTES)
+    expect(longestLog).toBeLessThan(ADVENTURE_GAME_LOG_CAP / 2)
   })
 })

@@ -427,6 +427,85 @@ keep their names; only their formats changed.
     streak reset.
   - **Recordings.** Relic setup lives in the recorded initial `GameState`.
     Never add reward data to recordings, replay or P2P.
+- **Milestone 6 rules.**
+  - **Exactly-once Pause.** Pause mid-encounter writes the envelope, then
+    the paused run. If either write is refused, the live game, its Game Menu
+    and the Pause control stay open with the storage warning. The next
+    successful Pause writes `[game, run]` once, and Resume restores that
+    game once.
+  - **A leftover envelope never restores.** Resume restores an envelope
+    only when the stored run is `paused` at `encounter`. Only Pause writes
+    that state, and only after its envelope write succeeds. If the run
+    write and then the envelope removal are both refused, the stored run
+    stays `active` next to the leftover envelope. Neither Resume nor a reload
+    restores it, and a later Pause replaces it. A restore writes the run
+    `active` before the game launches, so one envelope never restores twice.
+    For every other leftover, identity matching remains the safety boundary.
+  - **Mid-game save caps.** `normalizeGameSnapshot` keeps only the latest
+    `ADVENTURE_GAME_LOG_CAP` (1,000) `log` entries and `events`, and the
+    guard checks only the kept log tail. Each player may hold at most
+    `ADVENTURE_DECK_SIZE` (50) cards across deck, hand, battlefield and
+    graveyard, counting a pending land play for its actor. Each zone's
+    length is checked before its entries.
+  - **Game counter room.** `turn` and `nextInstanceId` must leave room for
+    the rest of the game. Each counter plus its part of
+    `remainingCounterGrowth` (`src/game/engine.ts`) must stay within
+    `Number.MAX_SAFE_INTEGER`. Only End Turn raises `turn`, and it either
+    draws a card or, on an empty deck, ends the game. Only a resolved land
+    play raises `nextInstanceId`, and each turn allows one. Decks never
+    refill, so legal play never raises a counter plus its remaining growth.
+    Any save Pause writes after play from an accepted save therefore keeps
+    counters that pass. A save without that room is invalid, so Resume
+    restarts the encounter.
+  - **Safe integers.** Run counters, `baseSeed`, `attemptSeed` and
+    `attemptOrdinal` must pass `isNonNegativeSafeInteger`. A hand-edited
+    counter can then neither make the score infinite nor make a seed lose
+    precision. A version 1 run holding an unsafe value converts to null, so
+    it is unavailable. An opponent may list at most five lands.
+  - **Counter limit.** Every counter that grows, in the run transitions
+    and in the in-place summon counter, goes through
+    `incrementAdventureCounter`. That function stops at
+    `Number.MAX_SAFE_INTEGER` instead of growing past it, so a run the guard
+    accepts can still finish an encounter, pause and save.
+    `computeAdventureScore` clamps to the safe integers, so the high score
+    it writes always reads back.
+  - **High score.** `readStoredAdventureHighScore` accepts only the decimal
+    digits `persistAdventureHighScore` writes, up to
+    `Number.MAX_SAFE_INTEGER`. Anything else reads as 0.
+  - **Budget.** Both slots stay far below the origin quota. These sizes were
+    measured from the app's own transitions:
+    - The largest run, a won route that claims every reward, is 33,364
+      bytes.
+    - The largest saved finished AI game is 18,296 bytes.
+
+    The engine logs at most six entries a turn, so real games stay near 600
+    entries, well under the cap. Reading and validating the largest run
+    takes about 0.17 ms, and the largest envelope about 0.07 ms (Node 26,
+    development container). `adventure-persistence.test.ts` keeps both slots
+    under 64 KiB and seeded AI game logs under half the cap.
+  - **Status copy.** `describeAdventureRelicChargeUse` in
+    `game-presentation.ts` describes a used relic charge from the reward
+    catalog. The text names the relic, says what the charge did, and gives
+    the charges left, or says "used its last charge" at zero.
+    `usedAdventureRelicCharges(before, after)` lists the charges a
+    transition used. Results keep them in `lastResult.relicsUsed`, which the
+    result panel shows.
+    - A node start names each charge it used.
+    - A restart of the same attempt adds "Same opening as before". It adds
+      "; no relic charge used" only when the run holds a charged relic.
+    - A Resume that cannot restore a lost game says the encounter restarts
+      without using a chance. It adds "or a relic charge" when the run holds
+      a charged relic.
+    - A draw says no chance was used.
+    - A refused result starts with its outcome, such as "Encounter lost.",
+      from `adventureOutcomeText`, which also starts each saved result.
+      The finished board's winner text is not a live region, so the status
+      is the only spoken outcome until Retry succeeds.
+    - A successful Retry Saving Result starts with "Result saved."
+    - A refusal straight after the same refusal says "still"
+      (`repeatedWarning`), so the status text changes and is announced
+      again. The Three interface re-announces any further identical status
+      itself.
 - **Migration closure.** Every version 1 run the app could have written must
   convert into a run that passes the version 2 guard. Every version 2 run an
   earlier milestone could have written must still read. When a version 2
@@ -468,6 +547,7 @@ keep their names; only their formats changed.
 - Validate that the two snapshot players have ids `0` and `1` in that
   order (the engine uses `player.id` to build instance ids and logs).
 - Validate `nextInstanceId` is a non-negative integer; the engine relies
-  on it as a monotonic counter.
+  on it as a monotonic counter. In a mid-game save it must also leave room
+  for the rest of the game (see "Game counter room").
 - Validate `landsPlayedThisTurn` is a non-negative integer ≤ the
   one-land-per-turn ceiling.

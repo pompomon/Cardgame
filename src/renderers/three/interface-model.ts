@@ -6,13 +6,12 @@ import {
   type TargetSelectionContext,
 } from '../../app/action-resolution'
 import { ADVENTURE_TIER_COUNT, type AdventureNodeLane, type AdventureNodeStatus } from '../../app/adventure'
-import { adventureRewardCatalogEntry } from '../../app/adventure-rewards'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../../app/card-catalog'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import { displayGamePhase } from '../../app/game-presentation'
+import { describeAdventureRelicChargeUses, displayGamePhase } from '../../app/game-presentation'
 import {
   describeNextAdventureOpponent,
   hasSavedAdventureRun,
@@ -65,6 +64,11 @@ export interface InterfaceUi {
 export interface ThreeDockModel {
   readonly prompt: string
   readonly actions: string
+  /**
+   * The prompt only repeats what the status announcer speaks, so its own
+   * live region stays off. Replay transport changes it on every playback tick.
+   */
+  readonly quiet?: boolean
 }
 
 export const EMPTY_THREE_DOCK: ThreeDockModel = Object.freeze({ prompt: '', actions: '' })
@@ -301,6 +305,13 @@ function renderAdventureGameActions(view: AppViewModel): string {
     + button('abandon-adventure', 'Reset Adventure Run')
 }
 
+// The narrow dock and the wide panel's header row have no room for the full
+// labels, which stay as the accessible names.
+function renderAdventurePendingActions(): string {
+  return button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
+    + button('abandon-adventure', 'Reset', false, ' aria-label="Reset Adventure Run"')
+}
+
 function renderMenu(view: AppViewModel): string {
   const logControllers = view.recording.metadata?.controllers ?? view.controllers
   return modal('menu', 'Game Menu', `${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
@@ -334,7 +345,7 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
   return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
     <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Urban Creatures${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '<p>Urban-fantasy 2-player card game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>
-    ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
+    ${view.status ? `<p>${escapeHtml(view.status)}</p>` : ''}
     ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
   </section>`
 }
@@ -375,11 +386,11 @@ function relicLabel(relic: AdventureRelicSummary): string {
 }
 
 // An empty inventory points to rewards only while a non-boss win can still earn one.
+// It never says "yet": a charged relic that used its last charge also leaves it empty.
 function renderAdventureRelics(adventure: AdventureUiState, resumable: boolean): string {
   if (adventure.relics.length === 0) {
     const canEarn = resumable && adventure.pendingReward === null && adventure.currentTier < ADVENTURE_TIER_COUNT
-    const text = resumable ? `Relics: none yet.${canEarn ? ' Win an encounter to earn a reward.' : ''}` : 'Relics: none.'
-    return `<p class="three-adventure-relics-empty">${text}</p>`
+    return `<p class="three-adventure-relics-empty">Relics: none.${canEarn ? ' Win an encounter to earn a reward.' : ''}</p>`
   }
   return `<div class="three-adventure-relics"><h3>Relics</h3><ul>${adventure.relics.map((relic) => {
     const charges = relicChargesText(relic)
@@ -421,12 +432,6 @@ function renderAdventureReward(offer: AdventureRewardOfferSummary): string {
   </section>`
 }
 
-// Which relics kept a loss from costing a chance or resetting the streak.
-function adventureProtectionText(result: AdventureResultSummary): string {
-  return (result.chanceLossPrevented ? `${adventureRewardCatalogEntry('guardian-sigil').name} kept your chance. ` : '')
-    + (result.streakResetPrevented ? `${adventureRewardCatalogEntry('streak-anchor').name} kept your win streak. ` : '')
-}
-
 function renderAdventureNode(adventure: AdventureUiState, node: AdventureNodeSummary): string {
   const status = adventureNodeStatusLabel(node.status)
   const lane = adventureLaneLabel(node.lane)
@@ -463,6 +468,16 @@ function renderAdventureTier(adventure: AdventureUiState, tier: AdventureTierSum
       `<li>${renderAdventureNode(adventure, node)}</li>`).join('')}</ul></li>`
 }
 
+// The relics that used a charge on this result, each with the charges left.
+function adventureRelicUseDetail(result: AdventureResultSummary): string {
+  const text = describeAdventureRelicChargeUses(result.relicsUsed)
+  return text ? `${text} ` : ''
+}
+
+// Focus lands on the result heading, which reads its detail (chances left,
+// relic use, what to do next) as its description.
+const ADVENTURE_RESULT_DETAIL_ID = 'three-adventure-result-detail'
+
 function renderAdventureResult(adventure: AdventureUiState): string {
   const result = adventure.lastResult
   if (!result) return ''
@@ -486,7 +501,7 @@ function renderAdventureResult(adventure: AdventureUiState): string {
         break
       case 'loss':
         heading = `Defeat at Tier ${tier}`
-        detail = `${adventureProtectionText(result)}${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
+        detail = `${adventureRelicUseDetail(result)}${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
         break
       case 'draw':
         heading = `Draw at Tier ${tier}`
@@ -499,8 +514,8 @@ function renderAdventureResult(adventure: AdventureUiState): string {
     }
   }
   return `<section class="three-adventure-result" data-outcome="${escapeHtml(result.outcome)}" aria-label="Encounter result">
-    <h2 tabindex="-1" data-adventure-result-heading>${escapeHtml(heading)}</h2>
-    <p>Opponent: ${escapeHtml(result.opponentLabel)}</p><p>${escapeHtml(detail)}</p></section>`
+    <h2 tabindex="-1" data-adventure-result-heading aria-describedby="${ADVENTURE_RESULT_DETAIL_ID}">${escapeHtml(heading)}</h2>
+    <p>Opponent: ${escapeHtml(result.opponentLabel)}</p><p id="${ADVENTURE_RESULT_DETAIL_ID}">${escapeHtml(detail)}</p></section>`
 }
 
 /**
@@ -540,7 +555,7 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
   return `<section class="panel three-adventure-hub" data-lobby-page="${page}" aria-label="Adventure map">
     <header><p>Adventure</p><h1 tabindex="-1" data-lobby-heading>Adventure Map${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '' : button('lobby-root', 'Back')}</header>
-    ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
+    ${view.status ? `<p>${escapeHtml(view.status)}</p>` : ''}
     ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
   </section>`
 }
@@ -629,19 +644,21 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
     return `<section class="three-hud" data-layout="narrow" aria-label="Game controls">
       ${button('menu', '☰', false, ` aria-label="Menu" aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
       <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))} <span>· Player ${game.actor + 1}</span></h2>
-      <p role="status" aria-live="polite">${escapeHtml(view.status)}</p>
+      <p>${escapeHtml(view.status)}</p>
       ${view.tutorial.active && ui.tutorialHidden ? button('tutorial-show', 'Hint', false, ' aria-label="Show tutorial hint"') : ''}</section>`
   }
   const targets = threeTargets(view, ui)
+  // This panel is a fixed-height row that scrolls, so a refused result's
+  // Retry and Reset sit beside Menu instead of below the fold.
+  const pendingActions = view.mode === 'adventure-hvai' && view.adventure.pendingCompletion
+    && !view.replay.active && !ui.menuOpen ? renderAdventurePendingActions() : ''
   return `<section class="three-hud" aria-label="Game controls">
-    <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
+    <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}${pendingActions}
       <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))}</h2><span>Player ${game.actor + 1}</span></header>
-    <p role="status" aria-live="polite">${escapeHtml(view.status)}</p>
+    <p>${escapeHtml(view.status)}</p>
     ${game.winnerText ? `<p class="three-winner">${escapeHtml(game.winnerText)}</p>` : ''}
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? TUTORIAL_FALLBACK_HINT)}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
-    ${view.mode === 'adventure-hvai' && view.adventure.pendingCompletion && !view.replay.active && !ui.menuOpen
-    ? `<div class="three-actions">${renderAdventureGameActions(view)}</div>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
     ${targets && !ui.menuOpen && !ui.preview ? `<p class="three-required-prompt">${escapeHtml(targets.title)}</p>` : ''}
     ${ui.menuOpen ? '' : renderReplay(view)}</section>`
@@ -674,6 +691,7 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
         + button('replay-next', 'Next', step >= totalSteps, ' aria-label="Next Step"')
         + button('replay-end', 'End', step >= totalSteps, ' aria-label="Jump to End"')
         + button('replay-exit', 'Exit', false, ' aria-label="Exit Replay"'),
+      quiet: true,
     }
   }
   if (game.phase === 'gameOver') {
@@ -681,12 +699,11 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
       // A committed result replaces the board with the map at once, so a
       // finished Adventure game only stays while storage refuses its result.
       const pending = view.adventure.pendingCompletion !== null
+      const winner = game.winnerText || 'Game over.'
       return {
-        prompt: `${game.winnerText || 'Game over.'}${pending ? ' The result is not saved yet.' : ''}`,
-        actions: pending
-          ? button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
-            + button('abandon-adventure', 'Reset', false, ' aria-label="Reset Adventure Run"')
-          : '',
+        // "Winner: Player 1" has no closing punctuation of its own.
+        prompt: pending ? `${/[.!?]$/.test(winner) ? winner : `${winner}.`} The result is not saved yet.` : winner,
+        actions: pending ? renderAdventurePendingActions() : '',
       }
     }
     return {

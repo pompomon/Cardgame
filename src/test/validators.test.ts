@@ -7,6 +7,7 @@ import {
   isFiniteNumber,
   isIntegerInRange,
   isNonNegativeInteger,
+  isNonNegativeSafeInteger,
   isRecordObject,
 } from '../app/validators'
 
@@ -85,6 +86,27 @@ describe('validators', () => {
     it('rejects negatives and fractions', () => {
       expect(isNonNegativeInteger(-1)).toBe(false)
       expect(isNonNegativeInteger(1.5)).toBe(false)
+    })
+  })
+
+  describe('isNonNegativeSafeInteger', () => {
+    it.each([
+      ['Infinity', Infinity],
+      ['NaN', Number.NaN],
+      ['negative', -1],
+      ['fraction', 1.5],
+      ['first unsafe integer', 2 ** 53],
+      ['huge integer', 1e308],
+      ['string', '3'],
+      ['null', null],
+    ])('rejects %s', (_label, value) => {
+      expect(isNonNegativeSafeInteger(value)).toBe(false)
+    })
+
+    it('accepts zero through the largest safe integer', () => {
+      expect(isNonNegativeSafeInteger(0)).toBe(true)
+      expect(isNonNegativeSafeInteger(1_770_000_000_000)).toBe(true)
+      expect(isNonNegativeSafeInteger(Number.MAX_SAFE_INTEGER)).toBe(true)
     })
   })
 

@@ -395,6 +395,27 @@ export function createInitialGame(
   return state
 }
 
+/**
+ * The most `turn` and `nextInstanceId` can still grow before the game ends.
+ * Only End Turn raises `turn`, and it draws a card or ends the game. A land
+ * enters play only from the pending play, and each turn allows one play.
+ * Each bound therefore falls at least as fast as its counter grows. When a
+ * state's counters plus these bounds stay within `Number.MAX_SAFE_INTEGER`,
+ * that also holds for every state legal actions reach from it.
+ */
+export function remainingCounterGrowth(state: GameState): { turn: number; nextInstanceId: number } {
+  if (state.phase === 'gameOver') {
+    return { turn: 0, nextInstanceId: 0 }
+  }
+  const cardsLeftToDraw = state.players[0].deck.length + state.players[1].deck.length
+  const landsStillToEnter = (state.pendingLandPlay ? 1 : 0)
+    + (state.players[state.currentPlayer].landsPlayedThisTurn < 1 ? 1 : 0)
+  return {
+    turn: cardsLeftToDraw + 1,
+    nextInstanceId: cardsLeftToDraw + landsStillToEnter,
+  }
+}
+
 export function canAct(state: GameState, actor: number): boolean {
   if (actor !== 0 && actor !== 1) {
     return false
