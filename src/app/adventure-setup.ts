@@ -5,8 +5,8 @@
 //
 // This is a leaf module. It imports the generic engine setup option, game
 // types, the reward rules and the shared validators, never `adventure.ts`,
-// persistence, the controller, storage or the DOM. Run progression does not
-// call it yet.
+// persistence, the controller, storage or the DOM. `adventure.ts` plans the
+// setup once for each committed attempt and stores it on the run.
 
 import { DEFAULT_OPENING_HAND_SIZE, type InitialGameOptions } from '../game/engine'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card } from '../game/types'

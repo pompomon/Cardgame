@@ -835,11 +835,13 @@ describe('Adventure node selection', () => {
     expect(JSON.stringify(midRun)).toBe(before)
   })
 
-  it('rejects every node on finished runs and at the encounter stage', () => {
+  it('rejects every node on finished runs, at the reward stage and at the encounter stage', () => {
     const encounter = select(atFork, 'tier-2-left')
     const states: Array<[string, AdventureRouteState]> = [
       ['a completed run', walkRoute(map, 0).state],
       ['a failed run', { ...atFork, status: 'failed', stage: null }],
+      ['an active reward stage', { ...midRun, status: 'active', stage: 'reward' }],
+      ['a paused reward stage', { ...midRun, status: 'paused', stage: 'reward' }],
       ['an active encounter', encounter],
       ['a paused encounter', { ...encounter, status: 'paused' }],
     ]
@@ -883,6 +885,33 @@ describe('Adventure node selection', () => {
       attemptSeed: retrying.attemptSeed,
     })
     expect(JSON.stringify(retrying)).toBe(before)
+  })
+})
+
+describe('Adventure reward stage route', () => {
+  const map = branchingMapWithForks([1, 3, 5])
+  const won = deepFreeze(win(select(routeAt(map, 1), 'tier-2-right')))
+  const waiting: AdventureRouteState = { ...won, status: 'active', stage: 'reward' }
+
+  it('waits between tiers with the won node completed and no committed attempt', () => {
+    expect(waiting).toMatchObject({ currentTierIndex: 2, completedNodeIds: ['tier-1-center', 'tier-2-right'] })
+    expect(isAdventureRouteState(waiting)).toBe(true)
+    expect(isAdventureRouteState({ ...waiting, status: 'paused' })).toBe(true)
+    // The next tier shows its node, which opens once the reward is resolved.
+    expect(statuses(waiting)['tier-3-center']).toBe('current')
+    expect(selectAdventureNode({ ...waiting, stage: 'map' }, 'tier-3-center')?.selectedNodeId).toBe('tier-3-center')
+  })
+
+  it.each<[string, Partial<AdventureRouteState>]>([
+    ['before any win', { currentTierIndex: 0, completedNodeIds: [] }],
+    ['keeping a node', { selectedNodeId: 'tier-3-center' }],
+    ['on a retry', { attemptOrdinal: 1 }],
+    ['with a seed', { attemptSeed: 42 }],
+    ['on a completed run', { status: 'completed' }],
+    ['on a failed run', { status: 'failed' }],
+  ])('rejects a reward stage %s', (_label, overrides) => {
+    expect(isAdventureRouteState({ ...waiting, ...overrides })).toBe(false)
+    expect(selectAdventureNode({ ...waiting, ...overrides }, 'tier-3-center')).toBeNull()
   })
 })
 

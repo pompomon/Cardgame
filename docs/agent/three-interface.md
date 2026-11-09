@@ -64,8 +64,8 @@ preview from Cards returns to Cards with its focus and scroll restored.
 and no replay. In that state `renderThreeAdventureHub` replaces the lobby:
 
 - An encounter result section with a heading.
-- A progress list.
-- A seven-tier route.
+- A progress list, followed by the owned relics with charges and rules text.
+- A seven-tier route, or the reward panel while an offer is pending.
 - The run actions:
   - While the run is open: **Pause Adventure** and **Reset Adventure Run**.
   - After it ends: **Start New Adventure** and **Back to Lobby**.
@@ -79,14 +79,36 @@ Rules:
   the node ID against `actionableAdventureNodes()` in the latest view before
   calling `startAdventureNode()`, which checks again. Other nodes are plain
   text.
+- **Reward panel.** While `adventure.pendingReward` is set, a **Choose a
+  reward** panel replaces the route:
+  - Each choice shows its catalog name, exact rules text, and cap or charge
+    context, with a
+    `button[data-action="adventure-reward-choose"][data-offer-id][data-reward-id]`
+    labeled **Choose <name>**.
+  - A distinct `adventure-reward-skip` button (**Skip reward**) carries only
+    `data-offer-id`.
+  - The click handler requires the root hub page and checks the offer ID and
+    the choice against the latest view. The controller checks again, so a
+    stale or tampered button does nothing.
+  - Reward copy comes from the view model, which takes it from the reward
+    catalog. Escape every value, including the IDs in attributes.
+  - The panel uses no element `id`s.
+  - `actionableAdventureNodes()` returns no nodes while an offer is pending.
 - **Not color alone.** Each node status has an `aria-hidden` icon and visible
   text (Completed, Current, Available, Bypassed, Locked). Boss nodes also show
   a text **Boss** label. The current tier has `aria-current="step"`.
 - **Focus.** Entering the hub, or a change of `adventure.decisionKey` (a
-  committed result or a new run), focuses the result heading if there is a
-  result, otherwise the current tier heading, falling back to the page
-  heading. A refused write keeps the decision key, so focus stays on the
-  activated control.
+  committed result, a resolved reward or a new run), moves focus to the first
+  of these that exists:
+  1. the result heading, if there is a result;
+  2. the reward heading, if an offer is pending (for example after a reload);
+  3. the current tier heading;
+  4. the page heading.
+
+  Choose and Skip clear the result, so focus moves to the current tier. A
+  refused write keeps the decision key, so focus stays on the activated
+  control. `focusKey` includes `data-reward-id`, so a re-render restores
+  focus to the same choice.
 - **Pending result.** While storage refuses a result, the finished board stays
   open. The Game Menu, the wide game-controls panel and the narrow dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The

@@ -10,12 +10,15 @@ import { actionableAdventureNodes } from '../app/lobby-presentation'
 import {
   HIDDEN_HAND_CARD_NAME,
   type AdventureNodeSummary,
+  type AdventureRelicSummary,
+  type AdventureResultSummary,
+  type AdventureRewardOfferSummary,
   type AdventureTierSummary,
   type AdventureUiState,
   type AppViewModel,
 } from '../app/types'
 import { createInitialGame } from '../game/engine'
-import { BASIC_LANDS, type BasicLand } from '../game/types'
+import { BASIC_LANDS, type BasicLand, type GameState } from '../game/types'
 import { escapeHtml, noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
 import { ThreeInterface } from '../renderers/three/interface'
 import {
@@ -43,8 +46,8 @@ function makeView(): AppViewModel {
     adventure: {
       runId: null, baseSeed: 0, status: 'inactive', stage: null, currentTier: 0, attemptOrdinal: 0,
       remainingChances: 3, winStreak: 0, totalRoundsPlayed: 0, totalCardsPlayed: 0, tiers: [],
-      activeGameSeed: null, pendingCompletion: null, lastResult: null, highScore: 0, hasSavedRun: false,
-      decisionKey: 'none',
+      activeGameSeed: null, pendingCompletion: null, lastResult: null, relics: [], pendingReward: null,
+      highScore: 0, hasSavedRun: false, decisionKey: 'none',
     },
     recording: { canSave: true, canLoadLocal: true, hasLocalSave: true, metadata: null },
     replay: { active: false, step: 0, totalSteps: 10, isPlaying: false },
@@ -263,6 +266,7 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
     subscribe: vi.fn(() => () => {}), getViewModel: vi.fn(() => current),
     setAiLevel: vi.fn(), setCardVisualStyle: vi.fn(), setMonochromeCards: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
     startGame: vi.fn(), startAdventure: vi.fn(), startAdventureNode: vi.fn(), retryAdventureCompletion: vi.fn(),
+    chooseAdventureReward: vi.fn(), skipAdventureReward: vi.fn(),
     resumeAdventure: vi.fn(), pauseAdventure: vi.fn(), abandonAdventure: vi.fn(), backToLobby: vi.fn(),
     createOffer: vi.fn(async () => {}), acceptAnswer: vi.fn(async () => {}), createAnswer: vi.fn(async () => {}), startP2PGame: vi.fn(),
     submitAction: vi.fn(), rematch: vi.fn(), exportRecordingJson: vi.fn((): string | null => '{}'),
@@ -2347,6 +2351,11 @@ function hubView(adventure: Partial<AdventureUiState> = {}): AppViewModel {
   }
 }
 
+function hubResult(result: Omit<AdventureResultSummary, 'chanceLossPrevented' | 'streakResetPrevented'>
+  & Partial<AdventureResultSummary>): AdventureResultSummary {
+  return { chanceLossPrevented: false, streakResetPrevented: false, ...result }
+}
+
 function installHubStorage(): Map<string, string> {
   const entries = new Map<string, string>()
   vi.stubGlobal('localStorage', {
@@ -2404,7 +2413,7 @@ describe('Three Adventure hub', () => {
   it('offers only the committed node after a fork choice and labels a retry', () => {
     const html = renderThreeInterface(hubView({
       attemptOrdinal: 1, remainingChances: 2, activeGameSeed: 99, tiers: hubTiers(['bypassed', 'current']),
-      lastResult: { outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null },
+      lastResult: hubResult({ outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null }),
     }), defaultUi)
     expect(html.match(/data-action="adventure-node"/g)).toHaveLength(1)
     expect(html).toContain('aria-label="Retry encounter: Tier 2 of 7, right path, Tier 2 right foe. Status: Current."')
@@ -2416,7 +2425,7 @@ describe('Three Adventure hub', () => {
 
   it('describes each committed result on the map', () => {
     const result = (outcome: 'win' | 'loss' | 'draw', extra: Partial<AdventureUiState> = {}): string =>
-      renderThreeInterface(hubView({ lastResult: { outcome, tierIndex: 0, opponentLabel: 'First <foe>', score: null }, ...extra }), defaultUi)
+      renderThreeInterface(hubView({ lastResult: hubResult({ outcome, tierIndex: 0, opponentLabel: 'First <foe>', score: null }), ...extra }), defaultUi)
     const win = result('win')
     expect(win).toContain('Victory at Tier 1')
     expect(win).toContain('Choose your Tier 2 encounter.')
@@ -2431,7 +2440,7 @@ describe('Three Adventure hub', () => {
       renderThreeInterface(hubView({
         status, stage: null, currentTier: tierIndex + 1, remainingChances: status === 'failed' ? 0 : 2, highScore: 9,
         tiers: hubTiers(['completed', 'bypassed'], undefined, status === 'completed' ? 'completed' : 'locked'),
-        lastResult: { outcome, tierIndex, opponentLabel: 'Boss', score: 9 }, decisionKey: `run-1|${status}|0|`,
+        lastResult: hubResult({ outcome, tierIndex, opponentLabel: 'Boss', score: 9 }), decisionKey: `run-1|${status}|0|`,
       }), defaultUi)
     const completed = ended('completed', 'win', 6)
     expect(completed).toContain('Adventure complete: Tier 7 boss defeated')
@@ -2462,7 +2471,7 @@ describe('Three Adventure hub', () => {
     expect(h.document.activeElement?.dataset.nodeId).toBe('tier-2-right')
     h.update(hubView({
       attemptOrdinal: 1, remainingChances: 2, tiers: hubTiers(['bypassed', 'current']), decisionKey: 'run-1|right|1|',
-      lastResult: { outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null },
+      lastResult: hubResult({ outcome: 'loss', tierIndex: 1, opponentLabel: 'Tier 2 right foe', score: null }),
     }))
     expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
     h.ui.dispose()
@@ -2549,7 +2558,7 @@ describe('Three Adventure hub', () => {
 
     h.controller.retryAdventureCompletion.mockImplementation(() => h.update(hubView({
       attemptOrdinal: 0, tiers: hubTiers(['completed', 'bypassed']), decisionKey: 'run-1|tier-3|0|',
-      lastResult: { outcome: 'win', tierIndex: 1, opponentLabel: 'Tier 2 left foe', score: null },
+      lastResult: hubResult({ outcome: 'win', tierIndex: 1, opponentLabel: 'Tier 2 left foe', score: null }),
     })))
     retryFromMenu()
     expect(h.controller.retryAdventureCompletion).toHaveBeenCalledTimes(2)
@@ -2637,6 +2646,232 @@ describe('Three Adventure hub', () => {
       const resumed = real.getViewModel()
       expect(resumed.game?.players).toEqual(encounter.game?.players)
       expect(resumed.adventure.activeGameSeed).toBe(encounter.adventure.activeGameSeed)
+      unsubscribe()
+      h.ui.dispose()
+    })
+  })
+})
+
+// A pending offer after Tier 1 with one reward of each kind.
+function hubOffer(offerId = 'offer-1'): AdventureRewardOfferSummary {
+  return {
+    offerId, sourceTier: 1,
+    choices: [
+      { id: 'second-wind', name: 'Second Wind', rulesText: 'Gain one chance.', context: { kind: 'boon', picks: 1, maxPicks: 2 } },
+      { id: 'guardian-sigil', name: 'Guardian Sigil', rulesText: 'Keep a chance.', context: { kind: 'charged-relic', charges: 1, maxCharges: 2 } },
+      { id: 'prepared-pack', name: 'Prepared Pack', rulesText: 'Draw one extra opening card.', context: { kind: 'unique-relic' } },
+    ],
+  }
+}
+
+const HUB_RELICS: readonly AdventureRelicSummary[] = [
+  { id: 'guardian-sigil', name: 'Guardian Sigil', rulesText: 'Keep a chance.', charges: 1, maxCharges: 2 },
+  { id: 'rooftop-charm', name: 'Rooftop Charm', rulesText: 'Opening hands include a Rooftop creature.', charges: null, maxCharges: null },
+]
+
+// Tier 1 won, with its reward waiting before the Tier 2 fork.
+function rewardView(adventure: Partial<AdventureUiState> = {}): AppViewModel {
+  return hubView({
+    stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1',
+    lastResult: hubResult({ outcome: 'win', tierIndex: 0, opponentLabel: 'Tier 1 center foe', score: null }),
+    ...adventure,
+  })
+}
+
+describe('Three Adventure rewards', () => {
+  it('replaces the route with the reward panel until the reward is resolved', () => {
+    const html = renderThreeInterface(rewardView(), defaultUi)
+    expect(html).toContain('<section class="three-adventure-reward" aria-label="Reward">')
+    expect(html).toContain('<h2 tabindex="-1" data-adventure-reward-heading>Choose a reward</h2>')
+    expect(html).toContain('Tier 1 cleared. Choose one reward or skip it, then pick your next encounter.')
+    expect(html).toContain('Victory at Tier 1')
+    expect(html).toContain('Choose a reward or skip it to continue to Tier 2.')
+    // The next tier is previewed, but nothing starts until the reward is resolved.
+    expect(html).toContain('Next opponent: Choose Tier 2 left foe or Tier 2 right foe')
+    expect(html).not.toContain('aria-label="Adventure route"')
+    expect(html).not.toContain('data-action="adventure-node"')
+    expect(html.match(/data-action="adventure-reward-choose"/g)).toHaveLength(3)
+    expect(html.match(/data-offer-id="offer-1"/g)).toHaveLength(4)
+    for (const label of [
+      'Choose Second Wind. Gain one chance. Boon · Taken 1 of 2 times this run.',
+      'Choose Guardian Sigil. Keep a chance. Charged relic · Holding 1 of 2 charges.',
+      'Choose Prepared Pack. Draw one extra opening card. Relic · Lasts for the rest of the run.',
+    ]) expect(html).toContain(`aria-label="${label}"`)
+    expect(html).toContain('data-action="adventure-reward-skip" data-offer-id="offer-1">Skip reward</button>')
+    for (const action of ['pause-adventure', 'abandon-adventure', 'lobby-settings', 'lobby-recording']) expect(html).toContain(`data-action="${action}"`)
+    const ids = Array.from(html.matchAll(/ id="([^"]*)"/g), (match) => match[1])
+    expect(new Set(ids).size).toBe(ids.length)
+    // Sub-pages never offer the reward.
+    for (const lobbyPage of ['settings', 'recording'] as const) {
+      expect(renderThreeInterface(rewardView(), { ...defaultUi, lobbyPage })).not.toContain('adventure-reward')
+    }
+    // Once resolved, the route returns with the next tier's choices.
+    const resolved = renderThreeInterface(hubView({ decisionKey: 'run-1|map|0|-|-' }), defaultUi)
+    expect(resolved).not.toContain('data-adventure-reward-heading')
+    expect(resolved.match(/data-action="adventure-node"/g)).toHaveLength(2)
+  })
+
+  it('lists relics with their charges and escapes catalog copy and offer IDs', () => {
+    const hostile = '<img src=x onerror="alert(1)">'
+    const offer = hubOffer('offer-"1"&<x>')
+    const view = rewardView({
+      pendingReward: { ...offer, choices: [{ ...offer.choices[0], name: hostile, rulesText: `${hostile} & more` }, ...offer.choices.slice(1)] },
+      relics: [{ ...HUB_RELICS[0], name: hostile }, HUB_RELICS[1]],
+    })
+    const html = renderThreeInterface(view, defaultUi)
+    expect(html).not.toContain('<img src=x')
+    expect(html).toContain('<h3>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</h3>')
+    expect(html).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; more')
+    expect(html).toContain('data-offer-id="offer-&quot;1&quot;&amp;&lt;x&gt;"')
+    expect(html).toContain('<li data-relic-id="guardian-sigil"><span><strong>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</strong> · 1 of 2 charges</span>')
+    expect(html).toContain('<li data-relic-id="rooftop-charm"><span><strong>Rooftop Charm</strong></span>')
+    expect(html).toContain('Opening hands include a Rooftop creature.')
+    expect(html).not.toContain('Relics: none yet')
+    // The empty inventory points to rewards only while a non-boss win can earn one.
+    const empty = (adventure: Partial<AdventureUiState>) =>
+      renderThreeInterface(hubView(adventure), defaultUi).match(/<p class="three-adventure-relics-empty">([^<]*)<\/p>/)?.[1]
+    expect(empty({})).toBe('Relics: none yet. Win an encounter to earn a reward.')
+    expect(empty({ stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1' })).toBe('Relics: none yet.')
+    expect(empty({ currentTier: 7 })).toBe('Relics: none yet.')
+    expect(empty({ status: 'failed', stage: null })).toBe('Relics: none.')
+    // The escaped offer ID still resolves exactly the offer on screen.
+    const h = setup(view)
+    h.click('[data-action="adventure-reward-skip"]')
+    expect(h.controller.skipAdventureReward).toHaveBeenCalledExactlyOnceWith('offer-"1"&<x>')
+    h.ui.dispose()
+    // The lobby summarizes relics and a waiting reward without offering it.
+    const lobby = renderThreeInterface({ ...makeView(), mode: null, game: null, adventure: { ...view.adventure, status: 'paused' } }, defaultUi)
+    expect(lobby).toContain('Relics: &lt;img src=x onerror=&quot;alert(1)&quot;&gt; (1 of 2 charges), Rooftop Charm')
+    expect(lobby).toContain('Reward waiting: resume the Adventure to choose or skip it.')
+    expect(lobby).toContain('data-action="resume-adventure"')
+    expect(lobby).not.toContain('data-action="adventure-reward-choose"')
+    const quiet = renderThreeInterface({ ...makeView(), mode: null, game: null, adventure: hubView({ status: 'paused' }).adventure }, defaultUi)
+    expect(quiet).not.toContain('Relics:')
+    expect(quiet).not.toContain('Reward waiting')
+  })
+
+  it('resolves only the offer on screen, once per decision', () => {
+    const h = setup(rewardView())
+    const offered = (rewardId: string) => h.content.querySelector(`[data-reward-id="${rewardId}"]`)!
+    // Tampered offer or reward IDs are ignored before the controller.
+    const second = offered('second-wind')
+    second.setAttribute('data-offer-id', 'offer-0')
+    h.host.emit('click', { target: second })
+    const sigil = offered('guardian-sigil')
+    sigil.setAttribute('data-reward-id', 'scout-cache')
+    h.host.emit('click', { target: sigil })
+    const skip = h.content.querySelector('[data-action="adventure-reward-skip"]')!
+    skip.setAttribute('data-offer-id', 'offer-2')
+    h.host.emit('click', { target: skip })
+    expect(h.controller.chooseAdventureReward).not.toHaveBeenCalled()
+    expect(h.controller.skipAdventureReward).not.toHaveBeenCalled()
+    // Sub-pages never resolve a reward.
+    h.click('[data-action="lobby-settings"]')
+    expect(h.content.querySelector('[data-action="adventure-reward-choose"]')).toBeNull()
+    h.click('[data-action="lobby-root"]')
+    // A refused write keeps the same decision, so the choice can be retried,
+    // and a refresh for the warning keeps focus on the reward that was chosen.
+    h.click('[data-reward-id="guardian-sigil"]')
+    expect(h.controller.chooseAdventureReward).toHaveBeenCalledExactlyOnceWith('offer-1', 'guardian-sigil')
+    h.update({ ...rewardView(), status: 'Adventure progress could not be saved (storage unavailable). The reward was not claimed.' })
+    expect(h.document.activeElement?.dataset.rewardId).toBe('guardian-sigil')
+    h.controller.chooseAdventureReward.mockImplementation(() => h.latest(hubView({ relics: HUB_RELICS.slice(0, 1), decisionKey: 'run-1|map|0|-|-' })))
+    const chosen = h.click('[data-reward-id="guardian-sigil"]')
+    expect(h.controller.chooseAdventureReward).toHaveBeenCalledTimes(2)
+    // A repeated activation before the next frame meets the newer decision,
+    // which only refreshes the view to the route.
+    h.host.emit('click', { target: chosen })
+    expect(h.controller.chooseAdventureReward).toHaveBeenCalledTimes(2)
+    expect(h.content.querySelector('[data-action="adventure-reward-choose"]')).toBeNull()
+    expect(h.content.querySelectorAll('[data-action="adventure-node"]')).toHaveLength(2)
+    expect(h.content.querySelector('[data-relic-id="guardian-sigil"]')).not.toBeNull()
+    h.ui.dispose()
+
+    // Skip resolves the offer on screen; a newer offer makes older buttons inert.
+    const s = setup(rewardView())
+    const staleSkip = s.content.querySelector('[data-action="adventure-reward-skip"]')!
+    s.latest(rewardView({ pendingReward: hubOffer('offer-2'), decisionKey: 'run-1|reward|0|-|offer-2' }))
+    s.host.emit('click', { target: staleSkip })
+    expect(s.controller.skipAdventureReward).not.toHaveBeenCalled()
+    s.click('[data-action="adventure-reward-skip"]')
+    expect(s.controller.skipAdventureReward).toHaveBeenCalledExactlyOnceWith('offer-2')
+    expect(s.controller.chooseAdventureReward).not.toHaveBeenCalled()
+    s.ui.dispose()
+  })
+
+  it('moves focus to the result, then the reward, then the current tier', () => {
+    // A won encounter leads with its result; the reward follows it.
+    const h = setup({
+      ...makeView(), mode: 'adventure-hvai', controllers: ['human', 'ai'],
+      adventure: { ...rewardView().adventure, stage: 'encounter', pendingReward: null, lastResult: null, decisionKey: 'run-1|encounter|0|-|-' },
+    })
+    h.update(rewardView())
+    expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
+    h.ui.dispose()
+    // Resuming at the reward stage shows no result, so the reward leads.
+    const lobby = setup({ ...makeView(), mode: null, game: null })
+    lobby.update(rewardView({ lastResult: null }))
+    const heading = lobby.content.querySelector('[data-adventure-reward-heading]')
+    expect(heading?.tagName).toBe('H2')
+    expect(lobby.document.activeElement).toBe(heading)
+    // The same decision keeps the user's focus.
+    lobby.content.querySelector('[data-reward-id="prepared-pack"]')!.focus()
+    lobby.update({ ...rewardView({ lastResult: null }), status: 'That reward is not available. Choose an offered reward or skip it.' })
+    expect(lobby.document.activeElement?.dataset.rewardId).toBe('prepared-pack')
+    // A resolved reward is a new decision: focus moves to the current tier.
+    lobby.update(hubView({ decisionKey: 'run-1|map|0|-|-' }))
+    expect(lobby.document.activeElement).toBe(lobby.content.querySelector('[data-adventure-current-tier]'))
+    lobby.ui.dispose()
+  })
+
+  it('claims a real reward from the hub and opens the next tier', () => {
+    withFakeTimers(() => {
+      installHubStorage()
+      const real = new AppController()
+      const h = setup(real.getViewModel())
+      h.controller.getViewModel.mockImplementation(() => real.getViewModel())
+      h.controller.startAdventure.mockImplementation(() => real.startAdventure())
+      h.controller.startAdventureNode.mockImplementation((nodeId) => real.startAdventureNode(nodeId))
+      h.controller.chooseAdventureReward.mockImplementation((offerId, rewardId) => real.chooseAdventureReward(offerId, rewardId))
+      h.controller.skipAdventureReward.mockImplementation((offerId) => real.skipAdventureReward(offerId))
+      const unsubscribe = real.subscribe((next) => h.update(next))
+      h.click('[data-mode="adventure-hvai"]')
+      h.click(`[data-node-id="${actionableAdventureNodes(real.getViewModel().adventure)[0].id}"]`)
+      // End the encounter the way the engine does, with a human win.
+      const internals = real as unknown as {
+        state: { game: GameState }
+        onAdventureGameFinished(previous: GameState): void
+        notify(): void
+      }
+      const previous = structuredClone(internals.state.game)
+      internals.state.game.winner = 0
+      internals.state.game.phase = 'gameOver'
+      internals.onAdventureGameFinished(previous)
+      internals.notify()
+      const won = real.getViewModel()
+      const offer = won.adventure.pendingReward!
+      expect(won.adventure.stage).toBe('reward')
+      expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-result-heading]'))
+      expect(h.content.querySelector('[data-action="adventure-node"]')).toBeNull()
+      expect(h.content.querySelectorAll('[data-action="adventure-reward-choose"]')
+        .map((element) => [element.dataset.offerId, element.dataset.rewardId]))
+        .toEqual(offer.choices.map((choice) => [offer.offerId, choice.id]))
+      const choice = offer.choices[0]
+      const chosen = h.click(`[data-reward-id="${choice.id}"]`)
+      expect(h.controller.chooseAdventureReward).toHaveBeenCalledExactlyOnceWith(offer.offerId, choice.id)
+      const claimed = real.getViewModel()
+      expect(claimed.status).toBe(`${choice.name} claimed. Choose your Tier 2 encounter.`)
+      expect(claimed.adventure).toMatchObject({ stage: 'map', pendingReward: null, lastResult: null })
+      expect(h.content.querySelector('[data-adventure-reward-heading]')).toBeNull()
+      expect(h.document.activeElement).toBe(h.content.querySelector('[data-adventure-current-tier]'))
+      expect(h.content.querySelectorAll('[data-relic-id]').map((element) => element.dataset.relicId))
+        .toEqual(claimed.adventure.relics.map((relic) => relic.id))
+      expect(h.content.querySelectorAll('[data-action="adventure-node"]').map((element) => element.dataset.nodeId))
+        .toEqual(actionableAdventureNodes(claimed.adventure).map((node) => node.id))
+      // The detached Choose button of the previous frame claims nothing more.
+      h.host.emit('click', { target: chosen })
+      expect(h.controller.chooseAdventureReward).toHaveBeenCalledTimes(1)
+      expect(real.getViewModel().adventure.decisionKey).toBe(claimed.adventure.decisionKey)
       unsubscribe()
       h.ui.dispose()
     })

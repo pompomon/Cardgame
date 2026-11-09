@@ -59,7 +59,7 @@ export interface ThreeInterfaceOptions {
 function focusKey(element: HTMLElement): string {
   return JSON.stringify([element.tagName, element.id, element.dataset.action, element.dataset.mode,
     element.dataset.cardId, element.dataset.owner, element.dataset.zone, element.dataset.instanceId,
-    element.dataset.targetId, element.dataset.discardCardId, element.dataset.nodeId,
+    element.dataset.targetId, element.dataset.discardCardId, element.dataset.nodeId, element.dataset.rewardId,
     element.closest('[data-modal]')?.getAttribute('data-modal')])
 }
 
@@ -289,9 +289,10 @@ export class ThreeInterface {
     if (this.disposed) return
     const session = threeSessionKey(view)
     const decision = threeDecisionKey(view)
-    // Entering the Adventure hub, or a new route decision on it (a committed
-    // result or a new run), moves focus to the result or the current tier.
-    // A refused write keeps the decision, so focus stays on the same control.
+    // Entering the Adventure hub, or a new decision on it (a committed result,
+    // a resolved reward or a new run), moves focus to the result, the reward
+    // or the current tier. A refused write keeps the decision, so focus stays
+    // on the same control.
     const hubFocus = isThreeAdventureHub(view) && (!this.view || !isThreeAdventureHub(this.view)
       || this.view.adventure.decisionKey !== view.adventure.decisionKey)
     if (this.session !== session) {
@@ -340,8 +341,9 @@ export class ThreeInterface {
 
   private focusAdventureHub(): void {
     if (this.disposed || !this.view || this.lobbyPage !== 'root') return
-    const target = this.content.querySelector<HTMLElement>(this.view.adventure.lastResult
-      ? '[data-adventure-result-heading]' : '[data-adventure-current-tier]')
+    const adventure = this.view.adventure
+    const target = this.content.querySelector<HTMLElement>(adventure.lastResult ? '[data-adventure-result-heading]'
+      : adventure.pendingReward ? '[data-adventure-reward-heading]' : '[data-adventure-current-tier]')
       ?? this.content.querySelector<HTMLElement>('[data-lobby-heading]')
     target?.focus()
   }
@@ -840,6 +842,22 @@ export class ThreeInterface {
         if (!nodeId || !isThreeAdventureHub(view) || this.lobbyPage !== 'root'
           || !actionableAdventureNodes(view.adventure).some((node) => node.id === nodeId)) break
         this.controller.startAdventureNode(nodeId)
+        break
+      }
+      case 'adventure-reward-choose':
+      case 'adventure-reward-skip': {
+        // Only the offer on screen can resolve, once; the controller re-checks
+        // the latest run. No reset, so a refused write keeps focus.
+        const offer = view.adventure.pendingReward
+        const offerId = element.dataset.offerId
+        if (!offer || !offerId || offer.offerId !== offerId || !isThreeAdventureHub(view) || this.lobbyPage !== 'root') break
+        if (action === 'adventure-reward-skip') {
+          this.controller.skipAdventureReward(offerId)
+          break
+        }
+        const rewardId = element.dataset.rewardId
+        if (!rewardId || !offer.choices.some((choice) => choice.id === rewardId)) break
+        this.controller.chooseAdventureReward(offerId, rewardId)
         break
       }
       // No reset, so a refused write keeps the menu and focus; a committed

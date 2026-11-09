@@ -105,11 +105,15 @@ query parameters and the hash, then discards the old stored renderer preference.
 - Real-device performance varies. Lower Render Quality if interaction is slow;
   mobile Safari/Android hardware testing is recommended before wider rollout.
 - Adventure opens a map of seven tiers with three two-way forks and a shared
-  final boss. Choose a highlighted encounter to play it. A loss costs a
-  chance; after a draw, or a loss with chances left, you retry the same
-  encounter. **Pause Adventure** saves the run and any live game, and
-  **Resume Adventure** reopens them. Leaving an encounter without pausing ends
-  that game; the encounter then restarts without using a chance.
+  final boss. Choose a highlighted encounter to play it. After each non-boss
+  win, choose one of three rewards or skip it before picking the next
+  encounter. Boons and relics last for the current run only: extra chances,
+  loss protection, larger opening hands, or a guaranteed creature in the
+  opening hand. A loss costs a chance unless a relic protects it; after a
+  draw, or a loss with chances left, you retry the same encounter.
+  **Pause Adventure** saves the run, any pending reward and any live game,
+  and **Resume Adventure** reopens them. Leaving an encounter without pausing
+  ends that game; the encounter then restarts without using a chance.
 - Adventure progress shows **Summons attempted (both players)**, replacing
   “Cards Played.” It counts both players' submitted summons, including those
   intercepted before reaching the Board, not only successful summons.

@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import {
   ADVENTURE_GAME_STORAGE_KEY,
   applyAdventureEncounterResult,
+  chooseAdventureRunReward,
   clearStoredAdventureGameSnapshot,
   createAdventureRun,
   isAdventureGameSnapshotForRun,
@@ -12,6 +13,7 @@ import {
   isLegacyAdventureRunState,
   persistAdventureGameSnapshot,
   readStoredAdventureGameSnapshot,
+  skipAdventureRunReward,
   startAdventureEncounter,
   type AdventureGameSnapshotEnvelope,
   type AdventureRunState,
@@ -300,7 +302,8 @@ describe('adventure run persistence', () => {
     ['fractional baseSeed', (run) => { run.baseSeed = 1.5 }],
     ['invalid status', (run) => { asRecord(run).status = 'waiting' }],
     ['inactive status', (run) => { asRecord(run).status = 'inactive' }],
-    ['unknown stage', (run) => { asRecord(run).stage = 'reward' }],
+    ['unknown stage', (run) => { asRecord(run).stage = 'shop' }],
+    ['a reward stage before any win', (run) => { asRecord(run).stage = 'reward' }],
     ['missing stage', (run) => { delete asRecord(run).stage }],
     ['no stage on a resumable run', (run) => { run.stage = null }],
     ['a stage on a completed run', (run) => {
@@ -733,7 +736,8 @@ describe('adventure game snapshot envelope', () => {
   it.each<[string, (run: AdventureRunState) => AdventureRunState]>([
     ['run', (run) => ({ ...run, runId: OTHER_RUN_ID })],
     ['node', (run) => {
-      const next = started(applyAdventureEncounterResult(run, 'win'), 'tier-2-center')
+      const won = applyAdventureEncounterResult(run, 'win')
+      const next = started(skipAdventureRunReward(won, won.pendingReward?.offerId)!, 'tier-2-center')
       return { ...next, attemptSeed: run.attemptSeed }
     }],
     ['attempt number', (run) => ({ ...run, attemptOrdinal: run.attemptOrdinal + 1 })],
@@ -929,5 +933,123 @@ describe('adventure game snapshot envelope', () => {
     store.shouldThrowOnRemove = false
     expect(clearStoredAdventureGameSnapshot()).toBe(true)
     expect(readStoredAdventureGameSnapshot()).toEqual({ kind: 'none' })
+  })
+})
+
+describe('adventure runs saved before rewards', () => {
+  let store: MemoryStore
+
+  beforeEach(() => {
+    store = installMemoryLocalStorage()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  type PreRewardFixture = Record<string, Record<string, string>>
+
+  function readPreRewardFixture(): PreRewardFixture {
+    const fixture = JSON.parse(readFileSync(resolve(__dirname, 'fixtures', 'adventure-v2-pre-reward-saves.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >
+    const { provenance: _provenance, ...scenarios } = fixture
+    return scenarios as PreRewardFixture
+  }
+
+  function storeScenario(scenario: Record<string, string>): void {
+    for (const [key, value] of Object.entries(scenario)) store.data.set(key, value)
+  }
+
+  function rewardFieldsIn(json: string | undefined): unknown[] {
+    const stored = JSON.parse(json ?? 'null') as MutableRecord
+    return ['pendingReward' in stored, 'encounterSetup' in stored, stored.pendingReward, stored.encounterSetup]
+  }
+
+  it('fills in the reward fields of each captured save in memory and leaves storage byte-for-byte unchanged', () => {
+    const scenarios = Object.entries(readPreRewardFixture())
+    expect(scenarios.map(([name]) => name)).toEqual([
+      'mapNewRun',
+      'encounterClosedMidGame',
+      'encounterPausedMidGame',
+      'mapRetryAfterLoss',
+      'mapPausedRetryAfterDraw',
+      'mapPausedAfterWin',
+    ])
+    for (const [name, scenario] of scenarios) {
+      store = installMemoryLocalStorage()
+      storeScenario(scenario)
+      const before = snapshotStorage(store)
+      const saved = JSON.parse(scenario[ADVENTURE_RUN_STORAGE_KEY]) as MutableRecord
+
+      const record = readStoredAdventureRunRecord()
+
+      expect(record, name).toEqual({
+        run: {
+          ...saved,
+          pendingReward: null,
+          encounterSetup: saved.stage === 'encounter' ? { playerOpeningHandSize: 5, guaranteedCreatures: [] } : null,
+        },
+        migratedFromV1: false,
+      })
+      if (ADVENTURE_GAME_STORAGE_KEY in scenario) {
+        const slot = readStoredAdventureGameSnapshot()
+        expect(isAdventureGameSnapshotForRun(expectEnvelope(slot), record!.run), name).toBe(true)
+      }
+      expect(snapshotStorage(store), name).toEqual(before)
+      expect([store.setCalls, store.removeCalls], name).toEqual([0, 0])
+    }
+  })
+
+  it('reads a save missing only one reward field as unavailable', () => {
+    const saved = JSON.parse(readPreRewardFixture().encounterClosedMidGame[ADVENTURE_RUN_STORAGE_KEY]) as MutableRecord
+    const current = JSON.parse(JSON.stringify(started(branchingRun()))) as MutableRecord
+    const { pendingReward: _pendingReward, ...withoutOffer } = current
+    const { encounterSetup: _encounterSetup, ...withoutSetup } = current
+    for (const value of [
+      { ...saved, pendingReward: null },
+      { ...saved, encounterSetup: { playerOpeningHandSize: 5, guaranteedCreatures: [] } },
+      withoutOffer,
+      withoutSetup,
+    ]) {
+      const serialized = JSON.stringify(value)
+      store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
+      expect(readStoredAdventureRun()).toBeNull()
+      expect(store.data.get(ADVENTURE_RUN_STORAGE_KEY)).toBe(serialized)
+    }
+    expect(store.setCalls).toBe(0)
+  })
+
+  it('writes both reward fields with the next saved transition', () => {
+    storeScenario(readPreRewardFixture().mapRetryAfterLoss)
+    const run = readStoredAdventureRun()!
+
+    expect(persistAdventureRun(started(run))).toBe(true)
+    expect(rewardFieldsIn(store.data.get(ADVENTURE_RUN_STORAGE_KEY))).toEqual([
+      true,
+      true,
+      null,
+      { playerOpeningHandSize: 5, guaranteedCreatures: [] },
+    ])
+    expect(readStoredAdventureRun()).toEqual(started(run))
+  })
+
+  it('round-trips a pending offer, relics, history and a setup in order', () => {
+    const won = applyAdventureEncounterResult(started(branchingRun()), 'win')
+    const offer = won.pendingReward!
+    const charm = offer.choices.find((choice) => choice.endsWith('-charm'))
+    const reward = charm ?? offer.choices[0]
+    const claimed = chooseAdventureRunReward(won, offer.offerId, reward)!
+    const waiting = applyAdventureEncounterResult(started(claimed), 'win')
+
+    for (const run of [won, claimed, started(claimed), waiting]) {
+      expect(persistAdventureRun(run)).toBe(true)
+      const read = readStoredAdventureRun()
+      expect(read).toEqual(run)
+      expect(read?.pendingReward?.choices).toEqual(run.pendingReward?.choices)
+    }
+    expect(waiting.rewardHistory).toEqual([{ sourceNodeId: offer.sourceNodeId, rewardId: reward }])
+    expect(waiting.pendingReward?.rewardOrdinal).toBe(1)
   })
 })

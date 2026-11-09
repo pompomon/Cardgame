@@ -20,8 +20,12 @@ const ADVENTURE_MAX_LABEL_LENGTH = 256
 
 export type AdventureOpponentKind = 'standard' | 'dual' | 'mono' | 'random'
 export type AdventureRunStatus = 'active' | 'paused' | 'completed' | 'failed'
-/** Resumable runs are at `map` or `encounter`; finished runs have no stage. */
-export type AdventureRunStage = 'map' | 'encounter'
+/**
+ * Resumable runs are at `map`, `reward` or `encounter`; finished runs have no
+ * stage. `reward` follows a non-boss win, after the route has moved on to the
+ * next tier and before its node can be chosen.
+ */
+export type AdventureRunStage = 'map' | 'reward' | 'encounter'
 /**
  * `linear` maps are generated for new runs: six non-boss tiers and a mono
  * boss. `legacy-linear` maps hold a migrated version 1 lineup verbatim, so
@@ -381,8 +385,10 @@ function tierHasNode(map: AdventureMap, tierIndex: number, nodeId: unknown): boo
  * Strict guard for the route fields of a run, shared by the run guard and
  * the route rules. It checks the lifecycle, the map and route consistency:
  * the tier index is in range, completed tiers form a strict prefix with one
- * node from each tier, and a selected node belongs to the current tier. It
- * accepts every map kind; callers decide which kinds a run may use.
+ * node from each tier, and a selected node belongs to the current tier. The
+ * `reward` stage follows a completed node, with nothing selected, attempt 0
+ * and no seed. It accepts every map kind; callers decide which kinds a run
+ * may use.
  */
 export function isAdventureRouteState(value: unknown): value is AdventureRouteState {
   if (!isRecordObject(value)) return false
@@ -391,7 +397,7 @@ export function isAdventureRouteState(value: unknown): value is AdventureRouteSt
   if (!isAdventureRunStatus(status)) return false
   const terminal = status === 'completed' || status === 'failed'
   const stage = value.stage
-  if (terminal ? stage !== null : stage !== 'map' && stage !== 'encounter') return false
+  if (terminal ? stage !== null : stage !== 'map' && stage !== 'reward' && stage !== 'encounter') return false
   const map = value.map
   if (!isAdventureMap(map)) return false
   const tierIndex = value.currentTierIndex
@@ -415,7 +421,10 @@ export function isAdventureRouteState(value: unknown): value is AdventureRouteSt
   } else if (terminal || !isNonNegativeInteger(attemptSeed)) {
     return false
   }
-  return true
+  // A reward waits between tiers: the won node is completed and the next
+  // tier has no committed attempt yet.
+  return stage !== 'reward'
+    || (completed.length > 0 && selected === null && value.attemptOrdinal === 0 && attemptSeed === null)
 }
 
 /**
@@ -591,6 +600,9 @@ export function generateBranchingAdventureMap(baseSeed: number): AdventureMap {
  * nodes are the unchosen sibling of a committed fork; `current` is the
  * selected node or the only node of an uncommitted tier; `available` is
  * either choice at an uncommitted fork; `locked` nodes cannot be reached yet.
+ * Statuses ignore the stage: while a reward is pending, the next tier already
+ * shows its choices, but `selectAdventureNode` refuses them until the reward
+ * is resolved.
  */
 export type AdventureNodeStatus = 'completed' | 'current' | 'available' | 'bypassed' | 'locked'
 

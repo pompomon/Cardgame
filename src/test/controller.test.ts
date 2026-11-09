@@ -1131,19 +1131,21 @@ describe('controller recording and replay', () => {
       expect(view.game).toBeNull()
       expect(view.adventure).toMatchObject({
         status: 'active',
-        stage: 'map',
+        stage: 'reward',
         currentTier: 2,
         winStreak: 1,
         pendingCompletion: null,
       })
+      expect(view.adventure.pendingReward?.sourceTier).toBe(1)
       expect(view.adventure.lastResult).toMatchObject({ outcome: 'win', tierIndex: 0, score: null })
-      expect(view.status).toBe('Encounter won. Choose your Tier 2 encounter.')
+      expect(view.status).toBe('Encounter won. Choose a reward or skip it to continue to Tier 2.')
       expect(storedAdventureRun()).toMatchObject({
         status: 'active',
-        stage: 'map',
+        stage: 'reward',
         currentTierIndex: 1,
         completedNodeIds: [nodeId],
         selectedNodeId: null,
+        pendingReward: { sourceNodeId: nodeId, rewardOrdinal: 0 },
       })
       // The hub replaces the finished board; the encounter's recording stays exportable.
       expect(view.recording.canSave).toBe(true)
@@ -1317,15 +1319,18 @@ describe('controller recording and replay', () => {
       const controller = new AppController()
       controller.startAdventure()
       for (let win = 0; win < 3; win += 1) {
+        if (win > 0) {
+          controller.skipAdventureReward(controller.getViewModel().adventure.pendingReward!.offerId)
+        }
         startFirstAdventureNode(controller)
         finishAdventureEncounter(controller, 0)
       }
 
       const view = controller.getViewModel()
-      expect(view.status).toBe('Encounter won. Choose your Tier 4 encounter.')
+      expect(view.status).toBe('Encounter won. Choose a reward or skip it to continue to Tier 4.')
       expect(view.adventure).toMatchObject({
         status: 'active',
-        stage: 'map',
+        stage: 'reward',
         currentTier: 4,
         remainingChances: 4,
         winStreak: 3,

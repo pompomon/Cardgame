@@ -19,9 +19,35 @@ import {
   type AdventureMapNode,
   type AdventureOpponentDeck,
   type AdventureRouteProgress,
+  type AdventureRouteState,
   type AdventureRunStage,
   type AdventureRunStatus,
 } from './adventure-map'
+import {
+  applyAdventureLossProtection,
+  chooseAdventureReward,
+  cloneAdventureRelics,
+  cloneAdventureRewardHistory,
+  cloneAdventureRewardOffer,
+  eligibleAdventureRewardIds,
+  generateAdventureRewardOffer,
+  isAdventureRewardHoldings,
+  isAdventureRewardOffer,
+  skipAdventureReward,
+  type AdventureRelic,
+  type AdventureRewardHistoryEntry,
+  type AdventureRewardHoldings,
+  type AdventureRewardOffer,
+  type AdventureRewardProgress,
+} from './adventure-rewards'
+import {
+  adventureEncounterGameSetup,
+  cloneAdventureEncounterSetup,
+  isAdventureEncounterSetup,
+  planAdventureEncounterSetup,
+  type AdventureEncounterGameSetup,
+  type AdventureEncounterSetup,
+} from './adventure-setup'
 import { sanitizeLogEvents } from './game-recording'
 import {
   isFiniteInteger as validatorsIsFiniteInteger,
@@ -96,10 +122,21 @@ export interface AdventureRunState {
   scoreEligibleWinStreak: number
   totalRoundsPlayed: number
   totalCardsPlayed: number
-  // Reserved for rewards and relics; always empty in schema version 2 runs
-  // written by this milestone.
-  relics: []
-  rewardHistory: []
+  /** Owned relics in catalog order. */
+  relics: AdventureRelic[]
+  /**
+   * One entry for each resolved offer. The sources are the latest completed
+   * non-boss nodes in route order; runs from before rewards existed have no
+   * entries for the tiers they had already completed.
+   */
+  rewardHistory: AdventureRewardHistoryEntry[]
+  /** The offer earned by the last won node: set at the `reward` stage only. */
+  pendingReward: AdventureRewardOffer | null
+  /**
+   * Opening-hand setup of the committed attempt, planned once when its node
+   * starts and kept for its restarts. Every result clears it.
+   */
+  encounterSetup: AdventureEncounterSetup | null
 }
 
 /** Identity-bound mid-game save stored under `ADVENTURE_GAME_STORAGE_KEY`. */
@@ -185,6 +222,8 @@ export function createAdventureRun(seed: number, runId: string): AdventureRunSta
     totalCardsPlayed: 0,
     relics: [],
     rewardHistory: [],
+    pendingReward: null,
+    encounterSetup: null,
   })
 }
 
@@ -225,6 +264,25 @@ export function deckPairForAdventureGame(run: AdventureRunState, seed: number): 
     throw new Error('An Adventure encounter needs a selected node.')
   }
   return [createStarterDeck(0, seed), cloneAdventureDeck(node.opponent.deck)]
+}
+
+/** `createInitialGame` arguments for a new game of the committed attempt. */
+export interface AdventureEncounterLaunch extends AdventureEncounterGameSetup {
+  seed: number
+}
+
+/**
+ * The seed, decks and options for a new game of the run's committed
+ * attempt. The saved encounter setup arranges the player's deck and opening
+ * hand, so restarts of the same attempt deal the same opening. Throws
+ * unless the run is at the `encounter` stage with a seed and a setup.
+ */
+export function adventureEncounterLaunch(run: AdventureRunState): AdventureEncounterLaunch {
+  const seed = run.attemptSeed
+  if (run.stage !== 'encounter' || seed === null || run.encounterSetup === null) {
+    throw new Error('An Adventure encounter needs a committed attempt with its setup.')
+  }
+  return { seed, ...adventureEncounterGameSetup(run.encounterSetup, deckPairForAdventureGame(run, seed)) }
 }
 
 /**
@@ -307,6 +365,54 @@ const ADVENTURE_COUNTER_KEYS = [
   'totalCardsPlayed',
 ] as const
 
+/**
+ * Completed non-boss nodes whose offers were resolved. At the `reward`
+ * stage the last completed node's offer is still pending.
+ */
+function resolvedRewardSourceCount(completedCount: number, stage: AdventureRunStage | null): number {
+  return stage === 'reward' ? completedCount - 1 : Math.min(completedCount, ADVENTURE_TIER_COUNT - 1)
+}
+
+/**
+ * The history names the latest resolved sources in route order, with no
+ * gaps. Runs from before rewards existed may lack entries for their earliest
+ * completed tiers, but never for a tier after a resolved one.
+ */
+function isRewardHistoryOnRoute(
+  history: readonly AdventureRewardHistoryEntry[],
+  completedNodeIds: readonly string[],
+  stage: AdventureRunStage | null,
+): boolean {
+  const end = resolvedRewardSourceCount(completedNodeIds.length, stage)
+  const start = end - history.length
+  return start >= 0 && history.every((entry, index) => entry.sourceNodeId === completedNodeIds[start + index])
+}
+
+/**
+ * An offer is pending exactly at the `reward` stage. It was earned by the
+ * last completed node, is the run's next offer, and offers only rewards the
+ * run can still take, so no choice can be a no-op.
+ */
+function isPendingRewardForRun(offer: unknown, run: AdventureRouteState & AdventureRewardHoldings): boolean {
+  if (run.stage !== 'reward') return offer === null
+  if (!isAdventureRewardOffer(offer)) return false
+  if (offer.sourceNodeId !== run.completedNodeIds.at(-1)) return false
+  if (offer.rewardOrdinal !== run.rewardHistory.length) return false
+  const eligible = eligibleAdventureRewardIds(run)
+  return offer.choices.every((choice) => eligible.includes(choice))
+}
+
+/**
+ * A setup belongs to a committed attempt: it is required at the `encounter`
+ * stage and allowed at the `map` stage only while a node and its seed are
+ * kept for a restart. Reward and terminal stages have none.
+ */
+function isEncounterSetupForRun(setup: unknown, run: AdventureRouteState): boolean {
+  if (setup === null) return run.stage !== 'encounter'
+  if (!isAdventureEncounterSetup(setup)) return false
+  return run.stage === 'encounter' || (run.stage === 'map' && run.selectedNodeId !== null && run.attemptSeed !== null)
+}
+
 /** Strict guard for schema version 2 runs. Unknown versions fail closed. */
 export function isAdventureRunState(value: unknown): value is AdventureRunState {
   if (!isRecordObject(value)) return false
@@ -314,7 +420,9 @@ export function isAdventureRunState(value: unknown): value is AdventureRunState 
   if (!isAdventureRunId(value.runId)) return false
   if (!isAdventureRouteState(value)) return false
   if (!ADVENTURE_COUNTER_KEYS.every((key) => isNonNegativeInteger(value[key]))) return false
-  return isEmptyArray(value.relics) && isEmptyArray(value.rewardHistory)
+  if (!isAdventureRewardHoldings(value)) return false
+  if (!isRewardHistoryOnRoute(value.rewardHistory, value.completedNodeIds, value.stage)) return false
+  return isPendingRewardForRun(value.pendingReward, value) && isEncounterSetupForRun(value.encounterSetup, value)
 }
 
 /** Deep copy of the known schema version 2 fields; unknown keys are dropped. */
@@ -337,14 +445,37 @@ export function cloneAdventureRun(run: AdventureRunState): AdventureRunState {
     scoreEligibleWinStreak: run.scoreEligibleWinStreak,
     totalRoundsPlayed: run.totalRoundsPlayed,
     totalCardsPlayed: run.totalCardsPlayed,
-    relics: [],
-    rewardHistory: [],
+    relics: cloneAdventureRelics(run.relics),
+    rewardHistory: cloneAdventureRewardHistory(run.rewardHistory),
+    pendingReward: run.pendingReward === null ? null : cloneAdventureRewardOffer(run.pendingReward),
+    encounterSetup: run.encounterSetup === null ? null : cloneAdventureEncounterSetup(run.encounterSetup),
   }
 }
 
 /** Validates an untrusted value and returns a detached copy, or null. */
 export function normalizeAdventureRun(value: unknown): AdventureRunState | null {
   return isAdventureRunState(value) ? cloneAdventureRun(value) : null
+}
+
+/**
+ * Fills in the two fields that schema version 2 runs saved before rewards
+ * existed lack, so those saves stay playable without a schema change. It
+ * applies only when both `pendingReward` and `encounterSetup` are absent and
+ * the run holds no relics or reward history. `pendingReward` becomes null,
+ * and a run saved at the `encounter` stage gets the setup it was launched
+ * with: the default opening hand. Any other value, including a run missing
+ * only one of the fields, is returned unchanged for the strict guard to
+ * judge. The result is never written back; the next committed transition
+ * saves the full shape.
+ */
+export function backfillPreRewardAdventureRun(value: Record<string, unknown>): Record<string, unknown> {
+  if ('pendingReward' in value || 'encounterSetup' in value) return value
+  if (!isEmptyArray(value.relics) || !isEmptyArray(value.rewardHistory)) return value
+  return {
+    ...value,
+    pendingReward: null,
+    encounterSetup: value.stage === 'encounter' ? planAdventureEncounterSetup([]).setup : null,
+  }
 }
 
 /**
@@ -380,6 +511,8 @@ export function migrateLegacyAdventureRun(legacy: AdventureRunStateV1, runId: st
     totalCardsPlayed: legacy.totalCardsPlayed,
     relics: [],
     rewardHistory: [],
+    pendingReward: null,
+    encounterSetup: null,
   })
 }
 
@@ -395,8 +528,10 @@ function applyAdventureRouteProgress(run: AdventureRunState, progress: Adventure
  * Commits a node choice from untrusted input and opens its encounter. The
  * node must be `current` or `available` on a resumable run at the `map`
  * stage. The attempt number and any stored seed are kept; otherwise the seed
- * is derived for the node and attempt. Returns null, and changes nothing,
- * when the choice is rejected.
+ * is derived for the node and attempt. A new attempt plans its encounter
+ * setup from the relics, which uses a Scout's Cache charge; a restart of the
+ * same attempt reuses the saved setup and uses nothing. Returns null, and
+ * changes nothing, when the choice is rejected.
  */
 export function startAdventureEncounter(run: AdventureRunState, nodeId: unknown): AdventureRunState | null {
   const progress = selectAdventureNode(run, nodeId)
@@ -405,22 +540,29 @@ export function startAdventureEncounter(run: AdventureRunState, nodeId: unknown)
   }
   const next = cloneAdventureRun(run)
   applyAdventureRouteProgress(next, progress)
+  if (next.encounterSetup === null) {
+    const plan = planAdventureEncounterSetup(next.relics)
+    next.encounterSetup = plan.setup
+    next.relics = plan.relics
+  }
   next.stage = 'encounter'
   next.status = 'active'
   return checkedAdventureRun(next)
 }
 
 /**
- * Opens the map hub for a resumable run: the `map` stage, active, with the
- * committed node, attempt number and seed kept for a retry. A run saved
- * mid-encounter whose game cannot be restored replays the same attempt.
+ * Opens the hub for a resumable run as an active run. A pending reward stays
+ * at the `reward` stage; anything else opens the `map` stage, with the
+ * committed node, attempt number, seed and setup kept for a retry. A run
+ * saved mid-encounter whose game cannot be restored replays the same
+ * attempt.
  */
 export function openAdventureMap(run: AdventureRunState): AdventureRunState {
   if (!isResumableAdventureRun(run)) {
     throw new Error('Only a resumable Adventure run can open the map.')
   }
   const next = cloneAdventureRun(run)
-  next.stage = 'map'
+  next.stage = run.stage === 'reward' ? 'reward' : 'map'
   next.status = 'active'
   return checkedAdventureRun(next)
 }
@@ -445,23 +587,40 @@ export function pauseAdventureRun(run: AdventureRunState): AdventureRunState {
   return checkedAdventureRun(next)
 }
 
+/** A finished encounter applied to its run, and which losses relics prevented. */
+export interface AdventureEncounterResolution {
+  run: AdventureRunState
+  /** Guardian Sigil kept the chance a loss would have cost. */
+  chanceLossPrevented: boolean
+  /** Streak Anchor kept the win streak a loss would have reset. */
+  streakResetPrevented: boolean
+}
+
 /**
- * Applies a finished encounter with the route rules. A win completes the
- * selected node, then opens the next tier's map or completes the run after
- * the boss. A loss costs a chance and fails the run when none remain.
- * Otherwise the same node is retried with the next attempt number and its
- * derived seed. Real and score-eligible counters change separately.
- * Non-terminal results return to the `map` stage as an active run.
+ * Applies a finished encounter with the route and reward rules. Every result
+ * counts a round and clears the attempt's encounter setup; a draw does not
+ * refund a Scout's Cache charge. A win completes the selected node. After
+ * the boss it completes the run; otherwise the route moves to the next tier
+ * and waits at the `reward` stage with the offer that node earned. The offer
+ * depends only on the run, so applying the same result again gives the same
+ * offer. A loss lets Guardian Sigil keep the chance and Streak Anchor keep
+ * the streak, then fails the run when no chance remains. A loss or draw
+ * otherwise retries the same node with the next attempt number and its
+ * derived seed, back at the `map` stage. The score-eligible counters follow
+ * a reward-free run: relics never protect them.
  */
-export function applyAdventureEncounterResult(
+export function resolveAdventureEncounterResult(
   run: AdventureRunState,
   outcome: AdventureEncounterOutcome,
-): AdventureRunState {
+): AdventureEncounterResolution {
   if (run.status !== 'active' || run.stage !== 'encounter' || run.selectedNodeId === null) {
     throw new Error('Only an active Adventure encounter can finish.')
   }
   const next = cloneAdventureRun(run)
   next.totalRoundsPlayed += 1
+  next.encounterSetup = null
+  let chanceLossPrevented = false
+  let streakResetPrevented = false
   if (outcome === 'win') {
     next.winStreak += 1
     if (next.winStreak % 3 === 0) {
@@ -476,27 +635,92 @@ export function applyAdventureEncounterResult(
     if (completion.finished) {
       next.status = 'completed'
       next.stage = null
-      return checkedAdventureRun(next)
+    } else {
+      next.pendingReward = generateAdventureRewardOffer(next.baseSeed, run.selectedNodeId, next)
+      next.stage = 'reward'
+      next.status = 'active'
     }
-  } else {
-    if (outcome === 'loss') {
-      next.remainingChances = Math.max(0, next.remainingChances - 1)
-      next.scoreEligibleChances = Math.max(0, next.scoreEligibleChances - 1)
-      next.winStreak = 0
-      next.scoreEligibleWinStreak = 0
-      if (next.remainingChances <= 0) {
-        next.status = 'failed'
-        next.stage = null
-        next.selectedNodeId = null
-        next.attemptSeed = null
-        return checkedAdventureRun(next)
-      }
-    }
-    applyAdventureRouteProgress(next, retryAdventureNode(run))
+    return { run: checkedAdventureRun(next), chanceLossPrevented, streakResetPrevented }
   }
+  if (outcome === 'loss') {
+    const protectedLoss = applyAdventureLossProtection(next, outcome)
+    next.remainingChances = protectedLoss.remainingChances
+    next.winStreak = protectedLoss.winStreak
+    next.relics = protectedLoss.relics
+    chanceLossPrevented = protectedLoss.preventedChanceLoss
+    streakResetPrevented = protectedLoss.preventedStreakReset
+    next.scoreEligibleChances = Math.max(0, next.scoreEligibleChances - 1)
+    next.scoreEligibleWinStreak = 0
+    if (next.remainingChances <= 0) {
+      next.status = 'failed'
+      next.stage = null
+      next.selectedNodeId = null
+      next.attemptSeed = null
+      return { run: checkedAdventureRun(next), chanceLossPrevented, streakResetPrevented }
+    }
+  }
+  applyAdventureRouteProgress(next, retryAdventureNode(run))
+  next.stage = 'map'
+  next.status = 'active'
+  return { run: checkedAdventureRun(next), chanceLossPrevented, streakResetPrevented }
+}
+
+/** The run after a finished encounter; see `resolveAdventureEncounterResult`. */
+export function applyAdventureEncounterResult(
+  run: AdventureRunState,
+  outcome: AdventureEncounterOutcome,
+): AdventureRunState {
+  return resolveAdventureEncounterResult(run, outcome).run
+}
+
+// Resolves the pending offer once, then opens the next tier's map.
+function resolveAdventureRunReward(
+  run: AdventureRunState,
+  offerId: unknown,
+  resolve: (offer: AdventureRewardOffer) => AdventureRewardProgress | null,
+): AdventureRunState | null {
+  const offer = run.pendingReward
+  if (!isResumableAdventureRun(run) || run.stage !== 'reward' || offer === null || offerId !== offer.offerId) {
+    return null
+  }
+  const progress = resolve(offer)
+  if (!progress) {
+    return null
+  }
+  const next = cloneAdventureRun(run)
+  next.remainingChances = progress.remainingChances
+  next.relics = progress.relics
+  next.rewardHistory = progress.rewardHistory
+  next.pendingReward = null
   next.stage = 'map'
   next.status = 'active'
   return checkedAdventureRun(next)
+}
+
+/**
+ * Takes one reward of the pending offer from untrusted input: Second Wind
+ * adds a chance (never a score-eligible one), and a relic joins the
+ * inventory or gains a charge. The history records the choice, the offer
+ * clears and the map opens at the next tier. Returns null, changing
+ * nothing, unless the run is resumable at the `reward` stage, `offerId`
+ * names its pending offer and `rewardId` is one of that offer's choices.
+ */
+export function chooseAdventureRunReward(
+  run: AdventureRunState,
+  offerId: unknown,
+  rewardId: unknown,
+): AdventureRunState | null {
+  return resolveAdventureRunReward(run, offerId, (offer) => chooseAdventureReward(run, offer, rewardId))
+}
+
+/**
+ * Skips the pending offer from untrusted input: only the history changes,
+ * recording the skip, and the map opens at the next tier. Returns null
+ * under the same conditions as `chooseAdventureRunReward`, apart from the
+ * reward.
+ */
+export function skipAdventureRunReward(run: AdventureRunState, offerId: unknown): AdventureRunState | null {
+  return resolveAdventureRunReward(run, offerId, (offer) => skipAdventureReward(run, offer))
 }
 
 export function readStoredAdventureHighScore(): number {

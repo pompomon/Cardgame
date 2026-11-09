@@ -26,6 +26,7 @@ import {
   pauseAdventureRun,
   resumeAdventureEncounter,
   selectedAdventureNode,
+  skipAdventureRunReward,
   startAdventureEncounter,
   type AdventureRunState,
   type AdventureRunStateV1,
@@ -159,11 +160,20 @@ function started(run: AdventureRunState, nodeId = run.map.tiers[run.currentTierI
   return next
 }
 
+/** Wins the open encounter and skips the reward it earns, back at the map stage. */
+function wonAndSkipped(run: AdventureRunState): AdventureRunState {
+  const won = applyAdventureEncounterResult(run, 'win')
+  if (won.pendingReward === null) return won
+  const skipped = skipAdventureRunReward(won, won.pendingReward.offerId)
+  if (!skipped) throw new Error('Expected the reward to be skipped.')
+  return skipped
+}
+
 /** Wins the first node of each tier until the encounter on `tierIndex` is open. */
 function encounterAt(tierIndex: number, run = createAdventureRun(500, RUN_ID)): AdventureRunState {
   let current = started(run)
   for (let tier = current.currentTierIndex; tier < tierIndex; tier += 1) {
-    current = started(applyAdventureEncounterResult(current, 'win'))
+    current = started(wonAndSkipped(current))
   }
   return current
 }
@@ -205,6 +215,8 @@ describe('schema version 2 Adventure runs', () => {
       totalCardsPlayed: 0,
       relics: [],
       rewardHistory: [],
+      pendingReward: null,
+      encounterSetup: null,
     })
     expect(run.map.tiers).toHaveLength(ADVENTURE_TIER_COUNT)
     expect(isAdventureRunState(run)).toBe(true)
@@ -252,7 +264,7 @@ describe('schema version 2 Adventure runs', () => {
   it("launches the selected node's deck pair without sharing decks", () => {
     const created = createAdventureRun(321, RUN_ID)
     const fork = forkTiers(created)[0]
-    const map = fork === 0 ? created : applyAdventureEncounterResult(encounterAt(fork - 1, created), 'win')
+    const map = fork === 0 ? created : wonAndSkipped(encounterAt(fork - 1, created))
 
     for (const node of map.map.tiers[fork].nodes) {
       const chosen = started(map, node.id)
@@ -450,7 +462,7 @@ describe('Adventure run changes', () => {
     expect(() => pauseAdventureRun(failed)).toThrow()
   })
 
-  it('advances to the next tier after a win', () => {
+  it('advances to the next tier after a win and waits at the reward stage', () => {
     const begun = started(createAdventureRun(48, RUN_ID))
     const before = JSON.stringify(begun)
 
@@ -459,7 +471,7 @@ describe('Adventure run changes', () => {
     expect(JSON.stringify(begun)).toBe(before)
     expect(next).toMatchObject({
       status: 'active',
-      stage: 'map',
+      stage: 'reward',
       currentTierIndex: 1,
       completedNodeIds: [begun.selectedNodeId],
       selectedNodeId: null,
@@ -470,7 +482,10 @@ describe('Adventure run changes', () => {
       winStreak: 1,
       scoreEligibleWinStreak: 1,
       totalRoundsPlayed: 1,
+      encounterSetup: null,
+      pendingReward: { sourceNodeId: begun.selectedNodeId, rewardOrdinal: 0 },
     })
+    expect(next.pendingReward?.choices).toHaveLength(3)
     expect(isAdventureRunState(next)).toBe(true)
   })
 
@@ -641,7 +656,7 @@ describe('Adventure run changes', () => {
         const forkIndex = forks.indexOf(run.currentTierIndex)
         const node = forkIndex === -1 ? nodes[0] : nodes[(route >> forkIndex) & 1]
         chosen.push(node.id)
-        run = applyAdventureEncounterResult(started(run, node.id), 'win')
+        run = wonAndSkipped(started(run, node.id))
         expect(isAdventureRunState(run)).toBe(true)
       }
 
@@ -710,6 +725,8 @@ describe('version 1 Adventure migration', () => {
       totalCardsPlayed: legacy.totalCardsPlayed,
       relics: [],
       rewardHistory: [],
+      pendingReward: null,
+      encounterSetup: null,
     })
     expect(run.map.tiers[0].nodes[0].opponent.deck).not.toBe(legacy.opponentLineup[0].deck)
     expect(computeAdventureScore(run)).toBe(

@@ -5,12 +5,22 @@ import {
   applyAdventureEncounterResult,
   createAdventureRun,
   createInactiveAdventureState,
+  isAdventureRunState,
   migrateLegacyAdventureRun,
+  skipAdventureRunReward,
   startAdventureEncounter,
   type AdventureOpponentDeck,
   type AdventureRunState,
   type AdventureRunStateV1,
 } from '../app/adventure'
+import {
+  ADVENTURE_MAX_RELIC_CHARGES,
+  ADVENTURE_REWARD_RULES_VERSION,
+  ADVENTURE_SECOND_WIND_LIMIT,
+  adventureRewardCatalogEntry,
+  adventureRewardOfferId,
+  type AdventureRewardId,
+} from '../app/adventure-rewards'
 import { displayAdventureOpponentLabel } from '../app/game-presentation'
 import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
@@ -40,11 +50,12 @@ function started(run: AdventureRunState, nodeId = run.map.tiers[run.currentTierI
   return next
 }
 
-/** Wins the first node of each tier until the map stage of `tierIndex`. */
+/** Wins the first node of each tier and skips its reward until the map stage of `tierIndex`. */
 function mapAt(tierIndex: number, run: AdventureRunState): AdventureRunState {
   let current = run
   while (current.currentTierIndex < tierIndex) {
-    current = applyAdventureEncounterResult(started(current), 'win')
+    const won = applyAdventureEncounterResult(started(current), 'win')
+    current = skipAdventureRunReward(won, won.pendingReward?.offerId) ?? won
   }
   return current
 }
@@ -376,12 +387,15 @@ describe('buildViewModel', () => {
       activeGameSeed: null,
       pendingCompletion: null,
       lastResult: null,
+      relics: [],
+      pendingReward: null,
       highScore: 77,
       hasSavedRun: false,
       decisionKey: 'none',
     })
     expect(Object.isFrozen(adventure)).toBe(true)
     expect(Object.isFrozen(adventure.tiers)).toBe(true)
+    expect(Object.isFrozen(adventure.relics)).toBe(true)
   })
 
   it('returns frozen deck-free Adventure snapshots that ignore later run changes', () => {
@@ -483,7 +497,14 @@ describe('buildViewModel', () => {
     const state = createState(64)
     const begun = started(createAdventureRun(64, TEST_RUN_ID))
     const node = begun.map.tiers[0].nodes[0]
-    const lastResult = { outcome: 'loss' as const, tierIndex: 0, nodeId: node.id, score: null }
+    const lastResult = {
+      outcome: 'loss' as const,
+      tierIndex: 0,
+      nodeId: node.id,
+      score: null,
+      chanceLossPrevented: true,
+      streakResetPrevented: false,
+    }
     state.adventure = { ...withRun(begun), pendingCompletion: { outcome: 'draw' }, lastResult }
 
     const adventure = buildViewModel(state, false).adventure
@@ -494,6 +515,8 @@ describe('buildViewModel', () => {
       tierIndex: 0,
       opponentLabel: displayAdventureOpponentLabel(node.opponent.kind, node.opponent.lands),
       score: null,
+      chanceLossPrevented: true,
+      streakResetPrevented: false,
     })
     expect(adventure.lastResult).not.toBe(lastResult)
     expect(Object.isFrozen(adventure.lastResult)).toBe(true)
@@ -504,7 +527,80 @@ describe('buildViewModel', () => {
       tierIndex: 0,
       opponentLabel: 'Adventure opponent',
       score: 12,
+      chanceLossPrevented: true,
+      streakResetPrevented: false,
     })
+  })
+
+  it('projects relics and the pending offer from the reward catalog as frozen snapshots', () => {
+    const state = createState(65)
+    const won = applyAdventureEncounterResult(started(mapAt(4, createAdventureRun(65, TEST_RUN_ID))), 'win')
+    const [first, second, third, fourth, source] = won.completedNodeIds
+    // The Tier 5 reward after Second Wind, Guardian Sigil, Prepared Pack and a skip.
+    const run: AdventureRunState = {
+      ...won,
+      remainingChances: won.remainingChances + 1,
+      relics: [{ id: 'guardian-sigil', charges: 1 }, { id: 'prepared-pack' }],
+      rewardHistory: [
+        { sourceNodeId: first, rewardId: 'second-wind' },
+        { sourceNodeId: second, rewardId: 'guardian-sigil' },
+        { sourceNodeId: third, rewardId: 'prepared-pack' },
+        { sourceNodeId: fourth, rewardId: null },
+      ],
+      pendingReward: {
+        rulesVersion: ADVENTURE_REWARD_RULES_VERSION,
+        offerId: adventureRewardOfferId(source, 4),
+        sourceNodeId: source,
+        rewardOrdinal: 4,
+        choices: ['rooftop-charm', 'second-wind', 'guardian-sigil'],
+      },
+    }
+    expect(isAdventureRunState(run)).toBe(true)
+    state.adventure = withRun(run)
+
+    const adventure = buildViewModel(state, false).adventure
+    const copy = (id: AdventureRewardId) => ({
+      id,
+      name: adventureRewardCatalogEntry(id).name,
+      rulesText: adventureRewardCatalogEntry(id).rulesText,
+    })
+
+    expect(adventure.relics).toEqual([
+      { ...copy('guardian-sigil'), charges: 1, maxCharges: ADVENTURE_MAX_RELIC_CHARGES },
+      { ...copy('prepared-pack'), charges: null, maxCharges: null },
+    ])
+    expect(adventure.pendingReward).toEqual({
+      offerId: run.pendingReward?.offerId,
+      sourceTier: 5,
+      choices: [
+        { ...copy('rooftop-charm'), context: { kind: 'unique-relic' } },
+        { ...copy('second-wind'), context: { kind: 'boon', picks: 1, maxPicks: ADVENTURE_SECOND_WIND_LIMIT } },
+        { ...copy('guardian-sigil'), context: { kind: 'charged-relic', charges: 1, maxCharges: ADVENTURE_MAX_RELIC_CHARGES } },
+      ],
+    })
+    const offer = adventure.pendingReward
+    for (const value of [adventure.relics, ...adventure.relics, offer, offer?.choices, ...offer?.choices ?? [],
+      ...(offer?.choices ?? []).map((choice) => choice.context)]) {
+      expect(Object.isFrozen(value)).toBe(true)
+    }
+    expect(offer?.choices).not.toBe(run.pendingReward?.choices)
+    expect(adventure.decisionKey.endsWith(`|${run.pendingReward?.offerId}`)).toBe(true)
+
+    // A charged relic the run does not hold shows no charges yet.
+    state.adventure = withRun({ ...run, pendingReward: { ...run.pendingReward!, choices: ['scout-cache', 'streak-anchor', 'echo-charm'] } })
+    expect(buildViewModel(state, false).adventure.pendingReward?.choices[0]).toEqual({
+      ...copy('scout-cache'),
+      context: { kind: 'charged-relic', charges: 0, maxCharges: ADVENTURE_MAX_RELIC_CHARGES },
+    })
+
+    // Resolving the offer is a new decision, with the offer gone.
+    const skipped = skipAdventureRunReward(run, run.pendingReward?.offerId)
+    if (!skipped) throw new Error('Expected the reward to be skipped.')
+    state.adventure = withRun(skipped)
+    const resolved = buildViewModel(state, false).adventure
+    expect(resolved.pendingReward).toBeNull()
+    expect(resolved.decisionKey).not.toBe(adventure.decisionKey)
+    expect(resolved.decisionKey.endsWith('|-')).toBe(true)
   })
 })
 

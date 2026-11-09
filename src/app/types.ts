@@ -10,6 +10,7 @@ import type {
   AdventureRunState,
   AdventureRunStatus,
 } from './adventure'
+import type { AdventureRelicId, AdventureRewardId } from './adventure-rewards'
 import type { BoardTheme } from './board-theme'
 import type { CardVisualStyle } from './card-visual-styles'
 import type { RenderQualityPreference } from './render-quality'
@@ -43,6 +44,10 @@ export interface AdventureEncounterResult {
   nodeId: string
   /** Final score once a completed or failed run is committed; otherwise null. */
   score: number | null
+  /** Guardian Sigil kept the chance this loss would have cost. */
+  chanceLossPrevented: boolean
+  /** Streak Anchor kept the win streak this loss would have reset. */
+  streakResetPrevented: boolean
 }
 
 // Controller-owned Adventure state. `run` is the validated schema version 2
@@ -86,6 +91,40 @@ export interface AdventureResultSummary {
   readonly tierIndex: number
   readonly opponentLabel: string
   readonly score: number | null
+  readonly chanceLossPrevented: boolean
+  readonly streakResetPrevented: boolean
+}
+
+/** An owned relic, with catalog copy that renderers escape. */
+export interface AdventureRelicSummary {
+  readonly id: AdventureRelicId
+  readonly name: string
+  readonly rulesText: string
+  /** Charges a charged relic holds; null for a relic without charges. */
+  readonly charges: number | null
+  readonly maxCharges: number | null
+}
+
+/** How an offered reward relates to what the run already holds. */
+export type AdventureRewardChoiceContext =
+  | { readonly kind: 'boon'; readonly picks: number; readonly maxPicks: number }
+  | { readonly kind: 'unique-relic' }
+  | { readonly kind: 'charged-relic'; readonly charges: number; readonly maxCharges: number }
+
+/** One offered reward, with catalog copy that renderers escape. */
+export interface AdventureRewardChoiceSummary {
+  readonly id: AdventureRewardId
+  readonly name: string
+  readonly rulesText: string
+  readonly context: AdventureRewardChoiceContext
+}
+
+/** The reward offer waiting at the `reward` stage. */
+export interface AdventureRewardOfferSummary {
+  readonly offerId: string
+  /** 1-based tier number of the node whose win earned the offer. */
+  readonly sourceTier: number
+  readonly choices: readonly AdventureRewardChoiceSummary[]
 }
 
 // Read-only projection of `AdventureState` exposed via the view model. Keeps
@@ -109,6 +148,10 @@ export interface AdventureUiState {
   /** Outcome waiting for Retry completion, or null. */
   readonly pendingCompletion: AdventureEncounterOutcome | null
   readonly lastResult: AdventureResultSummary | null
+  /** Owned relics in catalog order. */
+  readonly relics: readonly AdventureRelicSummary[]
+  /** The offer to choose from or skip at the `reward` stage, or null. */
+  readonly pendingReward: AdventureRewardOfferSummary | null
   readonly highScore: number
   readonly hasSavedRun: boolean
   /** Changes whenever the actionable Adventure decision changes. */
