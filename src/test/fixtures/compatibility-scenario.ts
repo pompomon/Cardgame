@@ -14,11 +14,15 @@ function deck(player: number, opening: BasicLand[]): Card[] {
   }))
 }
 
-export function createCompatibilityInitialState() {
-  return createInitialGame(compatibilitySeed, [
+export function compatibilityDecks(): [Card[], Card[]] {
+  return [
     deck(0, ['Island', 'Forest', 'Mountain', 'Swamp', 'Plains', 'Plains', 'Plains', 'Plains', 'Island']),
     deck(1, ['Island', 'Forest', 'Forest', 'Mountain', 'Swamp', 'Island', 'Mountain', 'Forest', 'Swamp']),
-  ])
+  ]
+}
+
+export function createCompatibilityInitialState() {
+  return createInitialGame(compatibilitySeed, compatibilityDecks())
 }
 
 export const compatibilityActions: readonly GameAction[] = [

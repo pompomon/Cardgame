@@ -1,7 +1,17 @@
 import { createStarterDeck } from './cards'
 import type { BattlefieldCard, Card, GameAction, GameState, LogEvent, PlayerState, Winner } from './types'
 
-const STARTING_HAND = 5
+/** Opening hand size of each player when `createInitialGame` gets no hand sizes. */
+export const DEFAULT_OPENING_HAND_SIZE = 5
+
+/** Optional game setup. An omitted field keeps the default. */
+export interface InitialGameOptions {
+  /**
+   * Opening hand sizes of players 0 and 1. Each is an integer from 0 to that
+   * player's deck size. Defaults to `[5, 5]`.
+   */
+  readonly openingHandSizes?: readonly [number, number]
+}
 
 function cloneState(state: GameState): GameState {
   return structuredClone(state)
@@ -323,7 +333,39 @@ function responseActorFor(state: GameState): number | null {
   return state.pendingLandPlay.actor === 0 ? 1 : 0
 }
 
-export function createInitialGame(seed = Date.now(), decks?: [Card[] | undefined, Card[] | undefined]): GameState {
+function openingHandSizes(state: GameState, options: InitialGameOptions | undefined): [number, number] {
+  const sizes: unknown = options?.openingHandSizes
+  if (sizes === undefined) {
+    return [DEFAULT_OPENING_HAND_SIZE, DEFAULT_OPENING_HAND_SIZE]
+  }
+  if (!Array.isArray(sizes) || sizes.length !== 2) {
+    throw new RangeError('Opening hand sizes must give one count for each of the two players.')
+  }
+  const checked: [number, number] = [0, 0]
+  for (const playerId of [0, 1]) {
+    const size: unknown = sizes[playerId]
+    const deckSize = state.players[playerId].deck.length
+    if (typeof size !== 'number' || !Number.isInteger(size) || size < 0 || size > deckSize) {
+      throw new RangeError(`Player ${playerId + 1}'s opening hand size must be an integer from 0 to their deck size, ${deckSize}.`)
+    }
+    checked[playerId] = size
+  }
+  return checked
+}
+
+/**
+ * Creates a game. Decks default to seeded starter decks. Players 0 and 1
+ * draw their opening hands alternately; when one hand is larger, its extra
+ * cards are drawn after the alternating draws. Player 0 then starts without
+ * a draw. Hand sizes outside 0 to the deck size throw a `RangeError`.
+ * Without `openingHandSizes`, both players draw five cards exactly as before
+ * the option existed, even when a deck runs out during the opening draws.
+ */
+export function createInitialGame(
+  seed = Date.now(),
+  decks?: [Card[] | undefined, Card[] | undefined],
+  options?: InitialGameOptions,
+): GameState {
   const [player0Deck, player1Deck] = decks ?? [undefined, undefined]
   const state: GameState = {
     players: [createPlayer(0, seed, player0Deck), createPlayer(1, seed + 1, player1Deck)],
@@ -339,9 +381,14 @@ export function createInitialGame(seed = Date.now(), decks?: [Card[] | undefined
     events: [{ kind: 'game_started' }],
   }
 
-  for (let index = 0; index < STARTING_HAND; index += 1) {
-    drawCard(state, 0)
-    drawCard(state, 1)
+  const [player0HandSize, player1HandSize] = openingHandSizes(state, options)
+  for (let index = 0; index < Math.max(player0HandSize, player1HandSize); index += 1) {
+    if (index < player0HandSize) {
+      drawCard(state, 0)
+    }
+    if (index < player1HandSize) {
+      drawCard(state, 1)
+    }
   }
 
   pushLog(state, 'Player 1 starts and skips first draw step.', { kind: 'game_start_skip_draw', actor: 0 })

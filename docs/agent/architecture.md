@@ -9,7 +9,7 @@ The renderer consolidation decision is recorded in
 ```text
 src/
 ├── game/                       Pure game engine and AI
-│   ├── engine.ts               Rules, legality, and action application
+│   ├── engine.ts               Rules, legality, action application, and initial setup
 │   ├── cards.ts                Deck generation and seeded shuffle
 │   ├── ai.ts                   Policy registry
 │   ├── ai-levels.ts            Canonical AI level type and guard
@@ -20,7 +20,7 @@ src/
 │   ├── view-model.ts           Immutable renderer projection
 │   ├── action-resolution.ts    Shared legal-action presentation
 │   ├── game-recording.ts       Versioned recording import/export
-│   ├── adventure*.ts           Adventure run, persistence, and pure map rules (adventure-map.ts)
+│   ├── adventure*.ts           Adventure run, persistence, and pure map, reward, and setup rules (adventure-map.ts, adventure-rewards.ts, adventure-setup.ts)
 │   ├── card-catalog.ts         Stable keys to player copy and asset slugs
 │   ├── game-presentation.ts    Shared card, action, phase, and roster labels
 │   ├── log-presentation.ts     Structured event labels and visual-log cap
