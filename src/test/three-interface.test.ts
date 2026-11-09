@@ -2537,6 +2537,14 @@ describe('Three Adventure hub', () => {
     expect(menu).not.toContain('data-action="rematch"')
     const hud = renderThreeHud(view, defaultUi)
     expect(hud).toContain('Retry Saving Result')
+    // The wide panel is a fixed-height row that scrolls: the only decision
+    // left shares the header row with Menu instead of falling below the fold.
+    const header = hud.slice(hud.indexOf('<header'), hud.indexOf('</header>'))
+    expect(header).toMatch(/data-action="menu"[\s\S]*data-action="adventure-retry-completion"[\s\S]*data-action="abandon-adventure"[\s\S]*<h2>/)
+    expect(hud.match(/data-action="adventure-retry-completion"/g)).toHaveLength(1)
+    expect(hud.match(/data-action="abandon-adventure"/g)).toHaveLength(1)
+    expect(renderThreeHud({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, defaultUi))
+      .not.toMatch(/adventure-retry-completion|abandon-adventure|pause-adventure/)
     expect(renderThreeHud(view, { ...defaultUi, menuOpen: true })).not.toContain('Retry Saving Result')
     const dock = renderThreeDock(view, { ...defaultUi, narrow: true })
     expect(dock.prompt).toBe('Player 1 wins! The result is not saved yet.')
@@ -2552,6 +2560,9 @@ describe('Three Adventure hub', () => {
       .toBe('Winner: Player 1')
     expect(dock.actions).toContain('aria-label="Retry Saving Result"')
     expect(dock.actions).not.toContain('rematch')
+    // Both have no room for the full labels, which stay as accessible names.
+    expect(dock.actions).toMatch(/>Retry<\/button>[\s\S]*>Reset<\/button>/)
+    expect(header).toContain(dock.actions)
     expect(renderThreeDock({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, narrow: true }).actions).toBe('')
     const h = setup(view)
     h.click('[data-action="adventure-retry-completion"]')

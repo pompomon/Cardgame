@@ -300,6 +300,13 @@ function renderAdventureGameActions(view: AppViewModel): string {
     + button('abandon-adventure', 'Reset Adventure Run')
 }
 
+// The narrow dock and the wide panel's header row have no room for the full
+// labels, which stay as the accessible names.
+function renderAdventurePendingActions(): string {
+  return button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
+    + button('abandon-adventure', 'Reset', false, ' aria-label="Reset Adventure Run"')
+}
+
 function renderMenu(view: AppViewModel): string {
   const logControllers = view.recording.metadata?.controllers ?? view.controllers
   return modal('menu', 'Game Menu', `${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
@@ -636,15 +643,17 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
       ${view.tutorial.active && ui.tutorialHidden ? button('tutorial-show', 'Hint', false, ' aria-label="Show tutorial hint"') : ''}</section>`
   }
   const targets = threeTargets(view, ui)
+  // This panel is a fixed-height row that scrolls, so a refused result's
+  // Retry and Reset sit beside Menu instead of below the fold.
+  const pendingActions = view.mode === 'adventure-hvai' && view.adventure.pendingCompletion
+    && !view.replay.active && !ui.menuOpen ? renderAdventurePendingActions() : ''
   return `<section class="three-hud" aria-label="Game controls">
-    <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
+    <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}${pendingActions}
       <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))}</h2><span>Player ${game.actor + 1}</span></header>
     <p>${escapeHtml(view.status)}</p>
     ${game.winnerText ? `<p class="three-winner">${escapeHtml(game.winnerText)}</p>` : ''}
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? TUTORIAL_FALLBACK_HINT)}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
-    ${view.mode === 'adventure-hvai' && view.adventure.pendingCompletion && !view.replay.active && !ui.menuOpen
-    ? `<div class="three-actions">${renderAdventureGameActions(view)}</div>` : ''}
     ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
     ${targets && !ui.menuOpen && !ui.preview ? `<p class="three-required-prompt">${escapeHtml(targets.title)}</p>` : ''}
     ${ui.menuOpen ? '' : renderReplay(view)}</section>`
@@ -688,10 +697,7 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
       return {
         // "Winner: Player 1" has no closing punctuation of its own.
         prompt: pending ? `${/[.!?]$/.test(winner) ? winner : `${winner}.`} The result is not saved yet.` : winner,
-        actions: pending
-          ? button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
-            + button('abandon-adventure', 'Reset', false, ' aria-label="Reset Adventure Run"')
-          : '',
+        actions: pending ? renderAdventurePendingActions() : '',
       }
     }
     return {

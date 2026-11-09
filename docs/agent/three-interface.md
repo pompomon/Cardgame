@@ -162,6 +162,10 @@ Rules:
 - **Pending result.** While storage refuses a result, the finished board stays
   open. The Game Menu, the wide game-controls panel and the narrow dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
+  wide panel is a fixed-height row that scrolls, so both buttons share its
+  header row with Menu instead of falling below the fold. There, as in the
+  dock, they show the short labels Retry and Reset and keep the full labels
+  as accessible names. The
   hub never opens over an unsaved result. Retry does not reset the
   interface, so a refused write keeps the Game Menu open with focus on Retry;
   a saved result leaves the encounter and the session change closes the menu.
