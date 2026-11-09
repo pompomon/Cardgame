@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { isLegalActionForState } from '../app/action-validation'
 import { canonicalActionClasses } from '../game/ai-action-classes'
-import { FULL_VIEW, evaluatePosition, weightVector } from '../game/ai-features'
+import { FULL_VIEW, evaluatePosition, weightVector, type AiFeatureView } from '../game/ai-features'
 import { createAiRng } from '../game/ai-random'
 import {
   actionValue,
   chooseByValue,
   holdsWinningCard,
+  isSwampDiscardChoice,
   playRollout,
   rolloutAction,
   type RolloutSettings,
@@ -15,7 +16,7 @@ import {
 } from '../game/ai-rollout'
 import { HARD_AI_WEIGHTS } from '../game/ai-weights'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../game/engine'
-import type { BattlefieldCard, BasicLand, GameState } from '../game/types'
+import type { BattlefieldCard, BasicLand, GameAction, GameState } from '../game/types'
 import { deepFreeze } from './helpers/deep-freeze'
 import { TEST_DECK_KINDS, randomDecisionStates } from './helpers/seeded-games'
 
@@ -52,6 +53,23 @@ function winningIslandState(opponentHand: GameState['players'][number]['hand'] =
   state.players[0].battlefield = battlefield(0, ['Forest', 'Mountain', 'Plains', 'Swamp'])
   state.players[1].hand = opponentHand
   return state
+}
+
+/**
+ * Swaps `seat`'s first hand card with a deck card of another name: a hand of
+ * the same size from the same hidden pool. `null` if no such card is left.
+ */
+function redealHand(state: GameState, seat: number): GameState | null {
+  const player = state.players[seat]
+  const first = player.hand[0]
+  const index = first ? player.deck.findIndex((card) => card.name !== first.name) : -1
+  if (!first || index < 0) {
+    return null
+  }
+  const hand = [player.deck[index], ...player.hand.slice(1)]
+  const deck = player.deck.map((card, position) => (position === index ? first : card))
+  const players = state.players.map((entry, position) => (position === seat ? { ...entry, hand, deck } : entry))
+  return { ...state, players: players as GameState['players'] }
 }
 
 describe('AI rollout policy', () => {
@@ -132,7 +150,7 @@ describe('AI rollout policy', () => {
     }
   })
 
-  it('discards at random for a blind opponent and by value for one who sees the hand', () => {
+  it('discards by value from the revealed hand, whether or not the opponent sees it otherwise', () => {
     let state = winningIslandState()
     state.currentPlayer = 1
     state.players[1].hand = [{ id: 'p1-swamp', name: 'Swamp', type: 'land' }]
@@ -140,18 +158,94 @@ describe('AI rollout policy', () => {
     expect(state.phase).toBe('respond')
     state = applyAction(state, { type: 'pass_response', actor: 0 })
     expect(state.phase).toBe('swamp_target')
+    expect(isSwampDiscardChoice(state)).toBe(true)
 
-    const blind = new Set<string>()
-    const seeing = new Set<string>()
+    const discard = { type: 'resolve_swamp_discard', actor: 1, effectTargetId: 'p0-win' }
     for (let seed = 0; seed < 25; seed += 1) {
-      const blindAction = rolloutAction({ steps: 0 }, settings(0), state, createAiRng(seed))
-      const seeingAction = rolloutAction({ steps: 0 }, settings(0, { opponentSeesHand: true }), state, createAiRng(seed))
-      expect(blindAction && isLegalActionForState(state, blindAction)).toBe(true)
-      blind.add(JSON.stringify(blindAction))
-      seeing.add(JSON.stringify(seeingAction))
+      expect(rolloutAction({ steps: 0 }, settings(0), state, createAiRng(seed))).toEqual(discard)
+      expect(rolloutAction({ steps: 0 }, settings(0, { opponentSeesHand: true }), state, createAiRng(seed))).toEqual(discard)
     }
-    expect(blind.size).toBe(2)
-    expect([...seeing]).toEqual([JSON.stringify({ type: 'resolve_swamp_discard', actor: 1, effectTargetId: 'p0-win' })])
+  })
+
+  it('reveals the hand when Plains reuses a Swamp, but not for other reuses', () => {
+    const state = winningIslandState()
+    state.currentPlayer = 1
+    state.players[1].hand = [{ id: 'p1-plains', name: 'Plains', type: 'land' }]
+    state.players[1].battlefield = battlefield(1, ['Swamp', 'Mountain'])
+    const reuse = (instanceId: string): GameState => {
+      const played = applyAction(state, { type: 'play_land', actor: 1, cardId: 'p1-plains', effectTargetId: instanceId })
+      return applyAction(played, { type: 'pass_response', actor: 0 })
+    }
+
+    const swampReuse = reuse('p1-bf-0')
+    expect(swampReuse.phase).toBe('plains_target')
+    expect(isSwampDiscardChoice(swampReuse)).toBe(true)
+    for (let seed = 0; seed < 10; seed += 1) {
+      expect(rolloutAction({ steps: 0 }, settings(0), swampReuse, createAiRng(seed)))
+        .toEqual({ type: 'resolve_plains_reuse', actor: 1, effectTargetId: 'p0-win' })
+    }
+
+    const mountainReuse = reuse('p1-bf-1')
+    expect(mountainReuse.phase).toBe('plains_target')
+    expect(isSwampDiscardChoice(mountainReuse)).toBe(false)
+    const redealt = redealHand(mountainReuse, 0)
+    expect(redealt).not.toBeNull()
+    if (!redealt) return
+    for (let seed = 0; seed < 10; seed += 1) {
+      expect(rolloutAction({ steps: 0 }, settings(0), redealt, createAiRng(seed)))
+        .toEqual(rolloutAction({ steps: 0 }, settings(0), mountainReuse, createAiRng(seed)))
+    }
+  })
+
+  it('keeps a blind opponent\'s choices outside a Swamp discard independent of the root player\'s hand', () => {
+    let compared = 0
+    let changedWhenSeeing = 0
+    const choose = (state: GameState, root: number, seed: number, opponentSeesHand: boolean) =>
+      rolloutAction({ steps: 0 }, settings(root, { opponentSeesHand }), state, createAiRng(seed))
+    for (const state of states) {
+      const actor = activeActor(state)
+      const root = actor === 0 ? 1 : 0
+      const redealt = redealHand(state, root)
+      if (isSwampDiscardChoice(state) || !redealt) continue
+      for (const seed of [3, 4]) {
+        expect(choose(redealt, root, seed, false)).toEqual(choose(state, root, seed, false))
+      }
+      if ([3, 4].some((seed) => JSON.stringify(choose(redealt, root, seed, true)) !== JSON.stringify(choose(state, root, seed, true)))) {
+        changedWhenSeeing += 1
+      }
+      compared += 1
+    }
+    expect(compared).toBeGreaterThanOrEqual(30)
+    // An opponent who sees the hand does react to a redeal.
+    expect(changedWhenSeeing).toBeGreaterThan(0)
+  })
+
+  it('values a blind opponent\'s Swamp by the best discard it can expect from the hidden pool', () => {
+    const state = winningIslandState()
+    state.currentPlayer = 1
+    state.players[1].hand = [{ id: 'p1-swamp', name: 'Swamp', type: 'land' }]
+    state.players[0].deck = ['a', 'b', 'c'].map((suffix) => ({ id: `p0-deck-${suffix}`, name: 'Forest', type: 'land' }))
+    const play: GameAction = { type: 'play_land', actor: 1, cardId: 'p1-swamp' }
+    const blind: AiFeatureView = { hiddenHandSeat: 0, maskedCardId: undefined }
+    // A land play is scored with the mover's top card masked, as it could be drawn.
+    const scored: AiFeatureView = { hiddenHandSeat: 0, maskedCardId: state.players[1].deck[0]?.id }
+    const target = applyAction(applyAction(state, play), { type: 'pass_response', actor: 0 })
+    expect(target.phase).toBe('swamp_target')
+    const discardValue = (cardId: string) =>
+      evaluatePosition(applyAction(target, { type: 'resolve_swamp_discard', actor: 1, effectTargetId: cardId }), 1, 0, WEIGHTS, scored)
+    const island = discardValue('p0-win')
+    const forest = discardValue('p0-other')
+    expect(island).toBeGreaterThan(forest)
+
+    // Two cards dealt from one Island and four Forests hold the Island with
+    // chance 1 - C(4, 2) / C(5, 2) = 0.4.
+    const expected = 0.4 * island + 0.6 * forest
+    expect(actionValue({ steps: 0 }, deepFreeze(state), play, 1, WEIGHTS, blind)).toBeCloseTo(expected, 12)
+    const redealt = structuredClone(state)
+    const [win, other] = redealt.players[0].hand
+    redealt.players[0].hand = [redealt.players[0].deck[0], other]
+    redealt.players[0].deck = [win, ...redealt.players[0].deck.slice(1)]
+    expect(actionValue({ steps: 0 }, deepFreeze(redealt), play, 1, WEIGHTS, blind)).toBeCloseTo(expected, 12)
   })
 
   it('recognizes winning lands in hand', () => {

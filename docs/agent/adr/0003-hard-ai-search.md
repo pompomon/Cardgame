@@ -32,7 +32,16 @@ Hard keeps the documented visibility: both hands and every public zone. It never
 uses deck order. `projectKnowledge` reduces each deck to a multiset and
 `determinize` samples orders ("worlds"). Rollouts mask the card an Island draws
 and score End Turn before its draw. The rollout model of the opponent does not
-see Hard's hand, as a human opponent cannot.
+see Hard's hand, as a human opponent cannot, except when it chooses a Swamp
+discard, direct or reused by Plains. The game reveals Hard's hand to a human for
+that choice, so the model picks the discard with the full hand.
+
+Deciding whether to play the Swamp stays blind. Before the reveal, the model
+values a Swamp at the best discard it can expect. The evaluator counts a hidden
+hand only by size, so a discard's blind value depends only on the card's name.
+Each name is weighted by the chance that it is the best name in a hand dealt
+from Hard's hand and deck. Tests check that redealing Hard's hidden cards
+changes no blind choice outside the discard itself.
 
 ### Search
 
