@@ -71,6 +71,64 @@ shared behavior changes. Check keyboard/focus and pointer paths where relevant.
 Do not introduce a new browser/GPU test stack to replace existing focused tests;
 mocked coverage remains separate from real-browser verification.
 
+### Adventure decision controls
+
+`three-interface.test.ts` runs the node, Choose and Skip controls through
+the matrix with `setupRealAdventure()`. This helper drives a real
+`AppController` over tracked storage and adds these controls:
+
+- `hold()` and `release()` delay presenting views, so the controller can
+  move on before the interface does.
+- `subscribe(listener, first)` adds a subscriber that runs before or after
+  the interface's own.
+
+For each control:
+
+- **Synchronous notification:** one dispatch, one run write, then the next
+  decision is focused and announced.
+- **Rejected retry:** a refused write keeps the decision key and focus, and
+  each repeated refusal is announced again. Once storage recovers, the retry
+  writes the run once.
+- **Stale input:** a control whose decision moved on behind the interface
+  dispatches nothing and refreshes the interface.
+- **Duplicate activation:** a repeat before or after the re-render dispatches
+  once.
+- **Disposal during notification:** with the disposing subscriber either
+  before or after the interface, nothing throws, the command applies once,
+  and nothing moves focus, rebuilds markup or writes the announcer after
+  disposal.
+
+A pending reward is also tested through Pause, Resume and Reset. Target
+cardinality does not apply, because each control has exactly one target.
+Adventure tests that refuse writes use `src/test/helpers/tracked-storage.ts`:
+
+- `calls` records each `set:<key>` and `remove:<key>`.
+- `failingSets`, `failingRemoves` and `failingGets` refuse operations per
+  key.
+
+## Malformed Adventure saves
+
+- **Fixture.** `src/test/fixtures/adventure-malformed-v2.ts` builds 14
+  valid schema version 2 bases from a fixed seed through the real run
+  transitions, and deep-freezes them. It also holds:
+  - 60 curated cases, each breaking one rule, in six categories: map,
+    offer, relic, history, attempt and counter;
+  - variants that must still be accepted.
+- **Fuzzer.** `src/test/adventure-fuzz.test.ts` reads 2,000 randomly edited
+  runs and 400 edited mid-game saves from fixed `lcg` seeds. For each one:
+  - Reading never throws or writes.
+  - An accepted run passes the guard, survives a JSON round trip, and keeps
+    a finite score.
+  - An accepted run plays on through Resume, a reward, a node start and a
+    result.
+  - A mid-game save restores only when its identity matches and the game
+    can continue.
+- **Reproducing a failure.** Each problem is reported with its case number,
+  base and edits, and the seeded stream repeats exactly on every run. Turn a
+  failure into a curated case in the fixture, then fix the guard. Do not
+  change the seed to get past it.
+- **Cost.** The suite takes about 2 seconds. Keep case counts bounded.
+
 ## Browser-API tests
 
 - Mock `window.matchMedia`, `beforeinstallprompt`, `appinstalled`,
@@ -211,3 +269,30 @@ claim Android/iOS coverage from desktop emulation.
    automated results, and mark the affected stages **blocked**. Request
    maintainer visual verification; do not claim coverage from mocks or silently
    waive screenshots. Do not retry an operation whose side effects are uncertain.
+
+### Adventure hub check
+
+Use the production preview with the base path. Check each Adventure state
+at four viewports, each at 100% and 200% root font size:
+
+- **States:** the paused-run lobby, the map, a pending reward, an encounter
+  result, Retry Saving Result (refuse the write in storage), and a completed
+  run.
+- **Viewports:**
+  - 390×844 (narrow portrait);
+  - 844×390 and 720×360 (short landscape);
+  - 1280×800 (wide).
+
+In each state, check that:
+
+- the page has no horizontal overflow;
+- every control is at least 44 CSS pixels in both dimensions;
+- Tab reaches the controls in the documented hub order;
+- focus lands where [the focus rules](three-interface.md#adventure-hub)
+  say;
+- the announcer's text matches the visible status.
+
+Desktop emulation cannot show safe-area insets, a coarse pointer, reduced
+motion, or real phones and tablets. Record the CSS and unit coverage for
+those, and mark them pending maintainer device verification. Do not waive
+them.

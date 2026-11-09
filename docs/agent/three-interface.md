@@ -58,6 +58,29 @@ that produced it. Preserve:
 Opening Cards from Game Menu returns to the menu on Back/Escape. Opening a card
 preview from Cards returns to Cards with its focus and scroll restored.
 
+## Status announcements
+
+One persistent, visually hidden region speaks the status line in every mode:
+`p#three-status-announcer.three-sr-only` with `role="status"`,
+`aria-live="polite"` and `aria-atomic="true"`. It is appended to the host
+after the rebuilt content, and only `dispose()` removes it. The lobby, hub
+and HUD status paragraphs are plain `<p>` elements with no live role. A live
+region created by an `innerHTML` rebuild is not reliably announced, and
+several regions would speak the same text twice.
+
+- `update()` sets the region's text after rendering and focus, and only
+  when `view.status` changes.
+- A status that stays the same is spoken again only after a command routed
+  through `dispatchAdventure`, such as a retried write. The controller says
+  "still" for a second identical refusal. For any repeat after that, the
+  interface toggles a trailing no-break space, which screen readers do not
+  read, so the region's text still changes.
+- Replay playback ticks stay quiet. Starting, pausing, stepping and reaching
+  the final state are announced.
+- Keep live regions persistent. Create them once, like this region, the
+  board captions and the dock prompt, and never put a live role in markup
+  that `render()` rebuilds. Send status-line text through `view.status`.
+
 ## Adventure hub
 
 `isThreeAdventureHub(view)` is true in Adventure mode when there is no game
@@ -109,6 +132,33 @@ Rules:
   refused write keeps the decision key, so focus stays on the activated
   control. `focusKey` includes `data-reward-id`, so a re-render restores
   focus to the same choice.
+- **Transition focus.** Every Adventure command runs through
+  `dispatchAdventure`. Focus moves only when the command changes the session
+  or removes the activated control:
+  - Pause, Reset, and Back to Lobby in Adventure mode go to the lobby heading
+    (`[data-lobby-heading]`).
+  - A node start, or a Resume that restores a saved game, goes to the Game
+    Menu button (`[data-action="menu"]`).
+  - Anything that lands on the hub goes to the hub's decision, in the order
+    above.
+
+  Focus stays put when a write is refused, when nothing was focused before
+  the command (Safari does not focus clicked buttons), while a modal or an
+  inline target panel is open, and after disposal. The move runs after the
+  controller call returns, so it wins over `render()` restoring focus as a
+  menu closes.
+- **Result description.** The result heading has
+  `aria-describedby="three-adventure-result-detail"`, so focusing it also
+  reads the detail: chances left, relic charges used, and what to do next.
+- **Tab order.** On the hub, Tab reaches the route's node buttons (or the
+  reward's Choose buttons and Skip), then Pause and Reset, then Settings
+  and Recording. A finished run offers Start New Adventure and Back to
+  Lobby instead of Pause and Reset. Headings take focus only from script
+  (`tabindex="-1"`), and the relic list has no tab stops.
+- **No motion.** The hub, reward panel, result and announcer use no CSS
+  transitions or animations, so reduced motion needs no override. A test
+  reads `interface.css` and fails if an Adventure or `three-sr-only` rule
+  adds a transition or animation, or if the file adds `@keyframes`.
 - **Pending result.** While storage refuses a result, the finished board stays
   open. The Game Menu, the wide game-controls panel and the narrow dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
@@ -120,7 +170,8 @@ Rules:
 
 ## IDs, actions, and focus
 
-- Keep every document `id` unique.
+- Keep every document `id` unique. The interface reserves
+  `three-status-announcer` and `three-adventure-result-detail`.
 - Use `data-action` for delegated repeated actions and `class` for repeated
   styling.
 - Avoid duplicate handlers after rerender or remount.
