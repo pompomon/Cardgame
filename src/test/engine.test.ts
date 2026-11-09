@@ -1,13 +1,14 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createTutorialDecks } from '../game/cards'
+import { createStarterDeck, createTutorialDecks, lcg } from '../game/cards'
 import {
   DEFAULT_OPENING_HAND_SIZE,
   applyAction,
   canAct,
   createInitialGame,
   getLegalActions,
+  remainingCounterGrowth,
   type InitialGameOptions,
 } from '../game/engine'
 import type { BasicLand, Card, GameState } from '../game/types'
@@ -614,6 +615,114 @@ describe('createInitialGame opening hands', () => {
     expect(JSON.stringify(decks)).toBe(before)
     expect(options.openingHandSizes).toEqual([8, 5])
     expect(state.players[0].hand[0]).not.toBe(decks[0][0])
+  })
+})
+
+describe('remainingCounterGrowth', () => {
+  type Potential = { turn: number; nextInstanceId: number }
+
+  function cardsLeftToDraw(state: GameState): number {
+    return state.players[0].deck.length + state.players[1].deck.length
+  }
+
+  function potential(state: GameState): Potential {
+    const growth = remainingCounterGrowth(state)
+    return { turn: state.turn + growth.turn, nextInstanceId: state.nextInstanceId + growth.nextInstanceId }
+  }
+
+  /** An edit a hand-written save may make: the current player's first hand card waits as a land play, and another land is still allowed. */
+  function withExtraPendingLand(state: GameState, phase: 'main' | 'respond'): GameState | null {
+    const edited = structuredClone(state)
+    const player = edited.players[edited.currentPlayer]
+    const card = player.hand.shift()
+    if (!card) return null
+    edited.pendingLandPlay = { actor: player.id, card }
+    edited.phase = phase
+    player.landsPlayedThisTurn = 0
+    return edited
+  }
+
+  it('allows a draw for every card left, one more End Turn, and the lands this turn can still add', () => {
+    const fresh = createInitialGame(21, [landDeck('p0', 'Forest', 12), landDeck('p1', 'Island', 12)])
+    const cards = cardsLeftToDraw(fresh)
+    expect(remainingCounterGrowth(fresh)).toEqual({ turn: cards + 1, nextInstanceId: cards + 1 })
+
+    // Player 2 holds Islands, so Player 1's land waits for a response.
+    const waiting = applyAction(fresh, { type: 'play_land', actor: 0, cardId: fresh.players[0].hand[0].id })
+    expect([waiting.phase, waiting.players[0].landsPlayedThisTurn]).toEqual(['respond', 1])
+    expect(remainingCounterGrowth(waiting)).toEqual({ turn: cards + 1, nextInstanceId: cards + 1 })
+
+    const resolved = applyAction(waiting, { type: 'pass_response', actor: 1 })
+    expect(resolved.nextInstanceId).toBe(fresh.nextInstanceId + 1)
+    expect(remainingCounterGrowth(resolved)).toEqual({ turn: cards + 1, nextInstanceId: cards })
+
+    const edited = withExtraPendingLand(resolved, 'main')
+    expect(edited && remainingCounterGrowth(edited)).toEqual({ turn: cards + 1, nextInstanceId: cards + 2 })
+
+    expect(remainingCounterGrowth({ ...resolved, phase: 'gameOver', winner: 0 })).toEqual({ turn: 0, nextInstanceId: 0 })
+  })
+
+  it('leaves room for the End Turn that ends the game on an empty deck', () => {
+    let state = createInitialGame(22, [landDeck('p0', 'Forest', 5), landDeck('p1', 'Mountain', 5)])
+    expect(cardsLeftToDraw(state)).toBe(0)
+    const before = potential(state)
+
+    state = applyAction(state, { type: 'end_turn', actor: 0 })
+
+    expect([state.phase, state.winner, state.events.at(-1)?.kind]).toEqual(['gameOver', 0, 'deck_empty_loss'])
+    expect(state.turn).toBe(before.turn)
+    expect(potential(state)).toEqual({ turn: before.turn, nextInstanceId: state.nextInstanceId })
+  })
+
+  it('never lets a counter plus its remaining growth rise, however the game is played', () => {
+    const random = lcg(0x5eed_06c0)
+    const problems: string[] = []
+    const seen = new Set<string>()
+    for (let game = 0; game < 90; game += 1) {
+      const seed = 4_000 + game
+      // Every third game uses short decks, so some games end on an empty deck.
+      const decks: [Card[], Card[]] | undefined = game % 3 === 2
+        ? [createStarterDeck(0, seed).slice(0, 9), createStarterDeck(1, seed + 1).slice(0, 9)]
+        : undefined
+      let state = createInitialGame(seed, decks)
+      const editAt = game % 2 === 0 ? 3 + (game % 7) : -1
+      for (let step = 0; step < 3_000 && state.phase !== 'gameOver'; step += 1) {
+        if (step === editAt && state.phase === 'main') {
+          state = withExtraPendingLand(state, game % 4 === 0 ? 'main' : 'respond') ?? state
+          seen.add('edited save')
+        }
+        const actor = canAct(state, 0) ? 0 : 1
+        const legal = getLegalActions(state, actor)
+        if (legal.length === 0) {
+          problems.push(`game ${game} step ${step}: no legal action in ${state.phase}`)
+          break
+        }
+        const action = legal[Math.floor(random() * legal.length)]
+        const next = applyAction(state, action)
+        const [was, now] = [potential(state), potential(next)]
+        if (now.turn > was.turn || now.nextInstanceId > was.nextInstanceId) {
+          problems.push(`game ${game} step ${step}: ${action.type} in ${state.phase} raised ${JSON.stringify(was)} to ${JSON.stringify(now)}`)
+        }
+        seen.add(action.type)
+        state = next
+      }
+      if (state.phase !== 'gameOver') problems.push(`game ${game}: did not end`)
+      if (state.events.some((event) => event.kind === 'deck_empty_loss')) seen.add('empty deck')
+      if (state.events.some((event) => event.kind === 'ability_plains_reuse')) seen.add('Plains reuse')
+    }
+
+    expect(problems).toEqual([])
+    expect([...seen].sort()).toEqual([
+      'Plains reuse',
+      'counter_land',
+      'edited save',
+      'empty deck',
+      'end_turn',
+      'pass_response',
+      'play_land',
+      'resolve_plains_reuse',
+      'resolve_swamp_discard',
+    ])
   })
 })
 

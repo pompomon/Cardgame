@@ -446,8 +446,17 @@ keep their names; only their formats changed.
     guard checks only the kept log tail. Each player may hold at most
     `ADVENTURE_DECK_SIZE` (50) cards across deck, hand, battlefield and
     graveyard, counting a pending land play for its actor. Each zone's
-    length is checked before its entries. `turn` and `nextInstanceId` must
-    be safe integers.
+    length is checked before its entries.
+  - **Game counter room.** `turn` and `nextInstanceId` must leave room for
+    the rest of the game. Each counter plus its part of
+    `remainingCounterGrowth` (`src/game/engine.ts`) must stay within
+    `Number.MAX_SAFE_INTEGER`. Only End Turn raises `turn`, and it either
+    draws a card or, on an empty deck, ends the game. Only a resolved land
+    play raises `nextInstanceId`, and each turn allows one. Decks never
+    refill, so legal play never raises a counter plus its remaining growth.
+    Any save Pause writes after play from an accepted save therefore keeps
+    counters that pass. A save without that room is invalid, so Resume
+    restarts the encounter.
   - **Safe integers.** Run counters, `baseSeed`, `attemptSeed` and
     `attemptOrdinal` must pass `isNonNegativeSafeInteger`. A hand-edited
     counter can then neither make the score infinite nor make a seed lose
@@ -534,6 +543,7 @@ keep their names; only their formats changed.
 - Validate that the two snapshot players have ids `0` and `1` in that
   order (the engine uses `player.id` to build instance ids and logs).
 - Validate `nextInstanceId` is a non-negative integer; the engine relies
-  on it as a monotonic counter.
+  on it as a monotonic counter. In a mid-game save it must also leave room
+  for the rest of the game (see "Game counter room").
 - Validate `landsPlayedThisTurn` is a non-negative integer ≤ the
   one-land-per-turn ceiling.

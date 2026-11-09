@@ -1120,11 +1120,19 @@ Rules and pitfalls for contributors are in
   - after a loss retry;
   - after the boss is beaten, including a stale boss save and a win still
     waiting to be saved.
+
+  A save that starts with both game counters at their limit is resumed,
+  played for one turn of each player, paused and reloaded, over and over
+  until the game ends. A counter one past its limit restarts the encounter
+  instead.
 - **Storage boundary.**
   - A mid-game save keeps the latest 1,000 `log` entries and `events`
     (`ADVENTURE_GAME_LOG_CAP`).
   - Each player may hold at most 50 cards across zones.
-  - Turn and instance counters must be safe integers.
+  - Turn and instance counters must leave room for the rest of the game:
+    each plus `remainingCounterGrowth` must stay within
+    `Number.MAX_SAFE_INTEGER`, so play from an accepted save never makes
+    the next Pause unreadable.
   - Run counters, seeds and attempt numbers must pass the new
     `isNonNegativeSafeInteger`. Counters stop at `Number.MAX_SAFE_INTEGER`
     instead of growing past it, and the score is clamped to the safe
@@ -1220,7 +1228,12 @@ Rules and pitfalls for contributors are in
   an unsafe value converts to null, so it is unavailable. A stored high
   score outside the safe range reads as 0. Review then found that a counter
   already at the limit made the next result fail the guard, so counters
-  now stop at the limit and the score is clamped.
+  now stop at the limit and the score is clamped. A second review found
+  the same gap in mid-game saves: a game turn or instance counter at the
+  limit passed, the next End Turn or land pushed it past, and the save
+  Pause then wrote never read back. Game counters cannot simply stop, so
+  the guard instead requires room for every turn and land the rest of the
+  game can add.
 - Transition focus applies to Adventure commands only. Back to Lobby moves
   focus only in Adventure mode, and starting other modes is unchanged.
   Focus also moves when a command removes the activated control, such as a

@@ -41,7 +41,8 @@ import {
 import { isLegalActionForState } from '../app/action-validation'
 import { chooseAiAction } from '../game/ai'
 import { AI_LEVELS } from '../game/ai-levels'
-import { applyAction, canAct, createInitialGame, getLegalActions } from '../game/engine'
+import { lcg } from '../game/cards'
+import { applyAction, canAct, createInitialGame, getLegalActions, remainingCounterGrowth } from '../game/engine'
 import { BASIC_LANDS, type GameState, type LogEvent } from '../game/types'
 import { compatibilityDecisions, compatibilityTimeline } from './fixtures/compatibility-scenario'
 
@@ -897,6 +898,10 @@ describe('adventure game snapshot envelope', () => {
     ['malformed battlefield entry', (state: Record<string, unknown>) => { playerOf(state, 0).battlefield = [{ instanceId: 'bf-1' }] }],
     ['an unsafe turn', (state: Record<string, unknown>) => { state.turn = 2 ** 53 }],
     ['an unsafe nextInstanceId', (state: Record<string, unknown>) => { state.nextInstanceId = 2 ** 53 }],
+    ['a turn with no room for the rest of the game', (state: Record<string, unknown>) => { state.turn = Number.MAX_SAFE_INTEGER }],
+    ['a nextInstanceId with no room for the rest of the game', (state: Record<string, unknown>) => {
+      state.nextInstanceId = Number.MAX_SAFE_INTEGER
+    }],
     ['a 51st card in the deck', (state: Record<string, unknown>) => { addCard(playerOf(state, 0).deck, 'deck') }],
     ['a 51st card in the hand', (state: Record<string, unknown>) => { addCard(playerOf(state, 1).hand, 'hand') }],
     ['a 51st card in the graveyard', (state: Record<string, unknown>) => { addCard(playerOf(state, 0).graveyard, 'graveyard') }],
@@ -923,6 +928,54 @@ describe('adventure game snapshot envelope', () => {
     // A corrupted bare game is not even a recognizable version 1 save.
     store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(state))
     expect(readStoredAdventureGameSnapshot()).toEqual({ kind: 'invalid' })
+  })
+
+  it.each(['turn', 'nextInstanceId'] as const)('accepts a %s exactly at its limit and rejects one more', (counter) => {
+    const state = createInitialGame(99)
+    const limit = Number.MAX_SAFE_INTEGER - remainingCounterGrowth(state)[counter]
+    const save = (value: number) => {
+      store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(envelopeFor(encounterRun(), { ...state, [counter]: value })))
+    }
+
+    save(limit)
+    expect(expectEnvelope(readStoredAdventureGameSnapshot()).game[counter]).toBe(limit)
+    save(limit + 1)
+    expect(readStoredAdventureGameSnapshot()).toEqual({ kind: 'invalid' })
+  })
+
+  it('reads back a save that starts at both counter limits after every legal action until the game ends', () => {
+    const random = lcg(0x5eed_06c1)
+    const problems: string[] = []
+    for (let game = 0; game < 6; game += 1) {
+      let state = createInitialGame(500 + game)
+      if (game % 2 === 1) {
+        // A hand-edited save: a land waits for a response while another is still allowed.
+        const card = state.players[0].hand.shift()
+        if (!card) throw new Error('Expected an opening hand.')
+        state.pendingLandPlay = { actor: 0, card }
+        state.phase = 'respond'
+      }
+      const growth = remainingCounterGrowth(state)
+      state = { ...state, turn: Number.MAX_SAFE_INTEGER - growth.turn, nextInstanceId: Number.MAX_SAFE_INTEGER - growth.nextInstanceId }
+      for (let step = 0; step < 3_000; step += 1) {
+        store.data.set(ADVENTURE_GAME_STORAGE_KEY, JSON.stringify(envelopeFor(encounterRun(), state)))
+        const slot = readStoredAdventureGameSnapshot()
+        const where = `game ${game} step ${step} (${state.phase}, turn ${state.turn}, next instance ${state.nextInstanceId})`
+        if (slot.kind !== 'envelope') {
+          problems.push(`${where}: read as ${slot.kind}`)
+          break
+        }
+        const instanceIds = state.players.flatMap((player) => player.battlefield.map((entry) => entry.instanceId))
+        if (new Set(instanceIds).size !== instanceIds.length) problems.push(`${where}: repeated an instance ID`)
+        if (state.phase === 'gameOver') break
+        const actor = canAct(state, 0) ? 0 : 1
+        const legal = getLegalActions(state, actor)
+        state = applyAction(state, legal[Math.floor(random() * legal.length)])
+      }
+      if (state.phase !== 'gameOver') problems.push(`game ${game}: did not end`)
+    }
+
+    expect(problems).toEqual([])
   })
 
   it('back-fills missing events on valid enveloped games', () => {

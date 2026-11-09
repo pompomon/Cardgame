@@ -1,4 +1,5 @@
 import { createStarterDeck } from '../game/cards'
+import { remainingCounterGrowth } from '../game/engine'
 import { isBasicLand, type Card, type GameState, type PlayerState } from '../game/types'
 import {
   ADVENTURE_DECK_SIZE,
@@ -896,6 +897,11 @@ function isGameStateSnapshot(value: unknown): value is GameState {
   const pendingActor = (candidate.pendingLandPlay as { actor: 0 | 1 } | null)?.actor
   if (zoneCardCount(player0) + (pendingActor === 0 ? 1 : 0) > ADVENTURE_DECK_SIZE) return false
   if (zoneCardCount(player1) + (pendingActor === 1 ? 1 : 0) > ADVENTURE_DECK_SIZE) return false
+  // Each counter must leave room for the rest of the game. Play from an
+  // accepted save then keeps it safe, and Pause writes a save that reads back.
+  const growth = remainingCounterGrowth(candidate as GameState)
+  if ((candidate.turn as number) > Number.MAX_SAFE_INTEGER - growth.turn) return false
+  if ((candidate.nextInstanceId as number) > Number.MAX_SAFE_INTEGER - growth.nextInstanceId) return false
   if (candidate.phase === 'plains_target') {
     if (candidate.pendingPlainsReuse === null) return false
   } else if (candidate.pendingPlainsReuse !== null) {

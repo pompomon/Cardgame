@@ -31,7 +31,7 @@ import { AppController } from '../app/controller'
 import { actionableAdventureNodes } from '../app/lobby-presentation'
 import type { AdventureNodeSummary, AdventureRewardOfferSummary } from '../app/types'
 import { createStarterDeck } from '../game/cards'
-import { createInitialGame } from '../game/engine'
+import { canAct, createInitialGame, getLegalActions, remainingCounterGrowth } from '../game/engine'
 import type { GameState } from '../game/types'
 import { claimed, malformedBase } from './fixtures/adventure-malformed-v2'
 import { installFakeTimerHooks } from './helpers/timers'
@@ -147,6 +147,27 @@ function playFirstLand(controller: AppController): void {
     throw new Error('Expected a playable land.')
   }
   controller.submitAction(action)
+}
+
+/**
+ * Plays Player 1's turn (a land when one is allowed, then End Turn) and lets
+ * the AI play its turn. True once Player 1 may act in a new turn, false when
+ * the game has ended.
+ */
+function playTurnAgainstAi(controller: AppController): boolean {
+  const startTurn = liveGame(controller).turn
+  for (let guard = 0; guard < 500; guard += 1) {
+    const game = internals(controller).state.game
+    if (!game || game.phase === 'gameOver') return false
+    if (!canAct(game, 0)) {
+      vi.runOnlyPendingTimers()
+      continue
+    }
+    if (game.phase === 'main' && game.turn > startTurn) return true
+    const legal = getLegalActions(game, 0)
+    controller.submitAction(legal.find((action) => action.type === 'play_land') ?? legal[0])
+  }
+  throw new Error('Expected the turn to finish.')
 }
 
 /** Wins encounters, skipping their rewards, until the current tier is an uncommitted fork. */
@@ -643,6 +664,56 @@ describe('Adventure controller persistence and recovery', () => {
     controller.startAdventureNode(node.id)
     expect(liveGame(controller)).toEqual(freshAttemptGame(currentRun(controller)))
     expect(controller.getViewModel().adventure).toMatchObject({ remainingChances: 3, attemptOrdinal: 0 })
+  })
+
+  it('keeps restoring a save that starts at both counter limits, with a Pause and a reload after every turn', () => {
+    const storage = installTrackedStorage()
+    const first = new AppController()
+    first.startAdventure()
+    startFirstNode(first)
+    first.pauseAdventure()
+    const envelope = storedJson<AdventureGameSnapshotEnvelope>(storage, GAME_KEY)
+    const growth = remainingCounterGrowth(envelope.game)
+    envelope.game.turn = Number.MAX_SAFE_INTEGER - growth.turn
+    envelope.game.nextInstanceId = Number.MAX_SAFE_INTEGER - growth.nextInstanceId
+    storage.data.set(GAME_KEY, JSON.stringify(envelope))
+
+    let saved = envelope.game
+    let turns = 0
+    for (;;) {
+      const controller = new AppController()
+      controller.resumeAdventure()
+      expect(controller.getViewModel().status).toBe('Adventure resumed at Tier 1.')
+      expect(liveGame(controller)).toEqual(saved)
+      if (!playTurnAgainstAi(controller)) break
+      turns += 1
+      const paused = structuredClone(liveGame(controller))
+      expect([paused.turn, paused.nextInstanceId].every(Number.isSafeInteger)).toBe(true)
+      controller.pauseAdventure()
+      saved = storedJson<AdventureGameSnapshotEnvelope>(storage, GAME_KEY).game
+      expect(saved).toEqual(paused)
+    }
+
+    expect(turns).toBeGreaterThan(3)
+    expect(saved.turn).toBe(envelope.game.turn + turns * 2)
+    expect(saved.nextInstanceId).toBeGreaterThan(envelope.game.nextInstanceId)
+  })
+
+  it.each(['turn', 'nextInstanceId'] as const)('restarts the encounter when the saved %s has no room for the rest of the game', (counter) => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    startFirstNode(controller)
+    controller.pauseAdventure()
+    const envelope = storedJson<AdventureGameSnapshotEnvelope>(storage, GAME_KEY)
+    envelope.game[counter] = Number.MAX_SAFE_INTEGER - remainingCounterGrowth(envelope.game)[counter] + 1
+    storage.data.set(GAME_KEY, JSON.stringify(envelope))
+
+    controller.resumeAdventure()
+
+    expect(internals(controller).state.game).toBeNull()
+    expect(controller.getViewModel().status).toBe(recoveryMessage(1))
+    expect(controller.getViewModel().adventure).toMatchObject({ stage: 'map', remainingChances: 3, attemptOrdinal: 0 })
   })
 
   const staleSources: Array<[string, (controller: AppController) => void]> = [
