@@ -357,31 +357,6 @@
     {
       "type": "play_land",
       "actor": 1,
-      "cardId": "p1-mountain-8",
-      "effectTargetId": "p0-1"
-    },
-    {
-      "type": "end_turn",
-      "actor": 1
-    },
-    {
-      "type": "play_land",
-      "actor": 0,
-      "cardId": "p0-forest-9",
-      "effectTargetId": "p0-island-6"
-    },
-    {
-      "type": "counter_land",
-      "actor": 1,
-      "discardCardId": "p1-plains-5"
-    },
-    {
-      "type": "end_turn",
-      "actor": 0
-    },
-    {
-      "type": "play_land",
-      "actor": 1,
       "cardId": "p1-swamp-5"
     },
     {
@@ -392,14 +367,15 @@
   ],
   "outcome": {
     "winner": 1,
-    "turn": 26,
+    "turn": 24,
     "phase": "gameOver",
     "currentPlayer": 1,
-    "nextInstanceId": 21,
+    "nextInstanceId": 20,
     "players": [
       {
         "id": 0,
         "deck": [
+          "p0-forest-9",
           "p0-plains-8",
           "p0-island-1",
           "p0-swamp-9",
@@ -437,6 +413,11 @@
           "p0-plains-5"
         ],
         "battlefield": [
+          {
+            "instanceId": "p0-1",
+            "cardId": "p0-swamp-7",
+            "name": "Swamp"
+          },
           {
             "instanceId": "p0-3",
             "cardId": "p0-swamp-3",
@@ -481,15 +462,14 @@
           "p0-mountain-7",
           "p0-island-6",
           "p0-forest-2",
-          "p0-swamp-7",
-          "p0-forest-9",
           "p0-plains-0"
         ],
-        "landsPlayedThisTurn": 1
+        "landsPlayedThisTurn": 0
       },
       {
         "id": 1,
         "deck": [
+          "p1-mountain-3",
           "p1-swamp-0",
           "p1-forest-3",
           "p1-mountain-7",
@@ -522,8 +502,10 @@
           "p1-island-5"
         ],
         "hand": [
-          "p1-plains-8",
-          "p1-mountain-3"
+          "p1-mountain-8",
+          "p1-plains-5",
+          "p1-island-0",
+          "p1-plains-8"
         ],
         "battlefield": [
           {
@@ -558,11 +540,6 @@
           },
           {
             "instanceId": "p1-19",
-            "cardId": "p1-mountain-8",
-            "name": "Mountain"
-          },
-          {
-            "instanceId": "p1-20",
             "cardId": "p1-swamp-5",
             "name": "Swamp"
           }
@@ -575,9 +552,7 @@
           "p1-forest-4",
           "p1-island-1",
           "p1-plains-9",
-          "p1-plains-6",
-          "p1-island-0",
-          "p1-plains-5"
+          "p1-plains-6"
         ],
         "landsPlayedThisTurn": 1
       }

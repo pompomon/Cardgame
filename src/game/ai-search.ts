@@ -3,7 +3,7 @@ import { determinize, projectKnowledge } from './ai-knowledge'
 import type { AiSearchBudget, AiVisibilityProfile } from './ai-policy-types'
 import { createAiRng } from './ai-random'
 import { playRollout, searchStep, type RolloutSettings, type StepMeter } from './ai-rollout'
-import { getLegalActions } from './engine'
+import { activeActor, getLegalActions } from './engine'
 import type { GameAction, GameState } from './types'
 
 // Determinized Monte-Carlo search for the Hard AI.
@@ -21,7 +21,7 @@ import type { GameAction, GameState } from './types'
 // world always completes; later worlds start only if they are expected to fit,
 // and their rollouts share what is left. A search therefore takes at most
 // max(maxEngineSteps, 16 × classes) steps plus about one rollout decision per
-// class.
+// class, and the counter window and target choice that decision may leave.
 //
 // Twelve worlds rather than eight cost about 1.4 times the time and win 55% of
 // mirrored games against eight; see docs/agent/adr/0003-hard-ai-search.md.
@@ -93,7 +93,7 @@ export interface AiClassStatistics {
   readonly standardError: number
   /** Whether the class survived every elimination round. */
   readonly finalist: boolean
-  /** Whether the class wins at once, without a chance to answer. */
+  /** Whether the class wins before the opponent can answer, after any target choice of its own. */
   readonly winsNow: boolean
 }
 
@@ -188,6 +188,19 @@ function halvingRounds(classes: number, worlds: number): number {
 }
 
 /**
+ * Whether `action` wins for `actor` before the opponent can answer. A land
+ * that leaves `actor` a target choice wins only once a target resolves,
+ * because the engine checks the board then. A counter window is an answer.
+ */
+function winsAtOnce(meter: StepMeter, state: GameState, action: GameAction, actor: number): boolean {
+  const next = searchStep(meter, state, action)
+  if ((next.phase === 'plains_target' || next.phase === 'swamp_target') && activeActor(next) === actor) {
+    return getLegalActions(next, actor).some((target) => searchStep(meter, next, target).winner === actor)
+  }
+  return next.winner === actor
+}
+
+/**
  * Estimates the value of every action class of `actor` in `state` from the
  * searching player's perspective. `actions` are the legal actions.
  */
@@ -214,7 +227,7 @@ export function searchActionValues(
   )
   const worldActions = classes.map((entry) => sortedClasses.get(entry.key) ?? entry.representative)
   const meter: StepMeter = { steps: 0 }
-  const wins = worldActions.map((action) => searchStep(meter, knowledge.root, action).winner === actor)
+  const wins = worldActions.map((action) => winsAtOnce(meter, knowledge.root, action, actor))
   if (wins.some(Boolean)) {
     return oneOutcome('win', keys, representatives, wins, meter.steps)
   }

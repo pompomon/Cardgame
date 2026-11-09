@@ -5,7 +5,7 @@ import { actionClassKey, canonicalActionClasses } from '../game/ai-action-classe
 import { explainHardDecision, hardSearchPolicy, type HardDecision, type HardDecisionOptions } from '../game/ai-hard'
 import { AI_PERSONAS, personaForSeat } from '../game/ai-personas'
 import type { AiPolicyContext } from '../game/ai-policy-types'
-import { HARD_AI_DEFAULT_SELECTION, decisionCriticality } from '../game/ai-selection'
+import { HARD_AI_DEFAULT_SELECTION, decisionCriticality, type AiSelectionRail } from '../game/ai-selection'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import type { BasicLand, BattlefieldCard, Card, GameAction, GameState } from '../game/types'
 import { deepFreeze } from './helpers/deep-freeze'
@@ -41,6 +41,42 @@ interface CriticalFixture {
   readonly name: string
   readonly state: GameState
   readonly expected: Partial<GameAction>
+  readonly rail: AiSelectionRail
+}
+
+/** A deck of Forests only, so its owner never draws an answer. */
+function forestDeck(state: GameState, seat: number): Card[] {
+  return state.players[seat].deck.map((_, index) => card(`p${seat}-deck-${index}`, 'Forest'))
+}
+
+/**
+ * Wins that leave Hard a target to choose before the engine declares them.
+ * The opponent holds and draws only Forests, so ending the turn would also
+ * win in every world, a turn later.
+ */
+function deferredWins(): CriticalFixture[] {
+  const swampWin = createInitialGame(93)
+  swampWin.players[0].hand = [card('ai-swamp', 'Swamp'), card('ai-forest', 'Forest')]
+  swampWin.players[0].battlefield = lands(0, ['Forest', 'Island', 'Mountain', 'Plains'])
+  swampWin.players[1].hand = [card('p1-forest', 'Forest'), card('p1-forest-2', 'Forest')]
+  swampWin.players[1].deck = forestDeck(swampWin, 1)
+
+  const plainsWin = createInitialGame(94)
+  plainsWin.players[0].hand = [card('ai-plains', 'Plains'), card('ai-island', 'Island')]
+  plainsWin.players[0].battlefield = lands(0, ['Plains', 'Plains', 'Plains', 'Plains', 'Forest'])
+  plainsWin.players[0].graveyard = [card('ai-mountain', 'Mountain')]
+  plainsWin.players[1].hand = [card('p1-forest', 'Forest')]
+  plainsWin.players[1].deck = forestDeck(plainsWin, 1)
+
+  return [
+    { name: 'win with a Swamp', state: swampWin, expected: { type: 'play_land', actor: 0, cardId: 'ai-swamp' }, rail: 'win' },
+    {
+      name: 'win with a Plains',
+      state: plainsWin,
+      expected: { type: 'play_land', actor: 0, cardId: 'ai-plains', effectTargetId: 'p0-bf-4' },
+      rail: 'win',
+    },
+  ]
 }
 
 /** Positions with one right play, where Hard holds the first seat. */
@@ -64,12 +100,14 @@ function criticalFixtures(): CriticalFixture[] {
   counter.players[1].battlefield = lands(1, ['Forest', 'Island', 'Mountain', 'Plains'])
 
   return [
-    { name: 'win now', state: winNow, expected: { type: 'play_land', actor: 0, cardId: 'ai-island' } },
-    { name: 'answer with Mountain', state: mustAnswer, expected: { type: 'play_land', actor: 0, cardId: 'ai-mountain' } },
+    { name: 'win now', state: winNow, expected: { type: 'play_land', actor: 0, cardId: 'ai-island' }, rail: 'win' },
+    ...deferredWins(),
+    { name: 'answer with Mountain', state: mustAnswer, expected: { type: 'play_land', actor: 0, cardId: 'ai-mountain' }, rail: 'critical' },
     {
       name: 'counter a winning land',
       state: applyAction(counter, { type: 'play_land', actor: 1, cardId: 'p1-swamp' }),
       expected: { type: 'counter_land', actor: 0, discardCardId: 'ai-forest' },
+      rail: 'critical',
     },
   ]
 }
@@ -142,14 +180,26 @@ describe('Hard AI decisions', () => {
     }
   })
 
-  it.each(criticalFixtures())('plays the one right move to $name in every game', ({ state, expected }) => {
+  it.each(criticalFixtures())('plays the one right move to $name in every game', ({ state, expected, rail }) => {
     expect(activeActor(state)).toBe(0)
     const first = decide(state, 0)
     expect(first.criticality).toBe(1)
     expect(first.action).toMatchObject(expected)
+    expect(first.selection.rail).toBe(rail)
     for (let game = 1; game < 32; game += 1) {
       const decision = decide(state, game * 7919)
       expect({ ...decision, persona: first.persona }).toEqual(first)
+    }
+  })
+
+  it.each(deferredWins())('plays to $name at once, though waiting would also win', ({ state, expected }) => {
+    // With the default budget, rollouts after End Turn win in every world too,
+    // and a tie would go to End Turn, the first class in key order.
+    for (let game = 0; game < 8; game += 1) {
+      const decision = explainHardDecision(state, 0, getLegalActions(state, 0), { seed: game * 7919 })
+      expect(decision.action).toMatchObject(expected)
+      expect(decision.selection.rail).toBe('win')
+      expect(decision.search.worlds).toBe(0)
     }
   })
 

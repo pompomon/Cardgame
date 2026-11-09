@@ -293,10 +293,19 @@ export function rolloutAction(meter: StepMeter, settings: RolloutSettings, state
   return chooseByValue(meter, state, actor, weights, chooserView(settings, actor, state), settings.epsilon, rng)
 }
 
+// A counter window and the target choice after it.
+const MAX_PENDING_DECISIONS = 2
+
+function isPendingPhase(phase: GameState['phase']): boolean {
+  return phase === 'respond' || phase === 'plains_target' || phase === 'swamp_target'
+}
+
 /**
  * Plays the rollout policy from `state` until `settings.turns` turns after
  * `startTurn` have passed and the root player is about to act, the game ends,
- * or the rollout step limit is reached. Returns the root player's value.
+ * or the rollout step limit is reached. A rollout cut off by the limit first
+ * finishes any counter window or target choice, because the engine checks for
+ * a win only once those resolve. Returns the root player's value.
  */
 export function playRollout(meter: StepMeter, settings: RolloutSettings, state: GameState, startTurn: number, rng: AiRng): number {
   const stepLimit = meter.steps + settings.maxRolloutSteps
@@ -310,6 +319,13 @@ export function playRollout(meter: StepMeter, settings: RolloutSettings, state: 
     ) {
       break
     }
+    const action = rolloutAction(meter, settings, current, rng)
+    if (!action) {
+      break
+    }
+    current = searchStep(meter, current, action)
+  }
+  for (let decisions = 0; decisions < MAX_PENDING_DECISIONS && isPendingPhase(current.phase); decisions += 1) {
     const action = rolloutAction(meter, settings, current, rng)
     if (!action) {
       break

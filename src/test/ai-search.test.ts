@@ -58,6 +58,31 @@ function winningIslandState(opponentHand: GameState['players'][number]['hand']):
   return state
 }
 
+/** Player 0 to act with a Swamp in hand that completes five different lands. */
+function winningSwampState(opponentHand: GameState['players'][number]['hand']): GameState {
+  const state = createInitialGame(81)
+  state.players[0].hand = [
+    { id: 'p0-win', name: 'Swamp', type: 'land' },
+    { id: 'p0-other', name: 'Forest', type: 'land' },
+  ]
+  state.players[0].battlefield = battlefield(0, ['Forest', 'Island', 'Mountain', 'Plains'])
+  state.players[1].hand = opponentHand
+  return state
+}
+
+/** Player 0 to act with a fifth Plains in hand, which can reuse only a Forest with a card to return. */
+function winningPlainsState(): GameState {
+  const state = createInitialGame(82)
+  state.players[0].hand = [
+    { id: 'p0-win', name: 'Plains', type: 'land' },
+    { id: 'p0-other', name: 'Island', type: 'land' },
+  ]
+  state.players[0].battlefield = battlefield(0, ['Plains', 'Plains', 'Plains', 'Plains', 'Forest'])
+  state.players[0].graveyard = [{ id: 'p0-grave', name: 'Mountain', type: 'land' }]
+  state.players[1].hand = [{ id: 'p1-forest', name: 'Forest', type: 'land' }]
+  return state
+}
+
 describe('AI search budget', () => {
   it('fills missing or non-finite fields with the defaults and clamps the rest', () => {
     expect(resolveSearchBudget()).toEqual(HARD_AI_DEFAULT_BUDGET)
@@ -112,6 +137,41 @@ describe('AI search', () => {
       { id: 'p1-forest', name: 'Forest', type: 'land' },
     ])
     const result = search(state)
+    expect(result.outcome).toBe('searched')
+    expect(result.classes.every((entry) => !entry.winsNow)).toBe(true)
+  })
+
+  it.each([
+    {
+      name: 'a Swamp that leaves its discard',
+      state: winningSwampState([
+        { id: 'p1-forest', name: 'Forest', type: 'land' },
+        { id: 'p1-mountain', name: 'Mountain', type: 'land' },
+      ]),
+      play: { type: 'play_land', actor: 0, cardId: 'p0-win' } as const,
+      phase: 'swamp_target',
+    },
+    {
+      name: 'a Plains that leaves its reused target',
+      state: winningPlainsState(),
+      play: { type: 'play_land', actor: 0, cardId: 'p0-win', effectTargetId: 'p0-bf-4' } as const,
+      phase: 'plains_target',
+    },
+  ])('takes a win by $name to choose without sampling worlds', ({ state, play, phase }) => {
+    // The engine declares the win only once the target resolves.
+    expect(applyAction(state, play)).toMatchObject({ phase, winner: null })
+    const result = search(state)
+    expect(result.outcome).toBe('win')
+    expect(result.worlds).toBe(0)
+    expect(result.classes.filter((entry) => entry.winsNow)).toEqual([expect.objectContaining({ action: play, finalist: true, mean: 1 })])
+    expect(result.classes[bestClassIndex(result)].action).toEqual(play)
+  })
+
+  it('searches a winning Swamp that the opponent can counter', () => {
+    const result = search(winningSwampState([
+      { id: 'p1-island', name: 'Island', type: 'land' },
+      { id: 'p1-forest', name: 'Forest', type: 'land' },
+    ]))
     expect(result.outcome).toBe('searched')
     expect(result.classes.every((entry) => !entry.winsNow)).toBe(true)
   })

@@ -55,6 +55,34 @@ function winningIslandState(opponentHand: GameState['players'][number]['hand'] =
   return state
 }
 
+/** Player 0's Swamp completing five different lands, resolved and waiting for its discard. */
+function pendingSwampWin(): GameState {
+  const state = createInitialGame(81)
+  state.players[0].hand = [
+    { id: 'p0-win', name: 'Swamp', type: 'land' },
+    { id: 'p0-other', name: 'Forest', type: 'land' },
+  ]
+  state.players[0].battlefield = battlefield(0, ['Forest', 'Island', 'Mountain', 'Plains'])
+  state.players[1].hand = [
+    { id: 'p1-forest', name: 'Forest', type: 'land' },
+    { id: 'p1-mountain', name: 'Mountain', type: 'land' },
+  ]
+  return applyAction(state, { type: 'play_land', actor: 0, cardId: 'p0-win' })
+}
+
+/** Player 0's fifth Plains, resolved and waiting for the reused Forest's return. */
+function pendingPlainsWin(): GameState {
+  const state = createInitialGame(82)
+  state.players[0].hand = [
+    { id: 'p0-win', name: 'Plains', type: 'land' },
+    { id: 'p0-other', name: 'Island', type: 'land' },
+  ]
+  state.players[0].battlefield = battlefield(0, ['Plains', 'Plains', 'Plains', 'Plains', 'Forest'])
+  state.players[0].graveyard = [{ id: 'p0-grave', name: 'Mountain', type: 'land' }]
+  state.players[1].hand = [{ id: 'p1-forest', name: 'Forest', type: 'land' }]
+  return applyAction(state, { type: 'play_land', actor: 0, cardId: 'p0-win', effectTargetId: 'p0-bf-4' })
+}
+
 /**
  * Swaps `seat`'s first hand card with a deck card of another name: a hand of
  * the same size from the same hidden pool. `null` if no such card is left.
@@ -132,6 +160,63 @@ describe('AI rollout policy', () => {
     // A decision can value several classes after the limit is checked.
     expect(limited.steps).toBeGreaterThanOrEqual(6)
     expect(limited.steps).toBeLessThan(6 + 40)
+  })
+
+  it('resolves a winning land\'s own target choice before scoring a rollout cut off by its limit', () => {
+    for (const pending of [pendingSwampWin(), pendingPlainsWin()]) {
+      expect(pending.winner).toBeNull()
+      expect(['swamp_target', 'plains_target']).toContain(pending.phase)
+      // The evaluator does not see a win that the engine has not declared.
+      expect(evaluatePosition(pending, 0, activeActor(pending), WEIGHTS)).toBeLessThan(1)
+      for (const root of [0, 1]) {
+        const meter: StepMeter = { steps: 0 }
+        expect(playRollout(meter, settings(root, { maxRolloutSteps: 0 }), pending, pending.turn, createAiRng(1))).toBe(1 - root)
+        expect(meter.steps).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('answers a counter window before scoring a rollout cut off by its limit', () => {
+    const pending = applyAction(
+      winningIslandState([
+        { id: 'p1-island', name: 'Island', type: 'land' },
+        { id: 'p1-forest', name: 'Forest', type: 'land' },
+      ]),
+      { type: 'play_land', actor: 0, cardId: 'p0-win' },
+    )
+    expect(pending.phase).toBe('respond')
+    // Passing loses, so the responder counters.
+    const countered = applyAction(pending, { type: 'counter_land', actor: 1, discardCardId: 'p1-forest' })
+    for (const root of [0, 1]) {
+      const expected = evaluatePosition(countered, root, activeActor(countered), WEIGHTS)
+      expect(expected).not.toBe(evaluatePosition(pending, root, activeActor(pending), WEIGHTS))
+      expect(playRollout({ steps: 0 }, settings(root, { maxRolloutSteps: 0 }), pending, pending.turn, createAiRng(1))).toBe(expected)
+    }
+  })
+
+  it('finishes a counter window and the target choice after it before scoring', () => {
+    const state = createInitialGame(83)
+    state.players[0].hand = [
+      { id: 'p0-swamp', name: 'Swamp', type: 'land' },
+      { id: 'p0-forest', name: 'Forest', type: 'land' },
+    ]
+    state.players[0].battlefield = battlefield(0, ['Forest'])
+    state.players[1].hand = [
+      { id: 'p1-island-a', name: 'Island', type: 'land' },
+      { id: 'p1-island-b', name: 'Island', type: 'land' },
+    ]
+    const pending = applyAction(state, { type: 'play_land', actor: 0, cardId: 'p0-swamp' })
+    expect(pending.phase).toBe('respond')
+    // A counter would cost both Islands, so the responder passes and the
+    // Swamp then takes one of them.
+    const passed = applyAction(pending, { type: 'pass_response', actor: 1 })
+    expect(passed.phase).toBe('swamp_target')
+    const resolved = applyAction(passed, { type: 'resolve_swamp_discard', actor: 0, effectTargetId: 'p1-island-a' })
+    expect(resolved.phase).toBe('main')
+    for (const root of [0, 1]) {
+      const expected = evaluatePosition(resolved, root, activeActor(resolved), WEIGHTS)
+      expect(playRollout({ steps: 0 }, settings(root, { maxRolloutSteps: 0 }), pending, pending.turn, createAiRng(1))).toBe(expected)
+    }
   })
 
   it('does not modify the state it rolls out', () => {
