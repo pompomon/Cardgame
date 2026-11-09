@@ -57,8 +57,9 @@ function sameValue(left: unknown, right: unknown): boolean {
   )
 }
 
+// The mid-game base holds Guardian Sigil, so the restart also keeps its charge.
 function recoveryMessage(tier: number): string {
-  return `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
+  return `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance or a relic charge.`
 }
 
 /** Writes and removals of the Adventure run and mid-game keys. */
@@ -431,6 +432,7 @@ describe('fuzzed mid-game saves', () => {
     const nodeId = run.selectedNodeId
     const seed = run.attemptSeed
     if (nodeId === null || seed === null) throw new Error('Expected a committed attempt.')
+    expect(run.relics.map((relic) => relic.id)).toEqual(['guardian-sigil'])
     const runRaw = JSON.stringify(run)
     const played = playedAdventureGame(run)
     const oversized = structuredClone(played)

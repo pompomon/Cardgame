@@ -6,13 +6,12 @@ import {
   type TargetSelectionContext,
 } from '../../app/action-resolution'
 import { ADVENTURE_TIER_COUNT, type AdventureNodeLane, type AdventureNodeStatus } from '../../app/adventure'
-import { adventureRewardCatalogEntry } from '../../app/adventure-rewards'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../../app/card-catalog'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import { displayGamePhase } from '../../app/game-presentation'
+import { describeAdventureRelicChargeUses, displayGamePhase } from '../../app/game-presentation'
 import {
   describeNextAdventureOpponent,
   hasSavedAdventureRun,
@@ -421,12 +420,6 @@ function renderAdventureReward(offer: AdventureRewardOfferSummary): string {
   </section>`
 }
 
-// Which relics kept a loss from costing a chance or resetting the streak.
-function adventureProtectionText(result: AdventureResultSummary): string {
-  return (result.chanceLossPrevented ? `${adventureRewardCatalogEntry('guardian-sigil').name} kept your chance. ` : '')
-    + (result.streakResetPrevented ? `${adventureRewardCatalogEntry('streak-anchor').name} kept your win streak. ` : '')
-}
-
 function renderAdventureNode(adventure: AdventureUiState, node: AdventureNodeSummary): string {
   const status = adventureNodeStatusLabel(node.status)
   const lane = adventureLaneLabel(node.lane)
@@ -463,6 +456,12 @@ function renderAdventureTier(adventure: AdventureUiState, tier: AdventureTierSum
       `<li>${renderAdventureNode(adventure, node)}</li>`).join('')}</ul></li>`
 }
 
+// The relics that used a charge on this result, each with the charges left.
+function adventureRelicUseDetail(result: AdventureResultSummary): string {
+  const text = describeAdventureRelicChargeUses(result.relicsUsed)
+  return text ? `${text} ` : ''
+}
+
 function renderAdventureResult(adventure: AdventureUiState): string {
   const result = adventure.lastResult
   if (!result) return ''
@@ -486,7 +485,7 @@ function renderAdventureResult(adventure: AdventureUiState): string {
         break
       case 'loss':
         heading = `Defeat at Tier ${tier}`
-        detail = `${adventureProtectionText(result)}${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
+        detail = `${adventureRelicUseDetail(result)}${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
         break
       case 'draw':
         heading = `Draw at Tier ${tier}`

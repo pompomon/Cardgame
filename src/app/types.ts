@@ -10,7 +10,7 @@ import type {
   AdventureRunState,
   AdventureRunStatus,
 } from './adventure'
-import type { AdventureRelicId, AdventureRewardId } from './adventure-rewards'
+import type { AdventureRelicChargeUse, AdventureRelicId, AdventureRewardId } from './adventure-rewards'
 import type { BoardTheme } from './board-theme'
 import type { CardVisualStyle } from './card-visual-styles'
 import type { RenderQualityPreference } from './render-quality'
@@ -48,6 +48,8 @@ export interface AdventureEncounterResult {
   chanceLossPrevented: boolean
   /** Streak Anchor kept the win streak this loss would have reset. */
   streakResetPrevented: boolean
+  /** Relics that used a charge on this result, with the charges left. */
+  relicsUsed: readonly AdventureRelicChargeUse[]
 }
 
 // Controller-owned Adventure state. `run` is the validated schema version 2
@@ -93,6 +95,8 @@ export interface AdventureResultSummary {
   readonly score: number | null
   readonly chanceLossPrevented: boolean
   readonly streakResetPrevented: boolean
+  /** Relics that used a charge on this result, with the charges left. */
+  readonly relicsUsed: readonly AdventureRelicChargeUse[]
 }
 
 /** An owned relic, with catalog copy that renderers escape. */

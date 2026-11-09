@@ -84,7 +84,7 @@ function skipped(run: AdventureRunState): AdventureRunState {
  * Takes `rewardId` from the pending offer, whatever the seed offered: the
  * offer is first shown with `rewardId` and two other eligible rewards.
  */
-function claimed(run: AdventureRunState, rewardId: AdventureRewardId): AdventureRunState {
+export function claimed(run: AdventureRunState, rewardId: AdventureRewardId): AdventureRunState {
   const offer = pendingOffer(run)
   const others = eligibleAdventureRewardIds(run).filter((id) => id !== rewardId).slice(0, 2)
   const offered: AdventureRunState = { ...cloneAdventureRun(run), pendingReward: { ...offer, choices: [rewardId, ...others] } }

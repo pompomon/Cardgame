@@ -32,7 +32,7 @@ import {
   type AdventureEncounterResolution,
   type AdventureRunState,
 } from './adventure'
-import { adventureRelicCharges, adventureRewardCatalogEntry } from './adventure-rewards'
+import { adventureRewardCatalogEntry, usedAdventureRelicCharges, type AdventureRelicChargeUse } from './adventure-rewards'
 import {
   ADVENTURE_RUN_STORAGE_KEY,
   clearStoredAdventureRun,
@@ -40,7 +40,7 @@ import {
   readStoredAdventureRunRecord,
   type StoredAdventureRunRecord,
 } from './adventure-persistence'
-import { displayAdventureOpponentLabel } from './game-presentation'
+import { describeAdventureRelicChargeUses, displayAdventureOpponentLabel } from './game-presentation'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
 import {
@@ -66,7 +66,11 @@ const RECORDING_STORAGE_KEY = 'cardgame.saved-recording'
 const REPLAY_TICK_MS = 700
 const TUTORIAL_SEED = 1
 const ADVENTURE_STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
+const ADVENTURE_STORAGE_WARNING_AGAIN = 'Adventure progress still could not be saved (storage unavailable).'
 const ADVENTURE_RESULT_WARNING = 'The encounter result could not be saved (storage unavailable). Retry saving the result.'
+const ADVENTURE_RESULT_WARNING_AGAIN = 'The encounter result still could not be saved (storage unavailable). Retry saving the result.'
+const ADVENTURE_RESET_WARNING = 'Adventure run could not be reset (storage unavailable).'
+const ADVENTURE_RESET_WARNING_AGAIN = 'Adventure run still could not be reset (storage unavailable).'
 const ADVENTURE_PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
 const ADVENTURE_REWARD_PENDING_NOTICE = 'Choose a reward or skip it before starting the next encounter.'
 
@@ -74,16 +78,29 @@ function adventureChancesText(chances: number): string {
   return `${chances} ${chances === 1 ? 'chance' : 'chances'} left`
 }
 
-// The relics that kept a loss from costing a chance or resetting the streak.
-function adventureProtectionText(resolution: AdventureEncounterResolution): string {
-  const kept: string[] = []
-  if (resolution.chanceLossPrevented) {
-    kept.push(` ${adventureRewardCatalogEntry('guardian-sigil').name} kept your chance.`)
-  }
-  if (resolution.streakResetPrevented) {
-    kept.push(` ${adventureRewardCatalogEntry('streak-anchor').name} kept your win streak.`)
-  }
-  return kept.join('')
+// A refusal straight after the same refusal says "still", so the status text
+// changes and assistive technology announces the repeated failure.
+function repeatedWarning(previousStatus: string, first: string, again: string): string {
+  return previousStatus === first || previousStatus === again ? again : first
+}
+
+function adventureStorageWarning(previousStatus: string, consequence: string): string {
+  return repeatedWarning(
+    previousStatus,
+    `${ADVENTURE_STORAGE_WARNING} ${consequence}`,
+    `${ADVENTURE_STORAGE_WARNING_AGAIN} ${consequence}`,
+  )
+}
+
+// A leading space and the used relic charges, or '' when none were used.
+function adventureRelicUseText(relicsUsed: readonly AdventureRelicChargeUse[]): string {
+  const text = describeAdventureRelicChargeUses(relicsUsed)
+  return text ? ` ${text}` : ''
+}
+
+// A restart reuses the committed attempt, so a charged relic is not used again.
+function holdsChargedAdventureRelic(run: AdventureRunState): boolean {
+  return run.relics.some((relic) => 'charges' in relic)
 }
 
 // The status after a committed encounter result. Only terminal runs carry a score.
@@ -92,6 +109,7 @@ function adventureResultStatus(
   outcome: AdventureEncounterOutcome,
   score: number | null,
   highScore: number,
+  relicsUsed: readonly AdventureRelicChargeUse[],
 ): string {
   const { run } = resolution
   if (run.status === 'completed' || run.status === 'failed') {
@@ -105,9 +123,9 @@ function adventureResultStatus(
       : `Encounter won. Choose your Tier ${tier} encounter.`
   }
   if (outcome === 'loss') {
-    return `Encounter lost.${adventureProtectionText(resolution)} ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
+    return `Encounter lost.${adventureRelicUseText(relicsUsed)} ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
   }
-  return `Encounter ended in a draw. Retry Tier ${tier}.`
+  return `Encounter ended in a draw. No chance was used. Retry Tier ${tier}.`
 }
 
 // Adventure seeds come from the clock, as before. Clamp unusual clock values
@@ -368,6 +386,7 @@ export class AppController implements ControllerApi {
     }
     const resolution = resolveAdventureEncounterResult(run, outcome)
     const candidate = resolution.run
+    const relicsUsed = usedAdventureRelicCharges(run.relics, candidate.relics)
     const terminal = !isResumableAdventureRun(candidate)
     let score: number | null = null
     let highScore = this.state.adventure.highScore
@@ -381,7 +400,7 @@ export class AppController implements ControllerApi {
     }
     if (!committed) {
       this.state.adventure = { ...this.state.adventure, pendingCompletion: { outcome } }
-      this.state.status = ADVENTURE_RESULT_WARNING
+      this.state.status = repeatedWarning(this.state.status, ADVENTURE_RESULT_WARNING, ADVENTURE_RESULT_WARNING_AGAIN)
       return
     }
     // The next attempt or tier, or a removed run, no longer matches any saved
@@ -401,11 +420,12 @@ export class AppController implements ControllerApi {
         score,
         chanceLossPrevented: resolution.chanceLossPrevented,
         streakResetPrevented: resolution.streakResetPrevented,
+        relicsUsed,
       },
     }
     // The hub replaces the finished board; the recording stays exportable.
     this.state.game = null
-    this.state.status = adventureResultStatus(resolution, outcome, score, highScore)
+    this.state.status = adventureResultStatus(resolution, outcome, score, highScore, relicsUsed)
   }
 
   private initializeRecording(mode: Mode): void {
@@ -771,7 +791,7 @@ export class AppController implements ControllerApi {
     // write succeeds, so a refused write keeps the previous state.
     const run = createAdventureRun(adventureClockSeed(), createAdventureRunId())
     if (!persistAdventureRun(run)) {
-      this.state.status = `${ADVENTURE_STORAGE_WARNING} The Adventure did not start.`
+      this.state.status = adventureStorageWarning(this.state.status, 'The Adventure did not start.')
       this.notify()
       return
     }
@@ -819,7 +839,7 @@ export class AppController implements ControllerApi {
     // Persistence first: a refused write keeps the map, the same choices, the
     // attempt number and every relic charge.
     if (!persistAdventureRun(candidate)) {
-      this.state.status = `${ADVENTURE_STORAGE_WARNING} The encounter did not start.`
+      this.state.status = adventureStorageWarning(this.state.status, 'The encounter did not start.')
       this.notify()
       return
     }
@@ -829,12 +849,12 @@ export class AppController implements ControllerApi {
     this.state.adventure = { ...adventure, run: candidate, hasSavedRun: true, lastResult: null }
     this.launchAdventureGame(candidate, null)
     const opponent = displayAdventureOpponentLabel(node.opponent.kind, node.opponent.lands)
-    const cacheChargeUsed =
-      adventureRelicCharges(candidate.relics, 'scout-cache') < adventureRelicCharges(run.relics, 'scout-cache')
-    const cacheUsed = cacheChargeUsed
-      ? ` ${adventureRewardCatalogEntry('scout-cache').name} used a charge.`
-      : ''
-    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.${cacheUsed}`
+    // A saved setup means a restart of the committed attempt: same seed, same
+    // setup, and no relic charge used again.
+    const restart = run.encounterSetup === null ? ''
+      : ` Same opening as before${holdsChargedAdventureRelic(run) ? '; no relic charge used' : ''}.`
+    const relicsUsed = adventureRelicUseText(usedAdventureRelicCharges(run.relics, candidate.relics))
+    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.${relicsUsed}${restart}`
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -878,7 +898,7 @@ export class AppController implements ControllerApi {
       return
     }
     if (!persistAdventureRun(candidate)) {
-      this.state.status = `${ADVENTURE_STORAGE_WARNING} The reward was not ${verb}.`
+      this.state.status = adventureStorageWarning(this.state.status, `The reward was not ${verb}.`)
       this.notify()
       return
     }
@@ -898,6 +918,9 @@ export class AppController implements ControllerApi {
       return
     }
     this.commitAdventureResult(run, pendingCompletion.outcome)
+    if (this.state.adventure.pendingCompletion === null) {
+      this.state.status = `Result saved. ${this.state.status}`
+    }
     this.notify()
   }
 
@@ -942,7 +965,7 @@ export class AppController implements ControllerApi {
     ) {
       const resumed = resumeAdventureEncounter(stored)
       if (!persistAdventureRun(resumed)) {
-        this.state.status = `${ADVENTURE_STORAGE_WARNING} The Adventure was not resumed.`
+        this.state.status = adventureStorageWarning(this.state.status, 'The Adventure was not resumed.')
         this.notify()
         return
       }
@@ -976,8 +999,9 @@ export class AppController implements ControllerApi {
     if (stored.stage === 'reward') {
       this.state.status = `Adventure resumed. Choose a reward or skip it to continue to Tier ${tier}.`
     } else {
+      const relicCharge = holdsChargedAdventureRelic(stored) ? ' or a relic charge' : ''
       this.state.status = lostGame
-        ? `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
+        ? `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance${relicCharge}.`
         : `Adventure resumed at Tier ${tier}.`
     }
     this.notify()
@@ -1009,18 +1033,18 @@ export class AppController implements ControllerApi {
     // retried.
     if (run.stage === 'encounter' && game) {
       if (!persistAdventureGameSnapshot(run, game)) {
-        this.state.status = `${ADVENTURE_STORAGE_WARNING} The game was not paused.`
+        this.state.status = adventureStorageWarning(this.state.status, 'The game was not paused.')
         this.notify()
         return
       }
       if (!persistAdventureRun(paused)) {
         clearStoredAdventureGameSnapshot()
-        this.state.status = `${ADVENTURE_STORAGE_WARNING} The game was not paused.`
+        this.state.status = adventureStorageWarning(this.state.status, 'The game was not paused.')
         this.notify()
         return
       }
     } else if (!persistAdventureRun(paused)) {
-      this.state.status = `${ADVENTURE_STORAGE_WARNING} The Adventure was not paused.`
+      this.state.status = adventureStorageWarning(this.state.status, 'The Adventure was not paused.')
       this.notify()
       return
     }
@@ -1037,6 +1061,7 @@ export class AppController implements ControllerApi {
   }
 
   abandonAdventure(): void {
+    const previousStatus = this.state.status
     const adventure = this.state.adventure
     const hadAdventure = adventure.run !== null || adventure.hasSavedRun || adventure.pendingCompletion !== null
     // Reset is the explicit way out of every Adventure state, including a
@@ -1051,7 +1076,7 @@ export class AppController implements ControllerApi {
     // Show what storage now holds: a run that could not be removed reappears.
     this.refreshAdventureFromStorage()
     if (!removed) {
-      this.state.status = 'Adventure run could not be reset (storage unavailable).'
+      this.state.status = repeatedWarning(previousStatus, ADVENTURE_RESET_WARNING, ADVENTURE_RESET_WARNING_AGAIN)
     } else if (hadAdventure) {
       this.state.status = 'Adventure run reset.'
     }

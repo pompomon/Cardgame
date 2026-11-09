@@ -1138,7 +1138,7 @@ describe('controller recording and replay', () => {
       })
       expect(view.adventure.pendingReward?.sourceTier).toBe(1)
       expect(view.adventure.lastResult).toMatchObject({ outcome: 'win', tierIndex: 0, score: null })
-      expect(view.status).toBe('Encounter won. Choose a reward or skip it to continue to Tier 2.')
+      expect(view.status).toBe('Result saved. Encounter won. Choose a reward or skip it to continue to Tier 2.')
       expect(storedAdventureRun()).toMatchObject({
         status: 'active',
         stage: 'reward',

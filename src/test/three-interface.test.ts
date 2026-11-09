@@ -2351,9 +2351,9 @@ function hubView(adventure: Partial<AdventureUiState> = {}): AppViewModel {
   }
 }
 
-function hubResult(result: Omit<AdventureResultSummary, 'chanceLossPrevented' | 'streakResetPrevented'>
+function hubResult(result: Omit<AdventureResultSummary, 'chanceLossPrevented' | 'streakResetPrevented' | 'relicsUsed'>
   & Partial<AdventureResultSummary>): AdventureResultSummary {
-  return { chanceLossPrevented: false, streakResetPrevented: false, ...result }
+  return { chanceLossPrevented: false, streakResetPrevented: false, relicsUsed: [], ...result }
 }
 
 function installHubStorage(): Map<string, string> {
@@ -2433,6 +2433,15 @@ describe('Three Adventure hub', () => {
     expect(result('draw', { currentTier: 1, tiers: hubTiers(['locked', 'locked'], undefined, 'locked', 'current') }))
       .toContain('No chance was used. Retry the same encounter.')
     expect(result('loss', { remainingChances: 1 })).toContain('1 chance left.')
+    const kept = renderThreeInterface(hubView({
+      remainingChances: 3,
+      lastResult: hubResult({
+        outcome: 'loss', tierIndex: 0, opponentLabel: 'First foe', score: null, chanceLossPrevented: true, streakResetPrevented: true,
+        relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 1 }, { id: 'streak-anchor', chargesLeft: 0 }],
+      }),
+    }), defaultUi)
+    expect(kept).toContain('<p>Guardian Sigil used a charge to keep your chance (1 left). '
+      + 'Streak Anchor used its last charge to keep your win streak. 3 chances left. Retry the same encounter.</p>')
   })
 
   it('ends a completed or failed run with a final score and new-run actions only', () => {

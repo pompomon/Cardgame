@@ -92,6 +92,7 @@ function projectAdventureResult(
     score: result.score,
     chanceLossPrevented: result.chanceLossPrevented,
     streakResetPrevented: result.streakResetPrevented,
+    relicsUsed: Object.freeze(result.relicsUsed.map((use) => Object.freeze({ id: use.id, chargesLeft: use.chargesLeft }))),
   })
 }
 

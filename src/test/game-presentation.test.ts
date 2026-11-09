@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { ADVENTURE_REWARD_IDS, adventureRewardCatalogEntry, isAdventureChargedRelicId } from '../app/adventure-rewards'
 import { cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import {
+  describeAdventureRelicChargeUse,
+  describeAdventureRelicChargeUses,
   displayAdventureOpponentLabel,
   labelGameAction,
   labelGameActions,
@@ -34,6 +37,23 @@ describe('shared game presentation', () => {
     ])).toBe('Mystery roster')
     expect(displayAdventureOpponentLabel('mono', ['Forest']))
       .toBe('Boss: Gravebloom Dryad specialist')
+  })
+
+  it('describes used relic charges with catalog names, their purpose and the charges left', () => {
+    expect(describeAdventureRelicChargeUse({ id: 'guardian-sigil', chargesLeft: 1 }))
+      .toBe('Guardian Sigil used a charge to keep your chance (1 left).')
+    expect(describeAdventureRelicChargeUse({ id: 'streak-anchor', chargesLeft: 0 }))
+      .toBe('Streak Anchor used its last charge to keep your win streak.')
+    expect(describeAdventureRelicChargeUse({ id: 'scout-cache', chargesLeft: 0 }))
+      .toBe("Scout's Cache used its last charge to draw 2 extra opening cards.")
+    for (const id of ADVENTURE_REWARD_IDS.filter(isAdventureChargedRelicId)) {
+      const name = adventureRewardCatalogEntry(id).name
+      expect(describeAdventureRelicChargeUse({ id, chargesLeft: 1 })).toMatch(new RegExp(`^${name} used a charge to .+ \\(1 left\\)\\.$`))
+      expect(describeAdventureRelicChargeUse({ id, chargesLeft: 0 })).toMatch(new RegExp(`^${name} used its last charge to [^()]+\\.$`))
+    }
+    expect(describeAdventureRelicChargeUses([])).toBe('')
+    expect(describeAdventureRelicChargeUses([{ id: 'guardian-sigil', chargesLeft: 0 }, { id: 'streak-anchor', chargesLeft: 1 }]))
+      .toBe('Guardian Sigil used its last charge to keep your chance. Streak Anchor used a charge to keep your win streak (1 left).')
   })
 
   it('uses safe Adventure labels for irregular or unknown lineup data', () => {
