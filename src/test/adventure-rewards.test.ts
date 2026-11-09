@@ -377,6 +377,8 @@ describe('Adventure reward history guard', () => {
         ['tier-5-center', null],
         ['tier-6-center', null],
       ), { sourceNodeId: 'tier-6-left', rewardId: null }],
+      // A sparse slot reads as undefined.
+      new Array(1),
     ]
     for (const value of rejected) {
       expect(isAdventureRewardHistory(value), JSON.stringify(value)).toBe(false)
@@ -438,6 +440,13 @@ describe('Adventure reward offer guard', () => {
 
   it('rejects other versions, sources, ordinals, IDs and choices', () => {
     const valid = offer('tier-3-left', 2, ['second-wind', 'prepared-pack', 'echo-charm'])
+    // Three slots with one hole each: `every()` skips a hole, and a Set counts it as undefined.
+    const sparseChoices = valid.choices.map((_, hole) => {
+      const choices: unknown[] = [...valid.choices]
+      delete choices[hole]
+      return choices
+    })
+    expect(sparseChoices.map((choices) => [choices.length, Object.keys(choices).length])).toEqual([[3, 2], [3, 2], [3, 2]])
     const rejected: unknown[] = [
       null,
       [],
@@ -461,6 +470,7 @@ describe('Adventure reward offer guard', () => {
       { ...valid, choices: ['second-wind', 'prepared-pack', null] },
       { ...valid, choices: 'second-wind' },
       { ...valid, choices: undefined },
+      ...sparseChoices.map((choices) => ({ ...valid, choices })),
     ]
     for (const value of rejected) {
       expect(isAdventureRewardOffer(value), JSON.stringify(value)).toBe(false)

@@ -363,10 +363,14 @@ export function isAdventureRewardOffer(value: unknown): value is AdventureReward
   if (source === null || typeof sourceNodeId !== 'string' || !isRewardTier(source.tierIndex)) return false
   if (!isIntegerInRange(rewardOrdinal, 0, source.tierIndex)) return false
   if (value.offerId !== adventureRewardOfferId(sourceNodeId, rewardOrdinal)) return false
-  return Array.isArray(choices)
-    && choices.length === ADVENTURE_REWARD_OFFER_SIZE
-    && choices.every((choice) => isAdventureRewardId(choice))
-    && new Set(choices).size === choices.length
+  if (!Array.isArray(choices) || choices.length !== ADVENTURE_REWARD_OFFER_SIZE) return false
+  // `for...of` reads a sparse slot as undefined, which `every()` would skip.
+  const seen = new Set<AdventureRewardId>()
+  for (const choice of choices) {
+    if (!isAdventureRewardId(choice) || seen.has(choice)) return false
+    seen.add(choice)
+  }
+  return true
 }
 
 function cloneRelic(relic: AdventureRelic): AdventureRelic {
