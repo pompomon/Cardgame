@@ -14,7 +14,8 @@
     "test:bench": "vitest bench src/test/ai-perf.bench.ts --outputJson .ai-bench-report.json && node scripts/check-ai-bench.mjs .ai-bench-report.json",
     "generate:card-art": "node scripts/generate-card-art.mjs",
     "generate:anime-card-art": "node scripts/generate-anime-card-art.mjs",
-    "generate:board-backgrounds": "node scripts/generate-board-backgrounds.mjs"
+    "generate:board-backgrounds": "node scripts/generate-board-backgrounds.mjs",
+    "ai:tournament": "vitest run --config vitest.tools.config.ts ai-tournament"
   },
   "devDependencies": {
     "@types/three": "^0.185.4",

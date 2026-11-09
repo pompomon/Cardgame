@@ -10,6 +10,7 @@ declare module 'node:fs' {
   export function existsSync(path: string): boolean
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void
   export function mkdtempSync(prefix: string): string
+  export function writeFileSync(path: string, data: string): void
 }
 
 declare module 'node:path' {
