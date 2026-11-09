@@ -107,48 +107,57 @@ time.
 
 All matches were mirrored over the same seeds. Latency was measured in Node 24
 on a 2-vCPU dev container. Adventure seating gives Hard the Adventure deck and
-the stand-in player (Advanced) the starter deck.
+the stand-in player (Advanced) the starter deck. The tables and bullets below
+use the registered Hard level with the version 2 weights.
 
 | Match | Games | Hard's score [95% Wilson] |
 | --- | --- | --- |
-| vs legacy Hard | 600 | 89.7% [87.0%, 91.9%] |
-| vs Advanced | 600 | 90.8% [88.3%, 92.9%] |
-| vs Basic | 600 | 96.3% [94.5%, 97.6%] |
-| vs the same search playing its best estimate | 600 | 50.5% [46.5%, 54.5%] |
-
-The registered Hard level reproduced the first three rows game for game.
+| vs legacy Hard | 600 | 88.8% [86.1%, 91.1%] |
+| vs Advanced | 600 | 90.2% [87.5%, 92.3%] |
+| vs Basic | 600 | 95.2% [93.1%, 96.6%] |
+| vs the same search playing its best estimate | 600 | 49.2% [45.2%, 53.2%] |
 
 | Adventure deck (vs Advanced on starter) | Legacy Hard | New Hard |
 | --- | --- | --- |
-| starter | 49.5% | 93.8% [90.9%, 95.7%] |
-| standard | 53.3% | 91.5% [88.4%, 93.9%] |
-| dual | 49.8% | 66.8% [62.0%, 71.2%] |
-| random | 48.8% | 92.3% [89.2%, 94.5%] |
+| starter | 49.5% | 92.8% [89.8%, 94.9%] |
+| standard | 53.3% | 90.5% [87.2%, 93.0%] |
+| dual | 49.8% | 65.8% [61.0%, 70.2%] |
+| random | 48.8% | 91.3% [88.1%, 93.6%] |
 | mono boss | 54.0% | 53.0% [48.1%, 57.8%] |
 
 Every Adventure row had 400 games. The mono-deck difference is within noise.
 
 | Behaviour, vs legacy Hard | New Hard |
 | --- | --- |
-| Calm decisions that vary across 8 game seeds | 70.7% (1,364 of 1,928) |
-| Critical decisions that vary across game seeds | 0% (0 of 823) |
+| Calm decisions that vary across 8 game seeds | 68.0% (1,378 of 2,025) |
+| Critical decisions that vary across game seeds | 0% (0 of 808) |
 | Decisions changed by card order within zones | 0% |
-| Choices worse than a 4×-budget re-search by more than 0.05 | 2.8% (77 of 2,751) |
+| Choices worse than a 4×-budget re-search by more than 0.05 | 3.1% (87 of 2,833) |
 
-- **Personas:** each scored 89.3% to 91.2% against legacy Hard. Against
-  balanced, the others scored 48.7% to 52.0%, so none dominates.
-- **Latency per searched decision:** mean 3.66 ms, p95 7.69 ms, maximum 18 ms
-  over 912 states. The first decision in a fresh process took 33 to 61 ms
+- **Weights:** version 2 was fitted on 4,000 self-play games that cover every
+  mono and dual deck. Its held-out log-loss is 0.5850 against 0.5893 for
+  version 1, and 0.4188 against 0.4553 on mono decks. The search with version
+  2 scored 52.4% [50.1%, 54.7%] against the search with version 1 over 1,800
+  mirrored games on starter, mono and dual decks.
+- **Personas:** each scored 89.7% to 90.2% against legacy Hard. Against
+  balanced, the others scored 48.5% to 51.2%, so none dominates.
+- **Latency per searched decision:** mean 3.66 ms, p95 7.50 ms, maximum 25 ms
+  over 949 states. The first decision in a fresh process took 23 to 48 ms
   because of JIT compilation.
 - **Benchmark:** the critical benchmark scenario (13 classes, 12 worlds) takes
-  6.76 ms; Advanced takes 0.255 ms on the same scenario.
+  6.51 ms; Advanced takes 0.258 ms on the same scenario.
 
 The planned gate of at most 2% blunders is unreachable for this search even
-without sampling: playing the best estimate scored 3.8%, 2.9% and 2.2% at 8, 12
-and 16 worlds against an oracle noise floor of 0.6%. The gate is restated as
-"seeded selection adds at most 0.5 percentage points over the best estimate at
-the same budget". On 1,439 paired states at 12 worlds it adds 0.16 points
-(2.89% to 3.05%) and raises calm variety from 67.9% to 74.1%.
+without sampling: with the version 1 weights, playing the best estimate scored
+3.8%, 2.9% and 2.2% at 8, 12 and 16 worlds against an oracle noise floor of
+0.6%. The gate is restated as "seeded selection adds at most 0.5 percentage
+points over the best estimate at the same budget". On 502 states, each decided
+with 8 game seeds at the default budget, it adds 0.25 points (2.51% to 2.76%)
+and raises calm variety from 57.9% to 66.9%.
+
+The budget comparison, the rollout depths and the alternative opponent model
+were measured with the version 1 weights, before the Swamp reveal, and were not
+repeated.
 
 ## Alternatives considered
 
@@ -164,8 +173,8 @@ the same budget". On 1,439 paired states at 12 worlds it adds 0.16 points
   against a larger search, it only added mistakes.
 - **Other rollout depths.** Against four turns, two turns scored 45.2%
   [41.2%, 49.2%] and six turns 46.3% [42.4%, 50.3%].
-- **An opponent model that sees Hard's hand.** 52.3%, not significant, and less
-  realistic.
+- **An opponent model that always sees Hard's hand.** 52.3%, not significant,
+  and less realistic.
 
 ## Consequences
 
@@ -182,7 +191,7 @@ the same budget". On 1,439 paired states at 12 worlds it adds 0.16 points
 - Adventure on Hard is much harder: the lobby's level applies to every
   encounter.
 - A stronger AI that sees the player's hand can feel unfair.
-- Hard takes about 20 times Advanced's CPU time per decision, and more on
+- Hard takes about 25 times Advanced's CPU time per decision, and more on
   low-end mobile devices. Its benchmark gate is separate from Advanced's.
 - Weight, budget, selection, or persona changes alter Hard's choices and
   require regenerating the Hard CLI fixture.

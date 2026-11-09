@@ -28,7 +28,7 @@ Each item names the evidence that should trigger it.
 
 - **Trigger:** p95 decision latency above 16 ms with 4× or 6× CPU throttling,
   or visible stutter on target devices. Desktop measurements in Node are a
-  3.66 ms mean and a 7.69 ms p95, and a fresh page's first decision includes
+  3.66 ms mean and a 7.50 ms p95, and a fresh page's first decision includes
   JIT warm-up.
 - **Shape:** a Web Worker adapter in `src/app/`. Each request carries the
   decision key; the controller drops stale replies and cancels on mode change,
@@ -41,7 +41,7 @@ Each item names the evidence that should trigger it.
 ### Adventure difficulty
 
 - **Trigger:** player feedback or a target win rate. With Hard selected,
-  Adventure opponents beat an Advanced stand-in 91.5% to 93.8% of the time on
+  Adventure opponents beat an Advanced stand-in 90.5% to 92.8% of the time on
   starter, standard and random decks.
 - **Shape:** scale the search budget and selection temperature by tier in
   `src/app/`, passing them through `chooseAiAction` options. `src/game/` must
