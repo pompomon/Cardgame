@@ -217,14 +217,17 @@ keep their names; only their formats changed.
 - **One change and save path.** Change runs only through the helpers in
   `src/app/adventure.ts` (`startAdventureEncounter`, `openAdventureMap`,
   `resumeAdventureEncounter`, `pauseAdventureRun`,
-  `applyAdventureEncounterResult`). They copy their input and throw on an
-  invalid result; `startAdventureEncounter` returns null for a rejected
-  node. Save with `persistAdventureRun()`, which refuses a run that fails the
+  `resolveAdventureEncounterResult` or its `applyAdventureEncounterResult`
+  wrapper, `chooseAdventureRunReward`, `skipAdventureRunReward`). They copy
+  their input and throw on an invalid result. `startAdventureEncounter` and
+  the two reward helpers return null for a rejected node, offer or reward.
+  Save with `persistAdventureRun()`, which refuses a run that fails the
   guard. Copy runs with `cloneAdventureRun()`, which copies only known
   fields, deeply.
 - **Milestone 1 rules.**
-  - `stage` is `map` or `encounter` for a resumable (`active`/`paused`) run.
-    Finished runs have no stage, selected node, or attempt seed.
+  - `stage` is `map` or `encounter` for a resumable (`active`/`paused`) run;
+    Milestone 5 adds `reward`. Finished runs have no stage, selected node, or
+    attempt seed.
   - `map.kind` is `linear` for runs created by Milestones 1–2, where only
     the final tier is a mono boss, or `legacy-linear` for converted runs,
     where any known kind may be last. Keep accepting both kinds until such
@@ -238,7 +241,7 @@ keep their names; only their formats changed.
     of the current tier and stays fixed through retries; it and
     `attemptSeed` are required at `encounter`.
   - Counters are finite, non-negative integers. `relics` and `rewardHistory`
-    are reserved and must be empty.
+    were reserved and empty until Milestone 5 (see the Milestone 5 rules).
 - **Milestone 2 rules.**
   - **Ownership.** `src/app/adventure-map.ts` owns opponent pools and decks,
     map types, node IDs, `isAdventureMap`, the shared route check
@@ -287,15 +290,15 @@ keep their names; only their formats changed.
 - **Milestone 3 rules.**
   - **Stages.** A new run starts `active` at `map` with no selected node and
     no attempt seed. Starting a node moves to `encounter`. A non-terminal
-    result returns the run `active` at `map`, and a terminal run has no
-    stage.
+    result returns the run `active` at `map`; since Milestone 5, a non-boss
+    win waits at `reward` first. A terminal run has no stage.
   - **Save first.** Build the candidate with the `adventure.ts` helpers,
     persist it, and only then replace controller state or launch a game. A
     refused write leaves state and controls unchanged, with the storage
     warning as the status. Write order:
     - **Start:** run write, game-slot clear, then the hub.
-    - **Node start:** run write, game-slot clear, then
-      `createInitialGame(attemptSeed, deckPair)`.
+    - **Node start:** run write, game-slot clear, then `createInitialGame`
+      with the arguments from `adventureEncounterLaunch(run)`.
     - **Pause mid-encounter:** envelope write, then the paused-run write. If
       the run write fails, clear the envelope and keep the game open.
     - **Resume with a matching save:** run write, launch the game, then clear
@@ -326,13 +329,13 @@ keep their names; only their formats changed.
     and route key, so never change a run's route or map in place; replace
     the run object. The summon counter is the only field changed in place.
     It is not part of the route key and does not affect the cached tiers.
-    `decisionKey` (`runId|route|attempt|pending`) changes with every
-    committed route decision and is part of `threeDecisionKey`.
+    `decisionKey` (`runId|route|attempt|pending|offer`) changes with every
+    committed route or reward decision and is part of `threeDecisionKey`.
 - **Milestone 4 rules.**
-  - **Not yet persisted.** The reward rules are pure, and nothing calls them
-    yet. Run guards still require empty `relics` and `rewardHistory` until
-    Milestone 5 relaxes them to `isAdventureRewardHoldings` plus run-level
-    checks.
+  - **Wired in by Milestone 5.** The reward rules stay pure. Milestone 5
+    calls them from the run transitions and relaxes the run guard to
+    `isAdventureRewardHoldings` plus run-level checks (see the Milestone 5
+    rules).
   - **Ownership.** `src/app/adventure-rewards.ts` owns the reward catalog,
     reward guards, eligibility, offers, choose and skip, relic charges, and
     loss protection. `src/app/adventure-setup.ts` owns opening-hand setup.
@@ -370,11 +373,67 @@ keep their names; only their formats changed.
     on restarts. `adventureEncounterGameSetup` returns
     `openingHandSizes: [H, 5]` with H from 5 to 8, never a shared count. The
     creature guarantee only reorders a copy of the player's deck.
+- **Milestone 5 rules.**
+  - **Reward stage.** A non-boss win completes its node and advances the
+    tier at once, then waits at `reward` with the offer that node earned.
+    At `reward`, nothing is selected, the attempt number is 0 and there is
+    no seed. `selectAdventureNode` requires `map`, and `startAdventureNode`
+    refuses with a notice while an offer waits. `openAdventureMap` keeps
+    `reward`, so Resume reopens the offer. A boss win never creates one.
+  - **Run guard.** `isAdventureRunState` adds these checks to the holdings
+    guard:
+    - `pendingReward` is non-null exactly at `reward`. Its source is the last
+      completed node, its ordinal equals the history length, and every
+      choice is still eligible.
+    - `rewardHistory` names the latest resolved offers' source nodes in
+      route order, with no gaps. Earlier tiers may lack entries, for runs
+      saved before rewards existed.
+    - `encounterSetup` is required at `encounter`. At `map` it is allowed
+      only with a kept node and seed, and other stages have none.
+  - **Pre-reward back-fill.** Milestones 1–4 wrote version 2 runs without
+    `pendingReward` and `encounterSetup`. `readStoredAdventureRunRecord`
+    passes every payload with a `schemaVersion` key through
+    `backfillPreRewardAdventureRun` before the guard. It fills both fields only when both are missing and
+    `relics` and `rewardHistory` are empty arrays. `pendingReward` becomes
+    null, and `encounterSetup` becomes the default five-card setup at
+    `encounter`, otherwise null. Anything else goes to the strict guard
+    unchanged. The back-fill stays in memory; never write on read.
+  - **Generate the offer inside the result transition.**
+    `resolveAdventureEncounterResult` creates the offer from the run alone,
+    so Retry Saving Result rebuilds the identical offer. Never generate,
+    reroll or reorder an offer anywhere else. Save it, and resolve it only
+    through `chooseAdventureRunReward` or `skipAdventureRunReward`.
+  - **Setup lifecycle.** `startAdventureEncounter` plans the setup only when
+    the run has none, and saves it with the committed attempt, along with
+    any Scout's Cache charge it used. A lost-game restart of the same attempt
+    reuses it. Every result clears it, and nothing refunds a charge. Launch
+    new games only through `adventureEncounterLaunch(run)`. Never call
+    `planAdventureEncounterSetup` outside the start transition.
+  - **Loss protection.** Relics protect only the real chances and streak.
+    The score-eligible counters always take the unprotected result. The run
+    fails only when the real chances reach zero.
+  - **Reward commands.** `chooseAdventureReward(offerId, rewardId)` and
+    `skipAdventureReward(offerId)` re-read the latest state. They do nothing
+    for a game, a replay, a pending result or another offer ID. An unoffered
+    reward ID shows a notice and writes nothing. They save first:
+    - A refused write keeps the offer and shows the storage warning.
+    - Success clears `lastResult`, which moves focus to the current tier.
+
+    Pause and Back to Lobby keep the offer: Pause saves it, and Back to
+    Lobby writes nothing.
+  - **Projection.** `relics` and `pendingReward` are frozen copies. Names and
+    rules text come from `adventureRewardCatalogEntry`, never from saved
+    data. `lastResult` reports which relic prevented a chance loss or a
+    streak reset.
+  - **Recordings.** Relic setup lives in the recorded initial `GameState`.
+    Never add reward data to recordings, replay or P2P.
 - **Migration closure.** Every version 1 run the app could have written must
-  convert into a run that passes the version 2 guard. When a version 2 limit
-  is stricter than version 1, check that app-written data meets it and add a
-  rejection test for hand-edited data that does not. The real version 1
-  capture lives in `src/test/fixtures/adventure-v1-saves.json`.
+  convert into a run that passes the version 2 guard. Every version 2 run an
+  earlier milestone could have written must still read. When a version 2
+  limit is stricter than version 1, check that app-written data meets it and
+  add a rejection test for hand-edited data that does not. The real captures
+  live in `src/test/fixtures/adventure-v1-saves.json` and
+  `src/test/fixtures/adventure-v2-pre-reward-saves.json`.
 - **Run identity.** `createAdventureRunId()` uses `crypto.getRandomValues`
   (`randomUUID` is missing on insecure LAN origins) with a counter, clock and
   `Math.random` fallback. Never derive a run ID from a seed. A converted
@@ -396,10 +455,13 @@ keep their names; only their formats changed.
   boundary.
 - **Score counters.** `scoreEligibleChances` and `scoreEligibleWinStreak`
   shadow the real chances and streak, and `computeAdventureScore` reads the
-  score-eligible chances. Without rewards they move together.
+  score-eligible chances. Without rewards they move together. Second Wind,
+  Guardian Sigil and Streak Anchor change only the real counters, so a
+  reward can never raise the score.
 - **Resume status.** A refused write shows only the storage warning.
   Otherwise the status is the success message, followed by the recovery
-  warning when a mid-encounter game was lost.
+  warning when a mid-encounter game was lost. At `reward` the status asks
+  for a reward choice or a skip.
 
 ## Adventure-specific rules
 

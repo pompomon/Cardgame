@@ -6,6 +6,7 @@ import {
   type TargetSelectionContext,
 } from '../../app/action-resolution'
 import { ADVENTURE_TIER_COUNT, type AdventureNodeLane, type AdventureNodeStatus } from '../../app/adventure'
+import { adventureRewardCatalogEntry } from '../../app/adventure-rewards'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
@@ -23,6 +24,10 @@ import { buildCounterHandOptions, type CounterHandOptions } from '../../app/resp
 import {
   HIDDEN_HAND_CARD_NAME,
   type AdventureNodeSummary,
+  type AdventureRelicSummary,
+  type AdventureResultSummary,
+  type AdventureRewardChoiceSummary,
+  type AdventureRewardOfferSummary,
   type AdventureTierSummary,
   type AdventureUiState,
   type AppViewModel,
@@ -119,7 +124,7 @@ export function threeSessionKey(view: AppViewModel): string {
 
 // Excludes settings/status and the growing log, but invalidates selections on
 // changes to the actual decision (including a replay step, a same-phase play,
-// or an Adventure route, attempt or pending-result change).
+// or an Adventure route, attempt, pending-result or reward-offer change).
 export function threeDecisionKey(view: AppViewModel): string {
   const game = view.game
   return JSON.stringify([threeSessionKey(view), view.replay.step, view.adventure.decisionKey, game && [
@@ -322,6 +327,8 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
       <p>Tier: ${adventure.currentTier}/${ADVENTURE_TIER_COUNT} · Chances: ${adventure.remainingChances} · Win Streak: ${adventure.winStreak}</p>
       <p>Total Rounds: ${adventure.totalRoundsPlayed} · Summons attempted (both players): ${adventure.totalCardsPlayed}</p>
       <p>Next Opponent: ${nextOpponent ? escapeHtml(nextOpponent) : 'N/A'}</p>
+      ${adventure.relics.length > 0 ? `<p>Relics: ${escapeHtml(adventure.relics.map(relicLabel).join(', '))}</p>` : ''}
+      ${adventure.pendingReward ? '<p>Reward waiting: resume the Adventure to choose or skip it.</p>' : ''}
       ${hasSavedAdventureRun(adventure) ? button('abandon-adventure', 'Reset Adventure Run') : ''}</section>
     ${renderInstallControls()}`
   return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
@@ -355,6 +362,66 @@ function adventureNodeStatusLabel(status: AdventureNodeStatus): { readonly icon:
 
 function adventureChancesText(chances: number): string {
   return `${chances} ${chances === 1 ? 'chance' : 'chances'}`
+}
+
+function relicChargesText(relic: AdventureRelicSummary): string | null {
+  return relic.charges === null ? null : `${relic.charges} of ${relic.maxCharges ?? relic.charges} charges`
+}
+
+/** A relic's name with its charges, for one-line summaries. */
+function relicLabel(relic: AdventureRelicSummary): string {
+  const charges = relicChargesText(relic)
+  return charges === null ? relic.name : `${relic.name} (${charges})`
+}
+
+function renderAdventureRelics(adventure: AdventureUiState): string {
+  if (adventure.relics.length === 0) {
+    return '<p class="three-adventure-relics-empty">Relics: none yet. Win an encounter to earn a reward.</p>'
+  }
+  return `<div class="three-adventure-relics"><h3>Relics</h3><ul>${adventure.relics.map((relic) => {
+    const charges = relicChargesText(relic)
+    return `<li data-relic-id="${escapeHtml(relic.id)}"><span><strong>${escapeHtml(relic.name)}</strong>${
+      charges === null ? '' : ` · ${escapeHtml(charges)}`}</span>
+      <span class="three-adventure-relic-rules">${escapeHtml(relic.rulesText)}</span></li>`
+  }).join('')}</ul></div>`
+}
+
+// What taking the reward means for what the run already holds.
+function adventureRewardContextText(choice: AdventureRewardChoiceSummary): string {
+  const context = choice.context
+  switch (context.kind) {
+    case 'boon': return `Boon · Taken ${context.picks} of ${context.maxPicks} times this run`
+    case 'unique-relic': return 'Relic · Lasts for the rest of the run'
+    case 'charged-relic': return `Charged relic · Holding ${context.charges} of ${context.maxCharges} charges`
+    default: return 'Reward'
+  }
+}
+
+function renderAdventureRewardChoice(offer: AdventureRewardOfferSummary, choice: AdventureRewardChoiceSummary): string {
+  const context = adventureRewardContextText(choice)
+  const label = `Choose ${choice.name}`
+  const attrs = ` data-offer-id="${escapeHtml(offer.offerId)}" data-reward-id="${escapeHtml(choice.id)}"`
+    + ` aria-label="${escapeHtml(`${label}. ${choice.rulesText} ${context}.`)}"`
+  return `<li class="three-adventure-reward-choice"><h3>${escapeHtml(choice.name)}</h3>
+    <p>${escapeHtml(choice.rulesText)}</p>
+    <p class="three-adventure-reward-context">${escapeHtml(context)}</p>
+    ${button('adventure-reward-choose', label, false, attrs)}</li>`
+}
+
+// The pending offer: three Choose controls and a distinct Skip control.
+function renderAdventureReward(offer: AdventureRewardOfferSummary): string {
+  return `<section class="three-adventure-reward" aria-label="Reward">
+    <h2 tabindex="-1" data-adventure-reward-heading>Choose a reward</h2>
+    <p>Tier ${offer.sourceTier} cleared. Choose one reward or skip it, then pick your next encounter.</p>
+    <ul class="three-adventure-reward-choices">${offer.choices.map((choice) => renderAdventureRewardChoice(offer, choice)).join('')}</ul>
+    <div class="three-actions">${button('adventure-reward-skip', 'Skip reward', false, ` data-offer-id="${escapeHtml(offer.offerId)}"`)}</div>
+  </section>`
+}
+
+// Which relics kept a loss from costing a chance or resetting the streak.
+function adventureProtectionText(result: AdventureResultSummary): string {
+  return (result.chanceLossPrevented ? `${adventureRewardCatalogEntry('guardian-sigil').name} kept your chance. ` : '')
+    + (result.streakResetPrevented ? `${adventureRewardCatalogEntry('streak-anchor').name} kept your win streak. ` : '')
 }
 
 function renderAdventureNode(adventure: AdventureUiState, node: AdventureNodeSummary): string {
@@ -410,11 +477,13 @@ function renderAdventureResult(adventure: AdventureUiState): string {
     switch (result.outcome) {
       case 'win':
         heading = `Victory at Tier ${tier}`
-        detail = `Choose your Tier ${adventure.currentTier} encounter.`
+        detail = adventure.pendingReward
+          ? `Choose a reward or skip it to continue to Tier ${adventure.currentTier}.`
+          : `Choose your Tier ${adventure.currentTier} encounter.`
         break
       case 'loss':
         heading = `Defeat at Tier ${tier}`
-        detail = `${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
+        detail = `${adventureProtectionText(result)}${adventureChancesText(adventure.remainingChances)} left. Retry the same encounter.`
         break
       case 'draw':
         heading = `Draw at Tier ${tier}`
@@ -432,9 +501,10 @@ function renderAdventureResult(adventure: AdventureUiState): string {
 }
 
 /**
- * The Adventure hub: progress, the seven-tier route and its node choices, and
- * Pause/Reset (or, once the run ends, a new run and the lobby). Settings and
- * Recording reuse the lobby sub-pages.
+ * The Adventure hub: progress with relics, then either the pending reward
+ * panel or the seven-tier route and its node choices, and Pause/Reset (or,
+ * once the run ends, a new run and the lobby). Settings and Recording reuse
+ * the lobby sub-pages.
  */
 function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
   const page = ui.lobbyPage ?? 'root'
@@ -454,10 +524,12 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
       <dl class="three-adventure-stats">${stats.map(([label, value]) =>
         `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>
       ${nextOpponent ? `<p>Next opponent: ${escapeHtml(nextOpponent)}</p>` : ''}
+      ${renderAdventureRelics(adventure)}
     </section>
-    <section class="three-adventure-map" aria-label="Adventure route"><h2>Route</h2>
+    ${adventure.pendingReward ? renderAdventureReward(adventure.pendingReward)
+    : `<section class="three-adventure-map" aria-label="Adventure route"><h2>Route</h2>
       <ol class="three-adventure-route">${adventure.tiers.map((tier) => renderAdventureTier(adventure, tier)).join('')}</ol>
-    </section>
+    </section>`}
     <nav class="three-actions" aria-label="Adventure actions">${resumable
       ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
       : button('start-new-adventure', 'Start New Adventure') + button('back-to-lobby', 'Back to Lobby')}</nav>

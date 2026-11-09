@@ -36,7 +36,7 @@ The following product decisions are approved for implementation:
 - [x] Milestone 2 — Add deterministic two-branch map generation and route rules
 - [x] Milestone 3 — Deliver the branching map as an end-to-end browser flow
 - [x] Milestone 4 — Add the typed boon/relic catalog and deterministic reward rules
-- [ ] Milestone 5 — Deliver reward selection and relic application end to end
+- [x] Milestone 5 — Deliver reward selection and relic application end to end
 - [ ] Milestone 6 — Harden persistence, reentrant input, accessibility, and recovery
 - [ ] Milestone 7 — Complete documentation, compatibility, and release verification
 
@@ -917,6 +917,151 @@ generic lobby:
 - No placeholder/no-op reward can be offered.
 - A full new run can traverse three forks, claim or skip six rewards, and
   complete the boss.
+
+**Delivery notes**
+
+- **Reward stage.** `AdventureRunStage` adds `reward`. A non-boss win
+  completes its node at once: the tier advances, and the selection, attempt
+  number and seed clear. The run then waits at `reward` with the offer that
+  node earned. Choose and Skip resolve only the offer and open the `map`
+  stage at the new tier. `isAdventureRouteState` accepts `reward` only after
+  a completed node, with nothing selected, attempt 0 and no seed.
+  `selectAdventureNode` still requires `map`, so no node starts while a
+  reward waits.
+- **Run fields.** Runs gain `pendingReward` and `encounterSetup`, and
+  `relics` and `rewardHistory` may now hold rewards. `isAdventureRunState`
+  applies the Milestone 4 holdings guard plus run-level checks:
+  - The history names the latest resolved offers' source nodes in route
+    order, with no gaps. Runs saved before Milestone 5 may lack entries for
+    their earliest tiers.
+  - An offer is pending exactly at `reward`. Its source is the last completed
+    node, its ordinal is the history length, and every choice is still
+    eligible, so a hand-edited offer cannot hold a no-op reward.
+  - A setup is required at `encounter` and allowed at `map` only while a
+    node and its seed are kept for a restart. Reward and terminal stages
+    have none.
+- **Saves from before rewards.** Milestones 1–4 wrote version 2 runs without
+  the two new fields. On read, `backfillPreRewardAdventureRun` fills them in
+  memory when both are missing and the run holds no rewards: no offer, and
+  at `encounter` the five-card setup those games were dealt with. A run
+  missing only one field is unavailable. The schema version stays 2, and the
+  next commit writes the full shape.
+  `src/test/fixtures/adventure-v2-pre-reward-saves.json` holds six saves
+  captured before this change.
+- **Results.** `resolveAdventureEncounterResult(run, outcome)` returns the
+  next run and whether Guardian Sigil or Streak Anchor acted.
+  `applyAdventureEncounterResult` remains a wrapper that returns the run.
+  - A non-boss win creates the offer with `generateAdventureRewardOffer`. The
+    offer depends only on the run, so Retry Saving Result offers the same
+    choices.
+  - A boss win completes the run with no offer.
+  - A loss applies `applyAdventureLossProtection` to the real chances and
+    streak. The score-eligible counters take the unprotected result, and the
+    run fails only when the real chances reach zero.
+  - A draw retries without using a protection charge.
+  - Every result clears the attempt's setup, and nothing refunds a Scout's
+    Cache charge.
+- **Setup.** When the run has no setup, `startAdventureEncounter` plans one
+  with `planAdventureEncounterSetup`. The node-start write saves the setup and
+  any Scout's Cache charge it used. Restarting the same attempt after a lost
+  mid-encounter game reuses the setup and uses no charge.
+  `adventureEncounterLaunch(run)` returns the seed, the arranged decks and
+  `openingHandSizes: [H, 5]` for `createInitialGame`. The engine is unchanged.
+- **Choose and skip.** `chooseAdventureRunReward(run, offerId, rewardId)` and
+  `skipAdventureRunReward(run, offerId)` treat both IDs as untrusted. Unless
+  the run is resumable at `reward` and the IDs match its offer, they return
+  null. Otherwise they apply the Milestone 4 choose or skip, clear the offer
+  and open the map.
+- **Controller.** `ControllerApi` adds `chooseAdventureReward(offerId,
+  rewardId)` and `skipAdventureReward(offerId)`. Both re-read the latest
+  state. They do nothing unless Adventure is open with no game, no replay and
+  no pending result, and the same offer is pending. They save first:
+  - **Success** replaces the run and clears the last result. The status
+    names the claimed reward, or the skip, and the next tier.
+  - **A refused write** keeps the offer, the controls and focus. The status
+    ends "The reward was not claimed." or "… skipped."
+  - **An unoffered reward ID** writes nothing and shows "That reward is not
+    available. Choose an offered reward or skip it."
+  - **Other commands:**
+    - `startAdventureNode` refuses while a reward waits and writes nothing.
+    - Pause saves the run at `reward`, and Resume reopens the offer without a
+      write.
+    - Back to Lobby never writes.
+  - **Relic status copy.** The status names Guardian Sigil or Streak Anchor
+    when either kept a chance or a streak. It names Scout's Cache when a node
+    start used a charge.
+- **View model.** `AdventureUiState` adds:
+  - frozen `relics`, each with its catalog name, rules text, charges and
+    maximum charges;
+  - `pendingReward`: the offer ID, the source tier, and three choices, each
+    with catalog copy and its cap or charge context.
+
+  Copy comes from the reward catalog, never from saved data. `lastResult`
+  adds `chanceLossPrevented` and `streakResetPrevented`. `decisionKey` ends
+  with the offer ID, or `-` when none is pending.
+- **Browser.**
+  - **Reward panel.** At `reward`, the hub replaces the route with a
+    **Choose a reward** panel. Each choice shows its name, exact rules text,
+    and cap or charge context, with a **Choose <name>** button. A distinct
+    **Skip reward** button follows. Every button carries `data-offer-id`, and
+    choices also carry `data-reward-id`. The click handler checks both
+    against the latest view, and the controller checks again.
+  - **Relics.** The progress section lists owned relics with charges and
+    rules text. For a saved run, the lobby lists relics and says when a
+    reward is waiting.
+  - **Focus.**
+    - After a win, focus goes to the result heading.
+    - After a reload at `reward`, it goes to the reward heading.
+    - After Choose or Skip, it goes to the current tier.
+    - A refused write keeps focus on the activated control.
+- **Recordings.** A relic-modified encounter records the initial `GameState`
+  it dealt. The recording holds no reward data and replays like any other.
+- **Tests.**
+  - `src/test/adventure-run-rewards.test.ts` covers:
+    - the run guards and the back-fill;
+    - each catalog effect, compared with skipping the same offer;
+    - the score shadows and Scout's Cache;
+    - every route of every fork pattern, claiming and skipping six rewards.
+  - Controller, persistence, map, lobby, view-model and Three-interface tests
+    cover:
+    - claiming each catalog entry;
+    - offers, reloads, and stale and duplicate input;
+    - refused writes, focus, and recording replay.
+
+**Deviations from the contract above**
+
+- The controller table advances the tier on Choose or Skip. Instead, the
+  tier advances when the win is saved, and the reward waits between tiers.
+  This keeps one completed node per finished tier and makes the offer's
+  source the last completed node. After Choose or Skip the map opens at the
+  same next tier, so players see the same flow.
+- Saves from Milestones 1–4 are back-filled on read, as described above,
+  rather than requiring a schema bump. An older cached bundle finds a run
+  unavailable once it waits on or has resolved a reward. Reading it never
+  deletes it.
+- Relic use gets one status sentence and result-panel lines. Milestone 6 owns
+  the full status copy.
+- A stale or mismatched offer ID is ignored silently, like a stale node
+  button. Only an unoffered reward ID for the current offer shows a notice.
+
+**Milestone 6 handoff**
+
+- Extend the stateful UI regression matrix to the Choose and Skip controls.
+  Cover synchronous notification, a rejected retry, cancellation and
+  disposal, and Pause or Reset while a reward waits.
+- Write the full status copy for automatic relic use: Guardian Sigil and
+  Streak Anchor on losses, and Scout's Cache at node start. Include retry
+  outcomes and how screen readers announce the copy.
+- Check the reward panel and relic list in a production browser at narrow
+  portrait, short landscape, coarse pointer, safe areas and 200% text.
+- Add malformed version 2 fixtures for offers, relics, history and setup
+  beyond the current guard tests. Measure validation cost and payload size
+  with six rewards and a full relic inventory.
+- Verify reloads at a pending reward, at a committed encounter with a used
+  Scout's Cache charge, and after a protected loss.
+
+Rules and pitfalls for contributors are in
+[`docs/agent/state-and-persistence.md`](../agent/state-and-persistence.md#adventure-run-schema-version-2).
 
 ### Milestone 6 — Hardening and accessibility
 

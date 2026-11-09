@@ -134,6 +134,8 @@ function createView(): AppViewModel {
       activeGameSeed: null,
       pendingCompletion: null,
       lastResult: null,
+      relics: [],
+      pendingReward: null,
       highScore: 0,
       hasSavedRun: false,
       decisionKey: 'none',

@@ -4,7 +4,9 @@
 //
 // This is a leaf module. It imports game types, the map module, the card
 // catalog and the shared validators, never `adventure.ts`, persistence, the
-// controller, storage or the DOM. Run progression does not call it yet.
+// controller, storage or the DOM. `adventure.ts` drives it: a non-boss win
+// generates the offer, Choose or Skip applies it, and a loss applies the
+// protection relics.
 
 import { shuffle } from '../game/cards'
 import type { BasicLand } from '../game/types'
@@ -236,7 +238,7 @@ function maxRelicCharges(id: AdventureChargedRelicId): number {
 }
 
 /** The charges an owned relic holds, or 0 when it is not an owned charged relic. */
-function relicCharges(relics: readonly AdventureRelic[], id: AdventureRewardId): number {
+export function adventureRelicCharges(relics: readonly AdventureRelic[], id: AdventureRewardId): number {
   const relic = relics.find((entry) => entry.id === id)
   return relic !== undefined && 'charges' in relic ? relic.charges : 0
 }
@@ -412,7 +414,7 @@ function isRewardEligible(
     case 'unique-relic':
       return !picks.has(id) && !relics.some((relic) => relic.id === id)
     case 'charged-relic':
-      return relicCharges(relics, id) < acquisition.maxCharges
+      return adventureRelicCharges(relics, id) < acquisition.maxCharges
     default:
       return false
   }
@@ -503,7 +505,7 @@ function takeReward(
 ): Omit<AdventureRewardProgress, 'rewardHistory'> | null {
   if (isAdventureRelicId(id)) {
     const relic: AdventureRelic = isAdventureChargedRelicId(id)
-      ? { id, charges: relicCharges(state.relics, id) + 1 }
+      ? { id, charges: adventureRelicCharges(state.relics, id) + 1 }
       : { id }
     return { remainingChances: state.remainingChances, relics: withRelic(state.relics, relic) }
   }
@@ -569,7 +571,7 @@ export function consumeAdventureRelicCharge(
   id: AdventureChargedRelicId,
 ): AdventureRelic[] | null {
   if (!isAdventureRelicInventory(relics) || !isAdventureChargedRelicId(id)) return null
-  const charges = relicCharges(relics, id)
+  const charges = adventureRelicCharges(relics, id)
   if (charges === 0) return null
   return charges > 1 ? withRelic(relics, { id, charges: charges - 1 }) : withoutRelic(relics, id)
 }

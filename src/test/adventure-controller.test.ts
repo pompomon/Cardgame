@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   ADVENTURE_GAME_STORAGE_KEY,
   ADVENTURE_HIGH_SCORE_STORAGE_KEY,
+  adventureEncounterLaunch,
   applyAdventureEncounterResult,
   computeAdventureScore,
   deckPairForAdventureGame,
@@ -18,9 +19,16 @@ import {
   generateBranchingAdventureMap,
 } from '../app/adventure-map'
 import { ADVENTURE_RUN_STORAGE_KEY } from '../app/adventure-persistence'
+import {
+  ADVENTURE_REWARD_IDS,
+  adventureRewardCatalogEntry,
+  generateAdventureRewardOffer,
+  type AdventureRewardId,
+} from '../app/adventure-rewards'
+import { planAdventureEncounterSetup } from '../app/adventure-setup'
 import { AppController } from '../app/controller'
 import { actionableAdventureNodes } from '../app/lobby-presentation'
-import type { AdventureNodeSummary } from '../app/types'
+import type { AdventureNodeSummary, AdventureRewardOfferSummary } from '../app/types'
 import { createStarterDeck } from '../game/cards'
 import { createInitialGame } from '../game/engine'
 import type { GameState } from '../game/types'
@@ -148,6 +156,16 @@ function startFirstNode(controller: AppController): AdventureNodeSummary {
   return node
 }
 
+/** Skips the pending reward so the next tier's encounters open. */
+function skipPendingReward(controller: AppController): void {
+  const offer = controller.getViewModel().adventure.pendingReward
+  if (!offer) {
+    throw new Error('Expected a pending reward.')
+  }
+  controller.skipAdventureReward(offer.offerId)
+  expect(controller.getViewModel().adventure.pendingReward).toBeNull()
+}
+
 /** Ends the live encounter the same way the engine does: gameOver with a winner. */
 function finishEncounter(controller: AppController, winner: 0 | 1 | 'draw'): void {
   const game = liveGame(controller)
@@ -173,7 +191,7 @@ function playFirstLand(controller: AppController): void {
   controller.submitAction(action)
 }
 
-/** Wins encounters until the current tier is an uncommitted fork. */
+/** Wins encounters, skipping their rewards, until the current tier is an uncommitted fork. */
 function advanceToFork(controller: AppController): [AdventureNodeSummary, AdventureNodeSummary] {
   for (let guard = 0; guard < 7; guard += 1) {
     const nodes = actionableNodes(controller)
@@ -182,15 +200,17 @@ function advanceToFork(controller: AppController): [AdventureNodeSummary, Advent
     }
     startFirstNode(controller)
     finishEncounter(controller, 0)
+    skipPendingReward(controller)
   }
   throw new Error('Expected a fork.')
 }
 
-/** Wins the first six tiers and starts the boss encounter. */
+/** Wins the first six tiers, skipping their rewards, and starts the boss encounter. */
 function reachBoss(controller: AppController): void {
   for (let tier = 1; tier < 7; tier += 1) {
     startFirstNode(controller)
     finishEncounter(controller, 0)
+    skipPendingReward(controller)
   }
   expect(startFirstNode(controller).boss).toBe(true)
 }
@@ -415,17 +435,32 @@ describe('Adventure controller with version 1 saves', () => {
     reloaded.startAdventureNode('tier-3-center')
     expect(liveGame(reloaded)).toEqual(freshAttemptGame(currentRun(reloaded)))
     finishEncounter(reloaded, 0)
-    expect(reloaded.getViewModel().status).toBe('Encounter won. Choose your Tier 4 encounter.')
+    expect(reloaded.getViewModel().status).toBe('Encounter won. Choose a reward or skip it to continue to Tier 4.')
     expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({
       runId,
       status: 'active',
-      stage: 'map',
+      stage: 'reward',
       currentTierIndex: 3,
       completedNodeIds: ['tier-1-center', 'tier-2-center', 'tier-3-center'],
       selectedNodeId: null,
       attemptOrdinal: 0,
       attemptSeed: null,
+      rewardHistory: [],
+      // Tiers won before the conversion earn no retroactive offer.
+      pendingReward: { offerId: 'reward-1-tier-3-center', sourceNodeId: 'tier-3-center', rewardOrdinal: 0 },
+      encounterSetup: null,
     })
+
+    skipPendingReward(reloaded)
+    expect(reloaded.getViewModel().status).toBe('Reward skipped. Choose your Tier 4 encounter.')
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({
+      runId,
+      stage: 'map',
+      currentTierIndex: 3,
+      rewardHistory: [{ sourceNodeId: 'tier-3-center', rewardId: null }],
+      pendingReward: null,
+    })
+    expect(actionableIds(reloaded)).toEqual(['tier-4-center'])
   })
 
   it('keeps the unsaved conversion ID through in-session refreshes until the first save', () => {
@@ -657,7 +692,10 @@ describe('Adventure controller persistence and recovery', () => {
       controller.abandonAdventure()
       controller.startAdventure()
     }],
-    ['a completed node', (controller) => finishEncounter(controller, 0)],
+    ['a completed node', (controller) => {
+      finishEncounter(controller, 0)
+      skipPendingReward(controller)
+    }],
     ['an earlier attempt', (controller) => finishEncounter(controller, 1)],
   ]
 
@@ -917,7 +955,10 @@ describe('Adventure controller branching route', () => {
 
       finishEncounter(controller, 0)
       if (tier < 7) {
-        expect(controller.getViewModel().status).toBe(`Encounter won. Choose your Tier ${tier + 1} encounter.`)
+        expect(controller.getViewModel().status).toBe(`Encounter won. Choose a reward or skip it to continue to Tier ${tier + 1}.`)
+        expect(actionableIds(controller)).toEqual([])
+        skipPendingReward(controller)
+        expect(controller.getViewModel().status).toBe(`Reward skipped. Choose your Tier ${tier + 1} encounter.`)
       }
     }
 
@@ -1052,10 +1093,10 @@ describe('Adventure controller branching route', () => {
   })
 
   it.each([
-    ['win', 'Encounter won. Choose your Tier 2 encounter.'],
-    ['loss', 'Encounter lost. 2 chances left. Retry Tier 1.'],
-    ['draw', 'Encounter ended in a draw. Retry Tier 1.'],
-  ] as const)('keeps a %s pending until it is saved, then applies it exactly once', (outcome, status) => {
+    ['win', 'Encounter won. Choose a reward or skip it to continue to Tier 2.', 'reward'],
+    ['loss', 'Encounter lost. 2 chances left. Retry Tier 1.', 'map'],
+    ['draw', 'Encounter ended in a draw. Retry Tier 1.', 'map'],
+  ] as const)('keeps a %s pending until it is saved, then applies it exactly once', (outcome, status, stage) => {
     const storage = installTrackedStorage()
     const controller = new AppController()
     controller.startAdventure()
@@ -1091,7 +1132,7 @@ describe('Adventure controller branching route', () => {
     expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(expected)
     expect(currentRun(controller)).toEqual(expected)
     expect(internals(controller).state.game).toBeNull()
-    expect(controller.getViewModel().adventure).toMatchObject({ pendingCompletion: null, stage: 'map' })
+    expect(controller.getViewModel().adventure).toMatchObject({ pendingCompletion: null, stage })
     expect(controller.getViewModel().adventure.lastResult).toMatchObject({ outcome, tierIndex: 0, score: null })
 
     storage.calls.length = 0
@@ -1216,5 +1257,320 @@ describe('Adventure controller branching route', () => {
     storage.failingSets.delete(RUN_KEY)
     controller.retryAdventureCompletion()
     expect(storage.data.has(RUN_KEY)).toBe(false)
+  })
+})
+
+describe('Adventure controller rewards', () => {
+  installFakeTimerHooks()
+
+  const CLOCK = 1_770_000_000_000
+  const REWARD_PENDING = 'Choose a reward or skip it before starting the next encounter.'
+  const UNAVAILABLE_REWARD = 'That reward is not available. Choose an offered reward or skip it.'
+
+  /** A clock value whose first offer, after winning the first node, includes `rewardId`. */
+  function clockOfferingFirst(rewardId: AdventureRewardId): number {
+    for (let seed = CLOCK; seed < CLOCK + 1_000; seed += 1) {
+      const nodeId = generateBranchingAdventureMap(seed).tiers[0].nodes[0].id
+      if (generateAdventureRewardOffer(seed, nodeId, { relics: [], rewardHistory: [] }).choices.includes(rewardId)) {
+        return seed
+      }
+    }
+    throw new Error(`No clock value offers ${rewardId} first.`)
+  }
+
+  interface FirstOffer {
+    storage: TrackedStorage
+    controller: AppController
+    offer: AdventureRewardOfferSummary
+  }
+
+  /** Starts a run at `clock`, wins its first encounter and returns the pending offer. */
+  function firstOffer(clock = CLOCK): FirstOffer {
+    vi.setSystemTime(clock)
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    startFirstNode(controller)
+    finishEncounter(controller, 0)
+    const offer = controller.getViewModel().adventure.pendingReward
+    if (!offer) {
+      throw new Error('Expected a pending reward.')
+    }
+    return { storage, controller, offer }
+  }
+
+  function claimFirst(rewardId: AdventureRewardId): FirstOffer {
+    const first = firstOffer(clockOfferingFirst(rewardId))
+    first.controller.chooseAdventureReward(first.offer.offerId, rewardId)
+    expect(currentRun(first.controller).rewardHistory.at(-1)?.rewardId).toBe(rewardId)
+    return first
+  }
+
+  it('waits at the reward stage after a non-boss win, with the offer saved', () => {
+    const { storage, controller, offer } = firstOffer()
+    const view = controller.getViewModel()
+    const run = currentRun(controller)
+
+    expect(view.status).toBe('Encounter won. Choose a reward or skip it to continue to Tier 2.')
+    expect(view.adventure).toMatchObject({ status: 'active', stage: 'reward', currentTier: 2, relics: [] })
+    expect(view.adventure.lastResult).toMatchObject({ outcome: 'win', chanceLossPrevented: false, streakResetPrevented: false })
+    expect(offer).toMatchObject({ offerId: run.pendingReward?.offerId, sourceTier: 1 })
+    expect(offer.choices.map((choice) => choice.id)).toEqual(run.pendingReward?.choices)
+    expect(actionableIds(controller)).toEqual([])
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(run)
+  })
+
+  it('claims a reward storage first, then opens the next tier', () => {
+    const { storage, controller, offer } = firstOffer()
+    const before = currentRun(controller)
+    const choice = offer.choices[0]
+    storage.calls.length = 0
+
+    controller.chooseAdventureReward(offer.offerId, choice.id)
+
+    const run = currentRun(controller)
+    expect(adventureCalls(storage)).toEqual([`set:${RUN_KEY}`])
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(run)
+    expect(controller.getViewModel().status).toBe(`${choice.name} claimed. Choose your Tier 2 encounter.`)
+    expect(controller.getViewModel().adventure).toMatchObject({ stage: 'map', pendingReward: null, lastResult: null })
+    expect(run.rewardHistory).toEqual([{ sourceNodeId: before.completedNodeIds[0], rewardId: choice.id }])
+    expect(actionableIds(controller).length).toBeGreaterThan(0)
+  })
+
+  it('skips a reward storage first, changing only the history', () => {
+    const { storage, controller, offer } = firstOffer()
+    const before = currentRun(controller)
+    storage.calls.length = 0
+
+    controller.skipAdventureReward(offer.offerId)
+
+    expect(adventureCalls(storage)).toEqual([`set:${RUN_KEY}`])
+    expect(controller.getViewModel().status).toBe('Reward skipped. Choose your Tier 2 encounter.')
+    expect(currentRun(controller)).toEqual({
+      ...before,
+      stage: 'map',
+      pendingReward: null,
+      rewardHistory: [{ sourceNodeId: before.completedNodeIds[0], rewardId: null }],
+    })
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(currentRun(controller))
+  })
+
+  it.each([
+    ['claim', 'claimed'],
+    ['skip', 'skipped'],
+  ] as const)('keeps the same offer when the %s write is refused, then resolves it on retry', (action, verb) => {
+    const { storage, controller, offer } = firstOffer()
+    const sourceNodeId = currentRun(controller).completedNodeIds[0]
+    const resolveOffer = () => {
+      if (action === 'claim') {
+        controller.chooseAdventureReward(offer.offerId, offer.choices[1].id)
+      } else {
+        controller.skipAdventureReward(offer.offerId)
+      }
+    }
+    const before = controller.getViewModel().adventure
+    const storedRun = storage.data.get(RUN_KEY)
+    storage.failingSets.add(RUN_KEY)
+
+    resolveOffer()
+
+    expect(controller.getViewModel().status).toBe(`${STORAGE_WARNING} The reward was not ${verb}.`)
+    expect(controller.getViewModel().adventure).toEqual(before)
+    expect(storage.data.get(RUN_KEY)).toBe(storedRun)
+
+    storage.failingSets.delete(RUN_KEY)
+    resolveOffer()
+
+    expect(controller.getViewModel().adventure).toMatchObject({ stage: 'map', pendingReward: null })
+    expect(currentRun(controller).rewardHistory).toEqual([
+      { sourceNodeId, rewardId: action === 'claim' ? offer.choices[1].id : null },
+    ])
+  })
+
+  it('resolves at most one reward for tampered, duplicate and stale activations', () => {
+    const { storage, controller, offer } = firstOffer()
+    const storedRun = storage.data.get(RUN_KEY)
+    const status = controller.getViewModel().status
+    const offered = offer.choices.map((choice) => choice.id)
+    const notOffered = ADVENTURE_REWARD_IDS.find((id) => !offered.includes(id))
+
+    // Another offer ID is stale input: nothing changes, silently.
+    for (const offerId of ['', ` ${offer.offerId}`, offer.offerId.toUpperCase(), `${offer.offerId}-x`, 'reward-2-tier-2-center', null, 42]) {
+      controller.chooseAdventureReward(offerId as string, offered[0])
+      controller.skipAdventureReward(offerId as string)
+    }
+    expect(controller.getViewModel().status).toBe(status)
+    // A reward outside the current offer is refused with a notice.
+    for (const rewardId of ['', 'lucky-coin', notOffered, offered[0].toUpperCase(), null, '__proto__']) {
+      controller.reportStatus('')
+      controller.chooseAdventureReward(offer.offerId, rewardId as string)
+      expect(controller.getViewModel().status).toBe(UNAVAILABLE_REWARD)
+    }
+    expect(storage.data.get(RUN_KEY)).toBe(storedRun)
+    expect(currentRun(controller).stage).toBe('reward')
+
+    storage.calls.length = 0
+    controller.chooseAdventureReward(offer.offerId, offered[0])
+    const claimed = currentRun(controller)
+    controller.chooseAdventureReward(offer.offerId, offered[1])
+    controller.skipAdventureReward(offer.offerId)
+    expect(adventureCalls(storage)).toEqual([`set:${RUN_KEY}`])
+    expect(currentRun(controller)).toBe(claimed)
+
+    // The earlier offer stays inert at the next reward stage.
+    startFirstNode(controller)
+    finishEncounter(controller, 0)
+    const next = controller.getViewModel().adventure.pendingReward
+    expect(next?.offerId).not.toBe(offer.offerId)
+    storage.calls.length = 0
+    controller.skipAdventureReward(offer.offerId)
+    controller.chooseAdventureReward(offer.offerId, next?.choices[0].id ?? '')
+    expect(adventureCalls(storage)).toEqual([])
+    expect(currentRun(controller).pendingReward?.offerId).toBe(next?.offerId)
+  })
+
+  it('starts no encounter until the reward is resolved', () => {
+    const { storage, controller } = firstOffer()
+    const nextTier = currentRun(controller).map.tiers[1].nodes.map((node) => node.id)
+    storage.calls.length = 0
+
+    for (const nodeId of nextTier) {
+      controller.reportStatus('')
+      controller.startAdventureNode(nodeId)
+      expect(controller.getViewModel().status).toBe(REWARD_PENDING)
+    }
+    expect(adventureCalls(storage)).toEqual([])
+    expect(internals(controller).state.game).toBeNull()
+    expect(currentRun(controller).stage).toBe('reward')
+  })
+
+  it('keeps the reward waiting in the lobby and after a pause and a reload', () => {
+    const { storage, controller, offer } = firstOffer()
+
+    controller.backToLobby()
+    storage.calls.length = 0
+    controller.chooseAdventureReward(offer.offerId, offer.choices[0].id)
+    controller.skipAdventureReward(offer.offerId)
+    expect(adventureCalls(storage)).toEqual([])
+    expect(controller.getViewModel().adventure).toMatchObject({ stage: 'reward', pendingReward: offer })
+
+    controller.resumeAdventure()
+    expect(controller.getViewModel().status).toBe('Adventure resumed. Choose a reward or skip it to continue to Tier 2.')
+    controller.pauseAdventure()
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({ status: 'paused', stage: 'reward' })
+
+    const reloaded = new AppController()
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'paused', stage: 'reward', pendingReward: offer })
+    reloaded.resumeAdventure()
+    expect(reloaded.getViewModel().status).toBe('Adventure resumed. Choose a reward or skip it to continue to Tier 2.')
+    expect(reloaded.getViewModel().adventure).toMatchObject({ status: 'active', stage: 'reward', pendingReward: offer })
+
+    reloaded.skipAdventureReward(offer.offerId)
+    expect(reloaded.getViewModel().status).toBe('Reward skipped. Choose your Tier 2 encounter.')
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toMatchObject({ status: 'active', stage: 'map', pendingReward: null })
+  })
+
+  it.each([
+    ['guardian-sigil', 'Encounter lost. Guardian Sigil kept your chance. 3 chances left. Retry Tier 2.', true, false],
+    ['streak-anchor', 'Encounter lost. Streak Anchor kept your win streak. 2 chances left. Retry Tier 2.', false, true],
+  ] as const)('reports %s keeping a loss', (rewardId, status, chanceLossPrevented, streakResetPrevented) => {
+    const { controller } = claimFirst(rewardId)
+    expect(controller.getViewModel().adventure.relics).toEqual([
+      expect.objectContaining({ id: rewardId, charges: 1, maxCharges: 2 }),
+    ])
+
+    startFirstNode(controller)
+    finishEncounter(controller, 1)
+
+    const view = controller.getViewModel()
+    expect(view.status).toBe(status)
+    expect(view.adventure.lastResult).toMatchObject({ outcome: 'loss', chanceLossPrevented, streakResetPrevented })
+    expect(view.adventure.relics).toEqual([])
+  })
+
+  it.each(ADVENTURE_REWARD_IDS)('claims %s, saves and shows it, and deals the next encounter with it', (rewardId) => {
+    const { storage, controller } = claimFirst(rewardId)
+    const entry = adventureRewardCatalogEntry(rewardId)
+    const claimed = currentRun(controller)
+    const view = controller.getViewModel()
+
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(claimed)
+    expect(view.status).toBe(`${entry.name} claimed. Choose your Tier 2 encounter.`)
+    if (rewardId === 'second-wind') {
+      // A boon adds a real chance only; the score keeps the reward-free count.
+      expect(view.adventure).toMatchObject({ remainingChances: 4, relics: [] })
+      expect(claimed.scoreEligibleChances).toBe(3)
+    } else {
+      expect(view.adventure).toMatchObject({ remainingChances: 3 })
+      expect(view.adventure.relics).toEqual([
+        expect.objectContaining({ id: rewardId, name: entry.name, rulesText: entry.rulesText }),
+      ])
+    }
+
+    startFirstNode(controller)
+    const started = currentRun(controller)
+    const launch = adventureEncounterLaunch(started)
+    const hand = liveGame(controller).players[0].hand
+
+    expect(started.encounterSetup).toEqual(planAdventureEncounterSetup(claimed.relics).setup)
+    expect(storedJson<AdventureRunState>(storage, RUN_KEY)).toEqual(started)
+    expect(liveGame(controller)).toEqual(createInitialGame(launch.seed, launch.decks, launch.options))
+    expect(hand).toHaveLength(started.encounterSetup?.playerOpeningHandSize ?? 0)
+    for (const land of started.encounterSetup?.guaranteedCreatures ?? []) {
+      expect(hand.map((card) => card.name)).toContain(land)
+    }
+  })
+
+  it("uses a Scout's Cache charge once for an attempt and keeps its deal for a restart", () => {
+    const { storage, controller } = claimFirst('scout-cache')
+    const node = startFirstNode(controller)
+    const game = structuredClone(liveGame(controller))
+
+    expect(controller.getViewModel().status).toBe(
+      `Tier 2 encounter started against ${node.opponent.label}. Scout's Cache used a charge.`,
+    )
+    expect(game.players[0].hand).toHaveLength(7)
+    expect(game.players[1].hand).toHaveLength(5)
+    expect(controller.getViewModel().adventure.relics).toEqual([])
+
+    // Leaving without Pause loses the game; the same attempt restarts.
+    controller.backToLobby()
+    controller.resumeAdventure()
+    expect(controller.getViewModel().status).toBe(recoveryMessage(2))
+    storage.calls.length = 0
+    controller.startAdventureNode(node.id)
+
+    expect(controller.getViewModel().status).toBe(`Tier 2 encounter started against ${node.opponent.label}.`)
+    expect(liveGame(controller)).toEqual(game)
+    expect(currentRun(controller).encounterSetup).toEqual({ playerOpeningHandSize: 7, guaranteedCreatures: [] })
+  })
+
+  it('records a relic-modified encounter that replays from its own snapshot, without reward data', () => {
+    const { controller } = claimFirst('prepared-pack')
+    startFirstNode(controller)
+    const opening = structuredClone(liveGame(controller))
+    expect(opening.players[0].hand).toHaveLength(6)
+    expect(opening.players[1].hand).toHaveLength(5)
+    playFirstLand(controller)
+    const played = structuredClone(liveGame(controller))
+
+    const json = controller.exportRecordingJson()
+    if (!json) {
+      throw new Error('Expected an exported recording.')
+    }
+    const record = JSON.parse(json) as { metadata: Record<string, unknown>; initialState: GameState; timeline: unknown[] }
+    expect(Object.keys(record.metadata).sort())
+      .toEqual(['aiLevel', 'completed', 'controllers', 'mode', 'seed', 'startedAt', 'updatedAt'])
+    expect(json).not.toMatch(/relic|reward|prepared|scout|sigil|anchor|charm/i)
+    expect(record.initialState).toEqual(opening)
+    expect(record.timeline).toHaveLength(1)
+
+    // Another session replays it like any recording, from the stored states.
+    installTrackedStorage()
+    const viewer = new AppController()
+    viewer.importRecordingJson(json)
+    expect(internals(viewer).state.game).toEqual(opening)
+    viewer.jumpReplayToEnd()
+    expect(internals(viewer).state.game).toEqual(played)
   })
 })

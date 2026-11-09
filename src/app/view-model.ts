@@ -2,6 +2,8 @@ import { canAct, getLegalActions } from '../game/engine'
 import type { GameAction, GameState, LogEvent } from '../game/types'
 import { activeActor } from './active-actor'
 import { adventureRouteNodes, type AdventureOpponentDeck, type AdventureRunState } from './adventure'
+import { parseAdventureNodeId } from './adventure-map'
+import { adventureRelicCharges, adventureRewardCatalogEntry, type AdventureRewardId } from './adventure-rewards'
 import {
   displayAdventureOpponentLabel,
   labelGameAction,
@@ -13,7 +15,10 @@ import { getCurrentTutorialStep } from './tutorial'
 import type {
   AdventureEncounterResult,
   AdventureOpponentSummary,
+  AdventureRelicSummary,
   AdventureResultSummary,
+  AdventureRewardChoiceContext,
+  AdventureRewardOfferSummary,
   AdventureTierSummary,
   AdventureUiState,
   AppState,
@@ -24,6 +29,8 @@ import type {
 } from './types'
 
 const EMPTY_ADVENTURE_TIERS: readonly AdventureTierSummary[] = Object.freeze([])
+const EMPTY_ADVENTURE_RELICS: readonly AdventureRelicSummary[] = Object.freeze([])
+const UNIQUE_RELIC_CONTEXT: AdventureRewardChoiceContext = Object.freeze({ kind: 'unique-relic' })
 
 function projectAdventureOpponent(opponent: AdventureOpponentDeck): AdventureOpponentSummary {
   return Object.freeze({
@@ -83,6 +90,65 @@ function projectAdventureResult(
     tierIndex: result.tierIndex,
     opponentLabel: opponent ? displayAdventureOpponentLabel(opponent.kind, opponent.lands) : 'Adventure opponent',
     score: result.score,
+    chanceLossPrevented: result.chanceLossPrevented,
+    streakResetPrevented: result.streakResetPrevented,
+  })
+}
+
+// Relic copy comes from the reward catalog, never from saved data.
+function projectAdventureRelics(run: AdventureRunState): readonly AdventureRelicSummary[] {
+  if (run.relics.length === 0) {
+    return EMPTY_ADVENTURE_RELICS
+  }
+  return Object.freeze(run.relics.map((relic) => {
+    const entry = adventureRewardCatalogEntry(relic.id)
+    return Object.freeze({
+      id: relic.id,
+      name: entry.name,
+      rulesText: entry.rulesText,
+      charges: 'charges' in relic ? relic.charges : null,
+      maxCharges: entry.acquisition.kind === 'charged-relic' ? entry.acquisition.maxCharges : null,
+    })
+  }))
+}
+
+function projectRewardChoiceContext(run: AdventureRunState, id: AdventureRewardId): AdventureRewardChoiceContext {
+  const acquisition = adventureRewardCatalogEntry(id).acquisition
+  switch (acquisition.kind) {
+    case 'boon':
+      return Object.freeze({
+        kind: 'boon',
+        picks: run.rewardHistory.filter((entry) => entry.rewardId === id).length,
+        maxPicks: acquisition.maxPicks,
+      })
+    case 'charged-relic':
+      return Object.freeze({ kind: 'charged-relic', charges: adventureRelicCharges(run.relics, id), maxCharges: acquisition.maxCharges })
+    case 'unique-relic':
+      return UNIQUE_RELIC_CONTEXT
+    default:
+      // An unknown acquisition shows no holding count.
+      return UNIQUE_RELIC_CONTEXT
+  }
+}
+
+function projectAdventureRewardOffer(run: AdventureRunState): AdventureRewardOfferSummary | null {
+  const offer = run.pendingReward
+  if (offer === null) {
+    return null
+  }
+  const source = parseAdventureNodeId(offer.sourceNodeId)
+  return Object.freeze({
+    offerId: offer.offerId,
+    sourceTier: (source?.tierIndex ?? 0) + 1,
+    choices: Object.freeze(offer.choices.map((id) => {
+      const entry = adventureRewardCatalogEntry(id)
+      return Object.freeze({
+        id,
+        name: entry.name,
+        rulesText: entry.rulesText,
+        context: projectRewardChoiceContext(run, id),
+      })
+    })),
   })
 }
 
@@ -104,6 +170,8 @@ function projectAdventureUiState(state: AppState): AdventureUiState {
       activeGameSeed: null,
       pendingCompletion: null,
       lastResult: null,
+      relics: EMPTY_ADVENTURE_RELICS,
+      pendingReward: null,
       highScore,
       hasSavedRun,
       decisionKey: 'none',
@@ -125,6 +193,8 @@ function projectAdventureUiState(state: AppState): AdventureUiState {
     activeGameSeed: run.attemptSeed,
     pendingCompletion: pendingOutcome,
     lastResult: projectAdventureResult(run, lastResult),
+    relics: projectAdventureRelics(run),
+    pendingReward: projectAdventureRewardOffer(run),
     highScore,
     hasSavedRun,
     decisionKey: [
@@ -132,6 +202,7 @@ function projectAdventureUiState(state: AppState): AdventureUiState {
       adventureRouteKey(run),
       run.attemptOrdinal,
       pendingOutcome ?? '-',
+      run.pendingReward?.offerId ?? '-',
     ].join('|'),
   })
 }

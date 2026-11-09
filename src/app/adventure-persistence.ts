@@ -4,6 +4,7 @@ import {
   writeJsonStorageItem,
 } from './safe-storage'
 import {
+  backfillPreRewardAdventureRun,
   createAdventureRunId,
   isAdventureRunId,
   isLegacyAdventureRunState,
@@ -37,8 +38,10 @@ export function clearStoredAdventureRun(): boolean {
 
 /**
  * Reads the stored run without ever writing. A valid schema version 2 run is
- * returned as a detached copy. A payload without a `schemaVersion` key is a
- * version 1 run: it must pass the strict version 1 guard and is then
+ * returned as a detached copy; a version 2 run saved before rewards existed
+ * first gets its missing reward fields filled in memory (see
+ * `backfillPreRewardAdventureRun`). A payload without a `schemaVersion` key
+ * is a version 1 run: it must pass the strict version 1 guard and is then
  * converted in memory with an unsaved run ID. Anything else, including
  * unknown versions, is unavailable rather than repaired.
  *
@@ -52,7 +55,7 @@ export function readStoredAdventureRunRecord(conversionRunId?: string): StoredAd
     return null
   }
   if ('schemaVersion' in parsed) {
-    const run = normalizeAdventureRun(parsed)
+    const run = normalizeAdventureRun(backfillPreRewardAdventureRun(parsed))
     return run ? { run, migratedFromV1: false } : null
   }
   if (!isLegacyAdventureRunState(parsed)) {

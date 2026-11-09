@@ -5,6 +5,7 @@ import {
   hasSavedAdventureRun,
   isAdventureResumable,
   LOBBY_MODE_OPTIONS,
+  upcomingAdventureNodes,
 } from '../app/lobby-presentation'
 import type { AdventureNodeLane, AdventureNodeStatus } from '../app/adventure'
 import type { AdventureNodeSummary, AdventureTierSummary, AdventureUiState } from '../app/types'
@@ -25,6 +26,8 @@ function adventure(overrides: Partial<AdventureUiState> = {}): AdventureUiState 
     activeGameSeed: null,
     pendingCompletion: null,
     lastResult: null,
+    relics: [],
+    pendingReward: null,
     highScore: 0,
     hasSavedRun: false,
     decisionKey: 'none',
@@ -91,6 +94,24 @@ describe('lobby presentation', () => {
     expect(describeNextAdventureOpponent(committed)).toBe('Right foe')
     expect(actionableAdventureNodes(convergence).map((entry) => entry.id)).toEqual(['tier-3-center'])
     expect(describeNextAdventureOpponent(convergence)).toBe('Next foe')
+  })
+
+  it('names the next opponents but offers no node while a reward is pending', () => {
+    const reward = adventure({
+      status: 'active',
+      stage: 'reward',
+      currentTier: 2,
+      tiers: route(['available', 'available']),
+      pendingReward: {
+        offerId: 'reward-1-tier-1-center',
+        sourceTier: 1,
+        choices: [],
+      },
+    })
+
+    expect(actionableAdventureNodes(reward)).toEqual([])
+    expect(upcomingAdventureNodes(reward).map((entry) => entry.id)).toEqual(['tier-2-left', 'tier-2-right'])
+    expect(describeNextAdventureOpponent(reward)).toBe('Choose Left foe or Right foe')
   })
 
   it('has no actionable node without a run or after the run ends', () => {

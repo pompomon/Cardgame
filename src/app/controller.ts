@@ -8,13 +8,13 @@ import { activeActor } from './active-actor'
 import { isGameAction, isLegalActionForState, isSeedPayload } from './action-validation'
 import { readStorageItem, tryReadStorageItem, writeStorageItem } from './safe-storage'
 import {
-  applyAdventureEncounterResult,
+  adventureEncounterLaunch,
+  chooseAdventureRunReward,
   clearStoredAdventureGameSnapshot,
   computeAdventureScore,
   createAdventureRun,
   createAdventureRunId,
   createInactiveAdventureState,
-  deckPairForAdventureGame,
   isAdventureGameSnapshotForRun,
   isResumableAdventureRun,
   openAdventureMap,
@@ -23,12 +23,16 @@ import {
   persistAdventureHighScore,
   readStoredAdventureGameSnapshot,
   readStoredAdventureHighScore,
+  resolveAdventureEncounterResult,
   resumeAdventureEncounter,
   selectedAdventureNode,
+  skipAdventureRunReward,
   startAdventureEncounter,
   type AdventureEncounterOutcome,
+  type AdventureEncounterResolution,
   type AdventureRunState,
 } from './adventure'
+import { adventureRelicCharges, adventureRewardCatalogEntry } from './adventure-rewards'
 import {
   ADVENTURE_RUN_STORAGE_KEY,
   clearStoredAdventureRun,
@@ -64,28 +68,44 @@ const TUTORIAL_SEED = 1
 const ADVENTURE_STORAGE_WARNING = 'Adventure progress could not be saved (storage unavailable).'
 const ADVENTURE_RESULT_WARNING = 'The encounter result could not be saved (storage unavailable). Retry saving the result.'
 const ADVENTURE_PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
+const ADVENTURE_REWARD_PENDING_NOTICE = 'Choose a reward or skip it before starting the next encounter.'
 
 function adventureChancesText(chances: number): string {
   return `${chances} ${chances === 1 ? 'chance' : 'chances'} left`
 }
 
+// The relics that kept a loss from costing a chance or resetting the streak.
+function adventureProtectionText(resolution: AdventureEncounterResolution): string {
+  const kept: string[] = []
+  if (resolution.chanceLossPrevented) {
+    kept.push(` ${adventureRewardCatalogEntry('guardian-sigil').name} kept your chance.`)
+  }
+  if (resolution.streakResetPrevented) {
+    kept.push(` ${adventureRewardCatalogEntry('streak-anchor').name} kept your win streak.`)
+  }
+  return kept.join('')
+}
+
 // The status after a committed encounter result. Only terminal runs carry a score.
 function adventureResultStatus(
-  run: AdventureRunState,
+  resolution: AdventureEncounterResolution,
   outcome: AdventureEncounterOutcome,
   score: number | null,
   highScore: number,
 ): string {
+  const { run } = resolution
   if (run.status === 'completed' || run.status === 'failed') {
     const heading = run.status === 'completed' ? 'Adventure completed!' : 'Adventure failed.'
     return `${heading} Score: ${score ?? 0}. High score: ${highScore}.`
   }
   const tier = run.currentTierIndex + 1
   if (outcome === 'win') {
-    return `Encounter won. Choose your Tier ${tier} encounter.`
+    return run.stage === 'reward'
+      ? `Encounter won. Choose a reward or skip it to continue to Tier ${tier}.`
+      : `Encounter won. Choose your Tier ${tier} encounter.`
   }
   if (outcome === 'loss') {
-    return `Encounter lost. ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
+    return `Encounter lost.${adventureProtectionText(resolution)} ${adventureChancesText(run.remainingChances)}. Retry Tier ${tier}.`
   }
   return `Encounter ended in a draw. Retry Tier ${tier}.`
 }
@@ -120,6 +140,8 @@ export interface ControllerApi {
   startGame(mode: Mode): void
   startAdventure(): void
   startAdventureNode(nodeId: string): void
+  chooseAdventureReward(offerId: string, rewardId: string): void
+  skipAdventureReward(offerId: string): void
   retryAdventureCompletion(): void
   resumeAdventure(): void
   pauseAdventure(): void
@@ -289,7 +311,7 @@ export class AppController implements ControllerApi {
   }
 
   // Launches the committed attempt: a restored game, or a new game from the
-  // attempt seed and the selected node's decks.
+  // attempt seed, the selected node's decks and the attempt's saved setup.
   private launchAdventureGame(run: AdventureRunState, snapshot: GameState | null): void {
     const seed = run.attemptSeed
     if (seed === null) {
@@ -298,7 +320,12 @@ export class AppController implements ControllerApi {
     this.clearAiTimeout()
     this.state.mode = 'adventure-hvai'
     this.state.seed = seed
-    this.state.game = snapshot ?? createInitialGame(seed, deckPairForAdventureGame(run, seed))
+    if (snapshot) {
+      this.state.game = snapshot
+    } else {
+      const launch = adventureEncounterLaunch(run)
+      this.state.game = createInitialGame(launch.seed, launch.decks, launch.options)
+    }
     this.state.controllers = ['human', 'ai']
     this.initializeRecording('adventure-hvai')
   }
@@ -328,16 +355,19 @@ export class AppController implements ControllerApi {
   }
 
   // Commits a finished encounter, storage first. A non-terminal result writes
-  // the next run. A terminal result writes the maximum high score, then
-  // removes the run. Until every write succeeds, memory keeps the pre-result
-  // run and the game-over board, and the outcome waits for Retry completion,
-  // which re-applies it to a fresh candidate from the same run.
+  // the next run, which holds the reward offer after a non-boss win. A
+  // terminal result writes the maximum high score, then removes the run.
+  // Until every write succeeds, memory keeps the pre-result run and the
+  // game-over board, and the outcome waits for Retry completion, which
+  // re-applies it to a fresh candidate from the same run and so offers the
+  // same rewards.
   private commitAdventureResult(run: AdventureRunState, outcome: AdventureEncounterOutcome): void {
     const nodeId = run.selectedNodeId
     if (nodeId === null) {
       return
     }
-    const candidate = applyAdventureEncounterResult(run, outcome)
+    const resolution = resolveAdventureEncounterResult(run, outcome)
+    const candidate = resolution.run
     const terminal = !isResumableAdventureRun(candidate)
     let score: number | null = null
     let highScore = this.state.adventure.highScore
@@ -364,11 +394,18 @@ export class AppController implements ControllerApi {
       highScore,
       hasSavedRun: !terminal,
       pendingCompletion: null,
-      lastResult: { outcome, tierIndex: run.currentTierIndex, nodeId, score },
+      lastResult: {
+        outcome,
+        tierIndex: run.currentTierIndex,
+        nodeId,
+        score,
+        chanceLossPrevented: resolution.chanceLossPrevented,
+        streakResetPrevented: resolution.streakResetPrevented,
+      },
     }
     // The hub replaces the finished board; the recording stays exportable.
     this.state.game = null
-    this.state.status = adventureResultStatus(candidate, outcome, score, highScore)
+    this.state.status = adventureResultStatus(resolution, outcome, score, highScore)
   }
 
   private initializeRecording(mode: Mode): void {
@@ -767,6 +804,11 @@ export class AppController implements ControllerApi {
     ) {
       return
     }
+    if (run.stage === 'reward') {
+      this.state.status = ADVENTURE_REWARD_PENDING_NOTICE
+      this.notify()
+      return
+    }
     const candidate = startAdventureEncounter(run, nodeId)
     const node = candidate ? selectedAdventureNode(candidate) : null
     if (!candidate || !node) {
@@ -774,8 +816,8 @@ export class AppController implements ControllerApi {
       this.notify()
       return
     }
-    // Persistence first: a refused write keeps the map, the same choices and
-    // the attempt number.
+    // Persistence first: a refused write keeps the map, the same choices, the
+    // attempt number and every relic charge.
     if (!persistAdventureRun(candidate)) {
       this.state.status = `${ADVENTURE_STORAGE_WARNING} The encounter did not start.`
       this.notify()
@@ -787,9 +829,67 @@ export class AppController implements ControllerApi {
     this.state.adventure = { ...adventure, run: candidate, hasSavedRun: true, lastResult: null }
     this.launchAdventureGame(candidate, null)
     const opponent = displayAdventureOpponentLabel(node.opponent.kind, node.opponent.lands)
-    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.`
+    const cacheChargeUsed =
+      adventureRelicCharges(candidate.relics, 'scout-cache') < adventureRelicCharges(run.relics, 'scout-cache')
+    const cacheUsed = cacheChargeUsed
+      ? ` ${adventureRewardCatalogEntry('scout-cache').name} used a charge.`
+      : ''
+    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.${cacheUsed}`
     this.notify()
     this.scheduleAiIfNeeded()
+  }
+
+  chooseAdventureReward(offerId: string, rewardId: string): void {
+    this.resolveAdventureReward(offerId, 'claimed', (run) => chooseAdventureRunReward(run, offerId, rewardId))
+  }
+
+  skipAdventureReward(offerId: string): void {
+    this.resolveAdventureReward(offerId, 'skipped', (run) => skipAdventureRunReward(run, offerId))
+  }
+
+  // Resolves the pending reward offer, storage first. Re-reads the latest
+  // state, so a stale or repeated activation (another offer, or none
+  // pending) does nothing. A refused write keeps the same offer, so the
+  // choice can be retried.
+  private resolveAdventureReward(
+    offerId: string,
+    verb: 'claimed' | 'skipped',
+    resolve: (run: AdventureRunState) => AdventureRunState | null,
+  ): void {
+    const adventure = this.state.adventure
+    const run = adventure.run
+    if (
+      this.state.mode !== 'adventure-hvai'
+      || this.isReplayActive()
+      || this.state.game !== null
+      || adventure.pendingCompletion !== null
+      || !run
+      || !isResumableAdventureRun(run)
+      || run.stage !== 'reward'
+      || run.pendingReward === null
+      || run.pendingReward.offerId !== offerId
+    ) {
+      return
+    }
+    const candidate = resolve(run)
+    if (!candidate) {
+      this.state.status = 'That reward is not available. Choose an offered reward or skip it.'
+      this.notify()
+      return
+    }
+    if (!persistAdventureRun(candidate)) {
+      this.state.status = `${ADVENTURE_STORAGE_WARNING} The reward was not ${verb}.`
+      this.notify()
+      return
+    }
+    this.unsavedConversionRunId = null
+    this.state.adventure = { ...adventure, run: candidate, hasSavedRun: true, lastResult: null }
+    const taken = candidate.rewardHistory.at(-1)?.rewardId ?? null
+    const tier = candidate.currentTierIndex + 1
+    this.state.status = taken === null
+      ? `Reward skipped. Choose your Tier ${tier} encounter.`
+      : `${adventureRewardCatalogEntry(taken).name} claimed. Choose your Tier ${tier} encounter.`
+    this.notify()
   }
 
   retryAdventureCompletion(): void {
@@ -873,9 +973,13 @@ export class AppController implements ControllerApi {
       pendingCompletion: null,
       lastResult: null,
     }
-    this.state.status = lostGame
-      ? `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
-      : `Adventure resumed at Tier ${tier}.`
+    if (stored.stage === 'reward') {
+      this.state.status = `Adventure resumed. Choose a reward or skip it to continue to Tier ${tier}.`
+    } else {
+      this.state.status = lostGame
+        ? `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
+        : `Adventure resumed at Tier ${tier}.`
+    }
     this.notify()
   }
 

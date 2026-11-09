@@ -17,15 +17,20 @@ export function hasSavedAdventureRun(adventure: AdventureUiState | undefined): b
   return !!adventure?.hasSavedRun
 }
 
-/** The current tier's actionable nodes: one retry/convergence node or two fork choices. */
-export function actionableAdventureNodes(adventure: AdventureUiState | undefined): readonly AdventureNodeSummary[] {
+/** The current tier's open nodes: one retry/convergence node or two fork choices. */
+export function upcomingAdventureNodes(adventure: AdventureUiState | undefined): readonly AdventureNodeSummary[] {
   const tier = adventure?.tiers[adventure.currentTier - 1]
   return tier ? tier.nodes.filter((node) => node.status === 'current' || node.status === 'available') : []
 }
 
+/** The nodes that can start now: the open nodes, unless a reward must be resolved first. */
+export function actionableAdventureNodes(adventure: AdventureUiState | undefined): readonly AdventureNodeSummary[] {
+  return adventure?.stage === 'reward' ? [] : upcomingAdventureNodes(adventure)
+}
+
 /** Player-facing next opponent, listing both labels at an uncommitted fork. */
 export function describeNextAdventureOpponent(adventure: AdventureUiState | undefined): string | null {
-  const nodes = actionableAdventureNodes(adventure)
+  const nodes = upcomingAdventureNodes(adventure)
   if (nodes.length === 0) {
     return null
   }
