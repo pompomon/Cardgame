@@ -33,6 +33,7 @@ import { createStarterDeck } from '../game/cards'
 import { createInitialGame } from '../game/engine'
 import type { GameState } from '../game/types'
 import { installFakeTimerHooks } from './helpers/timers'
+import { installTrackedStorage, type TrackedStorage } from './helpers/tracked-storage'
 
 interface V1Fixture {
   closedMidRound: Record<string, string>
@@ -54,54 +55,6 @@ const RUN_ID_PATTERN = /^[0-9a-f]{32}$/
 
 function recoveryMessage(tier: number): string {
   return `Adventure resumed at Tier ${tier}. The saved game could not be restored, so the encounter restarts without using a chance.`
-}
-
-interface TrackedStorage {
-  readonly data: Map<string, string>
-  /** Every write and removal, in order, as `set:<key>` / `remove:<key>`. */
-  readonly calls: string[]
-  readonly failingSets: Set<string>
-  readonly failingRemoves: Set<string>
-  readonly failingGets: Set<string>
-}
-
-function installTrackedStorage(seed: Record<string, string> = {}): TrackedStorage {
-  const tracked: TrackedStorage = {
-    data: new Map(Object.entries(seed)),
-    calls: [],
-    failingSets: new Set(),
-    failingRemoves: new Set(),
-    failingGets: new Set(),
-  }
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key: string) => {
-        if (tracked.failingGets.has(key)) {
-          throw new Error('storage locked')
-        }
-        return tracked.data.get(key) ?? null
-      },
-      setItem: (key: string, value: string) => {
-        tracked.calls.push(`set:${key}`)
-        if (tracked.failingSets.has(key)) {
-          throw new Error('quota exceeded')
-        }
-        tracked.data.set(key, String(value))
-      },
-      removeItem: (key: string) => {
-        tracked.calls.push(`remove:${key}`)
-        if (tracked.failingRemoves.has(key)) {
-          throw new Error('storage locked')
-        }
-        tracked.data.delete(key)
-      },
-      clear: () => {
-        tracked.data.clear()
-      },
-    },
-  })
-  return tracked
 }
 
 /** Writes and removals of the Adventure run and mid-game keys. */

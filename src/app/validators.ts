@@ -30,6 +30,14 @@ export function isNonNegativeInteger(value: unknown): value is number {
   return isFiniteInteger(value) && (value as number) >= 0
 }
 
+/**
+ * A non-negative integer that arithmetic keeps exact. Use it for stored
+ * counters and seeds that feed sums or products, such as a score.
+ */
+export function isNonNegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
 export function isIntegerInRange(value: unknown, min: number, max: number): value is number {
   return isFiniteInteger(value) && (value as number) >= min && (value as number) <= max
 }

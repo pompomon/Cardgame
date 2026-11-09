@@ -8,13 +8,17 @@
 
 import { lcg, shuffle } from '../game/cards'
 import { BASIC_LANDS, isBasicLand, type BasicLand, type Card } from '../game/types'
-import { isIntegerInRange, isNonNegativeInteger, isRecordObject } from './validators'
+import { isIntegerInRange, isNonNegativeInteger, isNonNegativeSafeInteger, isRecordObject } from './validators'
 
 export const ADVENTURE_TIER_COUNT = 7
 /** Node IDs; the groups capture the 1-based tier number and the lane. */
 export const ADVENTURE_NODE_ID_PATTERN = /^tier-([1-7])-(center|left|right)$/
 
-const ADVENTURE_DECK_SIZE = 50
+/**
+ * Cards in every Adventure deck. The engine never creates cards, so this
+ * also bounds each player's zones in a saved game.
+ */
+export const ADVENTURE_DECK_SIZE = 50
 const ADVENTURE_MAX_ID_LENGTH = 128
 const ADVENTURE_MAX_LABEL_LENGTH = 256
 
@@ -293,7 +297,7 @@ export function isAdventureRunStatus(value: unknown): value is AdventureRunStatu
 
 /** Attempt ordinals are non-negative safe integers. */
 export function isAdventureAttemptOrdinal(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0
+  return isNonNegativeSafeInteger(value)
 }
 
 function isBoundedString(value: unknown, maxLength: number): value is string {
@@ -308,7 +312,8 @@ function isAdventureOpponent(value: unknown): value is AdventureOpponentDeck {
   if (kind !== 'standard' && kind !== 'dual' && kind !== 'mono' && kind !== 'random') return false
   // Unique known lands, so at most five.
   const lands = value.lands
-  if (!Array.isArray(lands) || lands.length === 0 || !lands.every((land) => isBasicLand(land))) return false
+  if (!Array.isArray(lands) || lands.length === 0 || lands.length > BASIC_LANDS.length) return false
+  if (!lands.every((land) => isBasicLand(land))) return false
   if (new Set(lands).size !== lands.length) return false
   const deck = value.deck
   if (!Array.isArray(deck) || deck.length !== ADVENTURE_DECK_SIZE) return false
@@ -392,7 +397,7 @@ function tierHasNode(map: AdventureMap, tierIndex: number, nodeId: unknown): boo
  */
 export function isAdventureRouteState(value: unknown): value is AdventureRouteState {
   if (!isRecordObject(value)) return false
-  if (!isNonNegativeInteger(value.baseSeed)) return false
+  if (!isNonNegativeSafeInteger(value.baseSeed)) return false
   const status = value.status
   if (!isAdventureRunStatus(status)) return false
   const terminal = status === 'completed' || status === 'failed'
@@ -418,7 +423,7 @@ export function isAdventureRouteState(value: unknown): value is AdventureRouteSt
   const attemptSeed = value.attemptSeed
   if (attemptSeed === null) {
     if (stage === 'encounter') return false
-  } else if (terminal || !isNonNegativeInteger(attemptSeed)) {
+  } else if (terminal || !isNonNegativeSafeInteger(attemptSeed)) {
     return false
   }
   // A reward waits between tiers: the won node is completed and the next
