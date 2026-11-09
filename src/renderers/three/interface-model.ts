@@ -381,11 +381,11 @@ function relicLabel(relic: AdventureRelicSummary): string {
 }
 
 // An empty inventory points to rewards only while a non-boss win can still earn one.
+// It never says "yet": a charged relic that used its last charge also leaves it empty.
 function renderAdventureRelics(adventure: AdventureUiState, resumable: boolean): string {
   if (adventure.relics.length === 0) {
     const canEarn = resumable && adventure.pendingReward === null && adventure.currentTier < ADVENTURE_TIER_COUNT
-    const text = resumable ? `Relics: none yet.${canEarn ? ' Win an encounter to earn a reward.' : ''}` : 'Relics: none.'
-    return `<p class="three-adventure-relics-empty">${text}</p>`
+    return `<p class="three-adventure-relics-empty">Relics: none.${canEarn ? ' Win an encounter to earn a reward.' : ''}</p>`
   }
   return `<div class="three-adventure-relics"><h3>Relics</h3><ul>${adventure.relics.map((relic) => {
     const charges = relicChargesText(relic)

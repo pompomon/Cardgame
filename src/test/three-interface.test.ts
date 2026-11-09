@@ -2769,14 +2769,22 @@ describe('Three Adventure rewards', () => {
     expect(html).toContain('<li data-relic-id="guardian-sigil"><span><strong>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</strong> · 1 of 2 charges</span>')
     expect(html).toContain('<li data-relic-id="rooftop-charm"><span><strong>Rooftop Charm</strong></span>')
     expect(html).toContain('Opening hands include a Rooftop creature.')
-    expect(html).not.toContain('Relics: none yet')
+    expect(html).not.toContain('three-adventure-relics-empty')
     // The empty inventory points to rewards only while a non-boss win can earn one.
     const empty = (adventure: Partial<AdventureUiState>) =>
       renderThreeInterface(hubView(adventure), defaultUi).match(/<p class="three-adventure-relics-empty">([^<]*)<\/p>/)?.[1]
-    expect(empty({})).toBe('Relics: none yet. Win an encounter to earn a reward.')
-    expect(empty({ stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1' })).toBe('Relics: none yet.')
-    expect(empty({ currentTier: 7 })).toBe('Relics: none yet.')
+    expect(empty({})).toBe('Relics: none. Win an encounter to earn a reward.')
+    expect(empty({ stage: 'reward', pendingReward: hubOffer(), decisionKey: 'run-1|reward|0|-|offer-1' })).toBe('Relics: none.')
+    expect(empty({ currentTier: 7 })).toBe('Relics: none.')
     expect(empty({ status: 'failed', stage: null })).toBe('Relics: none.')
+    // A relic that used its last charge empties the inventory, so the copy must not say "none yet".
+    expect(empty({
+      remainingChances: 3,
+      lastResult: hubResult({
+        outcome: 'loss', tierIndex: 1, opponentLabel: 'Second foe', score: null, chanceLossPrevented: true,
+        relicsUsed: [{ id: 'guardian-sigil', chargesLeft: 0 }],
+      }),
+    })).toBe('Relics: none. Win an encounter to earn a reward.')
     // The escaped offer ID still resolves exactly the offer on screen.
     const h = setup(view)
     h.click('[data-action="adventure-reward-skip"]')
