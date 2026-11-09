@@ -143,8 +143,9 @@ function onRail(index: number, rail: AiSelectionRail): AiSelection {
 
 /**
  * Chooses a class of `result`. Rails come first: a single class, the first
- * class that wins at once, then the best estimate when `criticality` reaches
- * the threshold. Otherwise one `rng.next()` samples the candidates.
+ * class that wins before the opponent can answer, then the best estimate when
+ * `criticality` reaches the threshold. Otherwise one `rng.next()` samples the
+ * candidates.
  */
 export function selectSearchedClass(
   result: AiSearchResult,

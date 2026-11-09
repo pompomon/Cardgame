@@ -97,7 +97,7 @@ export interface AiClassStatistics {
   readonly winsNow: boolean
 }
 
-/** `single`: one class; `win`: a class wins at once; `searched`: worlds were sampled. */
+/** `single`: one class; `win`: a class wins before the opponent can answer; `searched`: worlds were sampled. */
 export type AiSearchOutcome = 'single' | 'win' | 'searched'
 
 export interface AiSearchResult {
@@ -250,7 +250,8 @@ export function searchActionValues(
       const remaining = budget.maxEngineSteps - meter.steps
       if ((rolloutSteps / rollouts) * alive.length > remaining) break
       // Every class in the world gets the same limit, so a costly world ends
-      // within the budget, give or take one rollout decision per class.
+      // within the budget, give or take one rollout decision per class and
+      // the counter window and target choice it may leave.
       rolloutLimit = Math.max(1, Math.min(firstRolloutLimit, Math.floor(remaining / alive.length) - 1))
     }
     const settings: RolloutSettings = {

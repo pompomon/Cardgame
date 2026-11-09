@@ -28,7 +28,7 @@ Each item names the evidence that should trigger it.
 
 - **Trigger:** p95 decision latency above 16 ms with 4× or 6× CPU throttling,
   or visible stutter on target devices. Desktop measurements in Node are a
-  3.66 ms mean and a 7.50 ms p95, and a fresh page's first decision includes
+  3.54 ms mean and a 7.42 ms p95, and a fresh page's first decision includes
   JIT warm-up.
 - **Shape:** a Web Worker adapter in `src/app/`. Each request carries the
   decision key; the controller drops stale replies and cancels on mode change,
@@ -76,6 +76,10 @@ re-measures Advanced against Basic and Hard.
 - **Exact chance enumeration:** when a class's outcome depends only on the next
   draw, weight each distinct card by its count instead of sampling worlds. This
   lowers variance at the same budget.
+- **Faster wins:** a rollout values every win within its horizon at 1, and
+  halving breaks ties in key order, so Hard cannot prefer the fastest of several
+  winning lines. The check for wins the opponent cannot answer covers the
+  common case. For the rest, discount a rollout's win by its length.
 - **Weight refits:** after rule or card changes, rerun `npm run ai:tune`, bump
   `HARD_AI_WEIGHTS_VERSION`, and regenerate the Hard CLI fixture (see
   [`docs/agent/testing.md`](../agent/testing.md#seeded-ai-and-the-hard-search)).

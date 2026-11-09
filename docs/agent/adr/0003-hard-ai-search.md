@@ -52,8 +52,16 @@ fitted evaluator in `ai-features.ts` and `ai-weights.ts`. All classes in a world
 share one random stream (common random numbers), so differences come from the
 actions rather than luck. Above four classes, sequential halving keeps three
 finalists. Only the first world is guaranteed: a counter of engine steps, not a
-clock, decides whether later worlds fit. A search takes at most
-max(6000, 16 × classes) steps plus about one rollout decision per class.
+clock, decides whether later worlds fit. A rollout cut off by its step limit
+first finishes any counter window and the target choice after it, because the
+engine checks for a win only once they resolve. A search takes at most
+max(6000, 16 × classes) steps plus about one rollout decision per class, and
+the counter window and target choice that decision may leave.
+
+Before sampling worlds, the search checks each class for a win the opponent
+cannot answer. A Swamp, or a Plains reusing a land that needs a target, wins
+only after the player's own target choice, so the check resolves that choice. A
+counter window is an answer, so a land the opponent can counter is searched.
 
 Search states advance through `applyActionForSearch`, which copies only what the
 engine mutates and is checked against `applyAction` by parity tests. AI modules
@@ -66,11 +74,11 @@ a deck holds two cards or fewer, or the game is over. Below that it is 0, 0,
 0.25 or 0.5 for the furthest player's progress of zero to three lands.
 
 `selectSearchedClass` applies rails first: a single class, then a class that
-wins at once, then the best estimate at criticality 1. Critical positions are
-also searched with a fixed seed and the balanced weights, so every game plays
-them identically. Otherwise Hard samples among finalists whose estimate trails
-the best by at most 0.02 win probability, with a softmax over the gaps whose
-temperature is 0.015 × (1 − criticality).
+wins before the opponent can answer, then the best estimate at criticality 1.
+Critical positions are also searched with a fixed seed and the balanced weights,
+so every game plays them identically. Otherwise Hard samples among finalists
+whose estimate trails the best by at most 0.02 win probability, with a softmax
+over the gaps whose temperature is 0.015 × (1 − criticality).
 
 Each seat draws a persona from the game seed for the whole game:
 
@@ -108,14 +116,15 @@ time.
 All matches were mirrored over the same seeds. Latency was measured in Node 24
 on a 2-vCPU dev container. Adventure seating gives Hard the Adventure deck and
 the stand-in player (Advanced) the starter deck. The tables and bullets below
-use the registered Hard level with the version 2 weights.
+use the registered Hard level with the version 2 weights, the win check, and
+rollouts that finish pending decisions.
 
 | Match | Games | Hard's score [95% Wilson] |
 | --- | --- | --- |
 | vs legacy Hard | 600 | 88.8% [86.1%, 91.1%] |
 | vs Advanced | 600 | 90.2% [87.5%, 92.3%] |
 | vs Basic | 600 | 95.2% [93.1%, 96.6%] |
-| vs the same search playing its best estimate | 600 | 49.2% [45.2%, 53.2%] |
+| vs the same search playing its best estimate | 600 | 49.0% [45.0%, 53.0%] |
 
 | Adventure deck (vs Advanced on starter) | Legacy Hard | New Hard |
 | --- | --- | --- |
@@ -127,12 +136,23 @@ use the registered Hard level with the version 2 weights.
 
 Every Adventure row had 400 games. The mono-deck difference is within noise.
 
-| Behaviour, vs legacy Hard | New Hard |
-| --- | --- |
-| Calm decisions that vary across 8 game seeds | 68.0% (1,378 of 2,025) |
-| Critical decisions that vary across game seeds | 0% (0 of 808) |
-| Decisions changed by card order within zones | 0% |
-| Choices worse than a 4×-budget re-search by more than 0.05 | 3.1% (87 of 2,833) |
+| Behaviour | Legacy Hard, vs Advanced | New Hard, vs legacy Hard |
+| --- | --- | --- |
+| Calm decisions that vary across 8 game seeds | 0% (0 of 1,138) | 70.8% (1,444 of 2,039) |
+| Critical decisions that vary across game seeds | 0% (0 of 543) | 0% (0 of 798) |
+| Decisions changed by card order within zones | 35.9% (604 of 1,681) | 0% |
+| Choices worse than a 4×-budget re-search by more than 0.05 | 29.5% (496 of 1,681) | 2.7% (76 of 2,837) |
+
+The win check and rollout finishing left the level, Adventure and persona
+results unchanged, moved the best-estimate match by one game, and shortened
+games by 0.1 turns on average. In 865 calm states from 60 games, Hard chose the
+same class before and after them with each of 4 game seeds. Nine of 316
+critical states changed, all between classes that win before the opponent can
+answer. The behaviour diagnostics re-run every fourth decision across all
+games, so games that end sooner change which states they sample. Before rollout
+finishing, no rollout reached its step limit in 16,236 rollouts at the default
+budget; at 1,500 steps, 0.7% of rollouts were scored in a pending decision,
+affecting 11.6% of searched decisions.
 
 - **Weights:** version 2 was fitted on 4,000 self-play games that cover every
   mono and dual deck. Its held-out log-loss is 0.5850 against 0.5893 for
@@ -141,20 +161,23 @@ Every Adventure row had 400 games. The mono-deck difference is within noise.
   mirrored games on starter, mono and dual decks.
 - **Personas:** each scored 89.7% to 90.2% against legacy Hard. Against
   balanced, the others scored 48.5% to 51.2%, so none dominates.
-- **Latency per searched decision:** mean 3.66 ms, p95 7.50 ms, maximum 25 ms
-  over 949 states. The first decision in a fresh process took 23 to 48 ms
-  because of JIT compilation.
+- **Latency per searched decision:** mean 3.54 ms, p95 7.42 ms, maximum 19 ms
+  over 949 states. The first decision in a fresh process took 24 to 36 ms
+  because of JIT compilation. Tournament jobs sharing both vCPUs saw single
+  decisions of up to 731 ms; the same 600 games run alone peaked at 37 ms.
 - **Benchmark:** the critical benchmark scenario (13 classes, 12 worlds) takes
-  6.51 ms; Advanced takes 0.258 ms on the same scenario.
+  6.3 to 8.3 ms over seven runs, no slower than before the win check; Advanced
+  takes 0.26 ms on the same scenario.
 
 The planned gate of at most 2% blunders is unreachable for this search even
 without sampling: with the version 1 weights, playing the best estimate scored
 3.8%, 2.9% and 2.2% at 8, 12 and 16 worlds against an oracle noise floor of
 0.6%. The gate is restated as "seeded selection adds at most 0.5 percentage
-points over the best estimate at the same budget". On 502 states, each decided
-with 8 game seeds at the default budget, it adds 0.25 points (2.51% to 2.76%)
-and raises calm variety from 57.9% to 66.9%.
+points over the best estimate at the same budget". On 505 states, each decided
+with 8 game seeds at the default budget, it adds 0.45 points (2.57% to 3.02%)
+and raises calm variety from 60.1% to 67.6%.
 
+The weights comparison was measured before the win check and rollout finishing.
 The budget comparison, the rollout depths and the alternative opponent model
 were measured with the version 1 weights, before the Swamp reveal, and were not
 repeated.
