@@ -42,6 +42,9 @@ import './interface.css'
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]'
 
+/** The single live region that announces lobby, Adventure hub and HUD status. */
+export const THREE_STATUS_ANNOUNCER_ID = 'three-status-announcer'
+
 interface SavedFocus {
   element: HTMLElement
   key: string
@@ -104,9 +107,15 @@ export class ThreeInterface {
   private targetReturnToCards = false
   private disposed = false
   private fileGeneration = 0
+  private announcedStatus: string | null = null
+  private announcerText = ''
+  // Set while an Adventure command runs, so a retry that leaves the status
+  // unchanged is announced again.
+  private announceRepeat = false
   private readonly downloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly content: HTMLElement
   private readonly hoverContent: HTMLElement
+  private readonly announcer: HTMLElement
   private readonly hudHost: HTMLElement | null
   private readonly dockHost: HTMLElement | null
   private readonly dockPrompt: HTMLElement | null
@@ -162,7 +171,15 @@ export class ThreeInterface {
     this.fileInput.type = 'file'
     this.fileInput.accept = 'application/json,.json'
     this.fileInput.hidden = true
-    host.append(this.content, this.fileInput, this.hoverContent)
+    // Status paragraphs are rebuilt with their markup, which makes their
+    // announcements unreliable; this region persists outside every rebuilt root.
+    this.announcer = this.document.createElement('p')
+    this.announcer.classList.add('three-sr-only')
+    this.announcer.setAttribute('id', THREE_STATUS_ANNOUNCER_ID)
+    this.announcer.setAttribute('role', 'status')
+    this.announcer.setAttribute('aria-live', 'polite')
+    this.announcer.setAttribute('aria-atomic', 'true')
+    host.append(this.content, this.fileInput, this.hoverContent, this.announcer)
     for (const root of this.roots) {
       root.classList.add('three-interface')
       root.addEventListener('click', this.handleClick)
@@ -295,6 +312,8 @@ export class ThreeInterface {
     // on the same control.
     const hubFocus = isThreeAdventureHub(view) && (!this.view || !isThreeAdventureHub(this.view)
       || this.view.adventure.decisionKey !== view.adventure.decisionKey)
+    // A playing replay steps every 700 ms; only starting and stopping it is announced.
+    const replayTick = view.replay.isPlaying && !!this.view?.replay.isPlaying
     if (this.session !== session) {
       this.menuOpen = false
       this.cardsOpen = false
@@ -337,6 +356,19 @@ export class ThreeInterface {
     this.session = session
     this.render()
     if (hubFocus) this.focusAdventureHub()
+    this.announce(view.status, replayTick)
+  }
+
+  private announce(status: string, replayTick: boolean): void {
+    const repeat = this.announceRepeat
+    this.announceRepeat = false
+    if (replayTick || status === this.announcedStatus && !repeat) return
+    this.announcedStatus = status
+    // A live region speaks only when its text changes: identical text toggles
+    // a trailing no-break space, which screen readers do not read.
+    const text = status !== '' && this.announcerText === status ? `${status}\u00a0` : status
+    this.announcer.textContent = text
+    this.announcerText = text
   }
 
   private focusAdventureHub(): void {
@@ -346,6 +378,33 @@ export class ThreeInterface {
       : adventure.pendingReward ? '[data-adventure-reward-heading]' : '[data-adventure-current-tier]')
       ?? this.content.querySelector<HTMLElement>('[data-lobby-heading]')
     target?.focus()
+  }
+
+  // Adventure commands notify synchronously, so the resulting view is on
+  // screen when one returns. A transition (a new session, or a vanished
+  // control) moves focus to its destination: the hub's decision, the Game
+  // Menu button, or the lobby heading. A refused write keeps the session and
+  // the activated control, so focus stays where it was.
+  private dispatchAdventure(dispatch: () => void): void {
+    const session = this.session
+    const focused = this.focusInRoots()
+    this.announceRepeat = true
+    try {
+      dispatch()
+    } finally {
+      this.announceRepeat = false
+    }
+    const view = this.view
+    if (this.disposed || !view || this.modalKind !== null || this.inlineTargetOpen) return
+    if (this.session === session && (!focused || this.focusInRoots())) return
+    if (isThreeAdventureHub(view)) this.focusAdventureHub()
+    else if (isThreeInGame(view)) this.elements('[data-action="menu"]')[0]?.focus({ preventScroll: true })
+    else this.content.querySelector<HTMLElement>('[data-lobby-heading]')?.focus({ preventScroll: true })
+  }
+
+  private focusInRoots(): boolean {
+    const active = this.document.activeElement
+    return !!active && this.roots.some((root) => root.contains(active))
   }
 
   // Controller snapshots can advance before the next presented frame. Never
@@ -745,7 +804,7 @@ export class ThreeInterface {
     const mode = element.dataset.mode
     if (isThreeMode(mode)) {
       this.reset()
-      if (mode === 'adventure-hvai') this.controller.startAdventure()
+      if (mode === 'adventure-hvai') this.dispatchAdventure(() => this.controller.startAdventure())
       else this.controller.startGame(mode)
       return
     }
@@ -832,16 +891,16 @@ export class ThreeInterface {
         this.previewCard({ key: '', cardId: element.dataset.cardId, instanceId: element.dataset.instanceId, name: '', owner, zone, playable: false })
         break
       }
-      case 'resume-adventure': this.reset(); this.controller.resumeAdventure(); break
-      case 'pause-adventure': this.controller.pauseAdventure(); break
-      case 'abandon-adventure': this.reset(); this.controller.abandonAdventure(); break
+      case 'resume-adventure': this.reset(); this.dispatchAdventure(() => this.controller.resumeAdventure()); break
+      case 'pause-adventure': this.dispatchAdventure(() => this.controller.pauseAdventure()); break
+      case 'abandon-adventure': this.reset(); this.dispatchAdventure(() => this.controller.abandonAdventure()); break
       case 'adventure-node': {
         // Only a node the map offers right now can start; the controller
         // re-checks the latest run. No reset, so a refused write keeps focus.
         const nodeId = element.dataset.nodeId
         if (!nodeId || !isThreeAdventureHub(view) || this.lobbyPage !== 'root'
           || !actionableAdventureNodes(view.adventure).some((node) => node.id === nodeId)) break
-        this.controller.startAdventureNode(nodeId)
+        this.dispatchAdventure(() => this.controller.startAdventureNode(nodeId))
         break
       }
       case 'adventure-reward-choose':
@@ -852,19 +911,26 @@ export class ThreeInterface {
         const offerId = element.dataset.offerId
         if (!offer || !offerId || offer.offerId !== offerId || !isThreeAdventureHub(view) || this.lobbyPage !== 'root') break
         if (action === 'adventure-reward-skip') {
-          this.controller.skipAdventureReward(offerId)
+          this.dispatchAdventure(() => this.controller.skipAdventureReward(offerId))
           break
         }
         const rewardId = element.dataset.rewardId
         if (!rewardId || !offer.choices.some((choice) => choice.id === rewardId)) break
-        this.controller.chooseAdventureReward(offerId, rewardId)
+        this.dispatchAdventure(() => this.controller.chooseAdventureReward(offerId, rewardId))
         break
       }
       // No reset, so a refused write keeps the menu and focus; a committed
       // result leaves the encounter, which resets through the session change.
-      case 'adventure-retry-completion': if (view.adventure.pendingCompletion) this.controller.retryAdventureCompletion(); break
-      case 'start-new-adventure': if (isThreeAdventureHub(view)) { this.reset(); this.controller.startAdventure() }; break
-      case 'back-to-lobby': this.reset(); this.controller.backToLobby(); break
+      case 'adventure-retry-completion':
+        if (view.adventure.pendingCompletion) this.dispatchAdventure(() => this.controller.retryAdventureCompletion())
+        break
+      case 'start-new-adventure': if (isThreeAdventureHub(view)) { this.reset(); this.dispatchAdventure(() => this.controller.startAdventure()) }; break
+      case 'back-to-lobby':
+        this.reset()
+        // Leaving a finished Adventure focuses the lobby; other modes keep their behavior.
+        if (view.mode === 'adventure-hvai') this.dispatchAdventure(() => this.controller.backToLobby())
+        else this.controller.backToLobby()
+        break
       case 'rematch': this.reset(); this.controller.rematch(); break
       case 'create-offer': this.runAsync(() => this.controller.createOffer(), 'Failed to create offer.'); break
       case 'accept-answer': this.runAsync(() => this.controller.acceptAnswer(this.hostAnswerDraft), 'Failed to accept answer.'); break
@@ -997,6 +1063,7 @@ export class ThreeInterface {
     this.content.remove()
     this.fileInput.remove()
     this.hoverContent.remove()
+    this.announcer.remove()
     this.dockPrompt?.remove()
     this.dockActions?.remove()
     if (this.hudHost) this.hudHost.innerHTML = ''

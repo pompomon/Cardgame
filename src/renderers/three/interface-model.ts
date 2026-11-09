@@ -333,7 +333,7 @@ function renderThreeLobby(view: AppViewModel, ui: InterfaceUi): string {
   return `<section class="panel three-lobby" data-lobby-page="${page}" aria-label="Game lobby">
     <header><p>Three.js tabletop</p><h1 tabindex="-1" data-lobby-heading>Urban Creatures${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '<p>Urban-fantasy 2-player card game with local AI and optional P2P mode.</p>' : button('lobby-root', 'Back')}</header>
-    ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
+    ${view.status ? `<p>${escapeHtml(view.status)}</p>` : ''}
     ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
   </section>`
 }
@@ -462,6 +462,10 @@ function adventureRelicUseDetail(result: AdventureResultSummary): string {
   return text ? `${text} ` : ''
 }
 
+// Focus lands on the result heading, which reads its detail (chances left,
+// relic use, what to do next) as its description.
+const ADVENTURE_RESULT_DETAIL_ID = 'three-adventure-result-detail'
+
 function renderAdventureResult(adventure: AdventureUiState): string {
   const result = adventure.lastResult
   if (!result) return ''
@@ -498,8 +502,8 @@ function renderAdventureResult(adventure: AdventureUiState): string {
     }
   }
   return `<section class="three-adventure-result" data-outcome="${escapeHtml(result.outcome)}" aria-label="Encounter result">
-    <h2 tabindex="-1" data-adventure-result-heading>${escapeHtml(heading)}</h2>
-    <p>Opponent: ${escapeHtml(result.opponentLabel)}</p><p>${escapeHtml(detail)}</p></section>`
+    <h2 tabindex="-1" data-adventure-result-heading aria-describedby="${ADVENTURE_RESULT_DETAIL_ID}">${escapeHtml(heading)}</h2>
+    <p>Opponent: ${escapeHtml(result.opponentLabel)}</p><p id="${ADVENTURE_RESULT_DETAIL_ID}">${escapeHtml(detail)}</p></section>`
 }
 
 /**
@@ -539,7 +543,7 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
   return `<section class="panel three-adventure-hub" data-lobby-page="${page}" aria-label="Adventure map">
     <header><p>Adventure</p><h1 tabindex="-1" data-lobby-heading>Adventure Map${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '' : button('lobby-root', 'Back')}</header>
-    ${view.status ? `<p role="status" aria-live="polite">${escapeHtml(view.status)}</p>` : ''}
+    ${view.status ? `<p>${escapeHtml(view.status)}</p>` : ''}
     ${page === 'root' ? root : page === 'settings' ? renderThreeSettings(view) : renderRecorder(view)}
   </section>`
 }
@@ -628,14 +632,14 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
     return `<section class="three-hud" data-layout="narrow" aria-label="Game controls">
       ${button('menu', '☰', false, ` aria-label="Menu" aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
       <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))} <span>· Player ${game.actor + 1}</span></h2>
-      <p role="status" aria-live="polite">${escapeHtml(view.status)}</p>
+      <p>${escapeHtml(view.status)}</p>
       ${view.tutorial.active && ui.tutorialHidden ? button('tutorial-show', 'Hint', false, ' aria-label="Show tutorial hint"') : ''}</section>`
   }
   const targets = threeTargets(view, ui)
   return `<section class="three-hud" aria-label="Game controls">
     <header class="three-header">${button('menu', '☰ Menu', false, ` aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
       <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))}</h2><span>Player ${game.actor + 1}</span></header>
-    <p role="status" aria-live="polite">${escapeHtml(view.status)}</p>
+    <p>${escapeHtml(view.status)}</p>
     ${game.winnerText ? `<p class="three-winner">${escapeHtml(game.winnerText)}</p>` : ''}
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? TUTORIAL_FALLBACK_HINT)}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
