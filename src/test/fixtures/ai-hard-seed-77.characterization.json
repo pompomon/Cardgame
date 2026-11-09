@@ -1,9 +1,26 @@
 {
   "provenance": {
-    "kind": "synthetic-current-engine-characterization",
-    "capturedRevision": "71bb4c4",
-    "comparedPreMigrationRevision": "0e4ed7cb16379dc219b2be95e45849cc92f9706a",
-    "identicalGameTree": "3a958ee4034d23aa7e7890dc24754bb5a9bacf89"
+    "kind": "synthetic-search-ai-characterization",
+    "baseRevision": "2f8e15f",
+    "policy": "hard-search-v1",
+    "weightsVersion": 1,
+    "budget": {
+      "determinizations": 12,
+      "rolloutTurns": 4,
+      "rolloutEpsilon": 0.15,
+      "maxEngineSteps": 6000
+    },
+    "selection": {
+      "temperature": 0.015,
+      "margin": 0.02,
+      "criticalThreshold": 1
+    },
+    "personas": [
+      "balanced",
+      "racer",
+      "controller",
+      "hoarder"
+    ]
   },
   "config": {
     "mode": "ai-vs-ai",
@@ -16,12 +33,11 @@
     {
       "type": "play_land",
       "actor": 0,
-      "cardId": "p0-mountain-7"
+      "cardId": "p0-plains-4"
     },
     {
-      "type": "counter_land",
-      "actor": 1,
-      "discardCardId": "p1-swamp-9"
+      "type": "pass_response",
+      "actor": 1
     },
     {
       "type": "end_turn",
@@ -30,12 +46,12 @@
     {
       "type": "play_land",
       "actor": 1,
-      "cardId": "p1-mountain-9"
+      "cardId": "p1-swamp-9"
     },
     {
       "type": "counter_land",
       "actor": 0,
-      "discardCardId": "p0-swamp-7"
+      "discardCardId": "p0-forest-2"
     },
     {
       "type": "end_turn",
@@ -47,50 +63,85 @@
       "cardId": "p0-swamp-3"
     },
     {
-      "type": "counter_land",
-      "actor": 1,
-      "discardCardId": "p1-forest-5"
-    },
-    {
-      "type": "end_turn",
-      "actor": 0
-    },
-    {
-      "type": "play_land",
-      "actor": 1,
-      "cardId": "p1-mountain-4"
-    },
-    {
-      "type": "end_turn",
+      "type": "pass_response",
       "actor": 1
-    },
-    {
-      "type": "play_land",
-      "actor": 0,
-      "cardId": "p0-plains-4"
-    },
-    {
-      "type": "end_turn",
-      "actor": 0
-    },
-    {
-      "type": "play_land",
-      "actor": 1,
-      "cardId": "p1-island-2"
-    },
-    {
-      "type": "end_turn",
-      "actor": 1
-    },
-    {
-      "type": "play_land",
-      "actor": 0,
-      "cardId": "p0-swamp-4"
     },
     {
       "type": "resolve_swamp_discard",
       "actor": 0,
-      "effectTargetId": "p1-forest-9"
+      "effectTargetId": "p1-island-0"
+    },
+    {
+      "type": "end_turn",
+      "actor": 0
+    },
+    {
+      "type": "play_land",
+      "actor": 1,
+      "cardId": "p1-mountain-4",
+      "effectTargetId": "p0-1"
+    },
+    {
+      "type": "end_turn",
+      "actor": 1
+    },
+    {
+      "type": "play_land",
+      "actor": 0,
+      "cardId": "p0-swamp-7"
+    },
+    {
+      "type": "pass_response",
+      "actor": 1
+    },
+    {
+      "type": "resolve_swamp_discard",
+      "actor": 0,
+      "effectTargetId": "p1-island-2"
+    },
+    {
+      "type": "end_turn",
+      "actor": 0
+    },
+    {
+      "type": "play_land",
+      "actor": 1,
+      "cardId": "p1-forest-5",
+      "effectTargetId": "p1-island-0"
+    },
+    {
+      "type": "end_turn",
+      "actor": 1
+    },
+    {
+      "type": "play_land",
+      "actor": 0,
+      "cardId": "p0-forest-4",
+      "effectTargetId": "p0-island-9"
+    },
+    {
+      "type": "counter_land",
+      "actor": 1,
+      "discardCardId": "p1-forest-9"
+    },
+    {
+      "type": "end_turn",
+      "actor": 0
+    },
+    {
+      "type": "play_land",
+      "actor": 1,
+      "cardId": "p1-island-0"
+    },
+    {
+      "type": "end_turn",
+      "actor": 1
+    },
+    {
+      "type": "play_land",
+      "actor": 0,
+      "cardId": "p0-forest-5",
+      "effectTargetId": "p0-island-9"
     },
     {
       "type": "end_turn",
@@ -102,29 +153,9 @@
       "cardId": "p1-swamp-6"
     },
     {
-      "type": "resolve_swamp_discard",
-      "actor": 1,
-      "effectTargetId": "p0-forest-2"
-    },
-    {
-      "type": "end_turn",
-      "actor": 1
-    },
-    {
-      "type": "play_land",
+      "type": "counter_land",
       "actor": 0,
-      "cardId": "p0-forest-4",
-      "effectTargetId": "p0-mountain-7"
-    },
-    {
-      "type": "end_turn",
-      "actor": 0
-    },
-    {
-      "type": "play_land",
-      "actor": 1,
-      "cardId": "p1-forest-4",
-      "effectTargetId": "p1-island-8"
+      "discardCardId": "p0-swamp-4"
     },
     {
       "type": "end_turn",
@@ -134,12 +165,36 @@
       "type": "play_land",
       "actor": 0,
       "cardId": "p0-mountain-7",
-      "effectTargetId": "p1-1"
+      "effectTargetId": "p1-5"
+    },
+    {
+      "type": "pass_response",
+      "actor": 1
+    },
+    {
+      "type": "end_turn",
+      "actor": 0
+    },
+    {
+      "type": "play_land",
+      "actor": 1,
+      "cardId": "p1-forest-4",
+      "effectTargetId": "p1-island-2"
+    },
+    {
+      "type": "end_turn",
+      "actor": 1
+    },
+    {
+      "type": "play_land",
+      "actor": 0,
+      "cardId": "p0-plains-7",
+      "effectTargetId": "p0-8"
     },
     {
       "type": "counter_land",
       "actor": 1,
-      "discardCardId": "p1-island-8"
+      "discardCardId": "p1-mountain-9"
     },
     {
       "type": "end_turn",
@@ -149,21 +204,48 @@
       "type": "play_land",
       "actor": 1,
       "cardId": "p1-plains-5",
-      "effectTargetId": "p1-3"
+      "effectTargetId": "p1-6"
+    },
+    {
+      "type": "end_turn",
+      "actor": 1
+    },
+    {
+      "type": "play_land",
+      "actor": 0,
+      "cardId": "p0-plains-9",
+      "effectTargetId": "p0-7"
+    },
+    {
+      "type": "counter_land",
+      "actor": 1,
+      "discardCardId": "p1-plains-9"
+    },
+    {
+      "type": "end_turn",
+      "actor": 0
+    },
+    {
+      "type": "play_land",
+      "actor": 1,
+      "cardId": "p1-swamp-5"
+    },
+    {
+      "type": "resolve_swamp_discard",
+      "actor": 1,
+      "effectTargetId": "p0-island-6"
     }
   ],
   "outcome": {
     "winner": 1,
-    "turn": 12,
+    "turn": 16,
     "phase": "gameOver",
     "currentPlayer": 1,
-    "nextInstanceId": 9,
+    "nextInstanceId": 12,
     "players": [
       {
         "id": 0,
         "deck": [
-          "p0-plains-9",
-          "p0-island-6",
           "p0-plains-6",
           "p0-swamp-6",
           "p0-island-0",
@@ -203,41 +285,44 @@
           "p0-island-2",
           "p0-island-3"
         ],
-        "hand": [
-          "p0-forest-5",
-          "p0-plains-7"
-        ],
+        "hand": [],
         "battlefield": [
           {
             "instanceId": "p0-2",
-            "cardId": "p0-plains-4",
-            "name": "Plains"
-          },
-          {
-            "instanceId": "p0-4",
-            "cardId": "p0-swamp-4",
+            "cardId": "p0-swamp-3",
             "name": "Swamp"
           },
           {
-            "instanceId": "p0-6",
-            "cardId": "p0-forest-4",
+            "instanceId": "p0-4",
+            "cardId": "p0-swamp-7",
+            "name": "Swamp"
+          },
+          {
+            "instanceId": "p0-7",
+            "cardId": "p0-forest-5",
             "name": "Forest"
+          },
+          {
+            "instanceId": "p0-8",
+            "cardId": "p0-mountain-7",
+            "name": "Mountain"
           }
         ],
         "graveyard": [
-          "p0-island-9",
-          "p0-swamp-7",
-          "p0-swamp-3",
           "p0-forest-2",
-          "p0-mountain-7"
+          "p0-plains-4",
+          "p0-forest-4",
+          "p0-island-9",
+          "p0-swamp-4",
+          "p0-plains-7",
+          "p0-plains-9",
+          "p0-island-6"
         ],
         "landsPlayedThisTurn": 1
       },
       {
         "id": 1,
         "deck": [
-          "p1-plains-9",
-          "p1-mountain-8",
           "p1-plains-6",
           "p1-forest-8",
           "p1-plains-3",
@@ -275,43 +360,45 @@
           "p1-island-5"
         ],
         "hand": [
-          "p1-swamp-5"
+          "p1-mountain-8"
         ],
         "battlefield": [
           {
-            "instanceId": "p1-1",
+            "instanceId": "p1-3",
             "cardId": "p1-mountain-4",
             "name": "Mountain"
           },
           {
-            "instanceId": "p1-3",
-            "cardId": "p1-island-2",
+            "instanceId": "p1-6",
+            "cardId": "p1-island-0",
             "name": "Island"
           },
           {
-            "instanceId": "p1-5",
-            "cardId": "p1-swamp-6",
-            "name": "Swamp"
-          },
-          {
-            "instanceId": "p1-7",
+            "instanceId": "p1-9",
             "cardId": "p1-forest-4",
             "name": "Forest"
           },
           {
-            "instanceId": "p1-8",
+            "instanceId": "p1-10",
             "cardId": "p1-plains-5",
             "name": "Plains"
+          },
+          {
+            "instanceId": "p1-11",
+            "cardId": "p1-swamp-5",
+            "name": "Swamp"
           }
         ],
         "graveyard": [
           "p1-swamp-9",
-          "p1-mountain-9",
-          "p1-island-0",
-          "p1-forest-5",
+          "p1-island-8",
           "p1-forest-9",
+          "p1-swamp-6",
+          "p1-forest-5",
           "p1-island-1",
-          "p1-island-8"
+          "p1-mountain-9",
+          "p1-island-2",
+          "p1-plains-9"
         ],
         "landsPlayedThisTurn": 1
       }

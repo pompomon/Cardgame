@@ -1,9 +1,11 @@
 import { readFileSync, unlinkSync } from 'node:fs'
 
-const BENCHMARK_NAME = 'hard ai chooses from targeted scenario'
-const BASELINE_MS_PER_OP = 0.55
-const MAX_SLOWDOWN = 1.5
-const MAX_MS_PER_OP = BASELINE_MS_PER_OP * MAX_SLOWDOWN
+// One gate per benchmark in `src/test/ai-perf.bench.ts`. The bench comment
+// explains how the baselines were measured; change both together.
+const GATES = [
+  { name: 'advanced ai chooses from targeted scenario', baselineMs: 0.55, maxSlowdown: 1.5 },
+  { name: 'hard ai search chooses from targeted scenario', baselineMs: 14, maxSlowdown: 1.5 },
+]
 
 function readReport(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
@@ -57,35 +59,45 @@ if (!reportPath) {
   throw new Error('usage: node scripts/check-ai-bench.mjs <benchmark-json>')
 }
 
-let benchmark
+let report
 try {
-  benchmark = findBenchmark(readReport(reportPath), BENCHMARK_NAME)
+  report = readReport(reportPath)
 } finally {
   if (!process.env.KEEP_AI_BENCH_REPORT) {
     try { unlinkSync(reportPath) } catch { /* ignore if already gone */ }
   }
 }
 
-if (!benchmark) {
-  throw new Error(`benchmark '${BENCHMARK_NAME}' was not found in ${reportPath}`)
+const failures = []
+
+for (const { name, baselineMs, maxSlowdown } of GATES) {
+  const benchmark = findBenchmark(report, name)
+  if (!benchmark) {
+    failures.push(`benchmark '${name}' was not found in ${reportPath}`)
+    continue
+  }
+
+  const meanMsPerOp = msPerOp(benchmark)
+  if (typeof meanMsPerOp !== 'number' || !Number.isFinite(meanMsPerOp)) {
+    failures.push(`benchmark '${name}' in ${reportPath} has no usable timing (hz/mean)`)
+    continue
+  }
+
+  const maxMsPerOp = baselineMs * maxSlowdown
+  if (meanMsPerOp > maxMsPerOp) {
+    failures.push(
+      [
+        `AI benchmark regression in '${name}': ${meanMsPerOp.toFixed(4)} ms/op exceeds ${maxMsPerOp.toFixed(4)} ms/op.`,
+        `Baseline is ${baselineMs.toFixed(4)} ms/op with a ${maxSlowdown}x gate.`,
+      ].join(' '),
+    )
+    continue
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`AI benchmark OK: '${name}' ${meanMsPerOp.toFixed(4)} ms/op <= ${maxMsPerOp.toFixed(4)} ms/op`)
 }
 
-const meanMsPerOp = msPerOp(benchmark)
-
-if (typeof meanMsPerOp !== 'number' || !Number.isFinite(meanMsPerOp)) {
-  throw new Error(`benchmark '${BENCHMARK_NAME}' in ${reportPath} has no usable timing (hz/mean)`)
+if (failures.length > 0) {
+  throw new Error(failures.join('\n'))
 }
-
-if (meanMsPerOp > MAX_MS_PER_OP) {
-  throw new Error(
-    [
-      `AI benchmark regression: ${meanMsPerOp.toFixed(4)} ms/op exceeds ${MAX_MS_PER_OP.toFixed(4)} ms/op.`,
-      `Baseline is ${BASELINE_MS_PER_OP.toFixed(4)} ms/op with a ${MAX_SLOWDOWN}x gate.`,
-    ].join(' '),
-  )
-}
-
-// eslint-disable-next-line no-console
-console.log(
-  `AI benchmark OK: ${meanMsPerOp.toFixed(4)} ms/op <= ${MAX_MS_PER_OP.toFixed(4)} ms/op`,
-)

@@ -29,6 +29,8 @@ describe('AI hot-loop modules', () => {
       'src/game/ai.ts',
       'src/game/ai-action-utils.ts',
       'src/game/ai-evaluation.ts',
+      'src/game/ai-hard.ts',
+      'src/game/ai-search.ts',
       'src/game/ai-visibility.ts',
     ]) {
       expect(AI_HOT_LOOP_FILES).toContain(known)

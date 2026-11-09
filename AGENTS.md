@@ -86,6 +86,10 @@ verification stays pending maintainer review under the
    when deliberately generating new replacements; record visual verification
    separately. See
    [`public/cards/README.md`](public/cards/README.md#anime-artwork).
+12. **Seeded AI randomness.** AI modules take randomness only from
+   `src/game/ai-random.ts`, seeded from the game seed; never `Math.random`,
+   clocks, or `crypto`. See
+   [ADR 0003](docs/agent/adr/0003-hard-ai-search.md).
 
 ## Topic index (`docs/agent/`)
 

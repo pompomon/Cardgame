@@ -1,5 +1,6 @@
-import { chooseStrategicAction } from '../ai-evaluation'
+import { hardSearchPolicy } from '../ai-hard'
 import type { AiPolicy } from '../ai-policy-types'
 
-export const hardPolicy: AiPolicy = ({ state, actor, actions, context }) =>
-  chooseStrategicAction(state, actor, actions, context)
+// Hard searches sampled deck orders and plays with seeded variety; see
+// ai-hard.ts and docs/agent/adr/0003-hard-ai-search.md.
+export const hardPolicy: AiPolicy = hardSearchPolicy

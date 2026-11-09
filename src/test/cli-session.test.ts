@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { isLegalActionForState } from '../app/action-validation'
 import type { CliIo } from '../cli/io'
 import { formatTerminalGameState, runGameSession } from '../cli/session'
+import { AI_PERSONAS } from '../game/ai-personas'
+import { HARD_AI_DEFAULT_BUDGET } from '../game/ai-search'
+import { HARD_AI_DEFAULT_SELECTION } from '../game/ai-selection'
+import { HARD_AI_WEIGHTS_VERSION } from '../game/ai-weights'
+import type { AiLevel } from '../game/ai-levels'
 import { applyAction, createInitialGame } from '../game/engine'
 import type { GamePhase } from '../game/types'
 
@@ -39,6 +44,39 @@ function makeIo(responses: string[], captureOutput = true): TestIoContext {
       },
     },
   }
+}
+
+
+// No captured historical fixture was present in the inspected pre-migration
+// revision. The Basic and Advanced fixtures are new characterizations, not
+// historical recordings. git ls-tree verified that the entire src/game tree
+// (engine, cards, types, AI policies/visibility/evaluation) is byte-identical
+// at both revisions.
+const PRE_SEARCH_PROVENANCE = {
+  kind: 'synthetic-current-engine-characterization',
+  capturedRevision: '71bb4c4',
+  comparedPreMigrationRevision: '0e4ed7cb16379dc219b2be95e45849cc92f9706a',
+  identicalGameTree: '3a958ee4034d23aa7e7890dc24754bb5a9bacf89',
+}
+
+// The Hard search was characterized on top of main at `baseRevision`. Its
+// choices follow from the policy, the weights, the budget, the selection
+// settings and the personas, so a change to any of them shows in this
+// fixture's diff. Regenerate it with
+// `npx vitest run src/test/cli-session.test.ts -u` and check that only the
+// Hard fixture changed.
+const CHARACTERIZATION_PROVENANCE: Record<AiLevel, object> = {
+  basic: PRE_SEARCH_PROVENANCE,
+  advanced: PRE_SEARCH_PROVENANCE,
+  hard: {
+    kind: 'synthetic-search-ai-characterization',
+    baseRevision: '2f8e15f',
+    policy: 'hard-search-v1',
+    weightsVersion: HARD_AI_WEIGHTS_VERSION,
+    budget: HARD_AI_DEFAULT_BUDGET,
+    selection: HARD_AI_DEFAULT_SELECTION,
+    personas: AI_PERSONAS,
+  },
 }
 
 describe('terminal game session', () => {
@@ -215,17 +253,8 @@ describe('terminal game session', () => {
       }
       expect(replayed).toEqual(result.state)
 
-      // No captured historical fixture was present in the inspected pre-migration
-      // revision. These are new characterizations, not historical recordings.
-      // git ls-tree verified that the entire src/game tree (engine, cards, types,
-      // AI policies/visibility/evaluation) is byte-identical at both revisions.
       await expect(JSON.stringify({
-        provenance: {
-          kind: 'synthetic-current-engine-characterization',
-          capturedRevision: '71bb4c4',
-          comparedPreMigrationRevision: '0e4ed7cb16379dc219b2be95e45849cc92f9706a',
-          identicalGameTree: '3a958ee4034d23aa7e7890dc24754bb5a9bacf89',
-        },
+        provenance: CHARACTERIZATION_PROVENANCE[aiLevel],
         config,
         status: result.status,
         actions: result.actions,

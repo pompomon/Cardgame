@@ -49,6 +49,42 @@ npm run test    # vitest run
   intent (e.g. disrupts a near-win opponent), not that it equals a
   specific card.
 
+### Seeded AI and the Hard search
+
+- **Seeding contract.** AI choices depend only on the state, the seat, the
+  game seed, and the budget. AI modules take randomness from
+  `src/game/ai-random.ts` only; `ai-randomness-sources.test.ts` bans
+  `Math.random`, clocks, and crypto in `src/game/ai*.ts`. Tests pass an
+  explicit seed and may assert that a decision repeats for the same inputs,
+  after a JSON round trip, and with a reordered deck or zone.
+- **Critical vs calm.** In critical positions (`decisionCriticality` of 1)
+  Hard must choose identically for every seed, so tests may assert the exact
+  action across many seeds (`criticalFixtures()` in `ai-hard.test.ts`). In
+  calm positions assert only legality, membership in the reported
+  candidates, and a variety floor over fixed states and seeds, never one
+  particular class.
+- **Budgets.** Default-suite tests use small budgets such as
+  `{ determinizations: 4, rolloutTurns: 2 }`. The strength smoke test in
+  `ai.test.ts` plays pinned mirrored seeds against the frozen pre-search
+  Hard (`LEGACY_HARD` in `src/test/helpers/ai-baselines.ts`); the seeds are
+  fixed, so it cannot flake.
+- **Opt-in tools.** Full-budget measurements are not part of `npm run test`.
+  `npm run ai:tournament` plays mirrored matches between entrant specs (see
+  `src/test/helpers/ai-entrants.ts`) and, with
+  `AI_TOURNAMENT_DIAGNOSTICS=1`, reports seed variety in calm and critical
+  positions and a blunder audit against a 4×-budget search.
+  `npm run ai:tune` refits the evaluator weights on self-play. Both document
+  their environment variables in `src/test/tools/`. Run no more tools in
+  parallel than there are CPUs, or the latency columns are inflated. Paste
+  results into the PR.
+- **Promoting weights or settings.** Copy tuned weights into
+  `src/game/ai-weights.ts` and bump `HARD_AI_WEIGHTS_VERSION`. Any change to
+  the weights, `HARD_AI_DEFAULT_BUDGET`, `HARD_AI_DEFAULT_SELECTION`, or the
+  personas changes Hard's choices: regenerate the CLI characterization with
+  `npx vitest run src/test/cli-session.test.ts -u` and confirm that only
+  `ai-hard-seed-77.characterization.json` changed. The Basic and Advanced
+  fixtures must stay byte-identical.
+
 ## Stateful UI regression matrix
 
 For target pickers, response controls, and submission changes, exercise the
