@@ -46,6 +46,13 @@ const FOCUSABLE = 'button:not([disabled]), a[href], input:not([hidden]):not([dis
 /** The single live region that announces lobby, Adventure hub and HUD status. */
 export const THREE_STATUS_ANNOUNCER_ID = 'three-status-announcer'
 
+/**
+ * How long the announcer stays in place after a move before it speaks.
+ * Safari can miss a live region's change made soon after the region is
+ * inserted.
+ */
+export const THREE_ANNOUNCER_SETTLE_MS = 100
+
 interface SavedFocus {
   element: HTMLElement
   key: string
@@ -110,6 +117,9 @@ export class ThreeInterface {
   private fileGeneration = 0
   private announcedStatus: string | null = null
   private announcerText = ''
+  // Runs while a moved announcer settles; the latest status waits for it.
+  private announcerSettle: ReturnType<typeof setTimeout> | null = null
+  private pendingAnnouncement: string | null = null
   // Set while an Adventure command runs, so a retry that leaves the status
   // unchanged is announced again.
   private announceRepeat = false
@@ -370,6 +380,14 @@ export class ThreeInterface {
     // spoken even when it repeats one from before.
     this.announcedStatus = status
     if (silent) return
+    if (this.announcerSettle !== null) {
+      this.pendingAnnouncement = status
+      return
+    }
+    this.writeAnnouncement(status)
+  }
+
+  private writeAnnouncement(status: string): void {
     // A live region speaks only when its text changes: identical text toggles
     // a trailing no-break space, which screen readers do not read.
     const text = status !== '' && this.announcerText === status ? `${status}\u00a0` : status
@@ -381,12 +399,22 @@ export class ThreeInterface {
   // region there. The announcer therefore joins the open dialog and returns
   // to the host before that dialog's markup is replaced. Each move clears
   // it, so a screen reader neither repeats an old status nor reads one as
-  // part of the dialog.
+  // part of the dialog. A moved region is a newly inserted one, so a status
+  // waits until the region has stayed in place for THREE_ANNOUNCER_SETTLE_MS.
   private placeAnnouncer(parent: HTMLElement): void {
     if (this.announcer.parentElement === parent) return
     this.announcer.textContent = ''
     this.announcerText = ''
     parent.append(this.announcer)
+    if (this.announcerSettle !== null) clearTimeout(this.announcerSettle)
+    this.announcerSettle = setTimeout(this.settleAnnouncer, THREE_ANNOUNCER_SETTLE_MS)
+  }
+
+  private readonly settleAnnouncer = (): void => {
+    this.announcerSettle = null
+    const status = this.pendingAnnouncement
+    this.pendingAnnouncement = null
+    if (status !== null && !this.disposed) this.writeAnnouncement(status)
   }
 
   private focusAdventureHub(): void {
@@ -1080,6 +1108,9 @@ export class ThreeInterface {
       URL.revokeObjectURL(url)
     }
     this.downloadTimers.clear()
+    if (this.announcerSettle !== null) clearTimeout(this.announcerSettle)
+    this.announcerSettle = null
+    this.pendingAnnouncement = null
     const dialog = this.content.querySelector<HTMLDialogElement>('dialog')
     if (dialog?.open && typeof dialog.close === 'function') dialog.close()
     this.content.remove()

@@ -23,7 +23,7 @@ import {
 import { createInitialGame } from '../game/engine'
 import { BASIC_LANDS, type BasicLand, type GameState } from '../game/types'
 import { escapeHtml, noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
-import { THREE_STATUS_ANNOUNCER_ID, ThreeInterface } from '../renderers/three/interface'
+import { THREE_ANNOUNCER_SETTLE_MS, THREE_STATUS_ANNOUNCER_ID, ThreeInterface } from '../renderers/three/interface'
 import {
   canThreeInput,
   isThreeMode,
@@ -3195,49 +3195,109 @@ describe('Three status announcer', () => {
   })
 
   it('moves the announcer into an open dialog, since a modal makes the rest of the page inert', () => {
-    const view = makeView()
-    view.mode = 'adventure-hvai'
-    view.adventure = { ...view.adventure, status: 'active', stage: 'encounter' }
-    const h = setup(view, true)
-    const region = h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
-    expect(announcement(h.host)).toBe('Ready')
-    h.click('[data-action="menu"]')
-    const menu = h.content.querySelector('dialog')!
-    expect(menu.open).toBe(true)
-    // It joins the dialog empty, so the earlier status is neither repeated
-    // nor read as part of the menu.
-    expect(region.parent).toBe(menu)
-    expect(announcement(h.host)).toBe('')
-    const regions = h.host.querySelectorAll(`#${THREE_STATUS_ANNOUNCER_ID}`)
-    expect(regions).toHaveLength(1)
-    expect(regions[0]).toBe(region)
-    // A refused Pause keeps the menu open and is announced inside it.
-    const refused = { ...view, status: 'Adventure progress could not be saved (storage unavailable). The game was not paused.' }
-    h.controller.pauseAdventure.mockImplementation(() => h.update(refused))
-    h.click('[data-action="pause-adventure"]')
-    expect(h.content.querySelector('dialog')).toBe(menu)
-    expect(region.parent).toBe(menu)
-    expect(announcement(h.host)).toBe(refused.status)
-    // A rebuilt menu takes the announcer along before its markup is replaced.
-    h.update({ ...refused, adventure: { ...refused.adventure, highScore: refused.adventure.highScore + 1 } })
-    const rebuilt = h.content.querySelector('dialog')!
-    expect(rebuilt).not.toBe(menu)
-    expect(menu.contains(region)).toBe(false)
-    expect(region.parent).toBe(rebuilt)
-    h.click('[data-action="pause-adventure"]')
-    expect(region.parent).toBe(h.content.querySelector('dialog'))
-    expect(announcement(h.host)).toBe(refused.status)
-    // Closing the menu returns it to the host.
-    h.click('[data-action="close"]')
-    expect(h.content.querySelector('dialog')).toBeNull()
-    expect(region.parent).toBe(h.host)
-    h.update({ ...refused, status: 'Turn 2 begins.' })
-    expect(announcement(h.host)).toBe('Turn 2 begins.')
-    // Disposing with a dialog open removes it too.
-    h.click('[data-action="menu"]')
-    expect(region.parent).toBe(h.content.querySelector('dialog'))
-    h.ui.dispose()
-    expect(region.parent).toBeNull()
+    withFakeTimers(() => {
+      const view = makeView()
+      view.mode = 'adventure-hvai'
+      view.adventure = { ...view.adventure, status: 'active', stage: 'encounter' }
+      const h = setup(view, true)
+      const region = h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)!
+      expect(announcement(h.host)).toBe('Ready')
+      h.click('[data-action="menu"]')
+      const menu = h.content.querySelector('dialog')!
+      expect(menu.open).toBe(true)
+      // It joins the dialog empty, so the earlier status is neither repeated
+      // nor read as part of the menu.
+      expect(region.parent).toBe(menu)
+      expect(announcement(h.host)).toBe('')
+      const regions = h.host.querySelectorAll(`#${THREE_STATUS_ANNOUNCER_ID}`)
+      expect(regions).toHaveLength(1)
+      expect(regions[0]).toBe(region)
+      // A refused Pause, clicked once the region has settled, keeps the menu
+      // open and is announced inside it at once.
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      const refused = { ...view, status: 'Adventure progress could not be saved (storage unavailable). The game was not paused.' }
+      h.controller.pauseAdventure.mockImplementation(() => h.update(refused))
+      h.click('[data-action="pause-adventure"]')
+      expect(h.content.querySelector('dialog')).toBe(menu)
+      expect(region.parent).toBe(menu)
+      expect(announcement(h.host)).toBe(refused.status)
+      // A rebuilt menu takes the announcer along before its markup is replaced.
+      const raised = { ...refused, adventure: { ...refused.adventure, highScore: refused.adventure.highScore + 1 } }
+      h.update(raised)
+      const rebuilt = h.content.querySelector('dialog')!
+      expect(rebuilt).not.toBe(menu)
+      expect(menu.contains(region)).toBe(false)
+      expect(region.parent).toBe(rebuilt)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      h.controller.pauseAdventure.mockImplementation(() => h.update(raised))
+      h.click('[data-action="pause-adventure"]')
+      expect(region.parent).toBe(rebuilt)
+      expect(announcement(h.host)).toBe(refused.status)
+      // Closing the menu returns it to the host.
+      h.click('[data-action="close"]')
+      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(region.parent).toBe(h.host)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      h.update({ ...raised, status: 'Turn 2 begins.' })
+      expect(announcement(h.host)).toBe('Turn 2 begins.')
+      // Disposing with a dialog open removes it too.
+      h.click('[data-action="menu"]')
+      expect(region.parent).toBe(h.content.querySelector('dialog'))
+      h.ui.dispose()
+      expect(region.parent).toBeNull()
+    })
+  })
+
+  it('speaks only once a moved announcer has settled, and then the latest status', () => {
+    withFakeTimers(() => {
+      const view = makeView()
+      view.mode = 'adventure-hvai'
+      view.adventure = { ...view.adventure, status: 'active', stage: 'encounter' }
+      const h = setup(view, true)
+      const region = h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`) as unknown as ElementStub & { textContent?: string }
+      // A higher score changes the Game Menu, so its dialog is rebuilt.
+      const inMenu = (status: string, highScore: number): void => {
+        h.update({ ...view, status, adventure: { ...view.adventure, highScore } })
+        expect(region.parent).toBe(h.content.querySelector('dialog'))
+      }
+      h.click('[data-action="menu"]')
+      // A status set in the same update as a rebuild waits for the new
+      // region, since a screen reader can miss it otherwise.
+      inMenu('First status.', 1)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS - 1)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(1)
+      expect(announcement(h.host)).toBe('First status.')
+      // Another move restarts the wait, and a newer status replaces a waiting one.
+      inMenu('Second status.', 2)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS - 1)
+      inMenu('Second status.', 3)
+      inMenu('Third status.', 3)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS - 1)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(1)
+      expect(announcement(h.host)).toBe('Third status.')
+      // Once settled, a status that leaves the menu unchanged is spoken at once.
+      h.update({ ...view, status: 'Failed to save recording to local storage.', adventure: { ...view.adventure, highScore: 3 } })
+      expect(announcement(h.host)).toBe('Failed to save recording to local storage.')
+      // Leaving the game closes the menu; its status speaks from the host after the wait.
+      h.update({ ...view, mode: null, game: null, status: 'Adventure paused at Tier 1.' })
+      expect(h.content.querySelector('dialog')).toBeNull()
+      expect(region.parent).toBe(h.host)
+      expect(announcement(h.host)).toBe('')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(h.host)).toBe('Adventure paused at Tier 1.')
+      // A status still waiting at dispose is dropped, with no timer left behind.
+      h.update(view)
+      h.click('[data-action="menu"]')
+      inMenu('Dropped.', 4)
+      h.ui.dispose()
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(region.textContent).toBe('')
+      expect(region.parent).toBeNull()
+    })
   })
 
   it('announces refused Pause and Retry Saving Result inside the open Game Menu', () => {
@@ -3256,6 +3316,9 @@ describe('Three status announcer', () => {
         r.host.emit('click', { target: control })
       }
       const expectAnnouncedInMenu = (): void => {
+        // Here the HUD is part of the menu's markup, so each status rebuilds
+        // the menu, and the moved announcer speaks once it has settled.
+        vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
         expect(region.parent).toBe(menu())
         expect(announcement(r.host)?.trim()).toBe(r.real.getViewModel().status)
       }
@@ -3284,6 +3347,8 @@ describe('Three status announcer', () => {
       expect(r.real.getViewModel()).toMatchObject({ game: null, adventure: { pendingCompletion: null } })
       expect(r.content.querySelector('dialog')).toBeNull()
       expect(region.parent).toBe(r.host)
+      expect(announcement(r.host)).toBe('')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
       expect(announcement(r.host)).toBe(r.real.getViewModel().status)
       r.dispose()
     })
@@ -3318,9 +3383,11 @@ describe('Three status announcer', () => {
       r.storage.failingSets.add(recordingKey)
       r.click('[data-action="save-recording-local"]')
       expect(r.real.getViewModel().replay.isPlaying).toBe(true)
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
       expect(announcement(r.host)).toBe('Failed to save recording to local storage.')
       tick()
       r.click('[data-action="save-recording-local"]')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
       expect(announcement(r.host)).toBe('Failed to save recording to local storage.')
       vi.advanceTimersByTime(700)
       expect(r.real.getViewModel().replay).toMatchObject({ isPlaying: false, step: 3 })

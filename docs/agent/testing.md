@@ -296,7 +296,8 @@ In each state, check that:
 - the announcer's text matches the visible status, and nearby copy agrees
   with it, such as the relic list after a relic uses its last charge.
   Opening or closing a dialog moves the announcer and empties it, so it
-  stays empty until the next status.
+  stays empty until the next status. A status that arrives with the move
+  appears about 100 ms later.
 
 `document.elementFromPoint` skips elements with `pointer-events: none`, so
 the board's focusable labels look covered by the canvas. Confirm those by

@@ -75,6 +75,15 @@ several regions would speak the same text twice.
   screen reader neither repeats an old status nor reads one as part of the
   dialog. A status set while the Game Menu is open, such as a refused Pause
   or Retry Saving Result, is therefore spoken.
+- A moved region is newly inserted. Safari can miss a change made soon after
+  a live region is inserted, and React Aria's announcer waits 100 ms for this
+  reason. After each move, `announce()` therefore holds the status until the
+  region has stayed in place for `THREE_ANNOUNCER_SETTLE_MS` (100 ms). A
+  further move restarts the wait, a newer status replaces a waiting one, and
+  `dispose()` drops it with the timer. This covers a status that arrives in
+  the same update as a move: Start Replay closing the menu, a replay control,
+  or the final step rebuilding the open menu, or Pause leaving the game. A
+  region that has not moved speaks at once.
 - `update()` sets the region's text after rendering and focus, and only
   when `view.status` changes.
 - A status that stays the same is spoken again only after a command routed

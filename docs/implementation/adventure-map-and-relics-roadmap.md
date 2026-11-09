@@ -1162,7 +1162,9 @@ Rules and pitfalls for contributors are in
   - One persistent, visually hidden `role="status"` region speaks lobby,
     hub and HUD status. The rebuilt status paragraphs lose their live
     roles. While a modal dialog is open, the region sits inside it, because
-    `showModal()` makes the rest of the page inert. Each move clears it.
+    `showModal()` makes the rest of the page inert. Each move clears it,
+    and a status waits until the moved region has stayed in place for
+    100 ms, since Safari can miss a change to a newly inserted live region.
   - A retried Adventure command announces an unchanged status again.
     During replay playback only the step status stays quiet. Any other
     status, such as a refused recording save, is announced.
