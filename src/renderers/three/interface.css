@@ -1051,7 +1051,7 @@
   top: calc(max(4px, env(safe-area-inset-top)) + 8px);
 }
 
-/* Short-rail actions share rows at 48px; the rail scrolls rather than this row. */
+/* Short-rail actions share rows at 48px; the dock scrolls rather than this row. */
 .three-root--game[data-shell="rail"][data-shell-short="true"] .three-dock-actions.three-interface {
   flex-direction: row;
   flex-wrap: wrap;

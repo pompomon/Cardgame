@@ -680,7 +680,7 @@ describe('Three.js short-landscape rail', () => {
     // The rows stay the plain rail's, so the top bar keeps its fixed rem height.
     expect(ruleBody(shell, '.three-root--game[data-shell="rail"]'))
       .toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr);')
-    // The actions keep their full height, and the rail scrolls rather than clipping them.
+    // The actions keep their full height, and the dock scrolls as a whole rather than clipping them.
     const rail = ruleBody(shell, `${SHORT} .three-dock`)
     expect(rail).toContain('grid-template-rows: minmax(var(--three-dock-prompt-height), 1fr) max-content auto;')
     expect(rail).toContain('overflow-y: auto;')

@@ -113,7 +113,7 @@ The approved decisions are:
     physical Galaxy Z Fold4)
 - [ ] Milestone 4 — Short landscape (cover screen and phones held sideways)
   - [x] Short-rail CSS: the top bar heads the rail, the board takes the full
-    height beside it, and the rail wraps its actions and scrolls at large
+    height beside it, and the dock wraps its actions and scrolls at large
     text sizes
   - [x] A 44 px paged hand strip, a sideways lift (`preferSide`) that leaves
     the landing ghost in view, and a near-lane anchor that keeps the hand in
@@ -919,7 +919,11 @@ The implementation differs from the scope above in these ways:
   with the status. Longer statuses and larger text scroll the title and
   status together under the pinned menu and Hint buttons.
 - The actions keep their 48 px height and wrap in rows. When large text
-  outgrows the rail, the whole rail scrolls instead of clipping them.
+  outgrows the rail, the dock below the top bar scrolls as a whole, End Turn
+  included, instead of clipping them. At 200% text on the cover screen, the
+  top bar takes 112 of the column's 224 px, so End Turn starts below the
+  dock's fold. With a card selected, the dock scrolls 137 px. Milestone 5
+  revisits it.
 - The near-lane anchor also keeps the whole hand in view, so a drag starts
   and lands without scrolling. When the near lane and the hand cannot both
   fit, the near header leaves the view first, then the top of the near lane.

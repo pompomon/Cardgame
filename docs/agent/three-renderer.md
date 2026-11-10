@@ -251,8 +251,8 @@ removes both listeners.
   prompt, 48 px actions, and the primary button. The target panel and the
   tutorial banner stay clear of the rail. In the short rail the top bar heads
   the rail column instead. Its title and status scroll under the pinned menu
-  and Hint buttons, the actions wrap in rows, and the whole rail scrolls when
-  large text outgrows it.
+  and Hint buttons, and the actions wrap in rows. When large text outgrows the
+  rail, the dock below the top bar scrolls as a whole, End Turn included.
 
 Keep action instructions and effect captions as stage-level overlays rather
 than row content. Changing a wrapped prompt during an active drag can trigger
