@@ -778,6 +778,13 @@
   max-width: max(48px, calc(var(--three-peek-max-height, 320px) - 96px));
 }
 
+/* The cover screen's tile is about 114px wide: keep a long word such as Doppelgänger whole. */
+.three-interface .three-peek .three-card__name {
+  padding-inline: 4px;
+  font-size: 13px;
+  hyphens: auto;
+}
+
 .three-interface .three-peek .three-card-rules {
   margin: 0;
 }

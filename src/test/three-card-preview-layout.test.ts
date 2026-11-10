@@ -58,6 +58,13 @@ describe('Three.js native card and preview layout', () => {
     expect(ruleBody('.three-interface .three-log-scroll')).toContain('max-height: min(320px, 45svh);')
   })
 
+  it('fits a long card name in the narrow peek tile without a mid-word break', () => {
+    const name = ruleBody('.three-interface .three-peek .three-card__name')
+    expect(name).toContain('padding-inline: 4px;')
+    expect(name).toContain('font-size: 13px;')
+    expect(name).toContain('hyphens: auto;')
+  })
+
   it('gives previews and target cards a self-contained stacked layout', () => {
     const rule = ruleBody(card)
     expect(rule).toContain('display: grid;')

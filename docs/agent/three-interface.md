@@ -123,7 +123,10 @@ several regions would speak the same text twice.
   the replay text returns.
 - The peek itself (`renderThreePeek`) is decorative: an `aria-hidden` panel
   in the hover overlay with the same rules as Details and no buttons. Its
-  inline style holds the whole-pixel placement from the board.
+  inline style holds the whole-pixel placement from the board. On the cover
+  screen its tile is only about 114 px wide, so the peek name uses less
+  padding, 13 px type and `hyphens: auto`. This keeps a long word such as
+  "Doppelgänger" on one line instead of breaking it mid-word.
 - Keep live regions persistent. Create them once, like this region, the
   board captions and the dock prompt, and never put a live role in markup
   that `render()` rebuilds. Send status-line text through `view.status`.
