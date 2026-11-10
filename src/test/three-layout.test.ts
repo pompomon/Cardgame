@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  AUTO_SCROLL_EDGE_PX, AUTO_SCROLL_MAX_SPEED, autoScrollVelocity,
   boardLayout, cardSlotX, clientToBoard, compactBoardViewport, dragProxyPlacement, dropAccepts, handTop, isNarrowWidth,
-  landingSlotRect, MOUSE_DRAG_SCALE, NARROW_LAYOUT_MAX_WIDTH,
+  landingSlotRect, MOUSE_DRAG_SCALE, NARROW_LAYOUT_MAX_WIDTH, PEEK_MIN_HEIGHT, peekPlacement,
   NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect,
   SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_DRAG_SCALE, TOUCH_DROP_SLOP_PX, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
-  type BoardRect, type DragProxyInput, type LayerRect, type ThreeLayout, type ThreeShell,
+  type BoardRect, type DragProxyInput, type LayerRect, type PeekPlacement, type PeekSide, type ThreeLayout, type ThreeShell,
 } from '../renderers/three/layout'
 
 function laneBounds(layout: ThreeLayout, row: 'far' | 'near' | 'hand') {
@@ -669,5 +670,116 @@ describe('Three.js touch drag geometry', () => {
     for (const invalid of [Number.NaN, -3]) {
       expect(landingSlotRect(layout, { typeSlot: 0, slotCount: 0, nearCount: invalid }).x).toBe(cardSlotX(0, 1, layout))
     }
+  })
+})
+
+describe('Three.js long-press peek and edge auto-scroll geometry', () => {
+  // The Fold4 cover screen's narrow stage, in client pixels below a 48px top bar.
+  const cover: LayerRect = { left: 6, top: 48, width: 332, height: 583 }
+  const handCard: LayerRect = { left: 130, top: 520, width: 60, height: 84 }
+  const farCard: LayerRect = { left: 20, top: 90, width: 60, height: 84 }
+
+  it('opens on the half of the stage away from the finger, scaled to the stage', () => {
+    expect(peekPlacement({ stage: cover, card: handCard, pointer: { x: 160, y: 560 } })).toEqual({
+      left: 14, width: 316, side: 'above', y: 512, maxHeight: 512 - 56,
+    })
+    expect(peekPlacement({ stage: cover, card: farCard, pointer: { x: 50, y: 130 } })).toEqual({
+      left: 14, width: 316, side: 'below', y: 182, maxHeight: 623 - 182,
+    })
+    // A wider screen caps the panel and centres it on the card.
+    const main: LayerRect = { left: 0, top: 0, width: 666, height: 600 }
+    expect(peekPlacement({ stage: main, card: { left: 300, top: 480, width: 66, height: 92 }, pointer: { x: 333, y: 520 } }))
+      .toMatchObject({ left: 153, width: 360, side: 'above' })
+  })
+
+  it('never covers the held card and stays inside the visible stage', () => {
+    for (let top = cover.top; top + handCard.height <= cover.top + cover.height; top += 37) {
+      for (const left of [cover.left, 140, cover.left + cover.width - handCard.width]) {
+        const card = { ...handCard, top, left }
+        for (const pointerY of [top, top + card.height / 2, top + card.height]) {
+          const placement = peekPlacement({ stage: cover, card, pointer: { x: left + 30, y: pointerY } })
+          if (!placement) continue
+          const [panelTop, panelBottom] = placement.side === 'above'
+            ? [placement.y - placement.maxHeight, placement.y]
+            : [placement.y, placement.y + placement.maxHeight]
+          expect(panelBottom <= card.top || panelTop >= card.top + card.height).toBe(true)
+          expect(panelTop).toBeGreaterThanOrEqual(cover.top)
+          expect(panelBottom).toBeLessThanOrEqual(cover.top + cover.height)
+          expect(placement.left).toBeGreaterThanOrEqual(cover.left)
+          expect(placement.left + placement.width).toBeLessThanOrEqual(cover.left + cover.width)
+          expect(placement.maxHeight).toBeGreaterThanOrEqual(PEEK_MIN_HEIGHT)
+        }
+      }
+    }
+  })
+
+  it('uses the other side when the preferred one is too short, and opens nowhere without room', () => {
+    const stage: LayerRect = { left: 0, top: 0, width: 332, height: 300 }
+    // The finger is low, but the card sits near the top: the panel goes below.
+    expect(peekPlacement({ stage, card: { left: 100, top: 40, width: 60, height: 84 }, pointer: { x: 130, y: 160 } }))
+      .toMatchObject({ side: 'below', y: 132 })
+    const short: LayerRect = { left: 0, top: 0, width: 332, height: 180 }
+    expect(peekPlacement({ stage: short, card: { left: 100, top: 60, width: 60, height: 84 }, pointer: { x: 130, y: 100 } })).toBeNull()
+    expect(peekPlacement({ stage: { ...cover, width: 150 }, card: handCard, pointer: { x: 160, y: 560 } })).toBeNull()
+  })
+
+  it('tries the other side when the preferred one would clip the whole peek, and opens nowhere when neither fits', () => {
+    const tried: PeekSide[] = []
+    const needs = (height: number) => (placement: PeekPlacement) => {
+      tried.push(placement.side)
+      return placement.maxHeight >= height
+    }
+    const stage: LayerRect = { left: 0, top: 0, width: 332, height: 600 }
+    const card: LayerRect = { left: 100, top: 254, width: 60, height: 84 }
+    // The finger is low, so above is preferred, but only below has 240px.
+    const pointer = { x: 130, y: 300 }
+    expect(peekPlacement({ stage, card, pointer })).toMatchObject({ side: 'above', maxHeight: 238 })
+    expect(peekPlacement({ stage, card, pointer, fits: needs(240) })).toEqual({ left: 8, width: 316, side: 'below', y: 346, maxHeight: 246 })
+    expect(tried).toEqual(['above', 'below'])
+    tried.length = 0
+    expect(peekPlacement({ stage, card, pointer, fits: needs(250) })).toBeNull()
+    expect(tried).toEqual(['above', 'below'])
+    // A 332x300 stage leaves 104px above an 84px card at top 120, and 80px below:
+    // too short for Signal Siren's two abilities, and for any peek.
+    tried.length = 0
+    const short: LayerRect = { left: 0, top: 0, width: 332, height: 300 }
+    const held: LayerRect = { left: 100, top: 120, width: 60, height: 84 }
+    expect(peekPlacement({ stage: short, card: held, pointer: { x: 130, y: 160 } })).toMatchObject({ side: 'above', maxHeight: 104 })
+    expect(peekPlacement({ stage: short, card: held, pointer: { x: 130, y: 160 }, fits: needs(200) })).toBeNull()
+    expect(tried).toEqual(['above'])
+  })
+
+  it('places the peek relative to a scrolled stage and handles invalid input', () => {
+    const scrolled = peekPlacement({ stage: { ...cover, top: -200 }, card: { ...handCard, top: 200 }, pointer: { x: 160, y: 240 } })
+    expect(scrolled).toMatchObject({ side: 'above', y: 192, maxHeight: 192 - -192 })
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(peekPlacement({ stage: { ...cover, height: value }, card: handCard, pointer: { x: 0, y: 0 } })).toBeNull()
+      expect(peekPlacement({ stage: cover, card: { ...handCard, left: value }, pointer: { x: 0, y: 0 } })).toBeNull()
+    }
+    // A lost pointer falls back to the card's centre, which is in the lower half.
+    expect(peekPlacement({ stage: cover, card: handCard, pointer: { x: Number.NaN, y: Number.NaN } })?.side).toBe('above')
+  })
+
+  it('scrolls only in the edge bands, faster with depth and capped beyond the edge', () => {
+    const [top, bottom] = [100, 500]
+    expect(AUTO_SCROLL_EDGE_PX).toBe(48)
+    expect(AUTO_SCROLL_MAX_SPEED).toBe(600)
+    expect(autoScrollVelocity(300, top, bottom)).toBe(0)
+    expect(autoScrollVelocity(top + 48, top, bottom)).toBe(0)
+    expect(autoScrollVelocity(top + 24, top, bottom)).toBe(-300)
+    expect(autoScrollVelocity(top, top, bottom)).toBe(-600)
+    expect(autoScrollVelocity(top - 80, top, bottom)).toBe(-600)
+    expect(autoScrollVelocity(bottom - 48, top, bottom)).toBe(0)
+    expect(autoScrollVelocity(bottom - 12, top, bottom)).toBe(450)
+    expect(autoScrollVelocity(bottom + 80, top, bottom)).toBe(600)
+    // A short stage shares its height between the bands.
+    expect(autoScrollVelocity(130, 100, 160)).toBe(0)
+    expect(autoScrollVelocity(115, 100, 160)).toBe(-300)
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(autoScrollVelocity(value, top, bottom)).toBe(0)
+      expect(autoScrollVelocity(top, value, bottom)).toBe(0)
+      expect(autoScrollVelocity(top, top, value)).toBe(0)
+    }
+    expect(autoScrollVelocity(100, 100, 100)).toBe(0)
   })
 })

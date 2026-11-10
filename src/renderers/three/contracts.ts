@@ -3,6 +3,7 @@ import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
 import type { BasicLand } from '../../game/types'
 import type { ThreePrimaryAction } from './interface-model'
+import type { PeekPlacement } from './layout'
 
 export interface RendererCardIdentity {
   readonly name: string
@@ -38,6 +39,12 @@ export const DEFAULT_BOARD_PRESENTATION: ThreeBoardPresentation = Object.freeze(
 /** The action dock's live prompt, which also describes the docked primary button. */
 export const THREE_DOCK_PROMPT_ID = 'three-dock-prompt'
 
+/** An open long-press peek: the held card and where its preview opens, in client pixels. */
+export interface ThreePeek {
+  readonly hit: BoardHit
+  readonly placement: PeekPlacement
+}
+
 /** A live drag, reported by the board when it starts and whenever its accepted state changes. */
 export interface ThreeDragFeedback {
   readonly cardId: string
@@ -55,6 +62,14 @@ export interface ThreeBoardApi {
   beginDrag(hit: BoardHit): void
   moveDrag(clientX: number, clientY: number, touch: boolean): void
   endDrag(animateReturn: boolean): void
+  /** Shows the long-press ring under a held finger. */
+  showPeekRing(clientX: number, clientY: number): void
+  hidePeekRing(): void
+  /**
+   * Where a peek of `hit` opens for a finger at the given point, or null when
+   * it cannot open. `fits` can refuse a side whose room would clip the peek.
+   */
+  peekPlacement(hit: BoardHit, clientX: number, clientY: number, fits?: (placement: PeekPlacement) => boolean): PeekPlacement | null
   playEffect(effect: VisualEffectDescriptor, duration: number, done: () => void): () => void
   setVisible(visible: boolean): void
   dispose(): void

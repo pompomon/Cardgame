@@ -57,6 +57,14 @@ query parameters and the hash, then discards the old stored renderer preference.
 - Drag a creature you can summon from your hand onto your Board. Touch and pen
   movement must cross a threshold; tapping opens a preview. Multiple legal
   targets are selected before committing the action.
+- With touch or pen, press and hold a card without moving it to peek at it. A
+  ring fills, and after about half a second a large preview with the card's
+  rules opens on the side of the screen away from your finger. Lift your finger
+  to close it; a peek never selects, intercepts, or plays the card. Move your
+  finger instead to start a drag.
+- While you drag a card, other fingers cannot press buttons. Dragging near the
+  top or bottom edge of a board that scrolls moves it, so you can reach the
+  far end.
 - Both Board headers show Hand, Deck, and Discard pile counts. **End Turn**
   or **Let It Through** appears in the near-player Board header when
   appropriate; neither is available during replay or after game over.

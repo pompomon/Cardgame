@@ -519,6 +519,94 @@ export function dragProxyPlacement({ pointer, card, stage, touch, side }: DragPr
   }
 }
 
+/** The long-press peek opens above or below the held card. */
+export type PeekSide = 'above' | 'below'
+
+export interface PeekPlacementInput {
+  /** The visible stage in client pixels. */
+  readonly stage: LayerRect
+  /** The held card in client pixels. */
+  readonly card: LayerRect
+  /** The finger in client pixels. */
+  readonly pointer: Point
+  /**
+   * Whether the whole peek fits a candidate placement. The panel cannot be
+   * scrolled, so a side that would clip the card is skipped.
+   */
+  readonly fits?: (placement: PeekPlacement) => boolean
+}
+
+export interface PeekPlacement {
+  /** The panel's left edge and width in client pixels. */
+  readonly left: number
+  readonly width: number
+  /** The panel edge nearest the card: its top when below the card, its bottom when above. */
+  readonly y: number
+  /** Room between the card and the stage edge; the panel never grows past it. */
+  readonly maxHeight: number
+  readonly side: PeekSide
+}
+
+const PEEK_MARGIN = 8
+const PEEK_GAP = 8
+const PEEK_MIN_WIDTH = 160
+const PEEK_MAX_WIDTH = 360
+/** Below this height on both sides, a peek would be unreadable, so none opens. */
+export const PEEK_MIN_HEIGHT = 96
+
+/**
+ * Where the long-press peek opens: on the half of the visible stage away from
+ * the finger, as wide as the stage allows up to a readable maximum, and never
+ * over the held card. Falls back to the other side when the preferred one is
+ * too short or `fits` refuses it, and returns null when neither side has room.
+ */
+export function peekPlacement({ stage, card, pointer, fits }: PeekPlacementInput): PeekPlacement | null {
+  const values = [stage.left, stage.top, stage.width, stage.height, card.left, card.top, card.width, card.height]
+  if (!values.every(Number.isFinite) || stage.width <= 0 || stage.height <= 0) return null
+  const width = Math.min(PEEK_MAX_WIDTH, stage.width - 2 * PEEK_MARGIN)
+  if (width < PEEK_MIN_WIDTH) return null
+  const top = stage.top + PEEK_MARGIN
+  const bottom = stage.top + stage.height - PEEK_MARGIN
+  const above = card.top - PEEK_GAP - top
+  const below = bottom - (card.top + card.height + PEEK_GAP)
+  const fingerY = Number.isFinite(pointer.y) ? pointer.y : card.top + card.height / 2
+  const preferred: PeekSide = fingerY >= stage.top + stage.height / 2 ? 'above' : 'below'
+  const room = (side: PeekSide) => side === 'above' ? above : below
+  const other: PeekSide = preferred === 'above' ? 'below' : 'above'
+  const left = clamp(card.left + card.width / 2 - width / 2, stage.left + PEEK_MARGIN, stage.left + stage.width - PEEK_MARGIN - width)
+  for (const side of [preferred, other]) {
+    if (room(side) < PEEK_MIN_HEIGHT) continue
+    const placement: PeekPlacement = {
+      left, width, side, maxHeight: room(side),
+      y: side === 'above' ? card.top - PEEK_GAP : card.top + card.height + PEEK_GAP,
+    }
+    if (!fits || fits({ ...placement })) return placement
+  }
+  return null
+}
+
+/** Depth of the edge bands, in CSS pixels, that scroll a scrollable stage during a touch drag. */
+export const AUTO_SCROLL_EDGE_PX = 48
+/** The fastest edge auto-scroll, in CSS pixels per second. */
+export const AUTO_SCROLL_MAX_SPEED = 600
+
+/**
+ * Edge auto-scroll speed for a finger at `pointerY` over a stage visible from
+ * `top` to `bottom` (client pixels): negative scrolls up. Zero outside the edge
+ * bands, rising linearly to the maximum at the edge and beyond it.
+ */
+export function autoScrollVelocity(pointerY: number, top: number, bottom: number): number {
+  if (!Number.isFinite(pointerY) || !Number.isFinite(top) || !Number.isFinite(bottom) || bottom <= top) return 0
+  // Short stages split their height between the bands, so they never overlap.
+  const band = Math.min(AUTO_SCROLL_EDGE_PX, (bottom - top) / 2)
+  const fromTop = pointerY - top
+  const fromBottom = bottom - pointerY
+  const depth = (distance: number) => clamp((band - distance) / band, 0, 1)
+  if (fromTop < band && fromTop <= fromBottom) return -AUTO_SCROLL_MAX_SPEED * depth(fromTop)
+  if (fromBottom < band) return AUTO_SCROLL_MAX_SPEED * depth(fromBottom)
+  return 0
+}
+
 export interface LandingSlotInput {
   /** The dragged card's creature-type slot; only the narrow layout uses it. */
   readonly typeSlot: number

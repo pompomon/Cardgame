@@ -4,7 +4,8 @@ import { createGameRecord } from '../app/game-recording'
 import { DEFAULT_CARD_VISUAL_STYLE } from '../app/card-visual-styles'
 import type { AppViewModel } from '../app/types'
 import type { CounterHandOptions } from '../app/response-options'
-import type { BoardHit } from '../renderers/three/contracts'
+import type { BoardHit, ThreePeek } from '../renderers/three/contracts'
+import type { ThreeInteractionOptions } from '../renderers/three/interaction'
 import { createInitialGame } from '../game/engine'
 import { threePrimaryAction, threeResponse, threeTargets, type ThreePrimaryAction } from '../renderers/three/interface-model'
 import { NARROW_LAYOUT_QUERY } from '../renderers/three/layout'
@@ -13,12 +14,12 @@ const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
   ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
     response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn(),
-    activate: vi.fn(), clearHandSelection: vi.fn(), setDragFeedback: vi.fn(),
+    activate: vi.fn(), clearHandSelection: vi.fn(), setDragFeedback: vi.fn(), canPeek: vi.fn(() => true), peekFits: vi.fn(() => true), setPeek: vi.fn(),
     selection: { cardId: 'selected', targetId: null, discardId: null } },
   boardConstruct: vi.fn(),
   uiConstruct: vi.fn(),
   inputConstruct: vi.fn(),
-  input: { cancel: vi.fn(), reconcile: vi.fn(), dispose: vi.fn() },
+  input: { cancel: vi.fn(), reconcile: vi.fn(), dispose: vi.fn(), dragging: false },
 }))
 vi.mock('../renderers/three/board', () => ({
   ThreeBoard: class { constructor(...args: unknown[]) { mocks.boardConstruct(...args); return mocks.board } },
@@ -71,6 +72,9 @@ afterEach(() => {
   mocks.ui.isBlocked.mockReturnValue(false)
   mocks.ui.response = null
   mocks.ui.primaryAction = null
+  mocks.ui.canPeek.mockReturnValue(true)
+  mocks.ui.peekFits.mockReturnValue(true)
+  mocks.input.dragging = false
   vi.unstubAllGlobals()
 })
 
@@ -80,7 +84,7 @@ describe('Three.js composition', () => {
     // HUD, stage, action dock, then the fixed overlay controls.
     expect(container.replaceChildren).toHaveBeenLastCalledWith(elements[2], elements[0], elements[3], elements[1])
     expect(mocks.uiConstruct).toHaveBeenLastCalledWith(elements[1], expect.anything(), expect.any(Function), expect.any(Function), elements[2],
-      { dockHost: elements[3], narrow: expect.any(Function) })
+      { dockHost: elements[3], narrow: expect.any(Function), dragActive: expect.any(Function) })
     expect(elements[3].className).toBe('three-dock')
     expect(elements[3].append).toHaveBeenCalledExactlyOnceWith(elements[4])
     expect(mocks.boardConstruct.mock.calls.at(-1)![4]).toBe(elements[4])
@@ -377,6 +381,34 @@ describe('Three.js composition', () => {
     // A board that ends its drag while unmounting must not reach a disposed interface.
     expect(() => feedback(null)).not.toThrow()
     expect(mocks.ui.setDragFeedback).toHaveBeenCalledTimes(2)
+  })
+
+  it('wires long-press peek and drag activity between the interaction and interface until unmount', () => {
+    const { renderer } = harness(true)
+    const { dragActive } = mocks.uiConstruct.mock.calls.at(-1)![5] as { dragActive: () => boolean }
+    const options = mocks.inputConstruct.mock.calls.at(-1)![6] as ThreeInteractionOptions
+    expect(dragActive()).toBe(false)
+    mocks.input.dragging = true
+    expect(dragActive()).toBe(true)
+    const hit: BoardHit = { key: 'card', cardId: 'card', name: 'Forest', owner: 0, zone: 'hand', playable: true }
+    mocks.ui.canPeek.mockReturnValueOnce(false)
+    expect(options.canPeek!(hit)).toBe(false)
+    expect(options.canPeek!(hit)).toBe(true)
+    expect(mocks.ui.canPeek).toHaveBeenLastCalledWith(hit)
+    const peek: ThreePeek = { hit, placement: { left: 8, width: 200, y: 100, maxHeight: 300, side: 'above' } }
+    mocks.ui.peekFits.mockReturnValueOnce(false)
+    expect(options.peekFits!(peek)).toBe(false)
+    expect(options.peekFits!(peek)).toBe(true)
+    expect(mocks.ui.peekFits).toHaveBeenLastCalledWith(peek)
+    options.onPeek!(peek)
+    expect(mocks.ui.setPeek).toHaveBeenCalledExactlyOnceWith(peek)
+    renderer.unmount()
+    // A gesture that finishes while unmounting must not reach a disposed interface.
+    expect(dragActive()).toBe(false)
+    expect(options.canPeek!(hit)).toBe(false)
+    expect(options.peekFits!(peek)).toBe(false)
+    expect(() => options.onPeek!(null)).not.toThrow()
+    expect(mocks.ui.setPeek).toHaveBeenCalledOnce()
   })
 
   it('forwards the activating pointer type to the interface', () => {

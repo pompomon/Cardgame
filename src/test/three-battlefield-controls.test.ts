@@ -13,8 +13,9 @@ import { boardCardKey, type ThreeCardRegistry } from '../renderers/three/card-re
 import {
   NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type ThreeBoardPresentation, type ThreeDragFeedback,
 } from '../renderers/three/contracts'
+import { ThreeInteraction } from '../renderers/three/interaction'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { cardSlotX, narrowHandPageSize, pendingCardRect, typeSlotX, type ThreeLayout } from '../renderers/three/layout'
+import { cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type PeekPlacement, type ThreeLayout } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
@@ -179,7 +180,9 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
     previewReturnToCards: false,
     phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
   }
-  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0, targets = new Set<string>()) => {
+  const present = (
+    changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0, targets = new Set<string>(), blocked = false,
+  ) => {
     const view = buildViewModel(app, false)
     if (replay) {
       view.replay.active = true
@@ -188,7 +191,7 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
     }
     const nextUi = { ...ui, presentedActor: view.game!.actor, ...changes }
     const primary = threePrimaryAction(view, nextUi)
-    board.render(view, nextUi.presentedActor, targets, threeResponse(view, nextUi), primary)
+    board.render(view, nextUi.presentedActor, targets, threeResponse(view, nextUi), primary, blocked)
     return primary
   }
   const act = (type: GameAction['type']) => {
@@ -389,7 +392,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   describe.each(['cardId', 'discardId'] as const)('responsive narrow %s selection', (field) => {
-    it.each(['width', 'height'] as const)('clears a hidden selection after a %s resize with a synchronous refresh', (dimension) => {
+    it.each(['width', 'height'] as const)('follows a selection to its page after a %s resize, then resets for a new actor', (dimension) => {
       const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
       const h = setup(presentation)
       const player = h.app.game!.players[0]
@@ -402,45 +405,123 @@ describe('constructed Three battlefield controls', () => {
         Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 50 : 36 })
       }
       const stage = h.host.all('three-board-stage')[0]
+      const label = h.host.all('three-board-pagination')[0].children[1]
+      const page = () => Number(label.textContent.split('/')[0]) - 1
       // Inner stages for 430/344x770 viewports, after the narrow shell.
-      stage.clientWidth = dimension === 'width' ? 418 : 332
-      stage.clientHeight = 583.25
+      const grow = () => {
+        stage.clientWidth = dimension === 'width' ? 418 : 332
+        stage.clientHeight = 583.25
+      }
+      const shrink = () => {
+        if (dimension === 'width') stage.clientWidth = 332
+        else stage.clientHeight = 468.25 // 344x655 viewport.
+        if (dimension === 'width') emit(h.window, 'resize')
+        else ObserverStub.latest.callback()
+      }
+      grow()
       h.present()
       const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
       const pageSize = narrowHandPageSize(layout())
       const id = player.hand[pageSize - 1].id
       presentation.selection[field] = id
       h.present()
+      expect(page()).toBe(0)
       expect(h.registry.get(boardCardKey(id, 0))!.descriptor.selected).toBe(true)
-      h.handPage.mockImplementation(() => {
-        presentation.selection = { ...NO_BOARD_SELECTION }
-        h.present()
-      })
-      h.handPage.mockClear()
-      if (dimension === 'width') stage.clientWidth = 332
-      else stage.clientHeight = 468.25 // 344x655 viewport.
-      if (dimension === 'width') emit(h.window, 'resize')
-      else ObserverStub.latest.callback()
-      expect(narrowHandPageSize(layout())).toBeLessThan(pageSize)
-      expect(h.registry.get(boardCardKey(id, 0))?.descriptor.visible ?? false).toBe(false)
-      expect(h.handPage).toHaveBeenCalledOnce()
-      expect(presentation.selection).toEqual(NO_BOARD_SELECTION)
-      // Repeated observers and status-only updates must not notify again.
+      shrink()
+      const smaller = narrowHandPageSize(layout())
+      expect(smaller).toBeLessThan(pageSize)
+      const followed = Math.floor((pageSize - 1) / smaller)
+      expect(followed).toBeGreaterThan(0)
+      // The page follows the card, so it stays on screen and selected.
+      expect(page()).toBe(followed)
+      expect(h.registry.get(boardCardKey(id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
+      expect(h.handPage).not.toHaveBeenCalled()
+      expect(presentation.selection[field]).toBe(id)
+      // Repeated observers and status-only updates keep the page.
       ObserverStub.latest.callback()
       h.app.status = 'Status only'
       h.present()
-      expect(h.handPage).toHaveBeenCalledOnce()
-      // A selection which stays on screen survives the same capacity change.
-      presentation.selection[field] = player.hand[0].id
-      stage.clientHeight = 583.25
-      stage.clientWidth = dimension === 'width' ? 418 : 332
-      h.present()
-      if (dimension === 'width') stage.clientWidth = 332
-      else stage.clientHeight = 468.25
+      expect(page()).toBe(followed)
+      // Growing back follows the card to the first page again.
+      grow()
       ObserverStub.latest.callback()
+      expect(page()).toBe(0)
+      // Without a selection, a smaller page keeps the current page's first card in view.
+      presentation.selection = { ...NO_BOARD_SELECTION }
+      h.present()
+      emit(h.host.all('three-board-pagination')[0].children[2], 'click')
+      expect(page()).toBe(1)
+      h.handPage.mockClear()
+      shrink()
+      expect(page()).toBe(Math.floor(pageSize / smaller))
+      expect(h.handPage).not.toHaveBeenCalled()
+      // A new acting player still starts on the first page instead of
+      // following; a stale selection left elsewhere is reported for clearing.
+      presentation.selection = { ...NO_BOARD_SELECTION, [field]: id }
+      h.present({ presentedActor: 1 })
+      expect(h.handPage).not.toHaveBeenCalled()
+      h.present({ presentedActor: 0 })
+      expect(page()).toBe(0)
       expect(h.handPage).toHaveBeenCalledOnce()
-      expect(h.registry.get(boardCardKey(player.hand[0].id, 0))!.descriptor.selected).toBe(true)
     })
+  })
+
+  it('follows the selection to its page when the narrow profile returns', () => {
+    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 332
+    stage.clientHeight = 583.25
+    h.present()
+    const pageSize = narrowHandPageSize((h.board as unknown as { layout: ThreeLayout }).layout)
+    const id = player.hand[2 * pageSize].id
+    presentation.narrow = false
+    h.present()
+    // The wide profile shows no selection; the narrow one follows it to its page.
+    presentation.selection = { ...NO_BOARD_SELECTION, cardId: id }
+    presentation.narrow = true
+    h.present()
+    expect(h.host.all('three-board-pagination')[0].children[1].textContent).toMatch(/^3\//)
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
+    expect(h.handPage).not.toHaveBeenCalled()
+  })
+
+  it.each(['cardId', 'discardId'] as const)('follows a %s selection held behind Details through a resize, so closing Details keeps it', (field) => {
+    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    if (field === 'discardId') {
+      h.app.game!.currentPlayer = 1
+      h.act('play_land')
+    }
+    for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+      Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 50 : 36 })
+    }
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 332
+    stage.clientHeight = 583.25
+    h.present()
+    const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
+    const pageSize = narrowHandPageSize(layout())
+    const id = player.hand[pageSize - 1].id
+    presentation.selection[field] = id
+    h.present()
+    // Details blocks input and hides the highlight, but keeps the selection.
+    h.present({}, false, 0, new Set(), true)
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor.selected).toBeUndefined()
+    stage.clientHeight = 468.25
+    ObserverStub.latest.callback()
+    const smaller = narrowHandPageSize(layout())
+    expect(Math.floor((pageSize - 1) / smaller)).toBeGreaterThan(0)
+    expect(h.host.all('three-board-pagination')[0].children[1].textContent)
+      .toMatch(new RegExp(`^${Math.floor((pageSize - 1) / smaller) + 1}/`))
+    // Closing Details finds the card on the shown page, still selected.
+    h.present()
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
+    expect(h.handPage).not.toHaveBeenCalled()
   })
 
   it.each(['cardId', 'discardId'] as const)('keeps the lifted %s selection inside its lane without overlapping another hand line', (field) => {
@@ -1176,6 +1257,27 @@ describe('constructed Three battlefield controls', () => {
   })
 })
 
+/** Counts live card-face leases, so every acquire is matched by exactly one release. */
+const countLeases = () => {
+  const leases = { live: 0, repeated: 0 }
+  gpu.acquireCard.mockImplementation(() => {
+    leases.live++
+    let released = false
+    return {
+      texture: new CanvasTexture({} as HTMLCanvasElement),
+      release: () => {
+        if (released) leases.repeated++
+        else leases.live--
+        released = true
+      },
+    }
+  })
+  return leases
+}
+const context2d = () => ({
+  drawImage: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(), setTransform: vi.fn(), fillStyle: '',
+})
+
 describe('Three touch drag feedback', () => {
   const SUMMON = 'Drag a highlighted creature onto your board to summon it'
   const CANCEL = 'Move onto your board · release elsewhere to cancel'
@@ -1214,26 +1316,6 @@ describe('Three touch drag feedback', () => {
   }
   const dropCentre = (h: Harness) => client(h, internals(h).layout.drop.x, internals(h).layout.drop.y)
   const overHand = (h: Harness) => client(h, internals(h).layout.drop.x, internals(h).layout.rows.hand.y)
-  /** Counts live card-face leases, so every acquire is matched by exactly one release. */
-  const countLeases = () => {
-    const leases = { live: 0, repeated: 0 }
-    gpu.acquireCard.mockImplementation(() => {
-      leases.live++
-      let released = false
-      return {
-        texture: new CanvasTexture({} as HTMLCanvasElement),
-        release: () => {
-          if (released) leases.repeated++
-          else leases.live--
-          released = true
-        },
-      }
-    })
-    return leases
-  }
-  const context2d = () => ({
-    drawImage: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(), setTransform: vi.fn(), fillStyle: '',
-  })
   /** Records writes to the visible instruction text, which screen readers would announce. */
   const recordText = (h: Harness, log: string[]) => {
     const text = h.host.all('three-board-instruction')[0].children[0]
@@ -1750,5 +1832,398 @@ describe('Three touch drag feedback', () => {
     }
     expect(css).toMatch(/\.three-drag-layer\s*\{[^}]*z-index:\s*3;[^}]*pointer-events:\s*none;/)
     expect(css).toMatch(/\.three-board-instruction\[data-drag\]\s*\{[^}]*z-index:\s*4;/)
+  })
+})
+
+describe('Three long-press ring, peek placement and edge auto-scroll', () => {
+  type Harness = ReturnType<typeof setup>
+  type StageStub = ElementStub & { scrollTop: number }
+  interface BoardInternals {
+    readonly layout: ThreeLayout
+    readonly drag: { returning: boolean } | null
+    readonly autoScroll: (time: number) => void
+  }
+  const internals = (h: Harness) => h.board as unknown as BoardInternals
+  const stageOf = (h: Harness) => h.host.all('three-board-stage')[0] as StageStub
+  /** A playable hand card that the board currently shows. */
+  const handHit = (h: Harness) => {
+    const card = h.app.game!.players[0].hand.find((entry) => h.registry.get(boardCardKey(entry.id, 0))?.descriptor.visible)!
+    return { ...h.registry.get(boardCardKey(card.id, 0))!.descriptor.hit }
+  }
+  const dropCentre = (h: Harness): [number, number] => {
+    const { layout } = internals(h)
+    const rect = h.board.canvas.getBoundingClientRect()
+    return [
+      rect.left + (layout.width / 2 + layout.drop.x) * rect.width / layout.width,
+      rect.top + (layout.height / 2 - layout.drop.y) * rect.height / layout.height,
+    ]
+  }
+  /** The narrow board on a 344x200 stage: 466px of content, so it scrolls up to 266px. */
+  const scrollingBoard = () => {
+    // Numbered frames tell the auto-scroll's own frames apart from drawing.
+    let id = 0
+    const frames = vi.fn((_callback: FrameRequestCallback) => ++id)
+    vi.stubGlobal('requestAnimationFrame', frames)
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = stageOf(h)
+    stage.clientWidth = 344
+    stage.clientHeight = 200
+    Object.assign(stage, { scrollTop: 0 })
+    h.present()
+    expect(stage.dataset.scrollable).toBe('true')
+    expect(internals(h).layout.height).toBe(466)
+    // A real canvas moves up with the stage's content as it scrolls.
+    h.host.all('three-board-canvas')[0].getBoundingClientRect = () => {
+      const { layout } = internals(h)
+      return { left: 0, top: -stage.scrollTop, width: layout.width, height: layout.height }
+    }
+    const scrollFrames = () => frames.mock.calls.flatMap(([callback], index) =>
+      callback === internals(h).autoScroll ? [frames.mock.results[index].value as number] : [])
+    const step = (time: number) => internals(h).autoScroll(time)
+    return { ...h, stage, scrollFrames, step }
+  }
+
+  it('scrolls a touch drag held in the bottom band in whole pixels, carrying fractions and rerunning moveDrag', () => {
+    const h = scrollingBoard()
+    const prompt = h.host.all('three-board-instruction')[0]
+    h.board.beginDrag(handHit(h))
+    const move = vi.spyOn(h.board, 'moveDrag')
+    // 23.5px into the 48px bottom band: (48 - 23.5) / 48 of 600px/s is 306.25px/s.
+    h.board.moveDrag(172, 176.5, true)
+    expect(h.scrollFrames()).toHaveLength(1)
+    move.mockClear()
+    const tops = [1000, 9000, 9016, 9046].map((time) => {
+      h.step(time)
+      return h.stage.scrollTop
+    })
+    // The first frame steps 16ms and a stalled one at most 64ms.
+    expect(tops).toEqual([4, 24, 29, 38])
+    expect(h.scrollFrames()).toHaveLength(5)
+    // Each step re-places the card under the resting finger and re-pins the pill.
+    expect(move.mock.calls).toEqual(Array.from({ length: 4 }, () => [172, 176.5, true]))
+    expect(prompt.style.top).toBe('42px')
+  })
+
+  it('scrolls faster deeper in a band, stops on leaving it or at either end, and never for the mouse', () => {
+    const h = scrollingBoard()
+    const cancelled = vi.mocked(cancelAnimationFrame)
+    h.board.beginDrag(handHit(h))
+    /** Starts a fresh scroll with the finger at `y`, and returns how far its first 16ms frame scrolls. */
+    const firstStep = (y: number, touch = true) => {
+      // Mid-stage, outside both bands, so any earlier scroll stops first.
+      h.board.moveDrag(172, 100, true)
+      const top = h.stage.scrollTop
+      const before = h.scrollFrames().length
+      h.board.moveDrag(172, y, touch)
+      if (h.scrollFrames().length === before) return 0
+      h.step(1000)
+      return h.stage.scrollTop - top
+    }
+    // 306.25px/s, then 550px/s 4px from the edge, then the 600px/s maximum past it.
+    expect(firstStep(176.5)).toBe(4)
+    expect(firstStep(196)).toBe(8)
+    h.stage.scrollTop = 100
+    expect(firstStep(230)).toBe(9)
+    // Leaving the band cancels the frame; a late frame does nothing.
+    const frames = h.scrollFrames().length
+    h.board.moveDrag(172, 100, true)
+    expect(cancelled).toHaveBeenLastCalledWith(h.scrollFrames().at(-1))
+    h.step(1016)
+    expect(h.stage.scrollTop).toBe(109)
+    expect(h.scrollFrames()).toHaveLength(frames)
+    // The top band scrolls up, and stops at the top.
+    h.stage.scrollTop = 3
+    expect(firstStep(10)).toBe(-3)
+    expect(h.scrollFrames()).toHaveLength(frames + 1)
+    expect(firstStep(10)).toBe(0)
+    // ...and the bottom band stops at the end of the board.
+    h.stage.scrollTop = 264
+    h.board.moveDrag(172, 100, true)
+    expect(firstStep(176.5)).toBe(2)
+    expect(h.stage.scrollTop).toBe(266)
+    expect(firstStep(176.5)).toBe(0)
+    // A mouse drag never auto-scrolls.
+    h.stage.scrollTop = 100
+    expect(firstStep(196, false)).toBe(0)
+    expect(firstStep(10, false)).toBe(0)
+  })
+
+  it('never auto-scrolls a stage that fits its board', () => {
+    let id = 0
+    const frames = vi.fn((_callback: FrameRequestCallback) => ++id)
+    vi.stubGlobal('requestAnimationFrame', frames)
+    for (const narrow of [false, true]) {
+      const h = setup({ narrow, selection: NO_BOARD_SELECTION })
+      expect(stageOf(h).dataset.scrollable).toBe('false')
+      h.board.beginDrag(handHit(h))
+      for (const y of [4, 740]) h.board.moveDrag(195, y, true)
+      expect(frames.mock.calls.filter(([callback]) => callback === internals(h).autoScroll)).toEqual([])
+      h.board.dispose()
+    }
+  })
+
+  it.each(['the drag ends', 'the layout changes', 'the board is disposed'] as const)(
+    'cancels the auto-scroll frame when %s, and a late frame does nothing',
+    (end) => {
+      const h = scrollingBoard()
+      const cancelled = vi.mocked(cancelAnimationFrame)
+      h.board.beginDrag(handHit(h))
+      h.board.moveDrag(172, 176.5, true)
+      h.step(1000)
+      const [, frame] = h.scrollFrames()
+      expect(frame).toBeDefined()
+      if (end === 'the drag ends') h.board.endDrag(false)
+      else if (end === 'the layout changes') {
+        h.stage.clientWidth = 340
+        ObserverStub.latest.callback()
+      } else h.board.dispose()
+      expect(internals(h).drag).toBeNull()
+      expect(cancelled).toHaveBeenCalledWith(frame)
+      const top = h.stage.scrollTop
+      h.step(1016)
+      expect(h.stage.scrollTop).toBe(top)
+      expect(h.scrollFrames()).toHaveLength(2)
+    },
+  )
+
+  it('centres the long-press ring on the finger in board pixels, hides it, and does nothing after disposal', () => {
+    const h = setup()
+    const layer = h.host.all('three-drag-layer')[0]
+    const ring = h.host.all('three-peek-ring')[0]
+    expect(ring.parent).toBe(layer)
+    const { layout } = internals(h)
+    // A half-scale canvas, offset inside the page.
+    h.host.all('three-board-canvas')[0].getBoundingClientRect = () => ({
+      left: 10, top: 20, width: layout.width / 2, height: layout.height / 2,
+    })
+    expect(ring.hidden).toBe(true)
+    h.board.showPeekRing(110, 70)
+    expect({ hidden: ring.hidden, layer: layer.hidden, left: ring.style.left, top: ring.style.top })
+      .toEqual({ hidden: false, layer: false, left: '200px', top: '100px' })
+    h.board.hidePeekRing()
+    expect(ring.hidden).toBe(true)
+    expect(layer.hidden).toBe(true)
+    h.board.dispose()
+    h.board.showPeekRing(110, 70)
+    expect(ring.hidden).toBe(true)
+  })
+
+  it('places the peek beside the held card in client pixels, and offers none for a card off the page', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    h.present()
+    const { layout } = internals(h)
+    const canvas = h.host.all('three-board-canvas')[0]
+    canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: layout.width / 2, height: layout.height / 2 })
+    const hit = handHit(h)
+    const anchor = h.registry.get(hit.key)!.anchor()
+    const card = {
+      left: 10 + (layout.width / 2 + anchor.x - anchor.width / 2) / 2,
+      top: 20 + (layout.height / 2 - anchor.y - anchor.height / 2) / 2,
+      width: anchor.width / 2,
+      height: anchor.height / 2,
+    }
+    for (const y of [card.top + 2, 700]) {
+      const placement = h.board.peekPlacement(hit, card.left + 2, y)!
+      expect(placement).toEqual(peekPlacement({
+        stage: { left: 0, top: 0, width: 390, height: 760 }, card, pointer: { x: card.left + 2, y },
+      }))
+      // The panel never covers the held card.
+      if (placement.side === 'above') expect(placement.y).toBeLessThanOrEqual(card.top)
+      else expect(placement.y).toBeGreaterThanOrEqual(card.top + card.height)
+    }
+    // The interface's fit check reaches the layout: a refused peek opens nowhere.
+    const fitted = h.board.peekPlacement(hit, card.left + 2, 700)!
+    const offered: PeekPlacement[] = []
+    expect(h.board.peekPlacement(hit, card.left + 2, 700, (placement) => { offered.push(placement); return true })).toEqual(fitted)
+    expect(offered).toEqual([fitted])
+    expect(h.board.peekPlacement(hit, card.left + 2, 700, () => false)).toBeNull()
+    const hidden = player.hand.find((entry) => !h.registry.get(boardCardKey(entry.id, 0))?.descriptor.visible)!
+    expect(hidden).toBeDefined()
+    expect(h.board.peekPlacement({ ...hit, key: boardCardKey(hidden.id, 0), cardId: hidden.id }, 50, 50)).toBeNull()
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 })
+    expect(h.board.peekPlacement(hit, 50, 50)).toBeNull()
+    canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: layout.width / 2, height: layout.height / 2 })
+    h.board.dispose()
+    expect(h.board.peekPlacement(hit, 50, 50)).toBeNull()
+  })
+
+  it('scrolls the least distance that shows the near lane after a relayout or on returning to narrow', () => {
+    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const h = setup(presentation)
+    const stage = stageOf(h)
+    stage.clientWidth = 344
+    stage.clientHeight = 200
+    Object.assign(stage, { scrollTop: 0 })
+    h.present()
+    const lane = () => {
+      const { layout } = internals(h)
+      const row = layout.rows.near
+      return {
+        top: Math.min(row.labelTop, layout.height / 2 - row.y - row.height / 2),
+        bottom: Math.max(row.labelTop + row.labelHeight, layout.height / 2 - row.y + row.height / 2),
+      }
+    }
+    // The lane fits the stage but starts out below its fold; presenting alone never scrolls.
+    expect(lane().bottom - lane().top).toBeLessThan(200)
+    expect(lane().bottom).toBeGreaterThan(200)
+    expect(stage.scrollTop).toBe(0)
+    const relayout = () => {
+      stage.clientWidth = stage.clientWidth === 344 ? 340 : 344
+      ObserverStub.latest.callback()
+    }
+    relayout()
+    expect(stage.scrollTop).toBeCloseTo(lane().bottom - 200)
+    // A lane already in view stays where the player left it.
+    stage.scrollTop = Math.ceil(lane().bottom - 200) + 5
+    const kept = stage.scrollTop
+    relayout()
+    expect(stage.scrollTop).toBe(kept)
+    // A lane above the view scrolls back down to its top edge.
+    stage.scrollTop = 266
+    relayout()
+    expect(stage.scrollTop).toBeCloseTo(lane().top)
+    presentation.narrow = false
+    h.present()
+    stage.scrollTop = 0
+    presentation.narrow = true
+    h.present()
+    expect(stage.scrollTop).toBeCloseTo(lane().bottom - 200)
+  })
+
+  it('ignores the primary button while a card is lifted, and accepts it once the card drops or returns', () => {
+    const h = setup()
+    h.board.beginDrag(handHit(h))
+    emit(h.button, 'pointerdown', { isPrimary: false })
+    emit(h.button, 'click')
+    expect(h.activate).not.toHaveBeenCalled()
+    h.board.endDrag(true)
+    emit(h.button, 'click')
+    expect(h.activate).toHaveBeenCalledOnce()
+  })
+
+  it('ignores hand page buttons while a card is lifted, and turns the page once the card drops or returns', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    h.present()
+    const [, label, next] = h.host.all('three-board-pagination')[0].children
+    expect(label.textContent).toMatch(/^1\//)
+    h.board.beginDrag(handHit(h))
+    h.cancel.mockClear()
+    emit(next, 'click')
+    expect(label.textContent).toMatch(/^1\//)
+    expect(internals(h).drag?.returning).toBe(false)
+    expect(h.cancel).not.toHaveBeenCalled()
+    expect(h.handPage).not.toHaveBeenCalled()
+    h.board.endDrag(true)
+    emit(next, 'click')
+    expect(label.textContent).toMatch(/^2\//)
+    expect(h.handPage).toHaveBeenCalledOnce()
+  })
+
+  it('cancels gestures and shows the near lane when only the visible stage changes, but not on unchanged callbacks', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = stageOf(h)
+    // Both stages are below the 356px minimum board, so the layout stays the same.
+    stage.clientWidth = 344
+    stage.clientHeight = 340
+    Object.assign(stage, { scrollTop: 0 })
+    ObserverStub.latest.callback()
+    const layout = internals(h).layout
+    expect(layout.height).toBe(466)
+    const row = layout.rows.near
+    const lane = {
+      top: Math.min(row.labelTop, layout.height / 2 - row.y - row.height / 2),
+      bottom: Math.max(row.labelTop + row.labelHeight, layout.height / 2 - row.y + row.height / 2),
+    }
+    expect(lane.bottom).toBeLessThanOrEqual(340)
+    expect(lane.bottom).toBeGreaterThan(200)
+    expect(lane.bottom - lane.top).toBeLessThan(200)
+    // Repeated callbacks keep a live drag and the player's own scroll.
+    h.board.beginDrag(handHit(h))
+    h.cancel.mockClear()
+    ObserverStub.latest.callback()
+    emit(h.window, 'resize')
+    expect(internals(h).drag).not.toBeNull()
+    expect(h.cancel).not.toHaveBeenCalled()
+    expect(stage.scrollTop).toBe(0)
+    // A shorter stage keeps the minimum-height layout, but still ends the
+    // gesture and scrolls the near lane back into view.
+    stage.clientHeight = 200
+    ObserverStub.latest.callback()
+    expect(internals(h).layout).toEqual(layout)
+    expect(internals(h).drag).toBeNull()
+    expect(h.cancel).toHaveBeenCalledOnce()
+    expect(stage.scrollTop).toBeCloseTo(lane.bottom - 200)
+    ObserverStub.latest.callback()
+    expect(h.cancel).toHaveBeenCalledOnce()
+  })
+
+  it.each(['resize', 'pointercancel'] as const)(
+    'cancels a touch drag cleanly when %s arrives first, releasing the capture and the card lease and submitting nothing',
+    (first) => {
+      ElementStub.context2d = context2d()
+      const leases = countLeases()
+      const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+      const stage = stageOf(h)
+      const canvas = h.host.all('three-board-canvas')[0]
+      const captures = new Set<number>()
+      const release = vi.fn((pointer: number) => captures.delete(pointer))
+      Object.assign(canvas, {
+        setPointerCapture: (pointer: number) => captures.add(pointer),
+        hasPointerCapture: (pointer: number) => captures.has(pointer),
+        releasePointerCapture: release,
+      })
+      const playCard = vi.fn()
+      const activate = vi.fn()
+      const interaction = new ThreeInteraction(h.board, () => buildViewModel(h.app, false), () => false, playCard, activate)
+      h.cancel.mockImplementation(() => interaction.cancel())
+      const resting = leases.live
+      const hit = handHit(h)
+      const anchor = h.registry.get(hit.key)!.anchor()
+      const { layout } = internals(h)
+      const pointer = { pointerId: 7, pointerType: 'touch', buttons: 1 }
+      emit(canvas, 'pointerdown', { ...pointer, clientX: layout.width / 2 + anchor.x, clientY: layout.height / 2 - anchor.y })
+      const [x, y] = dropCentre(h)
+      emit(canvas, 'pointermove', { ...pointer, clientX: x, clientY: y })
+      expect(interaction.dragging).toBe(true)
+      expect(captures).toEqual(new Set([7]))
+      expect(leases.live).toBe(resting + 2)
+      const resize = () => {
+        stage.clientWidth = 340
+        ObserverStub.latest.callback()
+      }
+      const cancel = () => emit(canvas, 'pointercancel', { pointerId: 7, pointerType: 'touch' })
+      if (first === 'resize') {
+        resize()
+        cancel()
+      } else {
+        cancel()
+        resize()
+      }
+      expect(interaction.dragging).toBe(false)
+      expect(internals(h).drag).toBeNull()
+      expect(captures.size).toBe(0)
+      expect(release).toHaveBeenCalledOnce()
+      // Relayout re-presents the board, so its resting faces may be re-leased; none leak.
+      expect(leases.repeated).toBe(0)
+      expect(h.host.all('three-drag-card')[0].hidden).toBe(true)
+      emit(canvas, 'pointerup', { ...pointer, buttons: 0, clientX: x, clientY: y })
+      expect(playCard).not.toHaveBeenCalled()
+      expect(activate).not.toHaveBeenCalled()
+      expect(h.feedback).toHaveBeenLastCalledWith(null)
+      interaction.dispose()
+      h.board.dispose()
+      expect(leases.live).toBe(0)
+    },
+  )
+
+  it('keeps a long press on the game board from selecting text or opening the touch callout', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    expect(css).toMatch(
+      /\.three-root--game \.three-board-stage\s*\{[^}]*-webkit-touch-callout:\s*none;[^}]*-webkit-user-select:\s*none;[^}]*user-select:\s*none;/,
+    )
   })
 })

@@ -4,8 +4,10 @@ import { DEFAULT_CARD_VISUAL_STYLE } from '../app/card-visual-styles'
 import { DEFAULT_RENDER_QUALITY_PREFERENCE } from '../app/render-quality'
 import { HIDDEN_HAND_CARD_NAME, type AppViewModel } from '../app/types'
 import * as sharedDrag from '../renderers/shared/drag-state'
-import type { BoardHit, ThreeBoardApi } from '../renderers/three/contracts'
+import type { BoardHit, ThreeBoardApi, ThreePeek } from '../renderers/three/contracts'
 import { ThreeInteraction } from '../renderers/three/interaction'
+import type { PeekPlacement } from '../renderers/three/layout'
+import { withFakeTimers } from './helpers/timers'
 
 type Listener = (event: never) => void
 type EventFields = Record<string, unknown>
@@ -191,6 +193,8 @@ function createView(): AppViewModel {
   }
 }
 
+const placement: PeekPlacement = { left: 108, width: 360, y: 572, maxHeight: 514, side: 'above' }
+
 function createHarness() {
   const canvas = new FakeCanvas()
   const controls = {
@@ -198,6 +202,11 @@ function createHarness() {
     hit: { ...handHit } as BoardHit | null,
     blocked: false,
     dragging: false,
+    /** Whether the interface would preview a card; off unless a test exercises the long-press peek. */
+    previewable: false,
+    placement: placement as PeekPlacement | null,
+    /** Whether the whole peek would show at the placement. */
+    fits: true,
   }
   const board = {
     canvas: canvas as unknown as HTMLCanvasElement,
@@ -211,16 +220,24 @@ function createHarness() {
     render: vi.fn(),
     playEffect: vi.fn(() => () => {}),
     setVisible: vi.fn(),
+    showPeekRing: vi.fn(),
+    hidePeekRing: vi.fn(),
+    peekPlacement: vi.fn((_hit: BoardHit, _x: number, _y: number, fits?: (placement: PeekPlacement) => boolean): PeekPlacement | null => (
+      controls.placement && (!fits || fits({ ...controls.placement })) ? { ...controls.placement } : null
+    )),
     dispose: vi.fn(),
   } satisfies ThreeBoardApi
   const playCard = vi.fn()
   const activate = vi.fn()
   const hover = vi.fn()
+  const canPeek = vi.fn((_hit: BoardHit) => controls.previewable)
+  const peekFits = vi.fn((_peek: ThreePeek) => controls.fits)
+  const peek = vi.fn<(peek: ThreePeek | null) => void>()
   const interaction = new ThreeInteraction(
-    board, () => controls.view, () => controls.blocked, playCard, activate, hover,
+    board, () => controls.view, () => controls.blocked, playCard, activate, hover, { canPeek, peekFits, onPeek: peek },
   )
   return {
-    interaction, canvas, board, playCard, activate, hover, controls,
+    interaction, canvas, board, playCard, activate, hover, canPeek, peekFits, peek, controls,
     document: canvas.ownerDocument,
     window: canvas.ownerDocument.defaultView,
     start: (fields: EventFields = {}) => canvas.emit('pointerdown', fields),
@@ -559,24 +576,59 @@ describe('ThreeInteraction', () => {
     expect(h.board.endDrag).toHaveBeenCalledExactlyOnceWith(true)
   })
 
-  it('ignores other pointers, including their cancellation and capture-loss events', () => {
+  it.each(['mouse', 'touch', 'pen'])('ignores other pointers during a %s drag, including their cancellation and capture loss', (pointerType) => {
     const h = createHarness()
-    h.start({ pointerType: 'touch' })
-    h.start({ pointerId: 2, pointerType: 'touch' })
-    h.move({ pointerId: 2, pointerType: 'touch', clientX: 420, clientY: 220 })
+    h.start({ pointerType })
+    h.move({ pointerType, clientX: 420, clientY: 220 })
+    expect(h.interaction.dragging).toBe(true)
+    h.start({ pointerId: 2, pointerType: 'touch', isPrimary: false })
+    h.move({ pointerId: 2, pointerType: 'touch', clientX: 180, clientY: 620 })
     h.drop({ pointerId: 2, pointerType: 'touch' })
     h.canvas.emit('pointercancel', { pointerId: 2 })
     h.canvas.emit('lostpointercapture', { pointerId: 2 })
     expect(h.canvas.setPointerCapture).toHaveBeenCalledExactlyOnceWith(1)
-    expect(h.board.beginDrag).not.toHaveBeenCalled()
-    h.drop({ pointerType: 'touch' })
+    expect(h.board.beginDrag).toHaveBeenCalledOnce()
+    expect(h.board.moveDrag).toHaveBeenLastCalledWith(420, 220, pointerType !== 'mouse')
+    expect(h.board.endDrag).not.toHaveBeenCalled()
+    h.drop({ pointerType })
     expect(h.playCard).toHaveBeenCalledExactlyOnceWith(handHit.cardId)
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.interaction.dragging).toBe(false)
+  })
+
+  it.each(['touch', 'pen'])('starts a gesture from a non-primary %s contact when idle', (pointerType) => {
+    const h = createHarness()
+    h.start({ pointerId: 7, pointerType, isPrimary: false })
+    expect(h.canvas.setPointerCapture).toHaveBeenCalledExactlyOnceWith(7)
+    h.release({ pointerId: 7, pointerType, isPrimary: false })
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, pointerType)
+  })
+
+  it.each([
+    ['on the same card', 180],
+    ['on the empty board', 300],
+  ] as const)('lets a second finger %s replace a stationary press and ignores the stale pointer', (_name, clientX) => {
+    const h = createHarness()
+    h.start({ pointerType: 'touch' })
+    h.start({ pointerId: 2, pointerType: 'touch', isPrimary: false, clientX })
+    expect(h.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1)
+    expect([...h.canvas.captures]).toEqual(clientX === 180 ? [2] : [])
+    h.move({ pointerType: 'touch', clientX: 420, clientY: 220 })
+    h.drop({ pointerType: 'touch' })
+    h.canvas.emit('pointercancel', { pointerId: 1 })
+    expect(h.board.beginDrag).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.activate).not.toHaveBeenCalled()
+    h.release({ pointerId: 2, pointerType: 'touch', clientX })
+    if (clientX === 180) expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, 'touch')
+    else expect(h.activate).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
   })
 
   it.each([
     { button: 1 },
     { button: 2 },
-    { isPrimary: false, pointerType: 'touch' },
+    { isPrimary: false },
     { pointerId: -1 },
     { pointerId: 1.5 },
     { clientX: Number.NaN },
@@ -952,7 +1004,7 @@ describe('ThreeInteraction', () => {
 
   it('removes every listener and restores an active source idempotently on disposal', () => {
     const h = createHarness()
-    expect(h.canvas.listeners.size).toBe(6)
+    expect(h.canvas.listeners.size).toBe(7)
     expect(h.window.listeners.size).toBe(5)
     expect(h.document.listeners.size).toBe(1)
     h.start()
@@ -989,5 +1041,290 @@ describe('ThreeInteraction', () => {
     const up = h.release()
     expect(down.preventDefault).not.toHaveBeenCalled()
     expect(up.preventDefault).not.toHaveBeenCalled()
+  })
+})
+
+describe('ThreeInteraction long-press peek', () => {
+  const { PEEK_HOLD_MS, PEEK_RING_DELAY_MS, TOUCH_DRAG_THRESHOLD_PX } = sharedDrag
+  const opened = (h: Harness) => h.peek.mock.calls.filter(([peek]) => peek !== null).length
+  /** Holds a touch press on the card under the default point until its peek opens. */
+  const hold = (h: Harness, fields: EventFields = {}) => {
+    h.controls.previewable = true
+    h.start({ pointerType: 'touch', ...fields })
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(opened(h)).toBe(1)
+  }
+
+  it.each(['touch', 'pen'])('rings at 150 ms and opens a %s peek at 450 ms through sub-threshold wobble', (pointerType) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.start({ pointerType })
+    vi.advanceTimersByTime(PEEK_RING_DELAY_MS - 1)
+    expect(h.board.showPeekRing).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(h.board.showPeekRing).toHaveBeenCalledExactlyOnceWith(180, 620)
+    h.move({ pointerType, clientX: 180 + TOUCH_DRAG_THRESHOLD_PX - 1 })
+    vi.advanceTimersByTime(PEEK_HOLD_MS - PEEK_RING_DELAY_MS - 1)
+    expect(h.peek).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(h.peek).toHaveBeenCalledExactlyOnceWith({ hit: handHit, placement })
+    // The peek is placed from where the press began, beside the held card, where all of it fits.
+    expect(h.board.peekPlacement).toHaveBeenLastCalledWith(handHit, 180, 620, expect.any(Function))
+    expect(h.peekFits).toHaveBeenLastCalledWith({ hit: handHit, placement })
+    expect(h.board.beginDrag).not.toHaveBeenCalled()
+    expect(h.board.hidePeekRing).not.toHaveBeenCalled()
+    expect(h.interaction.dragging).toBe(false)
+    expect([...h.canvas.captures]).toEqual([1])
+    h.release({ pointerType })
+    h.release({ pointerType })
+    expect(h.peek).toHaveBeenCalledTimes(2)
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+    expect(h.board.hidePeekRing).toHaveBeenCalledOnce()
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.board.containsDrop).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  }))
+
+  it('starts a drag, and never a peek, when the finger moves 12 px at 449 ms', () => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.start({ pointerType: 'touch' })
+    vi.advanceTimersByTime(PEEK_HOLD_MS - 1)
+    expect(h.board.showPeekRing).toHaveBeenCalledOnce()
+    h.move({ pointerType: 'touch', clientX: 180 + TOUCH_DRAG_THRESHOLD_PX })
+    expect(h.board.hidePeekRing).toHaveBeenCalledOnce()
+    expect(h.board.beginDrag).toHaveBeenCalledExactlyOnceWith(handHit)
+    expect(h.interaction.dragging).toBe(true)
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(h.peek).not.toHaveBeenCalled()
+    h.drop({ pointerType: 'touch' })
+    expect(h.playCard).toHaveBeenCalledExactlyOnceWith(handHit.cardId)
+    expect(h.board.hidePeekRing).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  }))
+
+  it('closes an open peek before a summonable card starts dragging past the threshold', () => withFakeTimers(() => {
+    const h = createHarness()
+    hold(h)
+    h.move({ pointerType: 'touch', clientX: 420, clientY: 220 })
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+    expect(h.board.hidePeekRing).toHaveBeenCalledOnce()
+    expect(h.board.beginDrag).toHaveBeenCalledExactlyOnceWith(handHit)
+    expect(h.peek.mock.invocationCallOrder[1]).toBeLessThan(h.board.beginDrag.mock.invocationCallOrder[0])
+    h.drop({ pointerType: 'touch' })
+    expect(h.playCard).toHaveBeenCalledExactlyOnceWith(handHit.cardId)
+    expect(opened(h)).toBe(1)
+  }))
+
+  it.each([
+    ['summonable hand card', createHarness],
+    ['Interception card', responseHarness],
+    ['unplayable hand card', () => {
+      const h = createHarness()
+      h.controls.view!.game!.legal.playLandByCard = {}
+      return h
+    }],
+    ['battlefield card', () => {
+      const h = createHarness()
+      h.controls.hit = battlefieldHit
+      return h
+    }],
+  ] as const)('releasing a peek on a %s never selects, previews, intercepts, or submits', (_name, harness) => withFakeTimers(() => {
+    const h = harness()
+    hold(h)
+    h.release({ pointerType: 'touch' })
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.board.beginDrag).not.toHaveBeenCalled()
+    expect(h.board.containsDrop).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
+    // The next quick tap behaves as before.
+    h.start({ pointerType: 'touch' })
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).toHaveBeenCalledOnce()
+  }))
+
+  it.each([
+    ['quick', 100, false],
+    ['slow', PEEK_HOLD_MS - 1, true],
+  ] as const)('keeps a %s tap a tap, hiding any ring first', (_name, ms, ring) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.start({ pointerType: 'touch' })
+    vi.advanceTimersByTime(ms)
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, 'touch')
+    expect(h.board.showPeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    expect(h.board.hidePeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    if (ring) {
+      expect(h.board.hidePeekRing.mock.invocationCallOrder[0]).toBeLessThan(h.activate.mock.invocationCallOrder[0])
+    }
+    expect(h.peek).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  }))
+
+  it.each([
+    ['the mouse', { pointerType: 'mouse' }, () => {}],
+    ['a card the interface would not preview', { pointerType: 'touch' }, (h: Harness) => { h.controls.previewable = false }],
+    ['a stage without room for it', { pointerType: 'touch' }, (h: Harness) => { h.controls.placement = null }],
+  ] as const)('never peeks for %s, so a held press stays a tap', (_name, fields, prepare) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    prepare(h)
+    h.start(fields)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(PEEK_HOLD_MS * 2)
+    h.release(fields)
+    expect(h.board.showPeekRing).not.toHaveBeenCalled()
+    expect(h.peek).not.toHaveBeenCalled()
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, fields.pointerType)
+  }))
+
+  it.each([
+    ['at its ring', 0, false],
+    ['once it opens', PEEK_RING_DELAY_MS, true],
+  ] as const)('keeps a press a tap when the whole peek would not fit %s', (_name, ms, ring) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.controls.fits = ring
+    h.start({ pointerType: 'touch' })
+    // Pointerdown only checks for room; the interface measures from the ring on.
+    expect(h.peekFits).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(ms)
+    h.controls.fits = false
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(h.peekFits).toHaveBeenCalledTimes(2)
+    expect(h.peekFits).toHaveBeenLastCalledWith({ hit: handHit, placement })
+    expect(h.peek).not.toHaveBeenCalled()
+    expect(h.board.showPeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    expect(h.board.hidePeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, 'touch')
+    expect(vi.getTimerCount()).toBe(0)
+  }))
+
+  it.each([
+    ['before its ring', PEEK_RING_DELAY_MS - 1, false],
+    ['after its ring', PEEK_RING_DELAY_MS, true],
+  ] as const)('keeps a press a tap when its preview is refused %s', (_name, ms, ring) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.start({ pointerType: 'touch' })
+    vi.advanceTimersByTime(ms)
+    h.controls.previewable = false
+    h.interaction.reconcile()
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(h.peek).not.toHaveBeenCalled()
+    expect(h.board.showPeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    expect(h.board.hidePeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, 'touch')
+  }))
+
+  const peekBoundaries: ReadonlyArray<readonly [string, (h: Harness) => void]> = [
+    ['pointercancel', (h) => { h.canvas.emit('pointercancel', { pointerType: 'touch' }) }],
+    ['capture loss', (h) => { h.canvas.emit('lostpointercapture', { pointerType: 'touch' }) }],
+    ['blur', (h) => { h.window.emit('blur') }],
+    ['Escape', (h) => { h.window.emit('keydown', { key: 'Escape' }) }],
+    ['a hidden document', (h) => { h.document.hidden = true; h.document.emit('visibilitychange') }],
+    ['a decision change', (h) => { h.controls.view!.game!.players[1].deckCount -= 1; h.interaction.reconcile() }],
+    ['a refused preview', (h) => { h.controls.previewable = false; h.interaction.reconcile() }],
+    ['a relayout or opened menu', (h) => { h.interaction.cancel() }],
+    ['disposal', (h) => { h.interaction.dispose() }],
+  ]
+
+  it.each(peekBoundaries)('closes a peek once on %s and ignores the late release', (_name, close) => withFakeTimers(() => {
+    const h = createHarness()
+    hold(h)
+    close(h)
+    expect(h.peek).toHaveBeenCalledTimes(2)
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+    expect(h.board.hidePeekRing).toHaveBeenCalledOnce()
+    expect(h.canvas.captures.size).toBe(0)
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    h.release({ pointerType: 'touch' })
+    h.interaction.cancel()
+    expect(h.peek).toHaveBeenCalledTimes(2)
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.board.endDrag).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  }))
+
+  it('keeps an open peek through status and settings updates', () => withFakeTimers(() => {
+    const h = createHarness()
+    hold(h)
+    h.controls.view = { ...h.controls.view!, status: 'Saved', animationSpeed: 'normal' }
+    h.interaction.reconcile()
+    expect(h.peek).toHaveBeenCalledOnce()
+    h.release({ pointerType: 'touch' })
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+  }))
+
+  it('lets a second finger replace an open peek with its own press', () => withFakeTimers(() => {
+    const h = createHarness()
+    hold(h)
+    h.start({ pointerId: 2, pointerType: 'touch', isPrimary: false })
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+    expect(h.board.hidePeekRing).toHaveBeenCalledOnce()
+    expect(h.canvas.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1)
+    expect([...h.canvas.captures]).toEqual([2])
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(opened(h)).toBe(2)
+    h.release({ pointerId: 2, pointerType: 'touch' })
+    expect(h.peek).toHaveBeenLastCalledWith(null)
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.canvas.captures.size).toBe(0)
+  }))
+
+  it.each([
+    ['disposal', (h: Harness) => h.interaction.dispose()],
+    ['cancellation', (h: Harness) => h.interaction.cancel()],
+  ] as const)('leaves no peek timer behind after %s', (_name, end) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.start({ pointerType: 'touch' })
+    expect(vi.getTimerCount()).toBe(2)
+    end(h)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(h.board.showPeekRing).not.toHaveBeenCalled()
+    expect(h.peek).not.toHaveBeenCalled()
+  }))
+
+  it.each([['touch', true], ['pen', true], ['mouse', false], ['', false]] as const)(
+    'prevents a %s context menu on the canvas only for touch and pen',
+    (pointerType, prevented) => {
+      const h = createHarness()
+      const event = h.canvas.emit('contextmenu', { pointerType })
+      expect(event.preventDefault).toHaveBeenCalledTimes(prevented ? 1 : 0)
+      h.interaction.dispose()
+      expect(h.canvas.listeners.has('contextmenu')).toBe(false)
+    },
+  )
+
+  it.each([['touch', true], ['mouse', false]] as const)(
+    'uses the last %s press for a context menu event without a pointer type',
+    (pointerType, prevented) => {
+      const h = createHarness()
+      h.start({ pointerType, clientX: 300 })
+      const event = { type: 'contextmenu', preventDefault: vi.fn() }
+      for (const listener of h.canvas.listeners.get('contextmenu') ?? []) listener(event as never)
+      expect(event.preventDefault).toHaveBeenCalledTimes(prevented ? 1 : 0)
+    },
+  )
+
+  it.each(['mouse', ''])('still prevents a long-press menu reported as "%s" after a touch press', (reported) => {
+    const h = createHarness()
+    h.start({ pointerType: 'touch', clientX: 300 })
+    expect(h.canvas.emit('contextmenu', { pointerType: reported }).preventDefault).toHaveBeenCalledOnce()
+    // A right-click presses the mouse first, so its menu stays available.
+    h.start({ pointerId: 2, pointerType: 'mouse', button: 2, clientX: 300 })
+    expect(h.canvas.emit('contextmenu', { pointerType: 'mouse' }).preventDefault).not.toHaveBeenCalled()
   })
 })

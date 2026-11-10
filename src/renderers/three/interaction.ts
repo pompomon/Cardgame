@@ -5,11 +5,26 @@ import {
   DragStateMachine,
   dragPointerType,
   TOUCH_DRAG_THRESHOLD_PX,
+  type DragPeekHandlers,
   type DragPointerSnapshot,
   type DragPointerType,
+  type DragTimers,
 } from '../shared/drag-state'
-import type { BoardHit, ThreeBoardApi } from './contracts'
+import type { BoardHit, ThreeBoardApi, ThreePeek } from './contracts'
 import { threeDecisionKey } from './interface-model'
+import type { PeekPlacement } from './layout'
+
+/** Long-press peek wiring. Without `canPeek`, a held press stays a tap. */
+export interface ThreeInteractionOptions {
+  /** Whether the interface would preview `hit` now. */
+  readonly canPeek?: (hit: BoardHit) => boolean
+  /** Whether the whole peek would show at its placement; a clipped peek stays a tap. */
+  readonly peekFits?: (peek: ThreePeek) => boolean
+  /** Opens a peek, or closes it with `null`. */
+  readonly onPeek?: (peek: ThreePeek | null) => void
+  /** The long-press timers; injectable for tests. */
+  readonly timers?: DragTimers
+}
 
 interface Gesture {
   readonly pointerId: number
@@ -22,6 +37,10 @@ interface Gesture {
   moved: boolean
   exceededTapThreshold: boolean
   visualStarted: boolean
+  ringShown: boolean
+  peek: ThreePeek | null
+  /** The decision the peek opened on; a new decision closes it. */
+  peekDecision: string
 }
 
 function snapshot(event: PointerEvent): DragPointerSnapshot {
@@ -73,12 +92,17 @@ export class ThreeInteraction {
   private readonly playCard: (cardId: string) => void
   private readonly activate: (hit: BoardHit, pointerType: DragPointerType) => void
   private readonly onHover: (hit: BoardHit | null) => void
+  private readonly canPeek: (hit: BoardHit) => boolean
+  private readonly peekFits: (peek: ThreePeek) => boolean
+  private readonly onPeek: (peek: ThreePeek | null) => void
   private readonly document: Document
   private readonly window: Window | null
-  private readonly state = new DragStateMachine()
+  private readonly state: DragStateMachine
   private gesture: Gesture | null = null
   private hover: BoardHit | null = null
   private hoverDecision = ''
+  /** The latest `pointerdown` type, for `contextmenu` events that do not carry one. */
+  private lastPointerType: DragPointerType = 'mouse'
   private disposed = false
 
   constructor(
@@ -88,6 +112,7 @@ export class ThreeInteraction {
     playCard: (cardId: string) => void,
     activate: (hit: BoardHit, pointerType: DragPointerType) => void,
     onHover: (hit: BoardHit | null) => void = () => {},
+    options: ThreeInteractionOptions = {},
   ) {
     this.board = board
     this.getView = getView
@@ -95,6 +120,10 @@ export class ThreeInteraction {
     this.playCard = playCard
     this.activate = activate
     this.onHover = onHover
+    this.canPeek = options.canPeek ?? (() => false)
+    this.peekFits = options.peekFits ?? (() => true)
+    this.onPeek = options.onPeek ?? (() => {})
+    this.state = new DragStateMachine(options.timers)
     this.document = board.canvas.ownerDocument
     this.window = this.document.defaultView
     board.canvas.addEventListener('pointerdown', this.onPointerDown)
@@ -103,6 +132,7 @@ export class ThreeInteraction {
     board.canvas.addEventListener('pointerup', this.onPointerUp)
     board.canvas.addEventListener('pointercancel', this.onPointerLoss)
     board.canvas.addEventListener('lostpointercapture', this.onPointerLoss)
+    board.canvas.addEventListener('contextmenu', this.onContextMenu)
     this.window?.addEventListener('pointerup', this.onWindowPointerUp)
     this.window?.addEventListener('pointercancel', this.onPointerLoss)
     this.window?.addEventListener('pointerout', this.onPointerOut)
@@ -111,8 +141,14 @@ export class ThreeInteraction {
     this.document.addEventListener('visibilitychange', this.onVisibilityChange)
   }
 
+  /** A card follows the pointer; native actions wait until it drops or returns. */
+  get dragging(): boolean {
+    return this.gesture?.visualStarted === true
+  }
+
   reconcile(): void {
-    if (this.gesture && !this.isCurrent(this.gesture)) {
+    const gesture = this.gesture
+    if (gesture && (!this.isCurrent(gesture) || gesture.peek && !this.peekCurrent(gesture))) {
       this.cancel()
     }
     const view = this.getView()
@@ -137,6 +173,7 @@ export class ThreeInteraction {
     canvas.removeEventListener('pointerup', this.onPointerUp)
     canvas.removeEventListener('pointercancel', this.onPointerLoss)
     canvas.removeEventListener('lostpointercapture', this.onPointerLoss)
+    canvas.removeEventListener('contextmenu', this.onContextMenu)
     this.window?.removeEventListener('pointerup', this.onWindowPointerUp)
     this.window?.removeEventListener('pointercancel', this.onPointerLoss)
     this.window?.removeEventListener('pointerout', this.onPointerOut)
@@ -155,6 +192,11 @@ export class ThreeInteraction {
       && (gesture.hit.zone === 'battlefield' || !this.isBlocked())
   }
 
+  private peekCurrent(gesture: Gesture): boolean {
+    const view = this.getView()
+    return !!view && threeDecisionKey(view) === gesture.peekDecision && this.canPeek(gesture.hit)
+  }
+
   private inWindow(event: PointerEvent): boolean {
     return Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
       && event.clientX >= 0 && event.clientY >= 0
@@ -164,10 +206,22 @@ export class ThreeInteraction {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    const pointer = snapshot(event)
+    const pointerType = dragPointerType(pointer)
+    this.lastPointerType = pointerType
     this.clearHover()
-    if (this.disposed || this.gesture || event.button !== 0
-      || event.isPrimary === false || this.document.hidden || !this.inWindow(event)) {
+    // Any touch or pen contact may start a gesture; a mouse only as the primary pointer.
+    if (this.disposed || event.button !== 0 || (pointerType === 'mouse' && event.isPrimary === false)
+      || this.document.hidden || !this.inWindow(event)) {
       return
+    }
+    const current = this.gesture
+    if (current) {
+      // A drag keeps its pointer. A new pointer replaces a stationary press or peek.
+      if (current.pointerId === event.pointerId || this.state.phase === 'dragging') {
+        return
+      }
+      this.cancel()
     }
     const view = this.getView()
     const hit = this.board.hitTest(event.clientX, event.clientY)
@@ -175,14 +229,9 @@ export class ThreeInteraction {
       || (hit.zone !== 'battlefield' && this.isBlocked())) {
       return
     }
-    const pointer = snapshot(event)
-    const result = this.state.begin(pointer, hit.cardId)
-    if (result === 'ignored') {
-      return
-    }
     const gesture: Gesture = {
       pointerId: event.pointerId,
-      pointerType: dragPointerType(pointer),
+      pointerType,
       hit: { ...hit },
       context: contextKey(view),
       playable: isPlayable(view, hit),
@@ -191,6 +240,17 @@ export class ThreeInteraction {
       moved: false,
       exceededTapThreshold: false,
       visualStarted: false,
+      ringShown: false,
+      peek: null,
+      peekDecision: '',
+    }
+    const peek: DragPeekHandlers | undefined = pointerType !== 'mouse' && this.canPeek(hit)
+      && this.board.peekPlacement(hit, event.clientX, event.clientY) !== null
+      ? { ring: () => this.ringPeek(gesture), open: () => this.openPeek(gesture) }
+      : undefined
+    const result = this.state.begin(pointer, hit.cardId, peek)
+    if (result === 'ignored') {
+      return
     }
     this.gesture = gesture
     try {
@@ -209,8 +269,62 @@ export class ThreeInteraction {
     gesture.moved ||= distance > 0
     gesture.exceededTapThreshold ||= distance >= TOUCH_DRAG_THRESHOLD_PX
     const result = this.state.move(snapshot(event))
+    if (result === 'started') {
+      // Leaving the threshold closes a peek, or its ring, before any drag starts.
+      this.closePeek(gesture)
+      if (this.gesture !== gesture) {
+        return
+      }
+    }
     if (gesture.playable && (result === 'started' || result === 'dragging')) {
       this.moveVisual(gesture, event)
+    }
+  }
+
+  private ringPeek(gesture: Gesture): void {
+    // Measure before ringing, so a press whose peek cannot fit shows no ring.
+    if (this.gesture !== gesture || !this.isCurrent(gesture) || !this.canPeek(gesture.hit) || !this.placePeek(gesture)) {
+      return
+    }
+    gesture.ringShown = true
+    this.board.showPeekRing(gesture.startX, gesture.startY)
+  }
+
+  /**
+   * Where the held card's peek opens with all of it in view, from where the
+   * press began. Null keeps the press a tap: the panel cannot be scrolled.
+   */
+  private placePeek(gesture: Gesture): PeekPlacement | null {
+    const hit = gesture.hit
+    return this.board.peekPlacement(hit, gesture.startX, gesture.startY, (placement) => this.peekFits({ hit: { ...hit }, placement }))
+  }
+
+  /** Opens the peek once the press is held; refusing it keeps the press a tap. */
+  private openPeek(gesture: Gesture): boolean {
+    const view = this.getView()
+    const placement = view && this.gesture === gesture && this.isCurrent(gesture) && this.canPeek(gesture.hit)
+      ? this.placePeek(gesture)
+      : null
+    if (!view || !placement) {
+      this.closePeek(gesture)
+      return false
+    }
+    const peek: ThreePeek = { hit: { ...gesture.hit }, placement: { ...placement } }
+    gesture.peek = peek
+    gesture.peekDecision = threeDecisionKey(view)
+    this.onPeek(peek)
+    return this.gesture === gesture && gesture.peek === peek
+  }
+
+  private closePeek(gesture: Gesture): void {
+    if (gesture.ringShown) {
+      gesture.ringShown = false
+      this.board.hidePeekRing()
+    }
+    if (gesture.peek) {
+      gesture.peek = null
+      gesture.peekDecision = ''
+      this.onPeek(null)
     }
   }
 
@@ -285,6 +399,11 @@ export class ThreeInteraction {
       return
     }
     const result = this.state.release({ id: event.pointerId })
+    if (result === 'peeked') {
+      // Releasing a peek only closes it: it never taps, selects, or submits.
+      this.finish(false)
+      return
+    }
     const tap = gesture.playable
       ? result === 'tap' || (gesture.pointerType === 'mouse' && !gesture.moved)
       : !gesture.exceededTapThreshold
@@ -326,6 +445,18 @@ export class ThreeInteraction {
     }
   }
 
+  /**
+   * A long press on the board never opens the system menu for touch or pen.
+   * The latest press decides too, in case a browser reports its synthesized
+   * menu event as a mouse one; a real right-click presses the mouse first.
+   */
+  private readonly onContextMenu = (event: Event): void => {
+    const reported = 'pointerType' in event ? event.pointerType : ''
+    if (reported === 'touch' || reported === 'pen' || this.lastPointerType !== 'mouse') {
+      event.preventDefault()
+    }
+  }
+
   private readonly onBlur = (): void => {
     this.cancel()
   }
@@ -349,6 +480,7 @@ export class ThreeInteraction {
     if (!gesture) {
       return
     }
+    this.closePeek(gesture)
     // releasePointerCapture may synchronously emit lostpointercapture.
     try {
       if (this.board.canvas.hasPointerCapture(gesture.pointerId)) {

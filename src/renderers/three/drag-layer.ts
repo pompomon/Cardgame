@@ -1,6 +1,6 @@
 import { clamp } from '../shared/math'
 import type { TextureLease } from './assets'
-import type { LayerRect } from './layout'
+import type { LayerRect, Point } from './layout'
 
 /** The WebGL card body colour, which shows as a 1px edge around the face. */
 const CARD_EDGE = '#ebd9b9'
@@ -10,15 +10,17 @@ const CARD_TILT_RAD = 0.025
 
 /**
  * The HTML overlay for an active drag. It draws the lifted card above the
- * board's HTML headers and labels the landing slot. It lives inside the board
- * stage, so it scrolls with the board and shares its pixel coordinates. Each
- * drag owns at most one face-texture lease, released on every end path. A
- * move only changes a CSS transform; it never reads layout.
+ * board's HTML headers and labels the landing slot, and shows the long-press
+ * ring under a held finger. It lives inside the board stage, so it scrolls
+ * with the board and shares its pixel coordinates. Each drag owns at most one
+ * face-texture lease, released on every end path. A move only changes a CSS
+ * transform; it never reads layout.
  */
 export class ThreeDragLayer {
   readonly element = document.createElement('div')
   private readonly card = document.createElement('canvas')
   private readonly landing = document.createElement('span')
+  private readonly ring = document.createElement('span')
   private readonly context: CanvasRenderingContext2D | null
   private lease: TextureLease | null = null
   private width = 0
@@ -36,8 +38,10 @@ export class ThreeDragLayer {
     this.landing.hidden = true
     this.card.className = 'three-drag-card'
     this.card.hidden = true
+    this.ring.className = 'three-peek-ring'
+    this.ring.hidden = true
     // The card follows the landing label so it draws above it.
-    this.element.append(this.landing, this.card)
+    this.element.append(this.landing, this.card, this.ring)
     let context: CanvasRenderingContext2D | null = null
     try {
       context = this.card.getContext('2d')
@@ -127,6 +131,22 @@ export class ThreeDragLayer {
     this.sync()
   }
 
+  /**
+   * Shows the long-press ring centred on `center` in layer pixels, or hides
+   * it for null. Each showing restarts its fill animation.
+   */
+  setRing(center: Point | null): void {
+    if (this.disposed) return
+    if (center && Number.isFinite(center.x) && Number.isFinite(center.y)) {
+      this.ring.style.left = `${center.x}px`
+      this.ring.style.top = `${center.y}px`
+      this.ring.hidden = false
+    } else {
+      this.ring.hidden = true
+    }
+    this.sync()
+  }
+
   /** Marks whether releasing now would summon; styled with a ring only. */
   setAccepted(accepted: boolean): void {
     if (this.disposed) return
@@ -138,6 +158,7 @@ export class ThreeDragLayer {
   end(): void {
     this.endCard()
     this.landing.hidden = true
+    this.ring.hidden = true
     delete this.element.dataset.accepted
     this.sync()
   }
@@ -158,7 +179,7 @@ export class ThreeDragLayer {
   }
 
   private sync(): void {
-    const hidden = this.card.hidden && this.landing.hidden
+    const hidden = this.card.hidden && this.landing.hidden && this.ring.hidden
     if (this.element.hidden !== hidden) this.element.hidden = hidden
   }
 

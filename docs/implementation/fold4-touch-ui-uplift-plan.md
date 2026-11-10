@@ -88,6 +88,15 @@ The approved decisions are:
   - [ ] Fold4 device check of Figure 3, callouts 1–5 (pending maintainer:
     needs a physical Galaxy Z Fold4)
 - [ ] Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
+  - [x] `peeking` drag phase, ring, `peekPlacement`, and the decorative peek
+    with its dock announcement, with focused tests
+  - [x] Multi-touch policy, the second-finger guard, and touch context-menu
+    and callout suppression
+  - [x] Edge auto-scroll, near-lane anchoring, and a hand page that follows
+    the selection
+  - [x] Agent docs and README: pointer policy, peek, and auto-scroll
+  - [ ] Fold4 device check of Figure 4, callouts 1–4, and the second-finger
+    policy (pending maintainer: needs a physical Galaxy Z Fold4)
 - [ ] Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
 - [ ] Milestone 4 — Short landscape (cover screen and phones held sideways)
 - [ ] Milestone 5 — Documentation, hardening, and device release gate
@@ -649,6 +658,35 @@ Use `withFakeTimers` or `installFakeTimerHooks` from
 - A long press never shows a system menu or selects text.
 - [`three-renderer.md`](../agent/three-renderer.md#interaction) records the
   pointer policy, and README describes the long-press peek.
+
+**As built**
+
+The implementation differs from the scope above in these ways:
+
+- During a game, callout and text-selection suppression covers the whole
+  board stage, not only the board labels.
+- A `contextmenu` that follows a touch or pen press is also prevented when
+  the browser reports it as `mouse` or with no pointer type. A real
+  right-click presses the mouse first, so it keeps its menu.
+- The peek also closes on capture loss, Escape, and a refused preview. The
+  full ring stays under the finger while the peek is open.
+- On a stage shorter than two bands, each auto-scroll band is half the stage
+  height, so the bands never overlap.
+- With no selection, a page-size change keeps the first card of the old page
+  in view instead of clamping the page.
+- The cover-screen peek tile is about 114 px wide. The peek name therefore
+  uses less padding and 13 px type, so "Doppelgänger" stays on one line.
+- The peek panel clips instead of scrolling, so a peek opens only on a side
+  where all of it fits. From the ring on, `ThreeInterface.peekFits()`
+  measures a probe of the peek at each candidate placement. If neither side
+  fits, no ring shows and the press stays a tap, as the
+  [fallback](#long-press-peek) describes.
+- The second-finger guard also covers the hand page buttons.
+- The hand page follows a selection that Details or a menu hides. Closing
+  them therefore keeps the card selected instead of clearing it as off-page.
+- A narrow board held at its minimum height keeps its layout while the stage
+  shrinks. Relayout therefore also tracks the stage's client box. When only
+  the box changes, it ends the gesture and re-anchors the near lane.
 
 ### Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
 

@@ -59,7 +59,7 @@ export class ThreeRenderer implements AppRenderer {
         (action) => this.ui?.activatePrimaryAction(action), dockPrimary, this.boardPresentation,
         () => this.ui?.clearHandSelection(), (feedback) => this.ui?.setDragFeedback(feedback))
       this.ui = new ThreeInterface(controls, controller, this.refresh, () => this.interaction?.cancel(), hud,
-        { dockHost: dock, narrow: () => this.narrow })
+        { dockHost: dock, narrow: () => this.narrow, dragActive: () => this.interaction?.dragging === true })
       dock.append(dockPrimary)
       this.interaction = new ThreeInteraction(
         this.board,
@@ -68,6 +68,8 @@ export class ThreeRenderer implements AppRenderer {
         (cardId) => this.ui?.playCard(cardId),
         (hit, pointerType) => this.ui?.activate(hit, pointerType),
         (hit) => this.ui?.setHover(hit),
+        { canPeek: (hit) => this.ui?.canPeek(hit) ?? false, peekFits: (peek) => this.ui?.peekFits(peek) ?? false,
+          onPeek: (peek) => this.ui?.setPeek(peek) },
       )
       this.effects = new ThreeEffects(
         (effect, duration, done) => this.board!.playEffect(effect, duration, done),
