@@ -1,9 +1,10 @@
 # Galaxy Z Fold4 touch-first UI uplift plan
 
 > [!IMPORTANT]
-> This document is an implementation plan, not evidence that any change,
-> automated check, or device verification has been completed. Figures 1 and 2
-> show the current build. Figures 3–7 are design illustrations (mockups and
+> This document is an implementation plan. Its
+> [checklist](#implementation-checklist) records which milestones have landed;
+> nothing here is evidence of device verification. Figures 1 and 2 show the
+> build before the uplift. Figures 3–7 are design illustrations (mockups and
 > prototypes), not screenshots of shipped behavior. No physical Galaxy Z Fold4
 > was used; see [Evidence and limitations](#evidence-and-limitations).
 
@@ -32,10 +33,14 @@ across the folded and unfolded screens with one touch grammar and three shells
 (Milestones 3–4): `narrow` for the cover screen, `dock` for the unfolded screen
 in portrait, and `rail` for landscape.
 
-## Status and proposed decisions
+## Status and decisions
 
-Status: **proposed; awaiting maintainer approval.** No runtime code has
-changed. The following decisions are proposed:
+Status: **approved** by @pompomon on 2026-11-10 (PR #143), together with the
+working defaults in [Open questions](#open-questions). Each milestone lands as
+its own pull request, stacked on the previous one. Device verification stays
+pending until a maintainer checks a physical Galaxy Z Fold4.
+
+The approved decisions are:
 
 1. **One touch grammar on coarse-pointer screens.** Tap selects and the dock
    confirms, drag summons, and a long press peeks. Folding, unfolding, or
@@ -67,7 +72,12 @@ changed. The following decisions are proposed:
 ## Implementation checklist
 
 - [x] Plan — Record the analysis, proposed design, figures, and milestones
+- [x] Approval — Maintainer approval of the plan and its working defaults
 - [ ] Milestone 0 — Device baseline and pure shell classifier
+  - [x] `threeShellProfile` in `layout.ts` with posture, boundary, pointer, and
+    invalid-size tests; no callers yet
+  - [ ] [Device measurements](#device-measurements) (pending maintainer:
+    needs a physical Galaxy Z Fold4)
 - [ ] Milestone 1 — Touch drag feedback above chrome
 - [ ] Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
 - [ ] Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
@@ -99,6 +109,38 @@ and main 1812×2176 device pixels) at a device pixel ratio of about 2.625, minus
 typical browser chrome. The main-screen CSS width varies from about 673 to 786
 px with Android's screen zoom setting. Milestone 0 replaces the estimates with
 measurements.
+
+### Device measurements
+
+**Pending maintainer verification.** No physical Galaxy Z Fold4 has been
+available, so every value below is still unmeasured. The `threeShellProfile`
+tests use the estimates above. When a posture is measured, update this table,
+the postures table, and the posture fixture in `src/test/three-layout.test.ts`
+together.
+
+Run the diagnostic from
+[Milestone 0](#milestone-0--device-baseline-and-pure-shell-classifier) in each
+posture, first as shown and then with the keyboard open, after a pinch zoom,
+and with the URL bar hidden. The index page does not set `interactive-widget`,
+so Chrome's default should resize only the visual viewport for the keyboard;
+the last column records whether `inner` changed.
+
+| Posture | Context | `inner` | `visual` | DPR | `screen` | `coarse` / `anyCoarse` / `hoverNone` | `inner` changes (keyboard, zoom, URL bar) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Cover portrait | Chrome tab | Pending | Pending | Pending | Pending | Pending | Pending |
+| Cover portrait | Installed PWA | Pending | Pending | Pending | Pending | Pending | Pending |
+| Cover landscape | Chrome tab | Pending | Pending | Pending | Pending | Pending | Pending |
+| Cover landscape | Installed PWA | Pending | Pending | Pending | Pending | Pending | Pending |
+| Main portrait | Chrome tab | Pending | Pending | Pending | Pending | Pending | Pending |
+| Main portrait | Installed PWA | Pending | Pending | Pending | Pending | Pending | Pending |
+| Main landscape | Chrome tab | Pending | Pending | Pending | Pending | Pending | Pending |
+| Main landscape | Installed PWA | Pending | Pending | Pending | Pending | Pending | Pending |
+
+| Gesture observation | Cover screen | Main screen |
+| --- | --- | --- |
+| A resting thumb makes the next touch non-primary | Pending | Pending |
+| A long press on the board fires `contextmenu` | Pending | Pending |
+| A long press selects row-label text or opens a system menu | Pending | Pending |
 
 ## Current baseline
 
@@ -835,16 +877,26 @@ Use `withFakeTimers` or `installFakeTimerHooks` from
 
 ## Open questions
 
+Approval adopted the working default after each question. Device testing can
+revisit any of them.
+
 1. Should touch shells key on `pointer: coarse` or `any-pointer: coarse`? Is
    1024 px the right `desktop` cap for tablets and touch laptops?
+   *Working default:* the primary pointer (`pointer: coarse`) with the 1024 px
+   cap, as `threeShellProfile` implements.
 2. Should a peek or an accepted drop trigger a short haptic pulse
    (`navigator.vibrate`, Android only) behind a setting?
+   *Working default:* no haptics.
 3. Should the rail be mirrored to the left for left-handed play, as a setting?
+   *Working default:* the rail stays on the right, with no mirror setting.
 4. Is short landscape worth full support (Milestone 4), or should it show a
    rotate hint instead?
+   *Working default:* full support.
 5. Should a mouse press-and-hold also open a peek, for parity with touch?
+   *Working default:* no; the mouse keeps hover.
 6. Should Flex mode (half-folded, using the Viewport Segments API) get a
    follow-up plan after Milestone 5?
+   *Working default:* yes, as a separate plan after Milestone 5.
 
 ## Verification plan
 
