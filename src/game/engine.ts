@@ -17,6 +17,32 @@ function cloneState(state: GameState): GameState {
   return structuredClone(state)
 }
 
+function clonePlayerForSearch(player: PlayerState): PlayerState {
+  return {
+    ...player,
+    deck: player.deck.slice(),
+    hand: player.hand.slice(),
+    battlefield: player.battlefield.slice(),
+    graveyard: player.graveyard.slice(),
+  }
+}
+
+// Copies everything the engine mutates: the state and player objects, the
+// zone arrays and the pending slots. Card and battlefield entries are shared,
+// because the engine never writes to them. The log and event lists start
+// empty, so a search state holds only the latest action's entries.
+function cloneStateForSearch(state: GameState): GameState {
+  return {
+    ...state,
+    players: [clonePlayerForSearch(state.players[0]), clonePlayerForSearch(state.players[1])],
+    pendingLandPlay: state.pendingLandPlay ? { ...state.pendingLandPlay } : null,
+    pendingPlainsReuse: state.pendingPlainsReuse ? { ...state.pendingPlainsReuse } : null,
+    pendingSwampDiscard: state.pendingSwampDiscard ? { ...state.pendingSwampDiscard } : null,
+    log: [],
+    events: [],
+  }
+}
+
 function pushLog(state: GameState, message: string, event: LogEvent): void {
   state.log.push(message)
   state.events.push(event)
@@ -416,6 +442,20 @@ export function remainingCounterGrowth(state: GameState): { turn: number; nextIn
   }
 }
 
+/** The seat whose decision the game is waiting for. */
+export function activeActor(state: GameState): number {
+  if (state.phase === 'respond' && state.pendingLandPlay) {
+    return state.pendingLandPlay.actor === 0 ? 1 : 0
+  }
+  if (state.phase === 'plains_target' && state.pendingPlainsReuse) {
+    return state.pendingPlainsReuse.actor
+  }
+  if (state.phase === 'swamp_target' && state.pendingSwampDiscard) {
+    return state.pendingSwampDiscard.actor
+  }
+  return state.currentPlayer
+}
+
 export function canAct(state: GameState, actor: number): boolean {
   if (actor !== 0 && actor !== 1) {
     return false
@@ -527,8 +567,22 @@ export function getLegalActions(state: GameState, actor: number): GameAction[] {
 }
 
 export function applyAction(inputState: GameState, action: GameAction): GameState {
-  const state = cloneState(inputState)
+  return applyActionToCopy(cloneState(inputState), action)
+}
 
+/**
+ * Applies an action the same way as `applyAction`, for AI search. Instead of
+ * a deep copy it copies only what the engine mutates and shares card and
+ * battlefield entries with the input, so it is much cheaper. The returned
+ * `log` and `events` hold only this action's entries. Treat both the input
+ * and the result as read-only: advance a search state only through this
+ * function.
+ */
+export function applyActionForSearch(inputState: GameState, action: GameAction): GameState {
+  return applyActionToCopy(cloneStateForSearch(inputState), action)
+}
+
+function applyActionToCopy(state: GameState, action: GameAction): GameState {
   if (!canAct(state, action.actor)) {
     return state
   }

@@ -69,6 +69,9 @@ See [failure triage](../docs/agent/validation-and-build.md#failure-triage-and-re
   module loads require reload because browsers cache the failed URL. Never add
   a hidden renderer fallback.
 - **No `structuredClone(GameState)` in hot loops** (AI evaluation, render).
+- **Seeded AI randomness:** AI modules take randomness only from
+  `src/game/ai-random.ts`; never `Math.random`, clocks, or `crypto`
+  (see `docs/agent/adr/0003-hard-ai-search.md`).
 - **Reuse shared helpers/constants:** `DEFAULT_CARD_VISUAL_STYLE`, shared
   `clamp` from `src/renderers/shared/math.ts`, `isBasicLand`. Do not
   hardcode `'classic'` as a fallback.

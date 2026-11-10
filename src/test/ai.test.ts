@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { chooseAiAction } from '../game/ai'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import type { BattlefieldCard } from '../game/types'
+import { LEGACY_HARD } from './helpers/ai-baselines'
+import { playMatch, seedRange, type TournamentEntrant } from './helpers/ai-tournament'
 
 describe('ai', () => {
   it('basic level plays the first legal action', () => {
@@ -98,5 +100,18 @@ describe('ai', () => {
 
     expect(basicAction?.type).toBe('resolve_plains_reuse')
     expect(advancedAction?.type).toBe('resolve_plains_reuse')
+  })
+
+  it('hard level beats the pre-search Hard in pinned mirrored games, even on a small budget', () => {
+    // Full-budget measurements come from `npm run ai:tournament`; these seeds
+    // are fixed, so the result cannot flake.
+    const hard: TournamentEntrant = {
+      name: 'hard',
+      policy: (state, actor, seed) =>
+        chooseAiAction(state, actor, { level: 'hard', seed, budget: { determinizations: 4, rolloutTurns: 2 } }),
+    }
+    const result = playMatch(hard, LEGACY_HARD, { seeds: seedRange(1, 10) })
+    expect(result.games).toBe(20)
+    expect(result.score).toBeGreaterThanOrEqual(0.6)
   })
 })

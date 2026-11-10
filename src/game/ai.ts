@@ -1,7 +1,7 @@
 import { getLegalActions } from './engine'
 import type { GameAction, GameState } from './types'
 import { DEFAULT_AI_LEVEL, type AiLevel } from './ai-levels'
-import type { AiPolicy, AiPolicyContext } from './ai-policy-types'
+import type { AiPolicy, AiPolicyContext, AiSearchBudget } from './ai-policy-types'
 import { basicPolicy } from './ai-policies/basic'
 import { advancedPolicy } from './ai-policies/advanced'
 import { hardPolicy } from './ai-policies/hard'
@@ -44,10 +44,18 @@ export const AI_POLICY_REGISTRY: Record<AiLevel, AiPolicyRegistration> = {
   },
 }
 
+export interface AiChoiceOptions {
+  level: AiLevel
+  /** The game seed; seeded levels vary their play with it. */
+  seed?: number
+  /** Search limits for search-based levels. */
+  budget?: Partial<AiSearchBudget>
+}
+
 export function chooseAiAction(
   state: GameState,
   actor: number,
-  options: { level: AiLevel } = { level: DEFAULT_AI_LEVEL },
+  options: AiChoiceOptions = { level: DEFAULT_AI_LEVEL },
 ): GameAction | null {
   const actions = getLegalActions(state, actor)
   if (actions.length === 0) {
@@ -59,5 +67,7 @@ export function chooseAiAction(
     actor,
     actions,
     context: registration.context,
+    seed: options.seed,
+    budget: options.budget,
   })
 }

@@ -148,7 +148,15 @@ query parameters and the hash, then discards the old stored renderer preference.
 - Available levels:
   - **Basic**: plays the first legal action.
   - **Advanced**: prioritizes winning progress and disruption when the opponent is near-win.
-  - **Hard**: advanced strategy + opponent hand awareness for targeted disruption.
+  - **Hard**: sees your hand but, like every player, never the order of either
+    deck. It looks several turns ahead by sampling possible deck orders and
+    playing each option forward, then chooses by its estimated chance to win.
+    In calm positions it varies among moves of nearly equal value and plays
+    each game in one of four styles (balanced, racer, controller or hoarder);
+    when a game is close to being decided, it always plays its strongest move.
+- Hard's variety comes from the game seed: the same game, or the same CLI
+  `--seed`, repeats its choices, including after Pause and resume in Adventure.
+  A new game or Adventure retry plays differently.
 - In **AI vs AI**, both bots use the same selected level from the single lobby selector.
 - Recording metadata stores AI level and replay parsing keeps compatibility with older recordings that do not contain an AI level (defaults to `basic`).
 
@@ -156,7 +164,9 @@ query parameters and the hash, then discards the old stored renderer preference.
 
 1. Add the level to `AI_LEVELS` in `src/game/ai-levels.ts` (this derives the `AiLevel` type and the `isAiLevel` guard). Update `DEFAULT_AI_LEVEL` in the same file if the new level should become the default.
 2. Add the label to `AI_LEVEL_LABELS` in `src/app/ai-levels.ts` (this auto-generates the lobby `AI_LEVEL_OPTIONS` entry).
-3. Implement a policy module in `src/game/ai-policies/`.
+3. Implement a policy module in `src/game/ai-policies/`. Randomized or
+   search-based policies take all randomness from `src/game/ai-random.ts`; see
+   [ADR 0003](docs/agent/adr/0003-hard-ai-search.md).
 4. Register the policy in `AI_POLICY_REGISTRY` in `src/game/ai.ts`.
 5. Add/update tests in `src/test/ai.test.ts` and controller/recording tests.
 

@@ -955,6 +955,7 @@ describe('controller recording and replay', () => {
       }).state.game = structuredClone(pending)
       const runId = (original as unknown as { state: { adventure: { run: { runId: string } } } })
         .state.adventure.run.runId
+      const seedBeforePause = original.getViewModel().seed
       original.pauseAdventure()
       const stored = localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)
       const envelope = JSON.parse(stored!)
@@ -974,6 +975,8 @@ describe('controller recording and replay', () => {
       expect(reloaded.getViewModel().adventure.status).toBe('active')
       expect(currentGame()).toEqual(pending)
       expect(localStorage.getItem(ADVENTURE_GAME_STORAGE_KEY)).toBeNull()
+      // Seeded AI levels must continue with the seed they started with.
+      expect(reloaded.getViewModel().seed).toBe(seedBeforePause)
 
       const aiAction = vi.spyOn(ai, 'chooseAiAction')
       try {
@@ -988,7 +991,7 @@ describe('controller recording and replay', () => {
           } else {
             aiAction.mockReturnValueOnce(step.action)
             vi.advanceTimersToNextTimer()
-            expect(aiAction).toHaveBeenLastCalledWith(step.before, 1, { level: 'basic' })
+            expect(aiAction).toHaveBeenLastCalledWith(step.before, 1, { level: 'basic', seed: seedBeforePause })
           }
           expect(currentGame()).toEqual(step.state)
           if (currentGame().phase === 'main') break

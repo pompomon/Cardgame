@@ -52,6 +52,13 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
    main/master pushes or manual dispatch, not pull requests, and does not
    replace the agent's CodeQL check.
 
+   The gate times Advanced's one-ply choice and Hard's search on a fixed
+   critical scenario, each against its own baseline with a 1.5× allowance in
+   `scripts/check-ai-bench.mjs`. Re-baseline only after intentional
+   AI-performance work: measure with `KEEP_AI_BENCH_REPORT=1 npm run test:bench`
+   and update the baselines and the comment in `src/test/ai-perf.bench.ts` in
+   the same PR.
+
 4. **Build** — typecheck + browser and terminal bundles:
 
    ```bash

@@ -52,7 +52,7 @@ describe('controller ai level wiring', () => {
     vi.advanceTimersByTime(500)
 
     expect(chooseAiActionMock).toHaveBeenCalled()
-    expect(chooseAiActionMock.mock.calls[0][2]).toEqual({ level: 'hard' })
+    expect(chooseAiActionMock.mock.calls[0][2]).toEqual({ level: 'hard', seed: controller.getViewModel().seed })
     expect(controller.getViewModel().aiLevel).toBe('hard')
   })
 
@@ -65,8 +65,9 @@ describe('controller ai level wiring', () => {
 
     const calls = chooseAiActionMock.mock.calls
     expect(calls.length).toBeGreaterThanOrEqual(2)
-    expect(calls[0][2]).toEqual({ level: 'advanced' })
-    expect(calls[1][2]).toEqual({ level: 'advanced' })
+    const seed = controller.getViewModel().seed
+    expect(calls[0][2]).toEqual({ level: 'advanced', seed })
+    expect(calls[1][2]).toEqual({ level: 'advanced', seed })
     expect(new Set([calls[0][1], calls[1][1]])).toEqual(new Set([0, 1]))
   })
 })

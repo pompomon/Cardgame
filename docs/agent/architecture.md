@@ -2,18 +2,31 @@
 
 A module map and ownership guide for the Three.js-only browser application.
 The renderer consolidation decision is recorded in
-[`adr/0002-three-only-renderer.md`](adr/0002-three-only-renderer.md).
+[`adr/0002-three-only-renderer.md`](adr/0002-three-only-renderer.md); the Hard
+AI's search in [`adr/0003-hard-ai-search.md`](adr/0003-hard-ai-search.md).
 
 ## Module map
 
 ```text
 src/
 ├── game/                       Pure game engine and AI
-│   ├── engine.ts               Rules, legality, action application, and initial setup
+│   ├── engine.ts               Rules, legality, action application (plus a cheaper search path), and initial setup
 │   ├── cards.ts                Deck generation and seeded shuffle
-│   ├── ai.ts                   Policy registry
+│   ├── ai.ts                   Policy registry and chooseAiAction
 │   ├── ai-levels.ts            Canonical AI level type and guard
-│   └── ai-policies/            Individual AI policies
+│   ├── ai-policies/            One policy per level; Hard delegates to ai-hard.ts
+│   ├── ai-evaluation.ts        One-ply strategic scorer (Advanced)
+│   ├── ai-hard.ts              Hard decision: persona, search, and selection
+│   ├── ai-search.ts            Determinized Monte-Carlo search and its default budget
+│   ├── ai-rollout.ts           Rollout policy and one-step action values
+│   ├── ai-features.ts          Position features and the win-probability evaluator
+│   ├── ai-weights.ts           Fitted evaluator weights and their version
+│   ├── ai-knowledge.ts         What a seat may know; samples deck orders
+│   ├── ai-action-classes.ts    Interchangeable legal actions grouped into classes
+│   ├── ai-selection.ts         Criticality and the seeded choice among searched classes
+│   ├── ai-personas.ts          Per-game playing styles
+│   ├── ai-random.ts            Seeded random streams, the only AI randomness source
+│   └── ai-policy-types.ts      Policy, visibility, and search budget types
 │
 ├── app/                        UI-independent orchestration
 │   ├── controller.ts           State transitions, persistence, subscriptions
@@ -168,12 +181,39 @@ submitting. Notifications may be synchronous and submissions may be rejected;
 follow the
 [reentrant submission contract](state-and-persistence.md#reentrant-ui-submissions).
 
+## AI decisions
+
+The controller's AI timer (never during replays) and the CLI call
+`chooseAiAction(state, actor, { level, seed })` synchronously and pass the
+game seed. Basic and Advanced are deterministic one-ply policies. Hard
+searches:
+
+```text
+explainHardDecision                                  ai-hard.ts
+ ├─ criticality = decisionCriticality(state)         ai-selection.ts
+ ├─ persona     = personaForSeat(seed, actor)        ai-personas.ts
+ ├─ search      = searchActionValues(...)            ai-search.ts
+ │   ├─ classes: canonicalActionClasses              ai-action-classes.ts
+ │   ├─ worlds:  determinize(projectKnowledge(...))  ai-knowledge.ts
+ │   ├─ moves:   applyActionForSearch                engine.ts
+ │   └─ values:  playRollout → evaluator             ai-rollout.ts, ai-features.ts, ai-weights.ts
+ └─ choice      = selectSearchedClass(...)           ai-selection.ts
+```
+
+A fixed budget of engine steps, not a clock, bounds each search. Critical
+positions are searched with a fixed seed and played by best estimate; calm
+ones are sampled among near-equal classes with the seeded selection stream.
+Decisions ignore deck order and the order of cards within zones. The
+information model, determinism contract, and measurements are recorded in
+[`adr/0003-hard-ai-search.md`](adr/0003-hard-ai-search.md).
+
 ## Where code belongs
 
 | Concern | Owner |
 | --- | --- |
 | Rules, legality, deterministic transitions | `src/game/` |
 | AI policy | `src/game/ai-policies/` |
+| AI search, evaluation, and seeded randomness | `src/game/ai-*.ts` |
 | Card catalog, shared labels, lobby options, event formatting | `src/app/` |
 | Persisted settings and their guards | `src/app/` |
 | Pointer state or generic render math | `src/renderers/shared/` |
