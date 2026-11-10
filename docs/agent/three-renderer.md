@@ -294,8 +294,8 @@ height.
 During a live drag the instruction becomes a pill at the top of the visible
 stage (`scrollTop` + 4 px), clear of the drop zone, and returns to the near row
 when the drag ends. A passive stage `scroll` listener keeps it there when the
-board scrolls mid-drag, and re-places the card and its acceptance from the
-last pointer; edge auto-scroll does both itself (see
+board scrolls mid-drag (a wheel, or edge auto-scroll), and re-places the card
+and its acceptance from the last pointer; edge auto-scroll does both itself (see
 [Drag geometry](#drag-geometry)). Touch and pen lift a smaller card
 above the finger, or beside it without room above, and keep its side while it
 fits (`dragProxyPlacement()` in `layout.ts`); the short rail prefers a side.
