@@ -288,8 +288,9 @@ export class ThreeInteraction {
     const tap = gesture.playable
       ? result === 'tap' || (gesture.pointerType === 'mouse' && !gesture.moved)
       : !gesture.exceededTapThreshold
+    // The same predicate, slop included, as the drag highlight.
     const drop = !tap && gesture.playable
-      && this.board.containsDrop(event.clientX, event.clientY)
+      && this.board.containsDrop(event.clientX, event.clientY, gesture.pointerType !== 'mouse')
 
     // Restore the source before hit-testing a mouse tap or invoking re-entrant UI.
     this.finish(!tap && !drop)

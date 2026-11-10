@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, DirectionalLight, HemisphereLight, Mesh, MeshBasicMaterial,
+  BoxGeometry, DirectionalLight, Group, HemisphereLight, Mesh, MeshBasicMaterial,
   MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, SRGBColorSpace, WebGLRenderer,
 } from 'three'
 import { DEFAULT_BOARD_THEME } from '../../app/board-theme'
@@ -16,15 +16,17 @@ import { ThreeBackground } from './background'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'
 import {
   DEFAULT_BOARD_PRESENTATION, NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID,
-  type BoardHit, type ThreeBoardApi, type ThreeBoardPresentation, type ThreeBoardSelection,
+  type BoardHit, type ThreeBoardApi, type ThreeBoardPresentation, type ThreeBoardSelection, type ThreeDragFeedback,
 } from './contracts'
+import { ThreeDragLayer } from './drag-layer'
 import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
 import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
 import {
-  boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns,
-  narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
-  type BoardLayoutMode, type BoardRow, type ThreeLayout,
+  boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, dragProxyPlacement, dropAccepts,
+  landingSlotRect, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns, narrowBoardLayout,
+  narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, TOUCH_DROP_SLOP_PX, typeSlotX,
+  type BoardLayoutMode, type BoardRow, type DragProxySide, type LayerRect, type ThreeLayout,
 } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
@@ -40,7 +42,23 @@ interface RowChrome {
 
 interface DragVisual {
   readonly source: RetainedCard
+  /** The in-scene card. It stays hidden while the drag layer draws the card, and always animates the return. */
   readonly proxy: RetainedCard
+  /** The HTML drag layer draws the lifted card above the board's headers. */
+  layered: boolean
+  /** Releasing now would summon the card. */
+  accepted: boolean
+  /** The touch card's side of the finger, kept so it does not flip while it fits. */
+  side: DragProxySide | undefined
+  /** The source card's unscaled size in board units. */
+  readonly width: number
+  readonly height: number
+  /** Client pixels from the visible stage's top to the drag pill's bottom, measured once per drag. */
+  pillBottom: number
+  /** The last pointer (NaN before the first move), so a scrolling stage can keep the card by a resting finger. */
+  pointerX: number
+  pointerY: number
+  pointerTouch: boolean
   returning: boolean
   elapsed: number
   fromX: number
@@ -55,9 +73,21 @@ interface TargetLabel {
 const ROWS: readonly BoardRow[] = ['far', 'near', 'hand']
 const SUMMON_INSTRUCTION = 'Drag a highlighted creature onto your board to summon it'
 const CANCEL_INSTRUCTION = 'Move onto your board · release elsewhere to cancel'
-const RELEASE_INSTRUCTION = 'Release to summon'
+const RELEASE_INSTRUCTION = 'Release to summon · back to hand cancels'
 const MAX_INSTRUCTION_WIDTH = 544
 const OVERLAY_GAP = 4
+const LANDING_LABEL = 'Lands here'
+/** The summoned card joins a narrow type stack that already holds a card. */
+const LANDING_STACK_LABEL = '+1'
+const ACTIVE_SURFACE = '#214c3b'
+const IDLE_SURFACE = '#152b3b'
+const ACCEPTED_SURFACE = '#2d6a51'
+const DIMMED_SURFACE = '#08111a'
+const IDLE_DROP = '#70e7b1'
+const ACCEPTED_DROP = '#94ffc9'
+const REJECTED_DROP = '#e5667d'
+/** Above every resting card and below lifted and dragged cards (1000, 1500). */
+const LANDING_SLOT_RENDER_ORDER = 999
 const EFFECT_ANNOUNCEMENT_MS = 350
 // Header sizers hold the longest copy each live header can show.
 const SIZER_LABELS: Readonly<Record<BoardRow, string>> = {
@@ -140,6 +170,18 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly presentation: () => ThreeBoardPresentation
   private readonly ghostMaterial = new MeshBasicMaterial({ color: '#b9d3e0', opacity: 0.12, transparent: true, depthWrite: false })
   private readonly ghosts: Mesh<PlaneGeometry, MeshBasicMaterial>[] = []
+  private readonly landingMaterial = new MeshBasicMaterial({ color: ACCEPTED_DROP, opacity: 0.22, transparent: true, depthWrite: false })
+  private readonly landing = new Mesh(this.plane, this.landingMaterial)
+  // Transparent sorting compares a group's renderOrder first, so the slot is
+  // wrapped to draw over resting cards, whose groups order by stack index.
+  private readonly landingGroup = new Group()
+  private readonly dragLayer = new ThreeDragLayer()
+  private readonly onDragFeedback: (feedback: ThreeDragFeedback | null) => void
+  /** Cards per narrow type slot on the near battlefield. */
+  private nearSlotCounts: readonly number[] = []
+  /** The instruction shown when no drag is live: the summon hint or a response prompt. */
+  private idleInstruction = SUMMON_INSTRUCTION
+  private instructionTop = 0
   private readonly countBadges = new Map<string, HTMLSpanElement>()
   private typeSlotsShown = false
   private primaryDocked = false
@@ -176,6 +218,7 @@ export class ThreeBoard implements ThreeBoardApi {
     dockSlot: HTMLElement | null = null,
     presentation: () => ThreeBoardPresentation = () => DEFAULT_BOARD_PRESENTATION,
     onHandPage: () => void = () => {},
+    onDragFeedback: (feedback: ThreeDragFeedback | null) => void = () => {},
   ) {
     this.host = host
     this.onFailure = onFailure
@@ -184,6 +227,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.dockSlot = dockSlot
     this.presentation = presentation
     this.onHandPage = onHandPage
+    this.onDragFeedback = onDragFeedback
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'three-board-canvas'
     this.canvas.setAttribute('aria-label', 'Urban Creatures board. Use the adjacent card controls for keyboard interaction.')
@@ -226,6 +270,12 @@ export class ThreeBoard implements ThreeBoardApi {
         this.ghosts.push(ghost)
         this.scene.add(ghost)
       }
+      this.landing.name = 'three-landing-slot'
+      this.landing.visible = false
+      this.landingGroup.renderOrder = LANDING_SLOT_RENDER_ORDER
+      this.landingGroup.position.z = 30
+      this.landingGroup.add(this.landing)
+      this.scene.add(this.landingGroup)
       this.effectCaption.className = 'three-board-effect-caption'
       this.effectCaption.hidden = true
       this.effectCaption.setAttribute('role', 'status')
@@ -273,7 +323,8 @@ export class ThreeBoard implements ThreeBoardApi {
       this.handPrevious.addEventListener('click', this.previousHandPage)
       this.handNext.addEventListener('click', this.nextHandPage)
       this.handPagination.append(this.handPrevious, this.handPageLabel, this.handNext)
-      this.stage.append(this.instruction)
+      this.stage.append(this.instruction, this.dragLayer.element)
+      this.stage.addEventListener('scroll', this.stageScrolled, { passive: true })
       host.append(this.stage)
       this.canvas.addEventListener('webglcontextlost', this.contextLost)
       window.addEventListener('resize', this.resize)
@@ -329,6 +380,10 @@ export class ThreeBoard implements ThreeBoardApi {
     this.inputBlocked = blocked
     const presentation = this.presentation()
     const narrow = presentation.narrow === true
+    // The narrow dock prompt announces drags, so this overlay stays quiet
+    // there. Politeness changes before any text does.
+    const live = narrow ? 'off' : 'polite'
+    if (this.instruction.getAttribute('aria-live') !== live) this.instruction.setAttribute('aria-live', live)
     if (narrow !== this.narrow) {
       // Switching profiles moves every card, so no gesture can survive it.
       this.endDrag(false)
@@ -393,13 +448,17 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     // The narrow dock carries the instructions; the overlay only returns to
     // give live feedback while a card is being dragged.
-    this.instruction.hidden = this.narrow ? !this.drag || this.drag.returning : !this.canDrop && !response
+    const dragging = this.drag !== null && !this.drag.returning
+    this.instruction.hidden = this.narrow ? !dragging : !this.canDrop && !response
     for (const size of this.instructionSizes) size.hidden = !this.canDrop
-    this.instructionText.textContent = response
+    this.idleInstruction = response
       ? primary?.prompt || (response.choices.length
         ? response.instruction
         : `No legal card combination can intercept the summon of ${game.pendingLandDisplayName ?? 'this creature'}. Choose Let It Through.`)
       : SUMMON_INSTRUCTION
+    this.writeInstruction(dragging
+      ? this.drag?.accepted ? RELEASE_INSTRUCTION : CANCEL_INSTRUCTION
+      : this.idleInstruction)
     for (const row of ROWS) {
       const owner = row === 'far' ? 1 - this.actor : this.actor
       const player = game.players[owner]
@@ -487,8 +546,12 @@ export class ThreeBoard implements ThreeBoardApi {
     this.reanchorEffects()
     this.syncTargetLabels(descriptors)
     this.syncTypeSlots(this.narrow ? slotCounts : null)
-    if (this.drag) this.drag.source.setOpacity(0.35)
-    this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
+    this.nearSlotCounts = this.narrow ? slotCounts[1] ?? [] : []
+    if (this.drag && !this.drag.returning) {
+      this.drag.source.setOpacity(0.35)
+      this.showLanding()
+    }
+    this.paintDropFeedback()
     // Clearing the interface selection may synchronously render a newer view.
     if (handPageChanged || hiddenHandSelection) this.onHandPage()
   }
@@ -705,10 +768,8 @@ export class ThreeBoard implements ThreeBoardApi {
     return this.cards?.hitTest(this.point) ?? null
   }
 
-  containsDrop(clientX: number, clientY: number): boolean {
-    return this.usable() && this.canDrop
-      && clientToBoard(clientX, clientY, this.canvas.getBoundingClientRect(), this.layout, this.point)
-      && pointInRect(this.point, this.layout.drop)
+  containsDrop(clientX: number, clientY: number, touch = false): boolean {
+    return this.dropAt(clientX, clientY, touch, this.canvas.getBoundingClientRect(), this.visibleStage())
   }
 
   beginDrag(hit: BoardHit): void {
@@ -722,30 +783,91 @@ export class ThreeBoard implements ThreeBoardApi {
     const proxy = this.cards!.createProxy(source)
     proxy.group.rotation.set(-0.06, 0.08, -0.025)
     source.setOpacity(0.35)
-    this.drag = { source, proxy, returning: false, elapsed: 0, fromX: 0, fromY: 0 }
+    const { width, height } = source.anchor()
+    const drag: DragVisual = {
+      source, proxy, layered: false, accepted: false, side: undefined, width, height,
+      pillBottom: 0, pointerX: Number.NaN, pointerY: Number.NaN, pointerTouch: false,
+      returning: false, elapsed: 0, fromX: 0, fromY: 0,
+    }
+    this.drag = drag
+    drag.layered = this.beginLayer(source, width, height)
+    proxy.group.visible = !drag.layered
+    this.stage.dataset.dragging = 'true'
+    this.instruction.dataset.drag = 'rejected'
     // The overlay's height is reserved, so showing it cannot resize anything.
-    if (this.narrow) this.instruction.hidden = false
+    this.instruction.hidden = false
+    this.writeInstruction(CANCEL_INSTRUCTION)
+    this.positionInstruction()
+    // The reserved height also covers the release text, so one read lasts the whole drag.
+    drag.pillBottom = OVERLAY_GAP + Math.max(0, this.instruction.offsetHeight || 0)
+    this.showLanding()
+    this.dragLayer.setAccepted(false)
+    this.paintDropFeedback()
+    this.paintSurfaces()
     this.invalidate()
+    // Last: the listener may render the interface synchronously.
+    this.onDragFeedback({ cardId: source.descriptor.hit.cardId, accepted: false })
   }
 
   moveDrag(clientX: number, clientY: number, touch: boolean): void {
-    if (!this.drag || this.drag.returning || !this.usable()) return
+    const drag = this.drag
+    if (!drag || drag.returning || !this.usable()) return
     const rect = this.canvas.getBoundingClientRect()
-    const inside = clientToBoard(clientX, clientY, rect, this.layout, this.point)
-    this.drag.proxy.group.position.x = this.point.x
-    this.drag.proxy.group.position.y = this.point.y + (touch ? 44 * this.layout.height / Math.max(1, rect.height) : 0)
-    const allowed = inside && this.canDrop && pointInRect(this.point, this.layout.drop)
-    this.dropMaterial.color.set(allowed ? '#94ffc9' : '#e5667d')
-    this.dropMaterial.opacity = allowed ? 0.2 : 0.08
-    this.instructionText.textContent = allowed ? RELEASE_INSTRUCTION : CANCEL_INSTRUCTION
+    if (!(rect.width > 0 && rect.height > 0) || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return
+    drag.pointerX = clientX
+    drag.pointerY = clientY
+    drag.pointerTouch = touch
+    const visible = this.visibleStage()
+    const accepted = this.dropAt(clientX, clientY, touch, rect, visible)
+    // Board units with a top-left origin, which are also drag-layer pixels.
+    const scaleX = this.layout.width / rect.width
+    const scaleY = this.layout.height / rect.height
+    // A touch card stays below the pill, which is drawn above it; a mouse card stays under the cursor.
+    const pill = touch ? Math.min(drag.pillBottom, visible.height / 2) : 0
+    const placement = dragProxyPlacement({
+      pointer: { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY },
+      card: { width: drag.width, height: drag.height },
+      stage: {
+        left: (visible.left - rect.left) * scaleX, top: (visible.top + pill - rect.top) * scaleY,
+        width: visible.width * scaleX, height: (visible.height - pill) * scaleY,
+      },
+      touch, side: drag.side,
+    })
+    drag.side = placement.side
+    drag.proxy.group.position.x = placement.x - this.layout.width / 2
+    drag.proxy.group.position.y = this.layout.height / 2 - placement.y
+    drag.proxy.group.scale.set(placement.scale, placement.scale, 1)
+    if (drag.layered && !this.dragLayer.move(placement.x, placement.y, placement.scale)) {
+      drag.layered = false
+      drag.proxy.group.visible = true
+    }
     this.invalidate()
+    if (accepted === drag.accepted) return
+    // Feedback changes only on transitions, so a move never rewrites text.
+    drag.accepted = accepted
+    this.writeInstruction(accepted ? RELEASE_INSTRUCTION : CANCEL_INSTRUCTION)
+    this.instruction.dataset.drag = accepted ? 'accepted' : 'rejected'
+    const near = this.chrome.get('near')!.header
+    if (accepted) near.dataset.dropAccepted = 'true'
+    else delete near.dataset.dropAccepted
+    this.dragLayer.setAccepted(accepted)
+    this.paintDropFeedback()
+    this.paintSurfaces()
+    // Last: the listener may render the interface synchronously.
+    this.onDragFeedback({ cardId: drag.source.descriptor.hit.cardId, accepted })
   }
 
   endDrag(animateReturn: boolean): void {
     const drag = this.drag
     if (!drag) return
+    // A returning proxy already restored the feedback when its drag ended.
+    const active = !drag.returning
     drag.source.setOpacity(1)
-    if (animateReturn && this.quality.motion && this.usable() && !drag.returning) {
+    if (active) {
+      this.dragLayer.end()
+      drag.proxy.group.visible = true
+    }
+    if (animateReturn && active && this.quality.motion && this.usable()) {
       drag.returning = true
       drag.elapsed = 0
       drag.fromX = drag.proxy.group.position.x
@@ -754,11 +876,112 @@ export class ThreeBoard implements ThreeBoardApi {
       drag.proxy.dispose()
       this.drag = null
     }
-    this.dropMaterial.color.set('#70e7b1')
-    this.dropMaterial.opacity = this.canDrop ? 0.05 : 0.015
-    this.instructionText.textContent = SUMMON_INSTRUCTION
-    if (this.narrow) this.instruction.hidden = true
+    if (active) {
+      this.landing.visible = false
+      delete this.stage.dataset.dragging
+      delete this.instruction.dataset.drag
+      const near = this.chrome.get('near')
+      if (near) delete near.header.dataset.dropAccepted
+      this.writeInstruction(this.idleInstruction)
+      if (this.narrow) this.instruction.hidden = true
+      this.positionInstruction()
+      this.paintDropFeedback()
+      this.paintSurfaces()
+    }
     this.invalidate()
+    if (active) this.onDragFeedback(null)
+  }
+
+  /** Draws the lifted card in the HTML drag layer, so it stays above the board's headers. */
+  private beginLayer(source: RetainedCard, width: number, height: number): boolean {
+    if (!this.assets || !this.dragLayer.drawsCards) return false
+    const { hit, style, monochromeCards } = source.descriptor
+    try {
+      return this.dragLayer.begin(this.assets.acquireCard(hit, style, monochromeCards), width, height, window.devicePixelRatio)
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * The one drop predicate behind the drag highlight and the release. Points
+   * must be inside the canvas and the stage's visible box, so a finger over a
+   * scrolled-away part of the board or the dock below it never drops.
+   */
+  private dropAt(clientX: number, clientY: number, touch: boolean, rect: DOMRect, visible: LayerRect): boolean {
+    if (!this.usable() || !this.canDrop || !clientToBoard(clientX, clientY, rect, this.layout, this.point)) return false
+    if (clientX < visible.left || clientX > visible.left + visible.width
+      || clientY < visible.top || clientY > visible.top + visible.height) return false
+    return dropAccepts(this.point, this.layout, touch ? TOUCH_DROP_SLOP_PX * this.layout.width / rect.width : 0)
+  }
+
+  /** The stage's padding box in client pixels: inside its border and any scrollbar. */
+  private visibleStage(): LayerRect {
+    const rect = this.stage.getBoundingClientRect()
+    return {
+      left: rect.left + (this.stage.clientLeft || 0),
+      top: rect.top + (this.stage.clientTop || 0),
+      width: this.stage.clientWidth || rect.width,
+      height: this.stage.clientHeight || rect.height,
+    }
+  }
+
+  /** Marks where a release would summon the dragged card: its type slot when narrow, else the append slot. */
+  private showLanding(): void {
+    const drag = this.drag
+    const game = this.view?.game
+    if (!drag || drag.returning || !game) {
+      this.landing.visible = false
+      this.dragLayer.setLanding(null)
+      return
+    }
+    const slot = typeSlot(drag.source.descriptor.hit)
+    const rect = landingSlotRect(this.layout, {
+      typeSlot: slot,
+      slotCount: this.nearSlotCounts[slot] ?? 0,
+      nearCount: game.players[this.actor]?.battlefield.length ?? 0,
+    })
+    this.landing.position.set(rect.x, rect.y, 0)
+    this.landing.scale.set(rect.width, rect.height, 1)
+    this.landing.visible = true
+    this.dragLayer.setLanding({
+      left: this.layout.width / 2 + rect.x - rect.width / 2,
+      top: this.layout.height / 2 - rect.y - rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+    }, rect.occupied ? LANDING_STACK_LABEL : LANDING_LABEL)
+  }
+
+  private writeInstruction(text: string): void {
+    if (this.instructionText.textContent !== text) this.instructionText.textContent = text
+  }
+
+  /** A live drag lifts the instruction to a pill at the top of the visible stage, clear of the drop zone. */
+  private positionInstruction(): void {
+    const top = this.drag && !this.drag.returning
+      ? (this.stage.scrollTop || 0) + OVERLAY_GAP
+      : this.instructionTop
+    const value = `${top}px`
+    if (this.instruction.style.top !== value) this.instruction.style.top = value
+  }
+
+  private paintDropFeedback(): void {
+    const drag = this.drag && !this.drag.returning ? this.drag : null
+    this.dropMaterial.color.set(drag ? drag.accepted ? ACCEPTED_DROP : REJECTED_DROP : IDLE_DROP)
+    this.dropMaterial.opacity = drag ? drag.accepted ? 0.2 : 0.08 : this.canDrop ? 0.05 : 0.015
+  }
+
+  /** Row surfaces: a live drag dims the rows that cannot accept the card and brightens an accepting lane. */
+  private paintSurfaces(): void {
+    const drag = this.drag && !this.drag.returning ? this.drag : null
+    for (const [row, surface] of this.surfaces) {
+      const owner = row === 'far' ? 1 - this.actor : this.actor
+      const dimmed = drag !== null && row !== 'near'
+      surface.material.color.set(dimmed ? DIMMED_SURFACE
+        : drag?.accepted ? ACCEPTED_SURFACE
+          : this.view?.game?.actor === owner ? ACTIVE_SURFACE : IDLE_SURFACE)
+      surface.material.opacity = row === 'hand' ? dimmed ? 0.5 : 0.35 : 0.68
+    }
   }
 
   private showEffectCaption(effect: VisualEffectDescriptor): void {
@@ -911,6 +1134,18 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   /**
+   * A wheel (or any scroll) moves the stage's content under a held pointer:
+   * pin the drag pill to the visible top again, and re-place the card and its
+   * acceptance from the last pointer instead of waiting for the next move.
+   */
+  private stageScrolled = (): void => {
+    const drag = this.drag
+    if (!drag || drag.returning) return
+    this.positionInstruction()
+    if (Number.isFinite(drag.pointerX)) this.moveDrag(drag.pointerX, drag.pointerY, drag.pointerTouch)
+  }
+
+  /**
    * Viewport and observer callbacks only interrupt gestures when the layout
    * really changed; otherwise overlays are re-anchored in place.
    */
@@ -952,6 +1187,8 @@ export class ThreeBoard implements ThreeBoardApi {
     // Narrow layouts may grow taller than the stage to keep headers and touch targets intact.
     const height = nextLayout.height
     this.canvas.style.height = this.narrow ? `${height}px` : ''
+    // The drag layer spans the whole scrolling board, like the canvas.
+    this.dragLayer.element.style.height = this.narrow ? `${height}px` : ''
     const scrollable = this.narrow && height > this.stage.clientHeight
     this.stage.dataset.scrollable = String(scrollable)
     for (const chrome of this.chrome.values()) {
@@ -977,10 +1214,12 @@ export class ThreeBoard implements ThreeBoardApi {
     const nearRowCenter = height / 2 - nearRow.y
     const nearRowTop = nearRowCenter - nearRow.height / 2
     const instructionTop = nearRowTop + OVERLAY_GAP
+    this.instructionTop = instructionTop
     this.instruction.style.left = `${columns.cardsLeft + columns.cardsWidth / 2}px`
-    this.instruction.style.top = `${instructionTop}px`
+    this.positionInstruction()
     this.instruction.style.width = `${Math.min(MAX_INSTRUCTION_WIDTH, Math.max(1, columns.cardsWidth - 24))}px`
-    const instructionHeight = this.instruction.hidden
+    // The narrow instruction only appears as the drag pill, never at the near row.
+    const instructionHeight = this.narrow || this.instruction.hidden
       ? 0 : Math.max(this.instruction.offsetHeight, this.instruction.scrollHeight || 0)
     this.effectCaption.style.left = `${width / 2 + this.layout.drop.x}px`
     this.effectCaption.style.top = `${instructionTop + instructionHeight + (instructionHeight ? OVERLAY_GAP : 0)}px`
@@ -995,10 +1234,8 @@ export class ThreeBoard implements ThreeBoardApi {
       const surface = this.surfaces.get(row)!
       surface.position.set(cardSlotX(0, 1, this.layout), this.layout.rows[row].y, 0)
       surface.scale.set(columns.cardsWidth, this.layout.rows[row].height + 4, 1)
-      const owner = row === 'far' ? 1 - this.actor : this.actor
-      surface.material.color.set(this.view?.game?.actor === owner ? '#214c3b' : '#152b3b')
-      surface.material.opacity = row === 'hand' ? 0.35 : 0.68
     }
+    this.paintSurfaces()
     return layoutChanged
   }
 
@@ -1015,7 +1252,9 @@ export class ThreeBoard implements ThreeBoardApi {
     if (this.quality.pixelRatio !== profile.pixelRatio) this.renderer?.setPixelRatio(profile.pixelRatio)
     this.quality = profile
     if (!profile.motion) {
-      this.endDrag(false)
+      // Only the decorative return stops. A live drag is functional, so
+      // reduced motion and Animations Off keep it under the pointer.
+      if (this.drag?.returning) this.endDrag(false)
       this.cards?.finishMotion()
       this.positionTargetLabels()
       for (const effect of this.effects) effect.cancel()
@@ -1131,6 +1370,10 @@ export class ThreeBoard implements ThreeBoardApi {
       drag.proxy.group.position.y = drag.fromY + (drag.source.descriptor.y - drag.fromY) * ease
       drag.proxy.setOpacity(1 - t * 0.65)
       if (t >= 1) this.endDrag(false)
+    } else if (drag?.layered && !this.dragLayer.refresh()) {
+      // Artwork that loads under a still finger schedules this frame; a failed repaint shows the in-scene proxy.
+      drag.layered = false
+      drag.proxy.group.visible = true
     }
     try {
       this.renderer?.render(this.scene, this.camera)
@@ -1171,6 +1414,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.primaryButton.removeEventListener('blur', this.clearPrimaryPress)
     this.handPrevious.removeEventListener('click', this.previousHandPage)
     this.handNext.removeEventListener('click', this.nextHandPage)
+    this.stage.removeEventListener('scroll', this.stageScrolled)
     this.primaryAction = null
     this.pressedAction = null
     window.removeEventListener('resize', this.resize)
@@ -1180,6 +1424,7 @@ export class ThreeBoard implements ThreeBoardApi {
     if (this.motionQuery?.removeEventListener) this.motionQuery.removeEventListener('change', this.motionChanged)
     else this.motionQuery?.removeListener(this.motionChanged)
     this.endDrag(false)
+    this.dragLayer.dispose()
     for (const effect of this.effects) effect.cancel()
     this.effects.clear()
     this.effectDescriptors.clear()
@@ -1190,6 +1435,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.surfaces.clear()
     this.ghosts.length = 0
     this.ghostMaterial.dispose()
+    this.landingMaterial.dispose()
     this.clearPendingCard()
     this.cards?.dispose()
     this.background?.dispose()

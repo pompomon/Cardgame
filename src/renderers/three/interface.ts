@@ -17,7 +17,9 @@ import type { AppViewModel } from '../../app/types'
 import type { GameAction } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { DragPointerType } from '../shared/drag-state'
-import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit, type ThreeBoardSelection } from './contracts'
+import {
+  NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit, type ThreeBoardSelection, type ThreeDragFeedback,
+} from './contracts'
 import { resetRasterCardArtLoadFailures } from './native-html'
 import {
   canThreeInput,
@@ -84,6 +86,7 @@ export class ThreeInterface {
   private preview: BoardHit | null = null
   private previewReturnToCards = false
   private hover: BoardHit | null = null
+  private dragFeedback: ThreeDragFeedback | null = null
   private lobbyPage: ThreeLobbyPage = 'root'
   private hostAnswerDraft = ''
   private joinOfferDraft = ''
@@ -219,6 +222,7 @@ export class ThreeInterface {
       selectedCardId: this.selectedCardId, selectedTargetId: this.selectedTargetId,
       selectedDiscardId: this.selectedDiscardId, targetListOpen: this.targetListOpen,
       tutorialHidden: this.tutorialDismissed !== null && this.tutorialDismissed === (this.view?.tutorial.hint ?? ''),
+      dragFeedback: this.dragFeedback,
     }
   }
 
@@ -267,6 +271,20 @@ export class ThreeInterface {
     if (this.disposed) return
     this.hover = hit ? { ...hit } : null
     this.renderHover()
+  }
+
+  /**
+   * Mirrors the board's drag in the dock prompt. It only re-renders the
+   * interface: the board already shows the drag and must not re-present
+   * mid-gesture.
+   */
+  setDragFeedback(feedback: ThreeDragFeedback | null): void {
+    if (this.disposed) return
+    const current = this.dragFeedback
+    if (current === feedback || current && feedback
+      && current.cardId === feedback.cardId && current.accepted === feedback.accepted) return
+    this.dragFeedback = feedback ? { cardId: feedback.cardId, accepted: feedback.accepted } : null
+    this.render()
   }
 
   private renderHover(): void {
@@ -1077,6 +1095,7 @@ export class ThreeInterface {
     this.preview = null
     this.previewReturnToCards = false
     this.hover = null
+    this.dragFeedback = null
     this.cardsReturnFocus = null
     this.previewReturnFocus = null
     this.targetReturnFocus = null

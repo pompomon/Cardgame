@@ -294,3 +294,53 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+/* The drag layer draws the lifted card and landing label above every header. */
+.three-drag-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.three-drag-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 6px;
+  box-shadow: 0 10px 24px #000a;
+  will-change: transform;
+}
+.three-drag-layer[data-accepted="true"] .three-drag-card {
+  box-shadow: 0 0 0 2px #94ffc9, 0 10px 24px #000a;
+}
+.three-drag-landing {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 1px 6px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #94ffc9;
+  border-radius: 999px;
+  background: #0b2a20e6;
+  color: #e0ffee;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+/* Drag feedback changes only colour, outline, and opacity, so measured headers keep their size. */
+.three-board-instruction[data-drag] {
+  z-index: 4;
+  background: rgb(8 24 36 / 85%);
+  box-shadow: 0 4px 12px #0008;
+}
+.three-board-instruction[data-drag="accepted"] { outline: 1px solid #94ffc9; }
+.three-board-label[data-drop-accepted="true"] {
+  outline: 2px solid #94ffc9;
+  outline-offset: -2px;
+  background: #123a2ee6;
+}
+.three-board-stage[data-dragging] .three-board-label:not([data-row="near"]) { opacity: 0.55; }

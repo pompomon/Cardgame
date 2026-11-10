@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
   ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
     response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn(),
-    activate: vi.fn(), clearHandSelection: vi.fn(), selection: { cardId: 'selected', targetId: null, discardId: null } },
+    activate: vi.fn(), clearHandSelection: vi.fn(), setDragFeedback: vi.fn(),
+    selection: { cardId: 'selected', targetId: null, discardId: null } },
   boardConstruct: vi.fn(),
   uiConstruct: vi.fn(),
   inputConstruct: vi.fn(),
@@ -363,6 +364,19 @@ describe('Three.js composition', () => {
     expect(container.classList.remove).toHaveBeenCalledWith('three-root--narrow')
     renderer.unmount()
     expect(narrowMedia.removeEventListener).toHaveBeenCalledExactlyOnceWith('change', change)
+  })
+
+  it('forwards board drag feedback to the interface and ignores it after unmount', () => {
+    const { renderer } = harness(true)
+    const feedback = mocks.boardConstruct.mock.calls.at(-1)![7] as (value: unknown) => void
+    feedback({ cardId: 'card', accepted: true })
+    expect(mocks.ui.setDragFeedback).toHaveBeenCalledExactlyOnceWith({ cardId: 'card', accepted: true })
+    feedback(null)
+    expect(mocks.ui.setDragFeedback).toHaveBeenLastCalledWith(null)
+    renderer.unmount()
+    // A board that ends its drag while unmounting must not reach a disposed interface.
+    expect(() => feedback(null)).not.toThrow()
+    expect(mocks.ui.setDragFeedback).toHaveBeenCalledTimes(2)
   })
 
   it('forwards the activating pointer type to the interface', () => {

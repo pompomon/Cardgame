@@ -57,7 +57,7 @@ export class ThreeRenderer implements AppRenderer {
     try {
       this.board = new ThreeBoard(stage, this.onFailure, () => this.interaction?.cancel(),
         (action) => this.ui?.activatePrimaryAction(action), dockPrimary, this.boardPresentation,
-        () => this.ui?.clearHandSelection())
+        () => this.ui?.clearHandSelection(), (feedback) => this.ui?.setDragFeedback(feedback))
       this.ui = new ThreeInterface(controls, controller, this.refresh, () => this.interaction?.cancel(), hud,
         { dockHost: dock, narrow: () => this.narrow })
       dock.append(dockPrimary)

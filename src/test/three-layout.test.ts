@@ -2,10 +2,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  boardLayout, cardSlotX, clientToBoard, compactBoardViewport, isNarrowWidth, NARROW_LAYOUT_MAX_WIDTH,
+  boardLayout, cardSlotX, clientToBoard, compactBoardViewport, dragProxyPlacement, dropAccepts, handTop, isNarrowWidth,
+  landingSlotRect, MOUSE_DRAG_SCALE, NARROW_LAYOUT_MAX_WIDTH,
   NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect,
-  SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
-  type BoardRect, type ThreeLayout, type ThreeShell,
+  SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_DRAG_SCALE, TOUCH_DROP_SLOP_PX, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
+  type BoardRect, type DragProxyInput, type LayerRect, type ThreeLayout, type ThreeShell,
 } from '../renderers/three/layout'
 
 function laneBounds(layout: ThreeLayout, row: 'far' | 'near' | 'hand') {
@@ -485,6 +486,188 @@ describe('Three.js shell profile', () => {
   it('returns immutable results', () => {
     for (const result of [touch(344, 770), touch(690, 717), touch(829, 578), touch(882, 232), mouse(1440, 960)]) {
       expect(Object.isFrozen(result)).toBe(true)
+    }
+  })
+})
+
+describe('Three.js touch drag geometry', () => {
+  const layouts: ReadonlyArray<readonly [string, ThreeLayout]> = [
+    ['stacked', boardLayout(390, 760)],
+    ['compact', boardLayout(844, 390, undefined, true)],
+    ['narrow', narrowBoardLayout(332, 583.25, { far: 36, near: 36, hand: 50 })],
+  ]
+
+  it.each(layouts)('accepts the %s drop zone exactly for a mouse and widens only its top and sides for touch', (_, layout) => {
+    const { drop } = layout
+    const top = drop.y + drop.height / 2
+    const bottom = drop.y - drop.height / 2
+    const right = drop.x + drop.width / 2
+    const left = drop.x - drop.width / 2
+    const slop = TOUCH_DROP_SLOP_PX
+    expect(slop).toBe(12)
+    for (const point of [{ x: drop.x, y: drop.y }, { x: left, y: top }, { x: right, y: bottom + 0.01 }]) {
+      expect(dropAccepts(point, layout)).toBe(true)
+      expect(dropAccepts(point, layout, slop)).toBe(true)
+    }
+    // Top and side slop for touch and pen only.
+    for (const point of [{ x: drop.x, y: top + 6 }, { x: right + 6, y: drop.y }, { x: left - 6, y: drop.y }, { x: right + 11, y: top + 11 }]) {
+      expect(dropAccepts(point, layout)).toBe(false)
+      expect(dropAccepts(point, layout, slop)).toBe(true)
+    }
+    for (const point of [{ x: drop.x, y: top + 13 }, { x: right + 13, y: drop.y }, { x: left - 13, y: drop.y }]) {
+      expect(dropAccepts(point, layout, slop)).toBe(false)
+    }
+    // The edge that faces the hand never grows.
+    expect(dropAccepts({ x: drop.x, y: bottom - 1 }, layout, slop)).toBe(false)
+    expect(dropAccepts({ x: right + 6, y: bottom - 1 }, layout, slop)).toBe(false)
+    // Invalid input is never a drop, and invalid slop is no slop.
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(dropAccepts({ x: value, y: drop.y }, layout, slop)).toBe(false)
+      expect(dropAccepts({ x: drop.x, y: value }, layout, slop)).toBe(false)
+      expect(dropAccepts({ x: drop.x, y: top + 6 }, layout, value)).toBe(false)
+    }
+    expect(dropAccepts({ x: drop.x, y: top + 6 }, layout, -12)).toBe(false)
+  })
+
+  it.each(layouts)('never accepts any point over the %s hand, header included', (_, layout) => {
+    const hand = layout.rows.hand
+    const lowest = hand.y - hand.height / 2
+    const highest = handTop(layout)
+    expect(highest).toBeGreaterThanOrEqual(hand.y + hand.height / 2)
+    if (layout.mode !== 'compact') expect(highest).toBeCloseTo(layout.height / 2 - hand.labelTop)
+    for (let x = -layout.width / 2; x <= layout.width / 2; x += layout.width / 24) {
+      for (let y = lowest; y <= highest; y += (highest - lowest) / 16) {
+        expect(dropAccepts({ x, y }, layout, TOUCH_DROP_SLOP_PX)).toBe(false)
+      }
+      expect(dropAccepts({ x, y: highest }, layout, TOUCH_DROP_SLOP_PX)).toBe(false)
+    }
+  })
+
+  const stage: LayerRect = { left: 0, top: 0, width: 332, height: 583 }
+  const card = { width: 80, height: 110 }
+  const place = (input: Partial<DragProxyInput>) => dragProxyPlacement({
+    pointer: { x: 166, y: 400 }, card, stage, touch: true, ...input,
+  })
+
+  it('keeps the mouse placement centred on the pointer at the existing scale', () => {
+    expect(MOUSE_DRAG_SCALE).toBe(1.08)
+    for (const pointer of [{ x: 166, y: 400 }, { x: 2, y: 2 }, { x: -50, y: 900 }]) {
+      expect(dragProxyPlacement({ pointer, card, stage, touch: false, side: 'left' })).toEqual({
+        ...pointer, width: card.width * 1.08, height: card.height * 1.08, scale: 1.08, side: 'center',
+      })
+    }
+  })
+
+  it('lifts a smaller touch card above the finger by an adaptive, bounded distance', () => {
+    expect(TOUCH_DRAG_SCALE).toBe(0.9)
+    const lifted = place({})
+    expect(lifted).toMatchObject({ x: 166, width: 72, height: 99, scale: 0.9, side: 'above' })
+    // Half the scaled card plus 20px: the finger never covers the card.
+    expect(400 - lifted.y).toBeCloseTo(99 / 2 + 20)
+    expect(lifted.y + lifted.height / 2).toBeLessThanOrEqual(400 - 20 + 0.001)
+    // Small cards still clear the finger by 44px; huge cards lift at most 120px.
+    expect(400 - place({ card: { width: 20, height: 30 } }).y).toBe(44)
+    const tall: LayerRect = { left: 0, top: 0, width: 800, height: 1200 }
+    expect(1000 - place({ pointer: { x: 400, y: 1000 }, card: { width: 300, height: 420 }, stage: tall }).y).toBe(120)
+  })
+
+  it('clamps touch placements inside every stage edge with a 4px margin', () => {
+    const inside = (placement: ReturnType<typeof place>, area: LayerRect = stage) => {
+      expect(placement.x - placement.width / 2).toBeGreaterThanOrEqual(area.left + 4 - 0.001)
+      expect(placement.x + placement.width / 2).toBeLessThanOrEqual(area.left + area.width - 4 + 0.001)
+      expect(placement.y - placement.height / 2).toBeGreaterThanOrEqual(area.top + 4 - 0.001)
+      expect(placement.y + placement.height / 2).toBeLessThanOrEqual(area.top + area.height - 4 + 0.001)
+    }
+    const leftEdge = place({ pointer: { x: 1, y: 400 } })
+    expect(leftEdge.x).toBeCloseTo(4 + 72 / 2)
+    inside(leftEdge)
+    const rightEdge = place({ pointer: { x: 331, y: 400 } })
+    expect(rightEdge.x).toBeCloseTo(332 - 4 - 72 / 2)
+    inside(rightEdge)
+    const topEdge = place({ pointer: { x: 166, y: 1 } })
+    expect(topEdge.y).toBeCloseTo(4 + 99 / 2)
+    inside(topEdge)
+    const bottomEdge = place({ pointer: { x: 20, y: 583 }, side: 'right' })
+    expect(bottomEdge.y).toBeLessThanOrEqual(583 - 4 - 99 / 2 + 0.001)
+    inside(bottomEdge)
+    for (let x = 0; x <= 332; x += 16) {
+      for (let y = 0; y <= 583; y += 16) inside(place({ pointer: { x, y } }))
+    }
+    // A stage smaller than the card centres it rather than overflowing one edge.
+    const tiny: LayerRect = { left: 10, top: 20, width: 60, height: 50 }
+    expect(place({ pointer: { x: 15, y: 25 }, stage: tiny })).toMatchObject({ x: 40, y: 45 })
+  })
+
+  it('moves beside the finger without room above and keeps that side while it fits', () => {
+    const nearTop = { x: 166, y: 90 }
+    const first = place({ pointer: nearTop })
+    // Ties go left, away from a right thumb, and the card clears the finger.
+    expect(first.side).toBe('left')
+    expect(first.x + first.width / 2).toBeLessThanOrEqual(nearTop.x - 20 + 0.001)
+    expect(first.y).toBeCloseTo(nearTop.y)
+    expect(place({ pointer: nearTop, side: 'right' }).side).toBe('right')
+    expect(place({ pointer: { x: 250, y: 90 }, side: 'left' }).side).toBe('left')
+    // The roomier side wins when the previous side no longer fits.
+    expect(place({ pointer: { x: 60, y: 90 }, side: 'left' }).side).toBe('right')
+    expect(place({ pointer: { x: 290, y: 90 }, side: 'right' }).side).toBe('left')
+    expect(place({ pointer: { x: 200, y: 90 } }).side).toBe('left')
+    expect(place({ pointer: { x: 120, y: 90 } }).side).toBe('right')
+  })
+
+  it('returns above the finger only with 12px of extra room after moving sideways', () => {
+    const lift = 99 / 2 + 20
+    const fitsAbove = 4 + 99 / 2 + lift
+    expect(place({ pointer: { x: 166, y: fitsAbove } }).side).toBe('above')
+    expect(place({ pointer: { x: 166, y: fitsAbove - 1 } }).side).toBe('left')
+    expect(place({ pointer: { x: 166, y: fitsAbove + 6 }, side: 'left' }).side).toBe('left')
+    expect(place({ pointer: { x: 166, y: fitsAbove + 12 }, side: 'right' }).side).toBe('above')
+  })
+
+  it('places relative to the visible, scrolled part of the stage', () => {
+    const scrolled: LayerRect = { left: 0, top: 300, width: 332, height: 583 }
+    const nearVisibleTop = place({ pointer: { x: 166, y: 330 }, stage: scrolled })
+    expect(nearVisibleTop.side).toBe('left')
+    expect(nearVisibleTop.y - nearVisibleTop.height / 2).toBeGreaterThanOrEqual(304 - 0.001)
+    const lower = place({ pointer: { x: 166, y: 600 }, stage: scrolled })
+    expect(lower).toMatchObject({ side: 'above', y: 600 - (99 / 2 + 20) })
+    // The same pointer is above the unscrolled stage's top margin.
+    expect(place({ pointer: { x: 166, y: 330 } }).side).toBe('above')
+  })
+
+  it('handles invalid sizes and pointers safely', () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, -5, 0]) {
+      const placement = place({ card: { width: value, height: value } })
+      expect(Number.isFinite(placement.x) && Number.isFinite(placement.y)).toBe(true)
+      expect(placement.width).toBeGreaterThanOrEqual(1)
+      expect(placement.height).toBeGreaterThanOrEqual(1)
+    }
+    const lost = place({ pointer: { x: Number.NaN, y: Number.POSITIVE_INFINITY } })
+    expect(Number.isFinite(lost.x) && Number.isFinite(lost.y)).toBe(true)
+  })
+
+  it('marks each narrow type slot, and stacks onto an occupied slot as +1', () => {
+    const [, , [, narrow]] = layouts
+    for (let slot = 0; slot < NARROW_TYPE_SLOTS; slot++) {
+      expect(landingSlotRect(narrow, { typeSlot: slot, slotCount: 0, nearCount: 7 })).toEqual({
+        x: typeSlotX(slot, narrow), y: narrow.rows.near.y, width: narrow.cardWidth, height: narrow.cardHeight, occupied: false,
+      })
+      expect(landingSlotRect(narrow, { typeSlot: slot, slotCount: 2, nearCount: 7 }).occupied).toBe(true)
+    }
+    expect(landingSlotRect(narrow, { typeSlot: 99, slotCount: 0, nearCount: 0 }).x).toBe(typeSlotX(NARROW_TYPE_SLOTS - 1, narrow))
+    expect(landingSlotRect(narrow, { typeSlot: 0, slotCount: Number.NaN, nearCount: 0 }).occupied).toBe(false)
+  })
+
+  it.each(layouts.slice(0, 2))('appends after the near battlefield in the %s layout', (_, layout) => {
+    for (const count of [0, 1, 4, 11]) {
+      const rect = landingSlotRect(layout, { typeSlot: 3, slotCount: 5, nearCount: count })
+      expect(rect).toEqual({
+        x: cardSlotX(count, count + 1, layout), y: layout.rows.near.y,
+        width: layout.cardWidth, height: layout.cardHeight, occupied: false,
+      })
+      expect(dropAccepts(rect, layout)).toBe(true)
+    }
+    for (const invalid of [Number.NaN, -3]) {
+      expect(landingSlotRect(layout, { typeSlot: 0, slotCount: 0, nearCount: invalid }).x).toBe(cardSlotX(0, 1, layout))
     }
   })
 })

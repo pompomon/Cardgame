@@ -35,7 +35,7 @@ import {
 } from '../../app/types'
 import { isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
-import type { BoardHit, RendererCardIdentity } from './contracts'
+import type { BoardHit, RendererCardIdentity, ThreeDragFeedback } from './contracts'
 import { renderThreeLog } from './interface-log'
 import { escapeHtml, renderCardRules, renderCardTile, renderInstallControls, renderP2P } from './native-html'
 
@@ -59,6 +59,8 @@ export interface InterfaceUi {
   readonly selectedDiscardId?: string | null
   readonly targetListOpen?: boolean
   readonly tutorialHidden?: boolean
+  /** The hand card being dragged on the board, mirrored by the narrow dock prompt. */
+  readonly dragFeedback?: ThreeDragFeedback | null
 }
 
 export interface ThreeDockModel {
@@ -758,6 +760,8 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
   if (!game.canInput) return { prompt: 'Waiting for the other player.', actions: '' }
   // The presented player can lag the actor while effects finish playing.
   if (!canThreeInput(view, ui.presentedActor) || game.phase !== 'main') return EMPTY_THREE_DOCK
+  // A drag only replaces the prompt, so the dock's actions and height stay put.
+  const dragPrompt = ui.menuOpen || ui.cardsOpen || ui.preview ? null : threeDragPrompt(game, ui.dragFeedback)
   const card = ui.selectedCardId
     ? game.players[game.actor].handCards.find((entry) => entry.id === ui.selectedCardId)
     : undefined
@@ -767,7 +771,7 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
     const ability = presentation.serializedKey ? cardCatalogEntry(presentation.serializedKey).primaryAbility : null
     const playable = (game.legal.playLandByCard[card.id]?.length ?? 0) > 0
     return {
-      prompt: `${name}${ability ? ` · ${ability.name}: ${ability.rulesText}` : ''}${playable ? '' : ' Cannot be summoned now.'}`,
+      prompt: dragPrompt ?? `${name}${ability ? ` · ${ability.name}: ${ability.rulesText}` : ''}${playable ? '' : ' Cannot be summoned now.'}`,
       actions: button('select-summon', 'Summon', !playable || ui.menuOpen || ui.cardsOpen || !!ui.preview || !!ui.pendingCardId,
         ` aria-label="${escapeHtml(`Summon ${name}`)}"`)
         + button('select-details', 'Details', false, ` aria-label="${escapeHtml(`Details for ${name}`)}"`)
@@ -776,11 +780,27 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
   }
   const playable = Object.values(game.legal.playLandByCard).some((options) => options.length > 0)
   return {
-    prompt: playable
+    prompt: dragPrompt ?? (playable
       ? 'Drag a highlighted creature onto your board, or select a card for options.'
-      : `No creature can be summoned now. Select a card for details${game.legal.canEndTurn ? ', or choose End Turn' : ''}.`,
+      : `No creature can be summoned now. Select a card for details${game.legal.canEndTurn ? ', or choose End Turn' : ''}.`),
     actions: '',
   }
+}
+
+/**
+ * The dock prompt for a live drag, named from the catalog. Null unless the
+ * dragged card is still a summonable card in the actor's hand, so stale
+ * feedback can never describe another decision.
+ */
+function threeDragPrompt(game: GameUiState, feedback: ThreeDragFeedback | null | undefined): string | null {
+  if (!feedback) return null
+  const card = game.players[game.actor]?.handCards.find((entry) => entry.id === feedback.cardId)
+  const presentation = cardPresentation(card)
+  if (!card || !presentation || !(game.legal.playLandByCard[card.id]?.length)) return null
+  const name = presentation.displayName
+  return feedback.accepted
+    ? `Release to summon ${name}. Drag back to your hand to cancel.`
+    : `Summon ${name}: release anywhere on your board. Drag back to your hand to cancel.`
 }
 
 function renderTutorialBanner(view: AppViewModel, ui: InterfaceUi): string {

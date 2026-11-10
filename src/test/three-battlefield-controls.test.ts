@@ -7,17 +7,21 @@ import type { AppState } from '../app/types'
 import type { VisualEffectDescriptor } from '../app/visual-effects'
 import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
-import type { Card, GameAction } from '../game/types'
+import { BASIC_LANDS, type Card, type GameAction } from '../game/types'
 import { ThreeBoard } from '../renderers/three/board'
 import { boardCardKey, type ThreeCardRegistry } from '../renderers/three/card-registry'
-import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type ThreeBoardPresentation } from '../renderers/three/contracts'
+import {
+  NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type ThreeBoardPresentation, type ThreeDragFeedback,
+} from '../renderers/three/contracts'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { cardSlotX, narrowHandPageSize, pendingCardRect, type ThreeLayout } from '../renderers/three/layout'
+import { cardSlotX, narrowHandPageSize, pendingCardRect, typeSlotX, type ThreeLayout } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
   render: vi.fn(), setSize: vi.fn(), setPixelRatio: vi.fn(), dispose: vi.fn(),
   acquireCard: vi.fn(), release: vi.fn(),
+  /** The board's callback for finished artwork, as the real asset cache calls it. */
+  assetsChanged: (): void => {},
 }))
 
 vi.mock('three', async (importOriginal) => ({
@@ -35,6 +39,9 @@ vi.mock('three', async (importOriginal) => ({
 vi.mock('../renderers/three/assets', async (importOriginal) => ({
   ...await importOriginal<typeof import('../renderers/three/assets')>(),
   ThreeAssets: class {
+    constructor(invalidate: () => void) {
+      gpu.assetsChanged = invalidate
+    }
     acquireCard = gpu.acquireCard
     acquireBoard() { return { texture: new CanvasTexture({} as HTMLCanvasElement), release: gpu.release } }
     dispose(): void {}
@@ -85,7 +92,11 @@ class ElementStub extends EventTarget {
   }
   setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
   getAttribute(name: string): string | null { return this.attributes.get(name) ?? null }
-  getContext(): { isContextLost(): boolean } { return { isContextLost: () => false } }
+  /** Opt-in 2D context for the drag layer; set before `setup()`, which constructs the layer. */
+  static context2d: object | null = null
+  getContext(type?: string): unknown {
+    return type === '2d' && ElementStub.context2d ? ElementStub.context2d : { isContextLost: () => false }
+  }
   getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight } }
   focus(): void {
     const previous = this.ownerDocument.activeElement
@@ -158,8 +169,9 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
   const activate = vi.fn<(action: ThreePrimaryAction) => void>()
   const dock = document.createElement('section')
   const handPage = vi.fn()
+  const feedback = vi.fn<(feedback: ThreeDragFeedback | null) => void>()
   const board = new ThreeBoard(host as unknown as HTMLElement, vi.fn(), cancel, activate,
-    dock as unknown as HTMLElement, () => presentation, handPage)
+    dock as unknown as HTMLElement, () => presentation, handPage, feedback)
   boards.push(board)
   const app = state()
   const ui: InterfaceUi = {
@@ -195,7 +207,7 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
   const cards = scene.children.find((entry) => entry.type === 'Group') as Group
   const pending = () => cards.children.find((entry) => entry.name === 'pending-land-play')
   const registry = (board as unknown as { cards: ThreeCardRegistry }).cards
-  return { app, board, host, dock, scene, registry, document, window, button, near, far, cards, pending, activate, cancel, handPage, present, act }
+  return { app, board, host, dock, scene, registry, document, window, button, near, far, cards, pending, activate, cancel, handPage, feedback, present, act }
 }
 
 beforeEach(() => {
@@ -207,6 +219,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   boards.splice(0).forEach((board) => board.dispose())
+  ElementStub.context2d = null
   vi.unstubAllGlobals()
 })
 
@@ -950,7 +963,7 @@ describe('constructed Three battlefield controls', () => {
     expect(sizes.map((entry) => entry.textContent)).toEqual([
       'Drag a highlighted creature onto your board to summon it',
       'Move onto your board · release elsewhere to cancel',
-      'Release to summon',
+      'Release to summon · back to hand cancels',
     ])
     for (const size of sizes) {
       expect(size.getAttribute('aria-hidden')).toBe('true')
@@ -993,7 +1006,9 @@ describe('constructed Three battlefield controls', () => {
       key: boardCardKey('0-0', 0), cardId: '0-0', owner: 0, zone: 'hand', name: 'Island', playable: true,
     })
     h.board.moveDrag(195, 380, false)
-    expect(geometry()).toEqual(initial)
+    // Only the instruction moves: a live drag lifts it to a pill at the top
+    // of the visible stage, clear of the drop zone.
+    expect(geometry()).toEqual({ ...initial, promptTop: '4px' })
     h.board.endDrag(false)
     expect(geometry()).toEqual(initial)
     h.act('play_land')
@@ -1158,5 +1173,582 @@ describe('constructed Three battlefield controls', () => {
     expect(h.host.children).toHaveLength(0)
     expect(ObserverStub.latest.disconnect).toHaveBeenCalledOnce()
     expect(gpu.dispose).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Three touch drag feedback', () => {
+  const SUMMON = 'Drag a highlighted creature onto your board to summon it'
+  const CANCEL = 'Move onto your board · release elsewhere to cancel'
+  const RELEASE = 'Release to summon · back to hand cancels'
+  type Harness = ReturnType<typeof setup>
+  interface DragInternals {
+    readonly drag: {
+      layered: boolean; accepted: boolean; returning: boolean; proxy: { group: Group }
+      readonly width: number; readonly height: number
+    } | null
+    readonly layout: ThreeLayout
+    readonly surfaces: Map<string, { material: MeshBasicMaterial }>
+    readonly dropMaterial: MeshBasicMaterial
+  }
+  const internals = (h: Harness) => h.board as unknown as DragInternals
+  /** The lifted card's box in drag-layer pixels (top-left origin), from the scene proxy that mirrors it. */
+  const lifted = (h: Harness) => {
+    const { drag, layout } = internals(h)
+    const { position, scale } = drag!.proxy.group
+    const x = position.x + layout.width / 2
+    const y = layout.height / 2 - position.y
+    const height = drag!.height * scale.y
+    return { x, y, top: y - height / 2, bottom: y + height / 2 }
+  }
+  const island = (cardId = '0-0') => ({
+    key: boardCardKey(cardId, 0), cardId, owner: 0, zone: 'hand' as const, name: 'Island', playable: true,
+  })
+  /** Board units (centred, y up) to client pixels through the stubbed canvas box. */
+  const client = (h: Harness, x: number, y: number): [number, number] => {
+    const { layout } = internals(h)
+    const rect = h.host.all('three-board-canvas')[0].getBoundingClientRect()
+    return [
+      rect.left + (x + layout.width / 2) * rect.width / layout.width,
+      rect.top + (layout.height / 2 - y) * rect.height / layout.height,
+    ]
+  }
+  const dropCentre = (h: Harness) => client(h, internals(h).layout.drop.x, internals(h).layout.drop.y)
+  const overHand = (h: Harness) => client(h, internals(h).layout.drop.x, internals(h).layout.rows.hand.y)
+  /** Counts live card-face leases, so every acquire is matched by exactly one release. */
+  const countLeases = () => {
+    const leases = { live: 0, repeated: 0 }
+    gpu.acquireCard.mockImplementation(() => {
+      leases.live++
+      let released = false
+      return {
+        texture: new CanvasTexture({} as HTMLCanvasElement),
+        release: () => {
+          if (released) leases.repeated++
+          else leases.live--
+          released = true
+        },
+      }
+    })
+    return leases
+  }
+  const context2d = () => ({
+    drawImage: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(), setTransform: vi.fn(), fillStyle: '',
+  })
+  /** Records writes to the visible instruction text, which screen readers would announce. */
+  const recordText = (h: Harness, log: string[]) => {
+    const text = h.host.all('three-board-instruction')[0].children[0]
+    let value = text.textContent
+    Object.defineProperty(text, 'textContent', {
+      configurable: true,
+      get: () => value,
+      set: (next: string) => { log.push(`text=${next}`); value = next },
+    })
+  }
+
+  it.each([['touch', true], ['mouse', false]] as const)(
+    'highlights the near header exactly where a %s release would summon',
+    (_, touch) => {
+      const h = setup()
+      const prompt = h.host.all('three-board-instruction')[0]
+      const { layout } = internals(h)
+      h.board.beginDrag(island())
+      let accepted = 0
+      let rejected = 0
+      for (let y = 0; y <= layout.height; y += 8) {
+        for (let x = 0; x <= layout.width; x += 13) {
+          h.board.moveDrag(x, y, touch)
+          const drops = h.board.containsDrop(x, y, touch)
+          expect(h.near.dataset.dropAccepted === 'true').toBe(drops)
+          expect(internals(h).drag?.accepted).toBe(drops)
+          expect(prompt.children[0].textContent).toBe(drops ? RELEASE : CANCEL)
+          expect(h.feedback.mock.lastCall?.[0]).toEqual({ cardId: '0-0', accepted: drops })
+          if (drops) accepted++
+          else rejected++
+        }
+      }
+      expect(accepted).toBeGreaterThan(0)
+      expect(rejected).toBeGreaterThan(0)
+    },
+  )
+
+  it('gives touch, not the mouse, 12px of slop except toward the hand or beyond the visible stage', () => {
+    const h = setup()
+    const { layout } = internals(h)
+    const { drop } = layout
+    const rect = h.host.all('three-board-canvas')[0].getBoundingClientRect()
+    // Board units are client pixels here, so the slop is exactly 12 units.
+    expect(rect.width).toBe(layout.width)
+    const top = drop.y + drop.height / 2
+    expect(h.board.containsDrop(...client(h, drop.x, top - 1), false)).toBe(true)
+    expect(h.board.containsDrop(...client(h, drop.x, top + 6), true)).toBe(true)
+    expect(h.board.containsDrop(...client(h, drop.x, top + 6), false)).toBe(false)
+    expect(h.board.containsDrop(...client(h, drop.x, top + 14), true)).toBe(false)
+    const side = drop.x - drop.width / 2
+    expect(side - 6 + layout.width / 2).toBeGreaterThan(0)
+    expect(h.board.containsDrop(...client(h, side - 6, drop.y), true)).toBe(true)
+    expect(h.board.containsDrop(...client(h, side - 6, drop.y), false)).toBe(false)
+    // The edge facing the hand never grows, and nothing over the hand drops.
+    const bottom = drop.y - drop.height / 2
+    expect(h.board.containsDrop(...client(h, drop.x, bottom - 6), true)).toBe(false)
+    expect(h.board.containsDrop(...overHand(h), true)).toBe(false)
+    expect(h.board.containsDrop(...overHand(h), false)).toBe(false)
+    // A drop zone scrolled out of the stage's visible box never accepts.
+    const centre = dropCentre(h)
+    expect(h.board.containsDrop(...centre, true)).toBe(true)
+    h.host.all('three-board-stage')[0].clientHeight = centre[1] - 10
+    expect(h.board.containsDrop(...centre, true)).toBe(false)
+    expect(h.board.containsDrop(...centre, false)).toBe(false)
+  })
+
+  it('draws a 2D-capable drag in one layer lease and releases it on every end path', () => {
+    const context = context2d()
+    ElementStub.context2d = context
+    const leases = countLeases()
+    const h = setup()
+    const layer = h.host.all('three-drag-layer')[0]
+    const card = h.host.all('three-drag-card')[0]
+    expect(layer.parent).toBe(h.host.all('three-board-stage')[0])
+    expect(layer.getAttribute('aria-hidden')).toBe('true')
+    const resting = leases.live
+    for (const animateReturn of [false, true, false]) {
+      h.board.beginDrag(island())
+      // The scene proxy and the layer card each hold one lease.
+      expect(leases.live).toBe(resting + 2)
+      expect(internals(h).drag).toMatchObject({ layered: true })
+      expect(internals(h).drag!.proxy.group.visible).toBe(false)
+      h.board.moveDrag(...dropCentre(h), true)
+      expect(card.hidden).toBe(false)
+      expect(layer.hidden).toBe(false)
+      expect(layer.dataset.accepted).toBe('true')
+      h.board.endDrag(animateReturn)
+      expect(card.hidden).toBe(true)
+      expect(layer.hidden).toBe(true)
+      if (animateReturn) {
+        // The returning proxy reappears in the scene and keeps only its own lease.
+        expect(internals(h).drag).toMatchObject({ returning: true })
+        expect(internals(h).drag!.proxy.group.visible).toBe(true)
+        expect(leases.live).toBe(resting + 1)
+        h.board.endDrag(false)
+      }
+      expect(leases.live).toBe(resting)
+    }
+    expect(context.drawImage).toHaveBeenCalledTimes(3)
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    h.board.dispose()
+    expect(leases.live).toBe(0)
+    expect(leases.repeated).toBe(0)
+  })
+
+  it.each(['no 2D context', 'a failing paint'] as const)(
+    'keeps the in-scene proxy with %s while still labelling the landing slot',
+    (failure) => {
+      if (failure === 'a failing paint') {
+        const context = context2d()
+        context.drawImage.mockImplementation(() => { throw new Error('tainted') })
+        ElementStub.context2d = context
+      }
+      const leases = countLeases()
+      const h = setup()
+      const resting = leases.live
+      h.board.beginDrag(island())
+      expect(internals(h).drag).toMatchObject({ layered: false })
+      expect(internals(h).drag!.proxy.group.visible).toBe(true)
+      expect(leases.live).toBe(resting + 1)
+      h.board.moveDrag(...dropCentre(h), true)
+      expect(h.host.all('three-drag-card')[0].hidden).toBe(true)
+      const landing = h.host.all('three-drag-landing')[0]
+      expect(landing.hidden).toBe(false)
+      expect(landing.textContent).toBe('Lands here')
+      expect(h.host.all('three-drag-layer')[0].hidden).toBe(false)
+      h.board.endDrag(false)
+      expect(landing.hidden).toBe(true)
+      expect(h.host.all('three-drag-layer')[0].hidden).toBe(true)
+      expect(leases.live).toBe(resting)
+      expect(leases.repeated).toBe(0)
+    },
+  )
+
+  it('repaints the lifted card on the next board frame when its artwork loads under a still finger', () => {
+    const context = context2d()
+    ElementStub.context2d = context
+    const leases = countLeases()
+    const counted = gpu.acquireCard.getMockImplementation()!
+    const art = { ready: false }
+    gpu.acquireCard.mockImplementation((...args: unknown[]) =>
+      Object.defineProperty(counted(...args), 'ready', { get: () => art.ready }))
+    const h = setup()
+    const card = h.host.all('three-drag-card')[0]
+    const frames = vi.mocked(requestAnimationFrame).mock.calls
+    const runFrame = () => frames.at(-1)![0](16)
+    const resting = leases.live
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    runFrame()
+    // The fallback face is drawn once, and frames before the artwork loads leave it.
+    expect(context.drawImage).toHaveBeenCalledOnce()
+    const scheduled = frames.length
+    art.ready = true
+    gpu.assetsChanged()
+    expect(frames).toHaveLength(scheduled + 1)
+    runFrame()
+    expect(context.drawImage).toHaveBeenCalledTimes(2)
+    expect(card.hidden).toBe(false)
+    expect(internals(h).drag).toMatchObject({ layered: true })
+    expect(internals(h).drag!.proxy.group.visible).toBe(false)
+    runFrame()
+    expect(context.drawImage).toHaveBeenCalledTimes(2)
+    h.board.endDrag(false)
+    expect(leases.live).toBe(resting)
+
+    // When that repaint fails, the frame shows the in-scene proxy and releases the layer's lease.
+    art.ready = false
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    art.ready = true
+    context.drawImage.mockImplementationOnce(() => { throw new Error('lost') })
+    gpu.assetsChanged()
+    runFrame()
+    expect(internals(h).drag).toMatchObject({ layered: false })
+    expect(internals(h).drag!.proxy.group.visible).toBe(true)
+    expect(card.hidden).toBe(true)
+    expect(leases.live).toBe(resting + 1)
+    h.board.endDrag(false)
+    expect(leases.live).toBe(resting)
+    expect(leases.repeated).toBe(0)
+  })
+
+  it('keeps a live drag through re-presentation with animations off and ends it without a return', () => {
+    const h = setup()
+    const stage = h.host.all('three-board-stage')[0]
+    h.app.animationSpeed = 'off'
+    h.present()
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    h.present()
+    h.present()
+    expect(internals(h).drag).toMatchObject({ accepted: true, returning: false })
+    expect(stage.dataset.dragging).toBe('true')
+    h.board.endDrag(true)
+    expect(internals(h).drag).toBeNull()
+    expect(stage.dataset.dragging).toBeUndefined()
+    expect(h.feedback).toHaveBeenLastCalledWith(null)
+  })
+
+  it('rewrites the instruction and notifies feedback only when acceptance changes', () => {
+    const h = setup()
+    const writes: string[] = []
+    recordText(h, writes)
+    const inside = dropCentre(h)
+    const hand = overHand(h)
+    h.board.beginDrag(island())
+    for (let step = 0; step < 4; step++) h.board.moveDrag(hand[0] + step, hand[1], true)
+    for (let step = 0; step < 4; step++) h.board.moveDrag(inside[0] + step, inside[1], true)
+    h.present()
+    h.board.moveDrag(inside[0], inside[1] + 1, true)
+    h.board.moveDrag(...hand, true)
+    h.board.endDrag(false)
+    h.board.endDrag(false)
+    expect(writes).toEqual([`text=${CANCEL}`, `text=${RELEASE}`, `text=${CANCEL}`, `text=${SUMMON}`])
+    expect(h.feedback.mock.calls.map(([feedback]) => feedback)).toEqual([
+      { cardId: '0-0', accepted: false },
+      { cardId: '0-0', accepted: true },
+      { cardId: '0-0', accepted: false },
+      null,
+    ])
+  })
+
+  it('reports feedback last, with the board already updated, and once when a return starts', () => {
+    const h = setup()
+    const stage = h.host.all('three-board-stage')[0]
+    const prompt = h.host.all('three-board-instruction')[0]
+    const seen: unknown[] = []
+    h.feedback.mockImplementation((feedback) => {
+      seen.push({
+        feedback,
+        dragging: stage.dataset.dragging ?? null,
+        accepted: h.near.dataset.dropAccepted ?? null,
+        text: prompt.children[0].textContent,
+      })
+    })
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    h.board.moveDrag(...overHand(h), true)
+    h.board.endDrag(true)
+    expect(internals(h).drag).toMatchObject({ returning: true })
+    h.board.endDrag(false)
+    expect(seen).toEqual([
+      { feedback: { cardId: '0-0', accepted: false }, dragging: 'true', accepted: null, text: CANCEL },
+      { feedback: { cardId: '0-0', accepted: true }, dragging: 'true', accepted: 'true', text: RELEASE },
+      { feedback: { cardId: '0-0', accepted: false }, dragging: 'true', accepted: null, text: CANCEL },
+      { feedback: null, dragging: null, accepted: null, text: SUMMON },
+    ])
+  })
+
+  it.each([
+    ['drag start', 'endDrag'], ['drag start', 'dispose'], ['drag acceptance', 'endDrag'], ['drag acceptance', 'dispose'],
+  ] as const)('survives a %s listener that calls %s re-entrantly', (moment, method) => {
+    ElementStub.context2d = context2d()
+    const leases = countLeases()
+    const h = setup()
+    const stage = h.host.all('three-board-stage')[0]
+    const inside = dropCentre(h)
+    const resting = leases.live
+    const reenter = () => { if (method === 'endDrag') h.board.endDrag(false); else h.board.dispose() }
+    if (moment === 'drag start') h.feedback.mockImplementationOnce(reenter)
+    h.board.beginDrag(island())
+    if (moment === 'drag acceptance') {
+      h.feedback.mockImplementationOnce(reenter)
+      h.board.moveDrag(...inside, true)
+    }
+    expect(internals(h).drag).toBeNull()
+    expect(stage.dataset.dragging).toBeUndefined()
+    h.board.moveDrag(...inside, true)
+    h.board.endDrag(false)
+    expect(h.feedback.mock.calls.map(([feedback]) => feedback)).toEqual([
+      { cardId: '0-0', accepted: false },
+      ...moment === 'drag acceptance' ? [{ cardId: '0-0', accepted: true }] : [],
+      null,
+    ])
+    expect(leases.live).toBe(method === 'dispose' ? 0 : resting)
+    expect(leases.repeated).toBe(0)
+  })
+
+  it('quiets the board instruction before narrow drag text changes and restores it on unfold', () => {
+    const presentation = { narrow: false, selection: NO_BOARD_SELECTION }
+    const h = setup(presentation)
+    const prompt = h.host.all('three-board-instruction')[0]
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+    const log: string[] = []
+    recordText(h, log)
+    const setAttribute = prompt.setAttribute.bind(prompt)
+    prompt.setAttribute = (name: string, value: string) => {
+      log.push(`${name}=${value}`)
+      setAttribute(name, value)
+    }
+    h.board.beginDrag(island())
+    log.length = 0
+    presentation.narrow = true
+    h.present()
+    // The profile switch ends the drag only after the region went quiet.
+    expect(log[0]).toBe('aria-live=off')
+    expect(log).toContain(`text=${SUMMON}`)
+    expect(prompt.hidden).toBe(true)
+    log.length = 0
+    h.present()
+    h.board.beginDrag(island())
+    expect(prompt.hidden).toBe(false)
+    h.board.endDrag(false)
+    expect(prompt.hidden).toBe(true)
+    expect(log.filter((entry) => entry.startsWith('aria-live'))).toEqual([])
+    presentation.narrow = false
+    h.present()
+    expect(prompt.getAttribute('aria-live')).toBe('polite')
+  })
+
+  it('lifts the narrow drag pill to the top of the scrolled stage without moving the effect caption', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = h.host.all('three-board-stage')[0]
+    const prompt = h.host.all('three-board-instruction')[0]
+    const caption = h.host.all('three-board-effect-caption')[0]
+    const idle = { prompt: prompt.style.top, caption: caption.style.top }
+    expect(prompt.hidden).toBe(true)
+    Object.assign(stage, { scrollTop: 120 })
+    h.board.beginDrag(island())
+    expect(prompt.hidden).toBe(false)
+    expect(prompt.style.top).toBe('124px')
+    expect(prompt.dataset.drag).toBe('rejected')
+    h.present()
+    expect(prompt.style.top).toBe('124px')
+    expect(caption.style.top).toBe(idle.caption)
+    h.board.moveDrag(...dropCentre(h), true)
+    expect(prompt.dataset.drag).toBe('accepted')
+    h.board.endDrag(false)
+    expect(prompt.hidden).toBe(true)
+    expect(prompt.dataset.drag).toBeUndefined()
+    expect({ prompt: prompt.style.top, caption: caption.style.top }).toEqual(idle)
+  })
+
+  it('keeps a touch card clear of the drag pill near the stage top, while a mouse card stays under the cursor', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const canvas = h.host.all('three-board-canvas')[0]
+    const prompt = h.host.all('three-board-instruction')[0]
+    const { layout } = internals(h)
+    // One client pixel per board unit, so layer pixels are client pixels.
+    Object.assign(canvas, { clientWidth: layout.width, clientHeight: layout.height })
+    h.board.beginDrag(island())
+    const pillBottom = Number.parseFloat(prompt.style.top) + prompt.offsetHeight
+    expect(pillBottom).toBe(48)
+    let checked = 0
+    for (const x of [6, layout.width / 2, layout.width - 6]) {
+      for (let y = 0; y <= 160; y += 4) {
+        h.board.moveDrag(x, y, true)
+        expect(lifted(h).top).toBeGreaterThanOrEqual(pillBottom)
+        h.board.moveDrag(x, y, false)
+        expect(lifted(h)).toMatchObject({ x, y })
+        checked++
+      }
+    }
+    expect(checked).toBe(123)
+  })
+
+  it.each([['mouse', false], ['touch', true]] as const)(
+    'keeps the drag pill pinned and the %s card in place when the stage scrolls mid-drag',
+    (_, touch) => {
+      const added = vi.spyOn(ElementStub.prototype, 'addEventListener')
+      const removed = vi.spyOn(ElementStub.prototype, 'removeEventListener')
+      const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+      const stage = h.host.all('three-board-stage')[0]
+      const canvas = h.host.all('three-board-canvas')[0]
+      const prompt = h.host.all('three-board-instruction')[0]
+      const { layout } = internals(h)
+      // A real canvas moves up with the stage's content as the stage scrolls.
+      Object.assign(stage, { scrollTop: 0 })
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: -(stage as unknown as { scrollTop: number }).scrollTop, width: layout.width, height: layout.height,
+      })
+      const scroll = (top: number) => {
+        Object.assign(stage, { scrollTop: top })
+        stage.dispatchEvent(new Event('scroll'))
+      }
+      // Just inside the drop zone's edge that faces the hand, so a scroll moves the hand under the pointer.
+      const pointer = client(h, layout.drop.x, layout.drop.y - layout.drop.height / 2 + 10)
+      expect(pointer[1]).toBeLessThan(stage.clientHeight - 140)
+      h.board.beginDrag(island())
+      h.board.moveDrag(...pointer, touch)
+      expect(internals(h).drag!.accepted).toBe(true)
+      expect(prompt.style.top).toBe('4px')
+      const before = lifted(h)
+      h.feedback.mockClear()
+      scroll(120)
+      expect(prompt.style.top).toBe('124px')
+      // The content moved up under a resting pointer, so the card moves down the content to stay put.
+      expect(lifted(h).x).toBeCloseTo(before.x)
+      expect(lifted(h).y).toBeCloseTo(before.y + 120)
+      if (touch) expect(lifted(h).top).toBeGreaterThanOrEqual(124 + prompt.offsetHeight)
+      expect(h.board.containsDrop(...pointer, touch)).toBe(false)
+      expect(internals(h).drag!.accepted).toBe(false)
+      expect(h.near.dataset.dropAccepted).toBeUndefined()
+      expect(h.feedback).toHaveBeenCalledExactlyOnceWith({ cardId: '0-0', accepted: false })
+      scroll(0)
+      expect(prompt.style.top).toBe('4px')
+      expect(internals(h).drag!.accepted).toBe(true)
+      expect(lifted(h)).toMatchObject({ x: before.x, y: before.y })
+      h.board.endDrag(false)
+      const idle = prompt.style.top
+      h.feedback.mockClear()
+      scroll(200)
+      expect(prompt.style.top).toBe(idle)
+      expect(h.feedback).not.toHaveBeenCalled()
+      const listeners = added.mock.calls.filter(([type]) => type === 'scroll').map(([, listener]) => listener)
+      expect(listeners).toHaveLength(1)
+      h.board.dispose()
+      expect(removed.mock.calls.filter(([type]) => type === 'scroll').map(([, listener]) => listener)).toEqual(listeners)
+      added.mockRestore()
+      removed.mockRestore()
+    },
+  )
+
+  it('marks the narrow type slot as "Lands here", or "+1" when it already holds a card', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const landing = h.scene.getObjectByName('three-landing-slot')!
+    const label = h.host.all('three-drag-landing')[0]
+    const slot = BASIC_LANDS.indexOf('Island')
+    expect(landing.visible).toBe(false)
+    h.board.beginDrag(island())
+    let { layout } = internals(h)
+    expect(landing.visible).toBe(true)
+    expect(landing.position.x).toBeCloseTo(typeSlotX(slot, layout))
+    expect(landing.position.y).toBeCloseTo(layout.rows.near.y)
+    expect(landing.scale.x).toBeCloseTo(layout.cardWidth)
+    expect(landing.scale.y).toBeCloseTo(layout.cardHeight)
+    expect(label.textContent).toBe('Lands here')
+    expect(label.hidden).toBe(false)
+    expect(Number.parseFloat(label.style.left)).toBeCloseTo(layout.width / 2 + landing.position.x)
+    expect(Number.parseFloat(label.style.top)).toBeCloseTo(layout.height / 2 - landing.position.y)
+    h.board.endDrag(false)
+    expect(landing.visible).toBe(false)
+    expect(label.hidden).toBe(true)
+    h.app.game!.players[0].battlefield = [{ instanceId: 'resting', card: { id: 'resting-island', name: 'Island', type: 'land' } }]
+    h.present()
+    h.board.beginDrag(island())
+    layout = internals(h).layout
+    expect(label.textContent).toBe('+1')
+    expect(landing.position.x).toBeCloseTo(typeSlotX(slot, layout))
+  })
+
+  it('marks the append slot after the near battlefield outside the narrow profile', () => {
+    const h = setup()
+    h.app.game!.players[0].battlefield = ['a', 'b'].map((id) => ({
+      instanceId: `resting-${id}`, card: { id: `resting-${id}`, name: 'Island', type: 'land' },
+    }))
+    h.present()
+    h.board.beginDrag(island())
+    const { layout } = internals(h)
+    const landing = h.scene.getObjectByName('three-landing-slot')!
+    expect(landing.visible).toBe(true)
+    expect(landing.position.x).toBeCloseTo(cardSlotX(2, 3, layout))
+    expect(landing.position.y).toBeCloseTo(layout.rows.near.y)
+    expect(h.host.all('three-drag-landing')[0].textContent).toBe('Lands here')
+  })
+
+  it('restores a newer response prompt, not the summon hint, when a view update ends the drag', () => {
+    const h = setup()
+    const prompt = h.host.all('three-board-instruction')[0]
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), false)
+    // The opponent summons while the drag is live, so the card stops being playable.
+    const game = h.app.game!
+    game.currentPlayer = 1
+    game.players[1].hand = [{ id: 'pending-mountain', name: 'Mountain', type: 'land' }]
+    h.act('play_land')
+    expect(h.app.game!.phase).toBe('respond')
+    expect(internals(h).drag).toBeNull()
+    expect(prompt.hidden).toBe(false)
+    expect(prompt.children[0].textContent).toContain('Intercept the summon of Rooftop Gargoyle?')
+    expect(h.feedback).toHaveBeenLastCalledWith(null)
+  })
+
+  it('dims rows that cannot accept the card and restores their colours afterwards', () => {
+    const h = setup()
+    const stage = h.host.all('three-board-stage')[0]
+    const colours = () => ({
+      far: internals(h).surfaces.get('far')!.material.color.getHexString(),
+      near: internals(h).surfaces.get('near')!.material.color.getHexString(),
+      hand: internals(h).surfaces.get('hand')!.material.color.getHexString(),
+      drop: internals(h).dropMaterial.color.getHexString(),
+    })
+    const idle = colours()
+    expect(idle).toEqual({ far: '152b3b', near: '214c3b', hand: '214c3b', drop: '70e7b1' })
+    h.board.beginDrag(island())
+    expect(stage.dataset.dragging).toBe('true')
+    expect(colours()).toEqual({ far: '08111a', near: '214c3b', hand: '08111a', drop: 'e5667d' })
+    h.board.moveDrag(...dropCentre(h), true)
+    expect(colours()).toEqual({ far: '08111a', near: '2d6a51', hand: '08111a', drop: '94ffc9' })
+    h.board.endDrag(false)
+    expect(stage.dataset.dragging).toBeUndefined()
+    expect(colours()).toEqual(idle)
+  })
+
+  it('styles drag feedback with colour, outline and opacity only, above every header', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'graphics.css'), 'utf8')
+    const properties = (selector: string) => {
+      const start = css.indexOf(`${selector} {`)
+      expect(start, selector).toBeGreaterThanOrEqual(0)
+      const body = css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
+      return body.split(';').map((entry) => entry.split(':')[0].trim()).filter(Boolean)
+    }
+    const visualOnly = new Set(['background', 'box-shadow', 'outline', 'outline-offset', 'opacity', 'z-index'])
+    for (const selector of [
+      '.three-board-instruction[data-drag]',
+      '.three-board-instruction[data-drag="accepted"]',
+      '.three-board-label[data-drop-accepted="true"]',
+      '.three-board-stage[data-dragging] .three-board-label:not([data-row="near"])',
+      '.three-drag-layer[data-accepted="true"] .three-drag-card',
+    ]) {
+      for (const property of properties(selector)) expect(visualOnly, `${selector} ${property}`).toContain(property)
+    }
+    expect(css).toMatch(/\.three-drag-layer\s*\{[^}]*z-index:\s*3;[^}]*pointer-events:\s*none;/)
+    expect(css).toMatch(/\.three-board-instruction\[data-drag\]\s*\{[^}]*z-index:\s*4;/)
   })
 })
