@@ -299,7 +299,10 @@ The HUD's `data-layout` names the shell; only the CSS differs between them.
   waits for a dock confirmation; a mouse click submits at once.
 - The dock is the prompt followed by its actions, in the same order and with
   the same unique ids in every shell. `dock` keeps it under the board, and
-  `rail` stacks it in a right-hand column with 48 px actions.
+  `rail` stacks it in a right-hand column with 48 px actions. On a landscape
+  screen at most 480 px tall, the short rail also heads that column with the
+  top bar, so the board takes the full height. Its actions wrap in rows, and
+  the rail scrolls when large text outgrows it.
 - Folding, unfolding or rotating between touch shells keeps the selection,
   the dock prompt and actions, and an open target list. A fold does not
   change `threeDecisionKey`, so the dock's buttons stay live.

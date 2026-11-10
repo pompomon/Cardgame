@@ -443,6 +443,36 @@ const ruleBody = (source: string, ...selectors: string[]) => cssRules(source)
   .map((rule) => rule.body)
   .join(' ')
 
+/**
+ * The board's stage size in the short rail, where the top bar heads the rail
+ * column and the stage spans the full height beside it (renderer.css). Text
+ * size changes only the headers.
+ */
+function shortRailStage(viewportWidth: number, viewportHeight: number, insets: SafeArea = NO_INSETS) {
+  const pad = (inset: number) => Math.max(4, inset)
+  const gap = 4
+  const borders = 4
+  return {
+    width: viewportWidth - pad(insets.left) - pad(insets.right) - gap - railWidth(viewportWidth) - borders,
+    height: viewportHeight - pad(insets.top) - pad(insets.bottom) - borders,
+  }
+}
+
+/** A notched phone held sideways: an inset on both sides and one for the gesture bar. */
+const SIDEWAYS_NOTCH: SafeArea = { top: 0, right: 47, bottom: 21, left: 47 }
+const SHORT_RAIL_POSTURES = [
+  ...FOLD4_POSTURES.flatMap(([name, width, height, { short }]) => short ? [[`Fold4 ${name}`, width, height, NO_INSETS] as const] : []),
+  ['phone held sideways', 844, 390, NO_INSETS] as const,
+  ['notched phone held sideways', 844, 390, SIDEWAYS_NOTCH] as const,
+]
+/** Single-line headers; a paged hand's header is the short rail's 44px pager strip (board.ts applySize). */
+const shortRailHeaders = (scale: number, paged: boolean) => ({ far: 21 * scale, near: 21 * scale, hand: (paged ? 44 : 22) * scale })
+const shortRailViewports = SHORT_RAIL_POSTURES.flatMap(([name, width, height, insets]) => [1, 2].flatMap((scale) =>
+  [false, true].map((paged) => [
+    `the ${name} (${width}x${height}) at ${scale * 100}% text${paged ? ' and a paged hand' : ''}`,
+    shortRailStage(width, height, insets), shortRailHeaders(scale, paged), scale,
+  ] as const)))
+
 describe('Three.js unfolded dock and rail layouts', () => {
   // The Milestone 0 main-screen postures: portrait gets the dock, landscape the rail.
   const postures = FOLD4_POSTURES.flatMap(([name, width, height, { profile, short }]) =>
@@ -450,12 +480,15 @@ describe('Three.js unfolded dock and rail layouts', () => {
   const fold4Pwa: SafeArea = { top: 28, right: 0, bottom: 16, left: 0 }
   // Single-line headers; only a hand with more pages reserves the pager row (board.ts applySize).
   const headers = (scale: number, paged: boolean) => ({ far: 21 * scale, near: 21 * scale, hand: (paged ? 50 : 22) * scale })
-  const viewports = postures.flatMap(({ name, width, height, shell }) => (
-    [[1, NO_INSETS], [2, NO_INSETS], [1, fold4Pwa]] as const
-  ).flatMap(([scale, insets]) => [false, true].map((paged) => [
-    `${name} (${width}x${height}) at ${scale * 100}% text${insets === NO_INSETS ? '' : ' with safe areas'}${paged ? ' and a paged hand' : ''}`,
-    shell, unfoldedStage(shell, width, height, scale, insets), headers(scale, paged),
-  ] as const)))
+  const viewports = [
+    ...postures.flatMap(({ name, width, height, shell }) => (
+      [[1, NO_INSETS], [2, NO_INSETS], [1, fold4Pwa]] as const
+    ).flatMap(([scale, insets]) => [false, true].map((paged) => [
+      `${name} (${width}x${height}) at ${scale * 100}% text${insets === NO_INSETS ? '' : ' with safe areas'}${paged ? ' and a paged hand' : ''}`,
+      shell, unfoldedStage(shell, width, height, scale, insets), headers(scale, paged),
+    ] as const))),
+    ...shortRailViewports.map(([label, stage, rowHeaders]) => [label, 'rail', stage, rowHeaders] as const),
+  ]
 
   it('covers both unfolded shells', () => {
     expect(postures.map(({ shell }) => shell).sort()).toEqual(['dock', 'dock', 'rail', 'rail'])
@@ -524,10 +557,11 @@ describe('Three.js unfolded dock and rail layouts', () => {
     const layout = narrowBoardLayout(stage.width, stage.height, rowHeaders, shell)
     expect(layout.mode).toBe(shell)
     // The board spans the stage's grid track, beside the rail and above the dock;
-    // large text grows it into the stage's own scroll area instead.
+    // large text, or a short rail below the minimum board, grows it into the
+    // stage's own scroll area instead.
     expect(layout.width).toBe(stage.width)
     expect(layout.height).toBeGreaterThanOrEqual(stage.height)
-    expect(layout.height).toBeLessThanOrEqual(stage.height * NARROW_MAX_BOARD_GROWTH)
+    expect(layout.height).toBeLessThanOrEqual(Math.max(NARROW_MIN_BOARD_HEIGHT, stage.height) * NARROW_MAX_BOARD_GROWTH)
     expect(layout.cardWidth).toBeGreaterThanOrEqual(44)
     expect(layout.cardHeight).toBeGreaterThanOrEqual(44)
     for (const row of ['far', 'near', 'hand'] as const) {
@@ -556,14 +590,6 @@ describe('Three.js unfolded dock and rail layouts', () => {
         expect(rects.some((rect, index) => rects.slice(index + 1).some((other) => overlaps(rect, other)))).toBe(false)
       }
     }
-  })
-
-  it('keeps every target at least 44px on the short cover-landscape rail by scrolling the board', () => {
-    const stage = unfoldedStage('rail', 882, 232)
-    const layout = narrowBoardLayout(stage.width, stage.height, headers(1, false), 'rail')
-    expect(layout.height).toBeGreaterThan(stage.height)
-    expect(layout.cardWidth).toBeGreaterThanOrEqual(44)
-    expect(narrowHandRects(narrowHandPageSize(layout), layout).every((rect) => rect.width >= 44)).toBe(true)
   })
 
   it('keeps the cover-screen geometry for narrow and unknown shells', () => {
@@ -640,6 +666,84 @@ describe('Three.js unfolded dock and rail layouts', () => {
         })
       }
     }
+  })
+})
+
+describe('Three.js short-landscape rail', () => {
+  const SHORT = '.three-root--game[data-shell="rail"][data-shell-short="true"]'
+  const bottomOf = (layout: ThreeLayout, row: 'far' | 'near' | 'hand') =>
+    layout.height / 2 - layout.rows[row].y + layout.rows[row].height / 2
+
+  it('gives the board the full height beside a rail headed by the top bar', () => {
+    const shell = css('renderer.css')
+    expect(ruleBody(shell, SHORT)).toBe('grid-template-areas: "stage hud" "stage rail";')
+    // The rows stay the plain rail's, so the top bar keeps its fixed rem height.
+    expect(ruleBody(shell, '.three-root--game[data-shell="rail"]'))
+      .toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr);')
+    // The actions keep their full height, and the rail scrolls rather than clipping them.
+    const rail = ruleBody(shell, `${SHORT} .three-dock`)
+    expect(rail).toContain('grid-template-rows: minmax(var(--three-dock-prompt-height), 1fr) max-content auto;')
+    expect(rail).toContain('overflow-y: auto;')
+    expect(rail).toContain('overscroll-behavior: contain;')
+    expect(SHORT_RAIL_POSTURES.map(([, width, height]) => threeShellProfile({ width, height, coarse: true })))
+      .toEqual([SHORT_RAIL_SHELL, SHORT_RAIL_SHELL, SHORT_RAIL_SHELL])
+    const cover = shortRailStage(882, 232)
+    expect(cover.width).toBeCloseTo(636.68, 6)
+    expect(cover.height).toBe(220)
+    expect(shortRailStage(844, 390, SIDEWAYS_NOTCH).height).toBe(361)
+  })
+
+  it.each(shortRailViewports.filter(([, , , scale]) => scale === 1))(
+    'shows the whole hand under a card-high strip of the drop zone in one view at %s',
+    (_, stage, rowHeaders) => {
+      const layout = narrowBoardLayout(stage.width, stage.height, rowHeaders, 'rail')
+      // Only a stage below the minimum board, such as the cover screen's, scrolls.
+      expect(layout.height).toBe(Math.max(NARROW_MIN_BOARD_HEIGHT, stage.height))
+      const dropBottom = layout.height / 2 - layout.drop.y + layout.drop.height / 2
+      expect(dropBottom).toBeCloseTo(bottomOf(layout, 'near'), 6)
+      expect(layout.rows.hand.labelTop).toBeGreaterThan(dropBottom)
+      expect(bottomOf(layout, 'hand') - (dropBottom - layout.cardHeight)).toBeLessThanOrEqual(stage.height + 0.001)
+    },
+  )
+
+  it.each(shortRailViewports.filter(([, , , scale]) => scale === 2))(
+    'keeps every row and the drop zone reachable whole by scrolling at %s',
+    (_, stage, rowHeaders) => {
+      const layout = narrowBoardLayout(stage.width, stage.height, rowHeaders, 'rail')
+      expect(layout.height).toBeGreaterThan(stage.height)
+      for (const row of ['far', 'near', 'hand'] as const) {
+        expect(bottomOf(layout, row) - layout.rows[row].labelTop).toBeLessThanOrEqual(stage.height)
+      }
+      // With the whole hand in view, part of the drop zone still shows above it.
+      expect(bottomOf(layout, 'near')).toBeGreaterThan(bottomOf(layout, 'hand') - stage.height)
+    },
+  )
+
+  it('scrolls a large-text top bar and wraps the actions in the rail instead of clipping them', () => {
+    const styles = css('interface.css')
+    const hud = `${SHORT} .three-interface .three-hud[data-layout="rail"]`
+    const top = ruleBody(styles, hud)
+    expect(top).toContain('overflow-y: auto;')
+    expect(top).toContain('overscroll-behavior: contain;')
+    // The menu and Hint stay reachable while the title and status scroll.
+    const pinned = ruleBody(styles, `${hud} > [data-action="menu"]`, `${hud} > [data-action="tutorial-show"]`)
+    expect(pinned).toContain('position: sticky;')
+    expect(pinned).toContain('top: 0;')
+    expect(ruleBody(styles, `${hud} > p`)).toContain('max-height: none;')
+    // The board starts at the top of the screen, and so does the tutorial banner.
+    expect(ruleBody(styles, `${SHORT} .three-interface .three-tutorial-banner`))
+      .toBe('top: 12px; top: calc(max(4px, env(safe-area-inset-top)) + 8px);')
+    const actions = ruleBody(styles, `${SHORT} .three-dock-actions.three-interface`)
+    expect(actions).toContain('flex-direction: row;')
+    expect(actions).toContain('flex-wrap: wrap;')
+    expect(ruleBody(styles, `${SHORT} .three-dock-actions.three-interface button`)).toContain('flex: 1 1 auto;')
+    // The rail's 48px actions still apply.
+    expect(ruleBody(styles, '.three-root--game[data-shell="rail"] .three-dock-actions.three-interface button'))
+      .toContain('min-height: 48px;')
+    // The pager's 44px buttons bleed into the hand header's padding instead of growing it.
+    expect(ruleBody(css('graphics.css'),
+      '.three-root[data-shell-short="true"] .three-board-stage[data-layout="rail"] .three-board-pagination button'))
+      .toBe('margin-block: -3px;')
   })
 })
 
@@ -847,6 +951,29 @@ describe('Three.js touch drag geometry', () => {
     expect(place({ pointer: { x: 166, y: fitsAbove - 1 } }).side).toBe('left')
     expect(place({ pointer: { x: 166, y: fitsAbove + 6 }, side: 'left' }).side).toBe('left')
     expect(place({ pointer: { x: 166, y: fitsAbove + 12 }, side: 'right' }).side).toBe('above')
+  })
+
+  it('lifts the card beside the finger whenever a side fits when it prefers a side', () => {
+    // Room above, but the short rail goes sideways; ties still go left.
+    expect(place({}).side).toBe('above')
+    const beside = place({ preferSide: true })
+    expect(beside.side).toBe('left')
+    expect(beside.x + beside.width / 2).toBeLessThanOrEqual(166 - 20 + 0.001)
+    expect(beside.y).toBeCloseTo(400)
+    // The side holds while it fits; otherwise the only side that fits wins.
+    expect(place({ preferSide: true, pointer: { x: 200, y: 400 } }).side).toBe('left')
+    expect(place({ preferSide: true, pointer: { x: 200, y: 400 }, side: 'right' }).side).toBe('right')
+    expect(place({ preferSide: true, pointer: { x: 60, y: 400 }, side: 'left' }).side).toBe('right')
+    expect(place({ preferSide: true, pointer: { x: 290, y: 400 }, side: 'right' }).side).toBe('left')
+    // Above only when neither side fits, then the roomier side when nothing fits.
+    const slim: LayerRect = { left: 0, top: 0, width: 150, height: 583 }
+    expect(place({ preferSide: true, pointer: { x: 75, y: 400 }, stage: slim, side: 'left' }).side).toBe('above')
+    expect(place({ preferSide: true, pointer: { x: 70, y: 90 }, stage: slim }).side).toBe('right')
+    // Without it, nothing changes; a mouse stays centred.
+    for (const side of ['above', 'left', 'right'] as const) {
+      expect(place({ preferSide: false, side })).toEqual(place({ side }))
+    }
+    expect(dragProxyPlacement({ pointer: { x: 166, y: 400 }, card, stage, touch: false, preferSide: true }).side).toBe('center')
   })
 
   it('places relative to the visible, scrolled part of the stage', () => {

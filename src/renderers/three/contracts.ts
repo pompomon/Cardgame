@@ -34,6 +34,12 @@ export interface ThreeBoardPresentation {
    * typed-slot touch layout, and its primary action lives in the action dock.
    */
   readonly shell: ThreeShellProfile
+  /**
+   * A short `rail`: a landscape screen too low for stacked rows, such as the
+   * cover screen or a phone held sideways. The board then takes the full
+   * height beside the rail. Ignored by every other shell.
+   */
+  readonly short?: boolean
   readonly selection: ThreeBoardSelection
 }
 

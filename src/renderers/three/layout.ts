@@ -485,6 +485,11 @@ export interface DragProxyInput {
   readonly touch: boolean
   /** The previous placement's side, so the card does not flip while it still fits. */
   readonly side?: DragProxySide
+  /**
+   * Lift the card beside the finger whenever a side fits, as on the short
+   * rail, which has no room above the finger.
+   */
+  readonly preferSide?: boolean
 }
 
 export interface DragProxyPlacement {
@@ -518,9 +523,11 @@ function fitCenter(center: number, size: number, min: number, max: number): numb
  * Where the dragged card is drawn. A mouse keeps the card centred on the
  * pointer, as before. Touch and pen lift a smaller card above the finger so it
  * stays visible; without room above, the card moves beside the finger and
- * keeps that side while it fits. Touch placements stay inside the visible stage.
+ * keeps that side while it fits. `preferSide` reverses that order, so the card
+ * goes above only when neither side fits. Touch placements stay inside the
+ * visible stage.
  */
-export function dragProxyPlacement({ pointer, card, stage, touch, side }: DragProxyInput): DragProxyPlacement {
+export function dragProxyPlacement({ pointer, card, stage, touch, side, preferSide = false }: DragProxyInput): DragProxyPlacement {
   const scale = touch ? TOUCH_DRAG_SCALE : MOUSE_DRAG_SCALE
   const width = Math.max(1, (Number.isFinite(card.width) ? card.width : 1) * scale)
   const height = Math.max(1, (Number.isFinite(card.height) ? card.height : 1) * scale)
@@ -532,21 +539,20 @@ export function dragProxyPlacement({ pointer, card, stage, touch, side }: DragPr
   const top = stage.top + DRAG_STAGE_MARGIN
   const bottom = stage.top + stage.height - DRAG_STAGE_MARGIN
   const lift = clamp(height / 2 + TOUCH_LIFT_CLEARANCE, TOUCH_LIFT_MIN, TOUCH_LIFT_MAX)
+  const offset = width / 2 + TOUCH_LIFT_CLEARANCE
   const sideways = side === 'left' || side === 'right'
+  const fitsAbove = py - lift - height / 2 >= top + (sideways ? DRAG_SIDE_HYSTERESIS : 0)
+  const fitsLeft = px - offset - width / 2 >= left
+  const fitsRight = px + offset + width / 2 <= right
   let next: DragProxySide = 'above'
-  let x = px
-  let y = py - lift
-  if (y - height / 2 < top + (sideways ? DRAG_SIDE_HYSTERESIS : 0)) {
-    const offset = width / 2 + TOUCH_LIFT_CLEARANCE
-    const fitsLeft = px - offset - width / 2 >= left
-    const fitsRight = px + offset + width / 2 <= right
+  if (!fitsAbove || preferSide && (fitsLeft || fitsRight)) {
     if ((side === 'left' && fitsLeft) || (side === 'right' && fitsRight)) next = side
     else if (fitsLeft !== fitsRight) next = fitsLeft ? 'left' : 'right'
     // The roomier side; ties go left, away from a right thumb.
     else next = px - left >= right - px ? 'left' : 'right'
-    x = px + (next === 'left' ? -offset : offset)
-    y = py
   }
+  const x = next === 'above' ? px : px + (next === 'left' ? -offset : offset)
+  const y = next === 'above' ? py - lift : py
   return {
     x: fitCenter(x, width, left, right), y: fitCenter(y, height, top, bottom),
     width, height, scale, side: next,

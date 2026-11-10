@@ -61,7 +61,10 @@ query parameters and the hash, then discards the old stored renderer preference.
   the current decision. Screens up to 480 px wide, such as a folded Galaxy
   Z Fold4's cover screen, put it under the board. Larger touch screens, such as
   the unfolded Fold4, put it under the board in portrait and in a right-hand
-  rail in landscape. Tap a hand card to select it, then choose **Summon**,
+  rail in landscape. On a short landscape screen, such as the cover screen or
+  a phone held sideways, the rail also holds the game title and status, so the
+  board uses the full height, and a dragged card lifts beside your finger.
+  Tap a hand card to select it, then choose **Summon**,
   **Details**, or **Clear**. With touch or pen, tapping a target or an
   Interception discard selects it until you confirm it in the dock; a mouse
   click acts at once. Folding, unfolding, or rotating keeps the selection and
