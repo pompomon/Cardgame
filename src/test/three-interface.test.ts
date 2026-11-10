@@ -2378,6 +2378,102 @@ describe('Three narrow profile', () => {
     h.ui.dispose()
   })
 
+  it('mirrors a live drag in the dock prompt without touching its actions, then restores it', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    const name = displayCardName('Mountain')
+    const idle = 'Drag a highlighted creature onto your board, or select a card for options.'
+    const rejected = `Summon ${name}: release anywhere on your board. Drag back to your hand to cancel.`
+    const accepted = `Release to summon ${name}. Drag back to your hand to cancel.`
+    const changes = h.onChange.mock.calls.length
+    expect(promptText(h)).toBe(idle)
+    h.ui.setDragFeedback({ cardId: 'source', accepted: false })
+    expect(promptText(h)).toBe(rejected)
+    expect(h.dockPrompt!.getAttribute('aria-live')).toBe('polite')
+    h.ui.setDragFeedback({ cardId: 'source', accepted: true })
+    expect(promptText(h)).toBe(accepted)
+    expect(dockActionNames(h)).toEqual([])
+    h.ui.setDragFeedback(null)
+    expect(promptText(h)).toBe(idle)
+    // Only the interface re-renders: the board must not re-present mid-gesture.
+    expect(h.onChange).toHaveBeenCalledTimes(changes)
+    // A rejected drop keeps a still-legal selection and its actions.
+    h.ui.activate(mountainHand, 'touch')
+    const selected = promptText(h)
+    h.ui.setDragFeedback({ cardId: 'source', accepted: true })
+    expect(promptText(h)).toBe(accepted)
+    expect(dockActionNames(h)).toEqual(selectedCardActions)
+    h.ui.setDragFeedback(null)
+    expect(promptText(h)).toBe(selected)
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+    expect(dockActionNames(h)).toEqual(selectedCardActions)
+    h.ui.dispose()
+  })
+
+  it('never lets stale or unsummonable drag feedback describe another decision', () => {
+    const view = makeView()
+    const h = setup(view, true, { enabled: true })
+    const idle = promptText(h)
+    h.ui.setDragFeedback({ cardId: 'missing', accepted: true })
+    expect(promptText(h)).toBe(idle)
+    h.ui.setDragFeedback({ cardId: 'source', accepted: false })
+    // A newer decision arriving mid-drag replaces the drag prompt.
+    h.update(responseView())
+    expect(promptText(h)).toContain('Select a pink-framed card to discard')
+    h.ui.setDragFeedback(null)
+    expect(promptText(h)).toContain('Select a pink-framed card to discard')
+    const blocked = makeView()
+    blocked.game!.legal.playLandByCard = { source: [] }
+    h.update(blocked)
+    h.ui.setDragFeedback({ cardId: 'source', accepted: true })
+    expect(promptText(h)).toBe('No creature can be summoned now. Select a card for details, or choose End Turn.')
+    h.update(makeView())
+    h.click('[data-action="menu"]')
+    expect(promptText(h)).not.toContain('Release to summon')
+    h.ui.reset()
+    expect(promptText(h)).toBe(idle)
+    h.ui.dispose()
+    expect(() => h.ui.setDragFeedback({ cardId: 'source', accepted: true })).not.toThrow()
+    expect(h.dock!.children).toHaveLength(0)
+  })
+
+  it('presents the decision a drop notifies synchronously, and keeps the dropped card after a rejection', () => {
+    const view = makeView()
+    view.game!.legal.playLandByCard.source = [view.game!.legal.playLandByCard.source[0]]
+    const h = setup(view, true, { enabled: true })
+    // ThreeInteraction ends the drag, which clears its feedback, before it submits the drop.
+    const drop = (): void => {
+      h.ui.setDragFeedback({ cardId: 'source', accepted: true })
+      h.ui.setDragFeedback(null)
+      h.ui.playCard('source')
+    }
+    h.controller.submitAction.mockImplementationOnce(() => h.update({ ...view, status: 'Send failed. Try again.' }))
+    drop()
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+    expect(dockActionNames(h)).toEqual(selectedCardActions)
+    expect(promptText(h)).not.toContain('Release to summon')
+    h.controller.submitAction.mockImplementationOnce(() => h.update(responseView()))
+    drop()
+    expect(h.controller.submitAction).toHaveBeenCalledTimes(2)
+    expect(h.controller.submitAction.mock.calls[1][0]).toEqual(h.controller.submitAction.mock.calls[0][0])
+    expect(promptText(h)).toContain('Select a pink-framed card to discard')
+    h.ui.dispose()
+  })
+
+  it('leaves the desktop interface to the board instruction during a drag', () => {
+    const h = setup(makeView(), true)
+    const content = h.content.innerHTML
+    const hud = h.hud!.innerHTML
+    h.ui.setDragFeedback({ cardId: 'source', accepted: true })
+    expect(h.content.innerHTML).toBe(content)
+    expect(h.hud!.innerHTML).toBe(hud)
+    expect(renderThreeDock(makeView(), { ...defaultUi, narrow: true, dragFeedback: { cardId: 'source', accepted: true } }).prompt)
+      .toBe(`Release to summon ${displayCardName('Mountain')}. Drag back to your hand to cancel.`)
+    expect(renderThreeDock(makeView(), {
+      ...defaultUi, narrow: true, menuOpen: true, dragFeedback: { cardId: 'source', accepted: true },
+    }).prompt).not.toContain('Release to summon')
+    h.ui.dispose()
+  })
+
   it('moves adventure progress into the menu and keeps ids unique across hosts', () => {
     const view = makeView()
     view.mode = 'adventure-hvai'

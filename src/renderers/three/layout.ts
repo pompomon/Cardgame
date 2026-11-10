@@ -1,3 +1,5 @@
+import { clamp } from '../shared/math'
+
 export type BoardRow = 'far' | 'near' | 'hand'
 
 export interface Point {
@@ -402,4 +404,144 @@ export function clientToBoard(
 export function pointInRect(point: Point, rect: BoardRect): boolean {
   return Math.abs(point.x - rect.x) <= rect.width / 2
     && Math.abs(point.y - rect.y) <= rect.height / 2
+}
+
+/** Touch and pen drops reach this many CSS pixels past the drop zone's top and sides. */
+export const TOUCH_DROP_SLOP_PX = 12
+
+/** Board y of the top of the presented hand, including its header. */
+export function handTop(layout: ThreeLayout): number {
+  const row = layout.rows.hand
+  return Math.max(layout.height / 2 - row.labelTop, row.y + row.height / 2)
+}
+
+/**
+ * The one drop predicate behind both the drag highlight and the release.
+ * `slop` (board units) widens only the top and side edges: the edge facing the
+ * hand never grows, and no point over the hand is ever accepted.
+ */
+export function dropAccepts(point: Point, layout: ThreeLayout, slop = 0): boolean {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false
+  const margin = Number.isFinite(slop) ? Math.max(0, slop) : 0
+  const { drop } = layout
+  return point.y >= drop.y - drop.height / 2
+    && point.y <= drop.y + drop.height / 2 + margin
+    && point.y > handTop(layout)
+    && Math.abs(point.x - drop.x) <= drop.width / 2 + margin
+}
+
+/** `center` follows a mouse; touch cards sit above the finger or beside it. */
+export type DragProxySide = 'center' | 'above' | 'left' | 'right'
+
+/** A rectangle in drag-layer pixels: top-left origin, y grows downward. */
+export interface LayerRect {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+}
+
+export interface DragProxyInput {
+  /** Pointer position in layer pixels. */
+  readonly pointer: Point
+  /** Unscaled card size in layer pixels. */
+  readonly card: { readonly width: number; readonly height: number }
+  /** The visible part of the stage in layer pixels. */
+  readonly stage: LayerRect
+  readonly touch: boolean
+  /** The previous placement's side, so the card does not flip while it still fits. */
+  readonly side?: DragProxySide
+}
+
+export interface DragProxyPlacement {
+  /** Card centre in layer pixels. */
+  readonly x: number
+  readonly y: number
+  /** Scaled card size in layer pixels. */
+  readonly width: number
+  readonly height: number
+  readonly scale: number
+  readonly side: DragProxySide
+}
+
+export const MOUSE_DRAG_SCALE = 1.08
+export const TOUCH_DRAG_SCALE = 0.9
+const TOUCH_LIFT_MIN = 44
+const TOUCH_LIFT_MAX = 120
+/** Space kept between the finger and the lifted card's nearest edge. */
+const TOUCH_LIFT_CLEARANCE = 20
+const DRAG_STAGE_MARGIN = 4
+/** Extra room needed above before a sideways card returns above the finger. */
+const DRAG_SIDE_HYSTERESIS = 12
+
+/** Centres `size` within [min, max], or between them when it cannot fit. */
+function fitCenter(center: number, size: number, min: number, max: number): number {
+  if (max - min <= size) return (min + max) / 2
+  return clamp(center, min + size / 2, max - size / 2)
+}
+
+/**
+ * Where the dragged card is drawn. A mouse keeps the card centred on the
+ * pointer, as before. Touch and pen lift a smaller card above the finger so it
+ * stays visible; without room above, the card moves beside the finger and
+ * keeps that side while it fits. Touch placements stay inside the visible stage.
+ */
+export function dragProxyPlacement({ pointer, card, stage, touch, side }: DragProxyInput): DragProxyPlacement {
+  const scale = touch ? TOUCH_DRAG_SCALE : MOUSE_DRAG_SCALE
+  const width = Math.max(1, (Number.isFinite(card.width) ? card.width : 1) * scale)
+  const height = Math.max(1, (Number.isFinite(card.height) ? card.height : 1) * scale)
+  const px = Number.isFinite(pointer.x) ? pointer.x : stage.left + stage.width / 2
+  const py = Number.isFinite(pointer.y) ? pointer.y : stage.top + stage.height / 2
+  if (!touch) return { x: px, y: py, width, height, scale, side: 'center' }
+  const left = stage.left + DRAG_STAGE_MARGIN
+  const right = stage.left + stage.width - DRAG_STAGE_MARGIN
+  const top = stage.top + DRAG_STAGE_MARGIN
+  const bottom = stage.top + stage.height - DRAG_STAGE_MARGIN
+  const lift = clamp(height / 2 + TOUCH_LIFT_CLEARANCE, TOUCH_LIFT_MIN, TOUCH_LIFT_MAX)
+  const sideways = side === 'left' || side === 'right'
+  let next: DragProxySide = 'above'
+  let x = px
+  let y = py - lift
+  if (y - height / 2 < top + (sideways ? DRAG_SIDE_HYSTERESIS : 0)) {
+    const offset = width / 2 + TOUCH_LIFT_CLEARANCE
+    const fitsLeft = px - offset - width / 2 >= left
+    const fitsRight = px + offset + width / 2 <= right
+    if ((side === 'left' && fitsLeft) || (side === 'right' && fitsRight)) next = side
+    else if (fitsLeft !== fitsRight) next = fitsLeft ? 'left' : 'right'
+    // The roomier side; ties go left, away from a right thumb.
+    else next = px - left >= right - px ? 'left' : 'right'
+    x = px + (next === 'left' ? -offset : offset)
+    y = py
+  }
+  return {
+    x: fitCenter(x, width, left, right), y: fitCenter(y, height, top, bottom),
+    width, height, scale, side: next,
+  }
+}
+
+export interface LandingSlotInput {
+  /** The dragged card's creature-type slot; only the narrow layout uses it. */
+  readonly typeSlot: number
+  /** Cards already in that narrow type slot. */
+  readonly slotCount: number
+  /** Cards already on the near battlefield; other layouts append after them. */
+  readonly nearCount: number
+}
+
+export interface LandingSlotRect extends BoardRect {
+  /** Narrow only: the card joins an existing stack ("+1") instead of an empty slot. */
+  readonly occupied: boolean
+}
+
+/** Where a summoned card lands on the near battlefield, in board units. */
+export function landingSlotRect(layout: ThreeLayout, { typeSlot, slotCount, nearCount }: LandingSlotInput): LandingSlotRect {
+  const narrow = layout.mode === 'narrow'
+  const count = Number.isFinite(nearCount) ? Math.max(0, Math.floor(nearCount)) : 0
+  return {
+    x: narrow ? typeSlotX(typeSlot, layout) : cardSlotX(count, count + 1, layout),
+    y: layout.rows.near.y,
+    width: layout.cardWidth,
+    height: layout.cardHeight,
+    occupied: narrow && Number.isFinite(slotCount) && slotCount > 0,
+  }
 }

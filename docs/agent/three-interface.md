@@ -105,6 +105,16 @@ several regions would speak the same text twice.
   before the new text, so a replay's first prompt stays silent and the
   first prompt after it, such as the winner, is spoken. The prompt keeps
   its role, id and text, and still describes the docked primary button.
+- The dock prompt is also the narrow drag announcer. `ThreeBoard` reports
+  `ThreeDragFeedback` (`cardId`, `accepted`) or `null`, and
+  `setDragFeedback()` re-renders the interface without calling `onChange`, so
+  the board never re-presents mid-gesture. `renderThreeDock` replaces only the
+  prompt, with copy built from catalog names, and keeps the actions and
+  selection. Stale or unsummonable feedback, an open menu, Cards, or a
+  preview leave the prompt alone. In the narrow profile the board
+  instruction sets `aria-live="off"` before any drag text changes, so each
+  drag message is spoken once. Outside it, the board instruction stays the
+  live region.
 - Keep live regions persistent. Create them once, like this region, the
   board captions and the dock prompt, and never put a live role in markup
   that `render()` rebuilds. Send status-line text through `view.status`.

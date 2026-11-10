@@ -476,7 +476,8 @@ describe('ThreeInteraction', () => {
     expect(h.board.moveDrag).toHaveBeenLastCalledWith(420, 220, true)
     h.drop({ pointerType })
     expect(h.board.hitTest).toHaveBeenCalledExactlyOnceWith(180, 620)
-    expect(h.board.containsDrop).toHaveBeenCalledExactlyOnceWith(420, 220)
+    // Touch and pen releases use the same slop as the drag highlight.
+    expect(h.board.containsDrop).toHaveBeenCalledExactlyOnceWith(420, 220, true)
     expect(h.playCard).toHaveBeenCalledExactlyOnceWith(handHit.cardId)
     expect(h.canvas.getBoundingClientRect).not.toHaveBeenCalled()
   })
@@ -486,9 +487,58 @@ describe('ThreeInteraction', () => {
     h.start({ pointerType: 'touch' })
     h.release({ pointerType: 'touch', clientX: 420, clientY: 500 })
     expect(h.board.moveDrag).toHaveBeenLastCalledWith(420, 500, true)
-    expect(h.board.containsDrop).toHaveBeenCalledExactlyOnceWith(420, 500)
+    expect(h.board.containsDrop).toHaveBeenCalledExactlyOnceWith(420, 500, true)
     expect(h.playCard).not.toHaveBeenCalled()
     expect(h.board.endDrag).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
+  it.each([
+    ['mouse', false], ['touch', true], ['pen', true],
+  ] as const)('asks the board whether a %s release drops, with touch slop only for touch and pen', (pointerType, touch) => {
+    const h = createHarness()
+    h.start({ pointerType })
+    h.move({ pointerType, clientX: 420, clientY: 220 })
+    h.drop({ pointerType })
+    expect(h.board.moveDrag).toHaveBeenLastCalledWith(420, 220, touch)
+    expect(h.board.containsDrop).toHaveBeenCalledExactlyOnceWith(420, 220, touch)
+    expect(h.playCard).toHaveBeenCalledExactlyOnceWith(handHit.cardId)
+  })
+
+  it('submits a touch release in the board slop band exactly once', () => {
+    const h = createHarness()
+    // The real board widens touch drops by a slop band above the drop zone.
+    h.board.containsDrop.mockImplementation((x: number, y: number, touch?: boolean) =>
+      x >= 350 && x <= 750 && y >= (touch ? 108 : 120) && y <= 480)
+    h.start({ pointerType: 'touch' })
+    h.move({ pointerType: 'touch', clientX: 420, clientY: 112 })
+    h.release({ pointerType: 'touch', clientX: 420, clientY: 112 })
+    h.release({ pointerType: 'touch', clientX: 420, clientY: 112 })
+    expect(h.board.containsDrop).toHaveBeenCalledExactlyOnceWith(420, 112, true)
+    expect(h.playCard).toHaveBeenCalledExactlyOnceWith(handHit.cardId)
+    expect(h.board.endDrag).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it.each([
+    ['over the hand', (h: Harness) => { h.release({ pointerType: 'touch', clientX: 180, clientY: 620 }) }, true],
+    // Beside the canvas, still inside the window, so it is a release rather than a cancellation.
+    ['outside the stage', (h: Harness) => { h.release({ pointerType: 'touch', clientX: 960, clientY: 300 }) }, true],
+    ['after pointercancel', (h: Harness) => {
+      h.canvas.emit('pointercancel', { pointerType: 'touch' })
+      h.drop({ pointerType: 'touch' })
+    }, false],
+    ['after a relayout', (h: Harness) => {
+      // A changed layout cancels the gesture through the board's onResize.
+      h.interaction.cancel()
+      h.drop({ pointerType: 'touch' })
+    }, false],
+  ] as const)('never submits a touch drag released %s', (_name, finish, animateReturn) => {
+    const h = createHarness()
+    h.start({ pointerType: 'touch' })
+    h.move({ pointerType: 'touch', clientX: 420, clientY: 220 })
+    finish(h)
+    expect(h.playCard).not.toHaveBeenCalled()
+    expect(h.activate).not.toHaveBeenCalled()
+    expect(h.board.endDrag).toHaveBeenCalledExactlyOnceWith(animateReturn)
   })
 
   it.each(['mouse', 'touch', 'pen'])('uses final %s release coordinates when moves were coalesced', (pointerType) => {

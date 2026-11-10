@@ -79,6 +79,14 @@ The approved decisions are:
   - [ ] [Device measurements](#device-measurements) (pending maintainer:
     needs a physical Galaxy Z Fold4)
 - [ ] Milestone 1 — Touch drag feedback above chrome
+  - [x] `ThreeDragLayer`, `dropAccepts`, `dragProxyPlacement`, and
+    `landingSlotRect`, with focused tests
+  - [x] Landing label, instruction pill, row dimming, and the narrow dock
+    prompt as the drag announcer
+  - [x] Agent docs: drag layer ownership, instruction placement, and the dock
+    announcer
+  - [ ] Fold4 device check of Figure 3, callouts 1–5 (pending maintainer:
+    needs a physical Galaxy Z Fold4)
 - [ ] Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
 - [ ] Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
 - [ ] Milestone 4 — Short landscape (cover screen and phones held sideways)
@@ -517,6 +525,27 @@ screen). The numbers match the callouts in the figure:*
   instruction goes during a drag and who owns the drag layer.
 - [`three-interface.md`](../agent/three-interface.md#status-announcements)
   records the dock prompt as the drag announcer.
+
+**As built**
+
+The implementation differs from the scope above in these ways:
+
+- The drag layer is mounted inside `.three-board-stage`, not after it. It
+  scrolls with the board, so its pixels are board units and need no scroll
+  offset.
+- The landing slot is its own mesh, drawn above cards, rather than a reused
+  type-slot ghost. That way it also marks the append slot in `stacked` and
+  `compact`.
+- Mouse drags use the layer too, at the unchanged mouse placement, so the
+  lifted card stays above the headers for every pointer.
+- `card-registry.ts` and `assets.ts` are unchanged. The board takes the extra
+  lease through `ThreeAssets.acquireCard`.
+- Two existing issues are fixed along the way. Reduced motion no longer ends a
+  live drag; only the return animation is skipped. And the end of a drag
+  restores the current idle instruction, such as a response prompt, instead
+  of the summon text.
+- Only `narrow` has a dock in this milestone. Milestone 3 extends the quiet
+  board instruction to every shell with a dock.
 
 ### Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
 

@@ -38,12 +38,20 @@ export const DEFAULT_BOARD_PRESENTATION: ThreeBoardPresentation = Object.freeze(
 /** The action dock's live prompt, which also describes the docked primary button. */
 export const THREE_DOCK_PROMPT_ID = 'three-dock-prompt'
 
+/** A live drag, reported by the board when it starts and whenever its accepted state changes. */
+export interface ThreeDragFeedback {
+  readonly cardId: string
+  /** Releasing now would summon the card. */
+  readonly accepted: boolean
+}
+
 export interface ThreeBoardApi {
   readonly canvas: HTMLCanvasElement
   render(view: AppViewModel, presentedActor: number, targetIds: ReadonlySet<string>,
     response: CounterHandOptions | null, primaryAction: ThreePrimaryAction | null): void
   hitTest(clientX: number, clientY: number): BoardHit | null
-  containsDrop(clientX: number, clientY: number): boolean
+  /** `touch` covers touch and pen, which get drop slop and a lifted card. */
+  containsDrop(clientX: number, clientY: number, touch?: boolean): boolean
   beginDrag(hit: BoardHit): void
   moveDrag(clientX: number, clientY: number, touch: boolean): void
   endDrag(animateReturn: boolean): void

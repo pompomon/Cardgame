@@ -160,7 +160,7 @@ describe('retained Three.js card registry', () => {
         quality: { shadows: false }, targetIds: new Set(), effectDescriptors: new Map(), drag: null, canDrop: false,
         instruction: { hidden: true }, instructionText: { textContent: '' }, instructionSizes: [],
         pendingCaption: { hidden: true, textContent: '' },
-        dropMaterial: { opacity: 0 },
+        dropMaterial: { opacity: 0, color: { set: vi.fn() } },
         primaryButton: { ownerDocument: { activeElement: null }, hidden: true, disabled: true, textContent: '', dataset: {} },
         primaryAction: null,
         handPage: 0, handPagination: { hidden: true }, handPageLabel: { textContent: '' },
