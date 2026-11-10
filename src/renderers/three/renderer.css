@@ -83,11 +83,13 @@
  * board.
  *
  * narrow (cover screen): a fixed top bar, the board, and a three-line dock.
+ * As in the unfolded dock below, the action row grows with End Turn, so large
+ * text never clips the prompt.
  */
 .three-root--game.three-root--narrow {
   --three-topbar-height: 3.5rem;
   --three-dock-prompt-height: calc(3 * 1.25 * 0.8125rem);
-  --three-dock-height: calc(var(--three-dock-prompt-height) + 62px);
+  --three-dock-height: calc(var(--three-dock-prompt-height) + max(44px, 1.125rem + 16px) + 18px);
   padding: 4px;
   padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right))
     max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));

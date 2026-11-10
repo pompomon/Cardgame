@@ -64,6 +64,8 @@ query parameters and the hash, then discards the old stored renderer preference.
   rail in landscape. On a short landscape screen, such as the cover screen or
   a phone held sideways, the rail also holds the game title and status, so the
   board uses the full height, and a dragged card lifts beside your finger.
+  With very large text on the cover screen held sideways, scroll the rail to
+  reach **End Turn**.
   Tap a hand card to select it, then choose **Summon**,
   **Details**, or **Clear**. With touch or pen, tapping a target or an
   Interception discard selects it until you confirm it in the dock; a mouse

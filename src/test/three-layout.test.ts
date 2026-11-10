@@ -209,15 +209,22 @@ interface SafeArea { top: number; right: number; bottom: number; left: number }
 const NO_INSETS: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 }
 
 /**
+ * A touch dock's height in renderer.css: its prompt lines, an action row as
+ * tall as End Turn (at least 44px), and 18px of padding, border, and row gap.
+ */
+const dockHeight = (promptLines: number, rem: number) =>
+  promptLines * 1.25 * 0.8125 * rem + Math.max(44, 1.125 * rem + 16) + 18
+
+/**
  * The board's stage size inside renderer.css's narrow shell: a 3.5rem top bar
- * and rem-sized dock, 4px gaps, safe-area-aware 4px padding, and the 1px
+ * and a three-line dock, 4px gaps, safe-area-aware 4px padding, and the 1px
  * borders of `.three-stage` and `.three-board-stage`.
  */
 function narrowStage(viewportWidth: number, viewportHeight: number, textScale = 1, insets: SafeArea = NO_INSETS) {
   const rem = 16 * textScale
   const pad = (inset: number) => Math.max(4, inset)
   const topBar = 3.5 * rem
-  const dock = 3 * 1.25 * 0.8125 * rem + 62
+  const dock = dockHeight(3, rem)
   const borders = 4
   return {
     width: viewportWidth - pad(insets.left) - pad(insets.right) - borders,
@@ -247,7 +254,7 @@ describe('Three.js narrow single-column layout', () => {
     const root = shell.match(/\.three-root--game\.three-root--narrow \{([^}]*)\}/)?.[1] ?? ''
     expect(root).toContain('--three-topbar-height: 3.5rem;')
     expect(root).toContain('--three-dock-prompt-height: calc(3 * 1.25 * 0.8125rem);')
-    expect(root).toContain('--three-dock-height: calc(var(--three-dock-prompt-height) + 62px);')
+    expect(root).toContain('--three-dock-height: calc(var(--three-dock-prompt-height) + max(44px, 1.125rem + 16px) + 18px);')
     expect(root).toContain('padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));')
     expect(root).toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr) var(--three-dock-height);')
     expect(root).toContain('gap: 4px;')
@@ -255,7 +262,8 @@ describe('Three.js narrow single-column layout', () => {
     expect(css('graphics.css')).toMatch(/\.three-board-stage \{[^}]*border: 1px /)
     // A 344x770 browser tab leaves the board well under the viewport height.
     expect(narrowStage(344, 770)).toEqual({ width: 332, height: 583.25 })
-    expect(narrowStage(344, 770, 2).height).toBe(478.5)
+    // At 200% text, End Turn's 52px row grows the dock by 8px.
+    expect(narrowStage(344, 770, 2).height).toBe(470.5)
   })
 
   it('classifies the narrow profile at the shared 480px breakpoint', () => {
@@ -429,7 +437,7 @@ function unfoldedStage(
   const width = viewportWidth - pad(insets.left) - pad(insets.right) - borders
   const height = viewportHeight - pad(insets.top) - pad(insets.bottom) - 3.5 * rem - borders
   return shell === 'dock'
-    ? { width, height: height - 2 * gap - (2 * 1.25 * 0.8125 * rem + Math.max(44, 1.125 * rem + 16) + 18) }
+    ? { width, height: height - 2 * gap - dockHeight(2, rem) }
     : { width: width - gap - railWidth(viewportWidth), height: height - gap }
 }
 

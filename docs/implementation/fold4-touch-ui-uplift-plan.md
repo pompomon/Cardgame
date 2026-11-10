@@ -124,6 +124,20 @@ The approved decisions are:
   - [ ] Fold4 device check of Figure 7 (pending maintainer: needs a physical
     Galaxy Z Fold4)
 - [ ] Milestone 5 — Documentation, hardening, and device release gate
+  - [x] Drag geometry measured once per drag: moves, edge auto-scroll steps,
+    and the release read no layout, with read-counting tests
+  - [x] The `narrow` dock's action row grows with End Turn, so its
+    three-line prompt stays whole at 200% text
+  - [x] Final pass over the README controls and agent docs, and the
+    [Fold4 posture check](../agent/testing.md#fold4-posture-check) in
+    `testing.md`
+  - [x] Posture sweep in Chromium touch emulation at 100% and 200% text and
+    with reduced motion
+  - [ ] Remote drag profiling in each shell and quality tier, TalkBack,
+    maximum font and display size, and Remove animations (pending
+    maintainer: needs a physical Galaxy Z Fold4)
+  - [ ] [Fold4 device checklist](#fold4-device-checklist) (pending
+    maintainer: needs a physical Galaxy Z Fold4)
 
 Each milestone is a separately reviewable change. It includes its own focused
 tests and agent-doc updates, and it leaves the repository passing the required
@@ -844,7 +858,9 @@ The implementation differs from the scope above in these ways:
 - At 200% text, End Turn grows to 52 px. The `dock` action row grows with
   it, so the two-line prompt stays whole. The `narrow` dock keeps the fixed
   62 px allowance it had before this plan, so 8 px of its three-line prompt
-  scrolls at 200% text. Milestone 5 revisits it.
+  scrolls at 200% text.
+  [Milestone 5](#milestone-5--documentation-hardening-and-device-release-gate)
+  gives it the same growing action row.
 - Entering `desktop` keeps a pending summon, as before this milestone. Its
   target picker reopens on `desktop` with no target chosen.
 - Without a selection, a switch between touch shells keeps the browsed hand
@@ -922,8 +938,9 @@ The implementation differs from the scope above in these ways:
   outgrows the rail, the dock below the top bar scrolls as a whole, End Turn
   included, instead of clipping them. At 200% text on the cover screen, the
   top bar takes 112 of the column's 224 px, so End Turn starts below the
-  dock's fold. With a card selected, the dock scrolls 137 px. Milestone 5
-  revisits it.
+  dock's fold. With a card selected, the dock scrolls 137 px.
+  [Milestone 5](#milestone-5--documentation-hardening-and-device-release-gate)
+  keeps this arrangement and explains why.
 - The near-lane anchor also keeps the whole hand in view, so a drag starts
   and lands without scrolling. When the near lane and the hand cannot both
   fit, the near header leaves the view first, then the top of the near lane.
@@ -977,6 +994,106 @@ The implementation differs from the scope above in these ways:
 
 - Every acceptance criterion below is met, or explicitly blocked with
   maintainer follow-up. No required item is silently waived.
+
+**As built**
+
+The implementation differs from the scope above in these ways:
+
+- A drag now measures its geometry once instead of on every pointer event.
+  `ThreeBoard` caches the canvas box, the visible stage, and the scroll range
+  when it first needs them, and tracks the stage's `scrollTop` itself. Moves,
+  edge auto-scroll steps, and the release read the cache. Each stage scroll
+  event reads `scrollTop` once. A page or ancestor scroll, a relayout, or a
+  new presentation measures again. The release decides from the geometry
+  behind the highlight, so the two cannot disagree.
+  [Drag geometry](../agent/three-renderer.md#drag-geometry) has the details.
+- Remote profiling needs the device, so it stays pending maintainer
+  verification. Instead, a review of the drag path and a count of layout
+  reads in Chromium touch emulation confirm that the finished stack adds no
+  per-frame measurement. Before this milestone, every edge auto-scroll frame
+  measured the board again. The count covers one touch drag that edge
+  auto-scrolls at 882×232 and 100% text and summons, in each build. It sums
+  box and scroll reads such as `getBoundingClientRect`, `clientHeight`, and
+  `scrollTop`:
+
+  | Phase | Before (`79d2daa`) | After |
+  | --- | --- | --- |
+  | Lift and 10 moves to the top band | 300 | 19 |
+  | Held auto-scroll: 10 scroll events over about 23 frames | 347 | 10, all `scrollTop` |
+  | 6 moves to the drop zone | 78 | 0 |
+  | Release, ending the drag and laying out | 62 | 43 |
+
+  Both builds also read `innerWidth` and `innerHeight` once per pointer
+  event in `ThreeInteraction`. That check predates this plan. The board's
+  frame loop and the drag layer read no layout.
+- The `narrow` dock's action row now grows with End Turn, as the `dock`
+  shell's has since Milestone 3. At 200% text on the cover screen, the stage
+  gives up 8 px (472.5 instead of 480.5 px at 344×770), and the three-line
+  idle prompt stays whole. Nothing changes at 100% text. A selected card's
+  rules, a drag instruction, or "No creature can be summoned now" can still
+  take four or five lines at 200% text. Those scroll inside the prompt,
+  because the dock keeps a fixed height during play.
+- The short rail keeps its Milestone 4 arrangement at 200% text. The top bar
+  takes 112 of the column's 224 px, which leaves the dock 108 px after the
+  gap. A two-line prompt (65 px), End Turn (52 px), and the dock's gaps,
+  padding, and border need 143 px, so something has to scroll. Scrolling the
+  dock as a whole keeps End Turn at full size. A swipe reaches it, and Tab
+  scrolls it into view. In the posture sweep, the fifth Tab with a card
+  selected focused End Turn with its focus ring, the dock scrolled 131 px,
+  and the card stayed selected. The README says to scroll the rail there.
+- The [Fold4 posture check](../agent/testing.md#fold4-posture-check) ran in
+  Chromium touch emulation against the production preview at `/Cardgame/`,
+  at 100% and 200% root font size. This is emulation evidence, not device
+  coverage.
+  - All five postures had the expected shell, no horizontal overflow, no
+    overlap of the board, top bar, and dock, controls of at least 44×44 px,
+    and one-line board headers. The board and dock boxes kept their sizes
+    through each drag, peek, and selection.
+  - All 10 tap-selects with Summon and all 10 drag summons summoned one
+    card, and all 10 drags back to the hand summoned nothing. Each of the 20
+    releases did what the highlight showed before it.
+  - At 882×232, holding a drag in the top band scrolled the board 132 px to
+    the drop zone, with the pill pinned to the visible top.
+  - Peeks opened above the finger in four postures. On the cover screen held
+    sideways, the hand card's peek did not fit at either text size, so each
+    held press stayed a tap, as the Milestone 2 fallback describes.
+  - Resizing 344×770 to 690×717 to 829×578 kept a selection through
+    `narrow`, `dock`, and `rail`, and cancelled a live drag at each step
+    without a summon.
+  - With reduced motion, a cancelled drag requested one animation frame after
+    the release, against 6 to 19 frames without it.
+- Remote profiling, TalkBack, maximum Android font and display size, Remove
+  animations, and the [Fold4 device checklist](#fold4-device-checklist) need
+  a physical Galaxy Z Fold4. They stay pending maintainer verification, and
+  the acceptance status below shows which criteria wait on them.
+
+**Acceptance status**
+
+"Met" rests on the cited tests, the posture sweep above, and a review of the
+stack's diff. Approved [decision 8](#status-and-decisions) still requires a
+physical Galaxy Z Fold4 for every user-facing row. A "pending" status names
+the device check that a row cannot do without.
+
+| Criterion | Status | Evidence |
+| --- | --- | --- |
+| Chrome never covers the lifted card, ghost, or pill; the card is not under the finger | Met in tests and emulation; device pending | "styles drag feedback with colour, outline and opacity only, above every header"; "lifts a smaller touch card above the finger by an adaptive, bounded distance"; "moves beside the finger without room above and keeps that side while it fits" |
+| A release summons only inside the drop zone or its slop | Met in tests and emulation | "gives touch, not the mouse, 12px of slop except toward the hand or beyond the visible stage"; "cancels a touch drag cleanly when %s arrives first, releasing the capture and the card lease and submitting nothing"; sweep cancels and folds |
+| Highlight and release never disagree | Met in tests and emulation | "highlights the near header exactly where a %s release would summon"; "decides a release from the geometry behind its highlight, and measures afresh without a live drag"; 20 sweep releases |
+| A peek opens in about 450 ms and never selects, submits, or shows a system menu | Met in tests and emulation; device pending | "rings at 150 ms and opens a %s peek at 450 ms through sub-threshold wobble"; "keeps a long press on the game board from selecting text or opening the touch callout"; sweep peeks |
+| A resting thumb never blocks play; a second finger never acts during a drag | Met in tests; device pending | "starts a gesture from a non-primary %s contact when idle"; "keeps native buttons inert while a card follows a pointer, yet accepts the drop, so a second finger never submits twice" |
+| At most one submission per gesture | Met in tests and emulation | "submits a touch release in the board slop band exactly once"; "summons once from a touch drag that auto-scrolls over the drop zone, and a drag scrolled back over the hand submits nothing" |
+| Each measured posture maps to its shell; `desktop` unchanged | Met for the estimated sizes; device measurements pending | "maps the Fold4 %s (%sx%s) by pointer type"; "marks the root for the Fold4 %s with a %s pointer (%sx%s) only during a game"; sweep shells |
+| Main screen at 100% text: hand cards at least 108×148 and one-line headers; 44 px targets at 200% | Partly met | Five-card hands meet 108×148, but in `dock` six cards are about 107×147 and seven about 91×125 ([Milestone 3](#milestone-3--unfolded-dock-and-rail-shells-with-fold-continuity)); "keeps every target at least 44px and inside the board at %s"; sweep headers and controls |
+| Folding keeps the selection, prompt, and hand page, and cancels a live drag | Met in tests and emulation; device pending | "keeps the selection, dock prompt and open target list while folding narrow, dock and rail"; "keeps the selection on its page and cancels a live drag when folding between touch shells"; sweep folds |
+| Fixed dock and rail sizes; prompts never resize Board rows | Met in tests and emulation | "keeps battlefield geometry fixed across main, drag, response and resolution prompts"; unchanged sweep boxes |
+| Short landscape: no overlap, and the drop zone is reachable | Met in tests and emulation; device pending | "gives the board the full height beside a rail headed by the top bar"; "summons once from a touch drag that auto-scrolls over the drop zone, and a drag scrolled back over the hand submits nothing"; sweep auto-scroll |
+| Renderer-only source; dependency direction kept | Met | Against `29bc00b`, source changes are only in `src/renderers/` |
+| `RendererHost` failure path unchanged; no second WebGL context or hidden fallback | Met | `host.ts` is unchanged, and the drag layer's only new context is 2D |
+| Texture leases released; no per-frame measurement or `structuredClone(GameState)` | Met in tests and emulation | "draws a 2D-capable drag in one layer lease and releases it on every end path"; "measures a drag once, so its moves and auto-scroll steps read no layout yet place it as measuring again would"; the read counts above |
+| No public assets; service worker and base path unaffected | Met | No changes under `public/`; the preview at `/Cardgame/` |
+| Persistent live regions; each drag or peek message announced once | Met in tests; TalkBack pending | "reports feedback last, with the board already updated, and once when a return starts"; "announces a narrow peek in the dock prompt without touching its actions or the selection"; "reserves drag feedback space without exposing duplicate instructions to assistive technology" |
+| Unique IDs, visible focus, keyboard access; Details stays available | Met in tests and emulation | "keeps ids unique and one dock reading and focus order in every touch shell"; "selects a narrow hand card with any pointer and offers Summon, Details and Clear"; sweep End Turn focus |
+| Reduced motion skips decorative drag animation | Met in tests and emulation; Remove animations pending | "keeps a live drag through re-presentation with animations off and ends it without a return"; sweep frame counts |
 
 ## Acceptance criteria
 
