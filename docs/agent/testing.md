@@ -375,8 +375,8 @@ replace them. In each posture, check that:
 - the page has no horizontal overflow, and the headers, End Turn, and the hand
   never overlap;
 - the idle dock prompt is whole, except in the short rail at 200% text, where
-  the dock scrolls to End Turn. Longer prompts, such as a selected card's
-  rules, may scroll inside the prompt;
+  it scrolls inside its two-line box and the dock scrolls to End Turn. Longer
+  prompts, such as a selected card's rules, may scroll inside the prompt;
 - every control is at least 44 CSS pixels in both dimensions;
 - tap-select then Summon, a drag that summons, and a drag back to the hand
   that cancels all work, and each release does what the highlight showed;

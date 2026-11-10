@@ -1036,11 +1036,13 @@ The implementation differs from the scope above in these ways:
 - The short rail keeps its Milestone 4 arrangement at 200% text. The top bar
   takes 112 of the column's 224 px, which leaves the dock 108 px after the
   gap. A two-line prompt (65 px), End Turn (52 px), and the dock's gaps,
-  padding, and border need 143 px, so something has to scroll. Scrolling the
-  dock as a whole keeps End Turn at full size. A swipe reaches it, and Tab
-  scrolls it into view. In the posture sweep, the fifth Tab with a card
-  selected focused End Turn with its focus ring, the dock scrolled 131 px,
-  and the card stayed selected. The README says to scroll the rail there.
+  padding, and border need 143 px, so something has to scroll. The idle
+  prompt needs four lines, so it also scrolls inside that two-line box.
+  Scrolling the dock as a whole keeps End Turn at full size. A swipe reaches
+  it, and Tab scrolls it into view. In the posture sweep, the fifth Tab with
+  a card selected focused End Turn with its focus ring, the dock scrolled
+  131 px, and the card stayed selected. The README says to scroll the rail
+  there.
 - The [Fold4 posture check](../agent/testing.md#fold4-posture-check) ran in
   Chromium touch emulation against the production preview at `/Cardgame/`,
   at 100% and 200% root font size. This is emulation evidence, not device
