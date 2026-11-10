@@ -139,8 +139,9 @@ cannot scroll, so a peek opens only on a side where all of it fits:
 
 While a card follows one pointer, the `dragActive` option of `ThreeInterface`
 makes the native click dispatcher (`handleClick`) inert. `ThreeBoard`'s
-`activatePrimary` ignores the primary button. A second finger therefore
-cannot press a dock button, Summon, or End Turn mid-drag.
+`activatePrimary` ignores the primary button, and `changeHandPage` ignores the
+hand page buttons. A second finger therefore cannot press a dock button,
+Summon, End Turn, or turn the hand page mid-drag.
 
 Never fold this guard into `isBlocked()` or `nativeActionBlocked()`.
 `playCard` checks `nativeActionBlocked()`, so the guard would refuse the drop
@@ -179,10 +180,21 @@ its visible top or bottom.
 On relayout the board anchors the stage scroll to the near lane, so the lane
 stays in view.
 
+Viewport and observer callbacks interrupt gestures only when something really
+changed. A new layout ends the drag, cancels the interaction (closing a peek or
+long press), re-presents the board and re-anchors the near lane. A narrow board
+held at its 356 px minimum keeps its layout while the stage around it shrinks or
+grows. `relayout` therefore also compares the stage's client box with the one
+from the last relayout. When only that box changed, it ends the drag, cancels the
+interaction and re-anchors the near lane, without re-presenting. A callback with
+neither change keeps a live gesture and the player's own scroll position.
+
 The narrow hand page follows the selected card across profile and page-size
-changes. With no selection, a page-size change keeps the first card of the
-old page in view. A new acting player or a presentation boundary still resets
-the hand to page 0.
+changes. It follows the retained selection even while Details or a menu blocks
+input and hides the highlight, so closing them finds the card on the shown
+page instead of clearing it as off-page. With no selection, a page-size change
+keeps the first card of the old page in view. A new acting player or a
+presentation boundary still resets the hand to page 0.
 
 ## Layout
 

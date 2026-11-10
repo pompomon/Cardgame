@@ -180,7 +180,9 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
     previewReturnToCards: false,
     phaseDismissed: false, hostAnswerDraft: '', joinOfferDraft: '',
   }
-  const present = (changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0, targets = new Set<string>()) => {
+  const present = (
+    changes: Partial<InterfaceUi> = {}, replay = false, replayStep = 0, targets = new Set<string>(), blocked = false,
+  ) => {
     const view = buildViewModel(app, false)
     if (replay) {
       view.replay.active = true
@@ -189,7 +191,7 @@ function setup(presentation: ThreeBoardPresentation = { narrow: false, selection
     }
     const nextUi = { ...ui, presentedActor: view.game!.actor, ...changes }
     const primary = threePrimaryAction(view, nextUi)
-    board.render(view, nextUi.presentedActor, targets, threeResponse(view, nextUi), primary)
+    board.render(view, nextUi.presentedActor, targets, threeResponse(view, nextUi), primary, blocked)
     return primary
   }
   const act = (type: GameAction['type']) => {
@@ -482,6 +484,42 @@ describe('constructed Three battlefield controls', () => {
     presentation.narrow = true
     h.present()
     expect(h.host.all('three-board-pagination')[0].children[1].textContent).toMatch(/^3\//)
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
+    expect(h.handPage).not.toHaveBeenCalled()
+  })
+
+  it.each(['cardId', 'discardId'] as const)('follows a %s selection held behind Details through a resize, so closing Details keeps it', (field) => {
+    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    if (field === 'discardId') {
+      h.app.game!.currentPlayer = 1
+      h.act('play_land')
+    }
+    for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+      Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 50 : 36 })
+    }
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = 332
+    stage.clientHeight = 583.25
+    h.present()
+    const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
+    const pageSize = narrowHandPageSize(layout())
+    const id = player.hand[pageSize - 1].id
+    presentation.selection[field] = id
+    h.present()
+    // Details blocks input and hides the highlight, but keeps the selection.
+    h.present({}, false, 0, new Set(), true)
+    expect(h.registry.get(boardCardKey(id, 0))!.descriptor.selected).toBeUndefined()
+    stage.clientHeight = 468.25
+    ObserverStub.latest.callback()
+    const smaller = narrowHandPageSize(layout())
+    expect(Math.floor((pageSize - 1) / smaller)).toBeGreaterThan(0)
+    expect(h.host.all('three-board-pagination')[0].children[1].textContent)
+      .toMatch(new RegExp(`^${Math.floor((pageSize - 1) / smaller) + 1}/`))
+    // Closing Details finds the card on the shown page, still selected.
+    h.present()
     expect(h.registry.get(boardCardKey(id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
     expect(h.handPage).not.toHaveBeenCalled()
   })
@@ -2063,6 +2101,64 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     h.board.endDrag(true)
     emit(h.button, 'click')
     expect(h.activate).toHaveBeenCalledOnce()
+  })
+
+  it('ignores hand page buttons while a card is lifted, and turns the page once the card drops or returns', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    h.present()
+    const [, label, next] = h.host.all('three-board-pagination')[0].children
+    expect(label.textContent).toMatch(/^1\//)
+    h.board.beginDrag(handHit(h))
+    h.cancel.mockClear()
+    emit(next, 'click')
+    expect(label.textContent).toMatch(/^1\//)
+    expect(internals(h).drag?.returning).toBe(false)
+    expect(h.cancel).not.toHaveBeenCalled()
+    expect(h.handPage).not.toHaveBeenCalled()
+    h.board.endDrag(true)
+    emit(next, 'click')
+    expect(label.textContent).toMatch(/^2\//)
+    expect(h.handPage).toHaveBeenCalledOnce()
+  })
+
+  it('cancels gestures and shows the near lane when only the visible stage changes, but not on unchanged callbacks', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const stage = stageOf(h)
+    // Both stages are below the 356px minimum board, so the layout stays the same.
+    stage.clientWidth = 344
+    stage.clientHeight = 340
+    Object.assign(stage, { scrollTop: 0 })
+    ObserverStub.latest.callback()
+    const layout = internals(h).layout
+    expect(layout.height).toBe(466)
+    const row = layout.rows.near
+    const lane = {
+      top: Math.min(row.labelTop, layout.height / 2 - row.y - row.height / 2),
+      bottom: Math.max(row.labelTop + row.labelHeight, layout.height / 2 - row.y + row.height / 2),
+    }
+    expect(lane.bottom).toBeLessThanOrEqual(340)
+    expect(lane.bottom).toBeGreaterThan(200)
+    expect(lane.bottom - lane.top).toBeLessThan(200)
+    // Repeated callbacks keep a live drag and the player's own scroll.
+    h.board.beginDrag(handHit(h))
+    h.cancel.mockClear()
+    ObserverStub.latest.callback()
+    emit(h.window, 'resize')
+    expect(internals(h).drag).not.toBeNull()
+    expect(h.cancel).not.toHaveBeenCalled()
+    expect(stage.scrollTop).toBe(0)
+    // A shorter stage keeps the minimum-height layout, but still ends the
+    // gesture and scrolls the near lane back into view.
+    stage.clientHeight = 200
+    ObserverStub.latest.callback()
+    expect(internals(h).layout).toEqual(layout)
+    expect(internals(h).drag).toBeNull()
+    expect(h.cancel).toHaveBeenCalledOnce()
+    expect(stage.scrollTop).toBeCloseTo(lane.bottom - 200)
+    ObserverStub.latest.callback()
+    expect(h.cancel).toHaveBeenCalledOnce()
   })
 
   it.each(['resize', 'pointercancel'] as const)(

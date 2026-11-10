@@ -681,6 +681,12 @@ The implementation differs from the scope above in these ways:
   measures a probe of the peek at each candidate placement. If neither side
   fits, no ring shows and the press stays a tap, as the
   [fallback](#long-press-peek) describes.
+- The second-finger guard also covers the hand page buttons.
+- The hand page follows a selection that Details or a menu hides. Closing
+  them therefore keeps the card selected instead of clearing it as off-page.
+- A narrow board held at its minimum height keeps its layout while the stage
+  shrinks. Relayout therefore also tracks the stage's client box. When only
+  the box changes, it ends the gesture and re-anchors the near lane.
 
 ### Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
 

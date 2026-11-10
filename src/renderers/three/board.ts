@@ -218,6 +218,9 @@ export class ThreeBoard implements ThreeBoardApi {
   private canDrop = false
   private inputBlocked = false
   private sized = false
+  /** The stage's client box at the last relayout. */
+  private visibleWidth = 0
+  private visibleHeight = 0
 
   constructor(
     host: HTMLElement,
@@ -353,6 +356,8 @@ export class ThreeBoard implements ThreeBoardApi {
         for (const chrome of this.chrome.values()) this.observer.observe(chrome.sizer)
       }
       this.applySize()
+      this.visibleWidth = this.stage.clientWidth
+      this.visibleHeight = this.stage.clientHeight
       this.setBackground(DEFAULT_BOARD_THEME)
       // Compile/render once here so shader/driver failures take the safe startup path.
       this.renderer.render(this.scene, this.camera)
@@ -503,7 +508,9 @@ export class ThreeBoard implements ThreeBoardApi {
     if (this.handPageFollow || pageSizeChanged) {
       // A profile or page-size change keeps the selected card in view, or
       // else the first card of the current page, instead of clearing it.
-      const selected = hand.findIndex((card) => card.id === handSelection.cardId || card.id === handSelection.discardId)
+      // Details and menus block input but keep the selection, so the page
+      // follows it there too and closing them finds the card in view.
+      const selected = hand.findIndex((card) => card.id === selection.cardId || card.id === selection.discardId)
       this.handPage = selected >= 0 ? Math.floor(selected / pageSize)
         : pageSizeChanged ? Math.floor(this.handPage * this.handPageSize / pageSize) : 0
     }
@@ -585,7 +592,8 @@ export class ThreeBoard implements ThreeBoardApi {
   private nextHandPage = (): void => { this.changeHandPage(1) }
 
   private changeHandPage(delta: number): void {
-    if (!this.usable() || this.handPagination.hidden
+    // Like the primary button, a second finger cannot turn the page mid-drag.
+    if (!this.usable() || this.handPagination.hidden || (this.drag && !this.drag.returning)
       || (delta < 0 ? this.handPrevious.disabled : this.handNext.disabled)) return
     this.endDrag(false)
     this.onResize()
@@ -1289,12 +1297,24 @@ export class ThreeBoard implements ThreeBoardApi {
 
   /**
    * Viewport and observer callbacks only interrupt gestures when the layout
-   * really changed; otherwise overlays are re-anchored in place.
+   * or the stage's visible box really changed; otherwise overlays are
+   * re-anchored in place.
    */
   private relayout(force: boolean): void {
     if (!this.usable()) return
     const changed = this.applySize()
+    // A board held at its minimum height keeps its layout while the stage
+    // around it shrinks, which can strand a peek or hide the near lane.
+    const { clientWidth, clientHeight } = this.stage
+    const visibleChanged = clientWidth !== this.visibleWidth || clientHeight !== this.visibleHeight
+    this.visibleWidth = clientWidth
+    this.visibleHeight = clientHeight
     if (!changed && !force) {
+      if (visibleChanged) {
+        this.endDrag(false)
+        this.onResize()
+        this.anchorNearLane()
+      }
       this.positionTargetLabels()
       this.invalidate()
       return
