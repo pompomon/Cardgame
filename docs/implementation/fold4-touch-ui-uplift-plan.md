@@ -1005,7 +1005,11 @@ The implementation differs from the scope above in these ways:
   edge auto-scroll steps, and the release read the cache. Each stage scroll
   event reads `scrollTop` once. A page or ancestor scroll, a relayout, or a
   new presentation measures again. The release decides from the geometry
-  behind the highlight, so the two cannot disagree.
+  behind the highlight, so a release at the last move's point does what the
+  highlight shows, even before a pending scroll event arrives. A render or
+  relayout that keeps the drag leaves the highlight until the next move or
+  scroll, and a release in between measures afresh, as before this
+  milestone.
   [Drag geometry](../agent/three-renderer.md#drag-geometry) has the details.
 - Remote profiling needs the device, so it stays pending maintainer
   verification. Instead, a review of the drag path and a count of layout

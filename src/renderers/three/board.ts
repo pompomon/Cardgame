@@ -47,8 +47,9 @@ interface RowChrome {
  * until something may move the stage: a render or a relayout that keeps the
  * drag (the next move measures again), or a scroll outside the stage (which
  * measures again at once). Drag feedback only rewrites the fixed-size dock's
- * prompt, so it keeps the geometry. Moves, auto-scroll steps and the release
- * therefore read no layout, and the release decides what the highlight shows.
+ * prompt, so it keeps the geometry. While it is kept, moves, auto-scroll steps
+ * and the release read no layout, and a release decides with the geometry
+ * behind the highlight.
  */
 interface DragGeometry {
   /** The canvas's client box, measured with the stage scrolled to `scrollTop`. */
@@ -859,7 +860,9 @@ export class ThreeBoard implements ThreeBoardApi {
   /**
    * Decides a release with the drag highlight's predicate. A live drag uses
    * the geometry behind its highlight, so a release at the last move's point
-   * always does what the highlight shows; without one, it measures afresh.
+   * does what the highlight shows, even before a pending scroll event. After
+   * a render or relayout has discarded that geometry, or without a live drag,
+   * it measures afresh, as the next move would.
    */
   containsDrop(clientX: number, clientY: number, touch = false): boolean {
     const drag = this.drag && !this.drag.returning ? this.drag : null

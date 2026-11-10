@@ -196,9 +196,11 @@ box, the stage's visible box, and the stage's scroll range (`DragGeometry` in
   ignored. A measurement that finds an untracked offset also pins the pill.
   Drag feedback re-renders only the fixed-size dock prompt, so it keeps the
   geometry.
-- **Release.** `containsDrop` uses the highlight's geometry, so a release does
-  what the highlight shows, even before a pending scroll event arrives.
-  Without a live drag, it measures afresh.
+- **Release.** `containsDrop` uses the geometry behind the highlight, so a
+  release at the last move's point does what the highlight shows, even before
+  a pending scroll event arrives. A render or relayout that keeps the drag
+  leaves the highlight until the next move or scroll; a release in between,
+  or without a live drag, measures afresh.
 
 New drag behaviour must not read layout per move or per frame, and anything
 that can move the stage without resizing it must discard the geometry.
