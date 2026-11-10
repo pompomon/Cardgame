@@ -115,8 +115,9 @@ The approved decisions are:
   - [x] Short-rail CSS: the top bar heads the rail, the board takes the full
     height beside it, and the rail wraps its actions and scrolls at large
     text sizes
-  - [x] A 44 px paged hand strip, a sideways lift (`preferSide`), and a
-    near-lane anchor that keeps the hand in view, with focused tests
+  - [x] A 44 px paged hand strip, a sideways lift (`preferSide`) that leaves
+    the landing ghost in view, and a near-lane anchor that keeps the hand in
+    view, with focused tests
   - [x] 882×232 and 844×390 geometry at 100% and 200% text, and a summon and
     a cancel after edge auto-scroll
   - [x] Agent docs and README: the short rail
@@ -912,8 +913,11 @@ The implementation differs from the scope above in these ways:
 
 - Milestone 3 already gave the top bar a fixed rem height
   (`--three-topbar-height`), so this milestone only moves it. In the short
-  rail it heads the rail column, and at large text sizes its title and status
-  scroll under the pinned menu and Hint buttons.
+  rail it heads the rail column at that height. The narrower column wraps the
+  title onto two lines, so at 100% text one status line stays in view. As in
+  the other touch shells, the top bar keeps its height rather than growing
+  with the status. Longer statuses and larger text scroll the title and
+  status together under the pinned menu and Hint buttons.
 - The actions keep their 48 px height and wrap in rows. When large text
   outgrows the rail, the whole rail scrolls instead of clipping them.
 - The near-lane anchor also keeps the whole hand in view, so a drag starts
@@ -928,6 +932,11 @@ The implementation differs from the scope above in these ways:
 - With `preferSide`, the card keeps its current side while it fits, then
   takes the only side that fits, then the roomier side, with ties going left.
   It goes above only when neither side fits but above does.
+- A sideways card shares the near lane's rows with the landing ghost, so it
+  first takes the only side that fits without covering the ghost. Near the
+  ghost's centre both sides cover it, or neither does, so the card keeps its
+  side there instead of flickering. Without this rule, a card dragged
+  straight up from the hand hid the ghost at both 882×232 and 844×390.
 - The 44 px paged hand strip applies only to the short rail. `dock` and the
   taller `rail` keep 50 px.
 - The summon and cancel tests drive the real `ThreeInteraction` and

@@ -284,7 +284,10 @@ the canvas, or outside the stage's visible box never drops.
 `ThreeBoard` owns one `ThreeDragLayer` (`drag-layer.ts`): an `aria-hidden`,
 pointer-transparent overlay inside `.three-board-stage`, so it scrolls with the
 board. It draws the lifted card above the HTML headers and labels the landing
-slot ("Lands here", or "+1" on an occupied touch-shell type slot). Each drag holds
+slot ("Lands here", or "+1" on an occupied touch-shell type slot). A touch card
+lifts above the finger, or beside it without room above (and whenever a side
+fits on the short rail). When exactly one side fits without covering the
+landing slot, a sideways card takes that side. Each drag holds
 at most one extra card-face lease for it, released by `endDrag` on every path,
 including disposal. Without a 2D context, or when painting fails, the
 in-scene proxy stays visible instead. A move changes only CSS transforms.

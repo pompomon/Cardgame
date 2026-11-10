@@ -52,6 +52,8 @@ interface DragVisual {
   accepted: boolean
   /** The touch card's side of the finger, kept so it does not flip while it fits. */
   side: DragProxySide | undefined
+  /** The landing ghost in drag-layer pixels, which a sideways card leaves in view. */
+  landing: LayerRect | undefined
   /** The source card's unscaled size in board units. */
   readonly width: number
   readonly height: number
@@ -846,7 +848,7 @@ export class ThreeBoard implements ThreeBoardApi {
     source.setOpacity(0.35)
     const { width, height } = source.anchor()
     const drag: DragVisual = {
-      source, proxy, layered: false, accepted: false, side: undefined, width, height,
+      source, proxy, layered: false, accepted: false, side: undefined, landing: undefined, width, height,
       pillBottom: 0, pointerX: Number.NaN, pointerY: Number.NaN, pointerTouch: false,
       returning: false, elapsed: 0, fromX: 0, fromY: 0,
     }
@@ -892,7 +894,7 @@ export class ThreeBoard implements ThreeBoardApi {
         left: (visible.left - rect.left) * scaleX, top: (visible.top + pill - rect.top) * scaleY,
         width: visible.width * scaleX, height: (visible.height - pill) * scaleY,
       },
-      touch, side: drag.side, preferSide: this.short,
+      touch, side: drag.side, preferSide: this.short, landing: drag.landing,
     })
     drag.side = placement.side
     drag.proxy.group.position.x = placement.x - this.layout.width / 2
@@ -1115,6 +1117,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const drag = this.drag
     const game = this.view?.game
     if (!drag || drag.returning || !game) {
+      if (drag) drag.landing = undefined
       this.landing.visible = false
       this.dragLayer.setLanding(null)
       return
@@ -1128,12 +1131,13 @@ export class ThreeBoard implements ThreeBoardApi {
     this.landing.position.set(rect.x, rect.y, 0)
     this.landing.scale.set(rect.width, rect.height, 1)
     this.landing.visible = true
-    this.dragLayer.setLanding({
+    drag.landing = {
       left: this.layout.width / 2 + rect.x - rect.width / 2,
       top: this.layout.height / 2 - rect.y - rect.height / 2,
       width: rect.width,
       height: rect.height,
-    }, rect.occupied ? LANDING_STACK_LABEL : LANDING_LABEL)
+    }
+    this.dragLayer.setLanding(drag.landing, rect.occupied ? LANDING_STACK_LABEL : LANDING_LABEL)
   }
 
   private writeInstruction(text: string): void {

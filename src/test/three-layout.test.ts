@@ -7,7 +7,7 @@ import {
   landingSlotRect, MOUSE_DRAG_SCALE, NARROW_LAYOUT_MAX_WIDTH, PEEK_MIN_HEIGHT, peekPlacement,
   NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect,
   SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_DRAG_SCALE, TOUCH_DROP_SLOP_PX, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
-  type BoardRect, type DragProxyInput, type LayerRect, type PeekPlacement, type PeekSide, type ThreeLayout, type ThreeShell,
+  type BoardRect, type DragProxyInput, type DragProxySide, type LayerRect, type PeekPlacement, type PeekSide, type ThreeLayout, type ThreeShell,
   type TouchLayoutMode,
 } from '../renderers/three/layout'
 import { DEFAULT_OPENING_HAND_SIZE } from '../game/engine'
@@ -974,6 +974,44 @@ describe('Three.js touch drag geometry', () => {
       expect(place({ preferSide: false, side })).toEqual(place({ side }))
     }
     expect(dragProxyPlacement({ pointer: { x: 166, y: 400 }, card, stage, touch: false, preferSide: true }).side).toBe('center')
+  })
+
+  it('takes the side that leaves the landing ghost in view, without flickering near its centre', () => {
+    const overlaps = (placement: ReturnType<typeof place>, rect: LayerRect) =>
+      Math.abs(placement.x - (rect.left + rect.width / 2)) < (placement.width + rect.width) / 2
+      && Math.abs(placement.y - (rect.top + rect.height / 2)) < (placement.height + rect.height) / 2
+    // A 60px ghost beside the finger's row, right of the finger as when dragging straight up the short rail.
+    const landing: LayerRect = { left: 180, top: 380, width: 60, height: 36 }
+    const right = place({ preferSide: true, pointer: { x: 150, y: 400 }, side: 'right' })
+    expect(right.side).toBe('right')
+    expect(overlaps(right, landing)).toBe(true)
+    const clear = place({ preferSide: true, pointer: { x: 150, y: 400 }, side: 'right', landing })
+    expect(clear.side).toBe('left')
+    expect(overlaps(clear, landing)).toBe(false)
+    // Ties no longer go left when the left card would hide a ghost there.
+    expect(place({ preferSide: true, landing: { ...landing, left: 90 } }).side).toBe('right')
+    // Sweeping across the ghost switches sides once each way, where the new side first clears it.
+    const sweep = (xs: readonly number[]) => {
+      let side: DragProxySide | undefined
+      const switches: [number, DragProxySide][] = []
+      for (const x of xs) {
+        const next = place({ preferSide: true, pointer: { x, y: 400 }, side, landing }).side
+        if (next !== side) switches.push([x, next])
+        side = next
+      }
+      return switches
+    }
+    // Both sides fit from 170 to 235; each card clears the ghost 20px past its far edge.
+    const xs = Array.from({ length: 66 }, (_, index) => 170 + index)
+    expect(sweep(xs)).toEqual([[170, 'left'], [220, 'right']])
+    expect(sweep([...xs].reverse())).toEqual([[235, 'right'], [200, 'left']])
+    // When both sides cover it, or only one side fits, the usual rules hold.
+    expect(place({ preferSide: true, pointer: { x: 210, y: 400 }, side: 'right', landing }).side).toBe('right')
+    expect(place({ preferSide: true, pointer: { x: 60, y: 400 }, side: 'left', landing: { ...landing, left: 100 } }).side).toBe('right')
+    // Off the card's row, the ghost changes nothing, and a card above the finger ignores it.
+    const below: LayerRect = { ...landing, top: 520 }
+    expect(place({ preferSide: true, pointer: { x: 150, y: 400 }, side: 'right', landing: below }).side).toBe('right')
+    expect(place({ pointer: { x: 150, y: 400 }, landing: { left: 120, top: 300, width: 60, height: 36 } }).side).toBe('above')
   })
 
   it('places relative to the visible, scrolled part of the stage', () => {

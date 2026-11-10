@@ -16,7 +16,8 @@ import {
 import { ThreeInteraction } from '../renderers/three/interaction'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
 import {
-  cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type PeekPlacement, type ThreeLayout, type ThreeShellProfile,
+  cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, TOUCH_DRAG_SCALE, typeSlotX, type LayerRect, type PeekPlacement,
+  type ThreeLayout, type ThreeShellProfile,
 } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
@@ -2493,6 +2494,42 @@ describe('Three short-landscape rail board', () => {
     const above = lift()
     expect(above.side).toBe('above')
     expect(above.bottom).toBeLessThanOrEqual(180 - 20 + 0.001)
+  })
+
+  it('lifts the card to the side of the finger that leaves the landing ghost in view', () => {
+    const h = coverBoard({ shell: RAIL, short: true, selection: NO_BOARD_SELECTION })
+    h.board.beginDrag(handHit(h))
+    const { drag, layout, landing } = internals(h)
+    /** Board pixels from the top-left corner, which are also client pixels plus the scroll. */
+    const ghost: LayerRect = {
+      left: layout.width / 2 + landing.position.x - landing.scale.x / 2,
+      top: layout.height / 2 - landing.position.y - landing.scale.y / 2,
+      width: landing.scale.x, height: landing.scale.y,
+    }
+    const card = (): LayerRect => {
+      const { position, scale } = drag!.proxy.group
+      const width = drag!.width * scale.x
+      const height = drag!.height * scale.y
+      return { left: layout.width / 2 + position.x - width / 2, top: layout.height / 2 - position.y - height / 2, width, height }
+    }
+    const spans = (a: number, aSize: number, b: number, bSize: number) => a < b + bSize && b < a + aSize
+    // The anchored stage shows the ghost, and a card fits on either side of a finger 10px from it.
+    expect(ghost.top).toBeGreaterThanOrEqual(h.stage.scrollTop)
+    expect(ghost.top + ghost.height).toBeLessThanOrEqual(h.stage.scrollTop + VIEW)
+    const reach = 10 + 20 + drag!.width * TOUCH_DRAG_SCALE
+    expect(ghost.left - reach).toBeGreaterThan(4)
+    expect(ghost.left + ghost.width + reach).toBeLessThan(layout.width - 4)
+    const y = ghost.top + ghost.height / 2 - h.stage.scrollTop
+    const left = ghost.left - 10
+    const right = ghost.left + ghost.width + 10
+    for (const [x, side] of [[left, 'left'], [right, 'right'], [left, 'left']] as const) {
+      h.board.moveDrag(x, y, true)
+      expect(drag!.side).toBe(side)
+      const box = card()
+      // Level with the ghost, so only the side keeps it uncovered.
+      expect(spans(box.top, box.height, ghost.top, ghost.height)).toBe(true)
+      expect(spans(box.left, box.width, ghost.left, ghost.width)).toBe(false)
+    }
   })
 
   it('ends a live drag and re-anchors when the rail turns short or back, but keeps it across other renders', () => {

@@ -490,6 +490,8 @@ export interface DragProxyInput {
    * rail, which has no room above the finger.
    */
   readonly preferSide?: boolean
+  /** The landing ghost. A sideways card takes the side that leaves it in view when only one side does. */
+  readonly landing?: LayerRect
 }
 
 export interface DragProxyPlacement {
@@ -524,10 +526,13 @@ function fitCenter(center: number, size: number, min: number, max: number): numb
  * pointer, as before. Touch and pen lift a smaller card above the finger so it
  * stays visible; without room above, the card moves beside the finger and
  * keeps that side while it fits. `preferSide` reverses that order, so the card
- * goes above only when neither side fits. Touch placements stay inside the
- * visible stage.
+ * goes above only when neither side fits. A sideways card first takes the only
+ * side that fits without covering the landing ghost. Touch placements stay
+ * inside the visible stage.
  */
-export function dragProxyPlacement({ pointer, card, stage, touch, side, preferSide = false }: DragProxyInput): DragProxyPlacement {
+export function dragProxyPlacement({
+  pointer, card, stage, touch, side, preferSide = false, landing,
+}: DragProxyInput): DragProxyPlacement {
   const scale = touch ? TOUCH_DRAG_SCALE : MOUSE_DRAG_SCALE
   const width = Math.max(1, (Number.isFinite(card.width) ? card.width : 1) * scale)
   const height = Math.max(1, (Number.isFinite(card.height) ? card.height : 1) * scale)
@@ -544,19 +549,29 @@ export function dragProxyPlacement({ pointer, card, stage, touch, side, preferSi
   const fitsAbove = py - lift - height / 2 >= top + (sideways ? DRAG_SIDE_HYSTERESIS : 0)
   const fitsLeft = px - offset - width / 2 >= left
   const fitsRight = px + offset + width / 2 <= right
+  const centerX = (next: DragProxySide) => fitCenter(
+    next === 'above' ? px : px + (next === 'left' ? -offset : offset), width, left, right,
+  )
+  const centerY = (next: DragProxySide) => fitCenter(next === 'above' ? py - lift : py, height, top, bottom)
+  const coversLanding = (next: DragProxySide): boolean => {
+    if (!landing) return false
+    const x = centerX(next)
+    const y = centerY(next)
+    return Math.abs(x - (landing.left + landing.width / 2)) < (width + landing.width) / 2
+      && Math.abs(y - (landing.top + landing.height / 2)) < (height + landing.height) / 2
+  }
   let next: DragProxySide = 'above'
   if (!fitsAbove || preferSide && (fitsLeft || fitsRight)) {
-    if ((side === 'left' && fitsLeft) || (side === 'right' && fitsRight)) next = side
+    // Near the ghost's centre both sides cover it, or neither does, so the card keeps its side there.
+    const clearLeft = fitsLeft && !coversLanding('left')
+    const clearRight = fitsRight && !coversLanding('right')
+    if (clearLeft !== clearRight) next = clearLeft ? 'left' : 'right'
+    else if ((side === 'left' && fitsLeft) || (side === 'right' && fitsRight)) next = side
     else if (fitsLeft !== fitsRight) next = fitsLeft ? 'left' : 'right'
     // The roomier side; ties go left, away from a right thumb.
     else next = px - left >= right - px ? 'left' : 'right'
   }
-  const x = next === 'above' ? px : px + (next === 'left' ? -offset : offset)
-  const y = next === 'above' ? py - lift : py
-  return {
-    x: fitCenter(x, width, left, right), y: fitCenter(y, height, top, bottom),
-    width, height, scale, side: next,
-  }
+  return { x: centerX(next), y: centerY(next), width, height, scale, side: next }
 }
 
 /** The long-press peek opens above or below the held card. */
