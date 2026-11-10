@@ -8,7 +8,10 @@ import {
   NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect,
   SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_DRAG_SCALE, TOUCH_DROP_SLOP_PX, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
   type BoardRect, type DragProxyInput, type LayerRect, type PeekPlacement, type PeekSide, type ThreeLayout, type ThreeShell,
+  type TouchLayoutMode,
 } from '../renderers/three/layout'
+import { DEFAULT_OPENING_HAND_SIZE } from '../game/engine'
+import { DESKTOP_SHELL, DOCK_SHELL, FOLD4_POSTURES, NARROW_SHELL, RAIL_SHELL, SHORT_RAIL_SHELL } from './helpers/fold4-postures'
 
 function laneBounds(layout: ThreeLayout, row: 'far' | 'near' | 'hand') {
   const lane = layout.rows[row]
@@ -405,29 +408,251 @@ describe('Three.js narrow single-column layout', () => {
   })
 })
 
+type UnfoldedShell = Exclude<TouchLayoutMode, 'narrow'>
+
+/** The rail column, `clamp(180px, 26vw, 240px)` in renderer.css. */
+const railWidth = (viewportWidth: number) => Math.min(240, Math.max(180, 0.26 * viewportWidth))
+
+/**
+ * The board's stage size inside renderer.css's unfolded shells, derived as
+ * narrowStage() derives the cover screen's: the 3.5rem top bar, 4px gaps,
+ * safe-area-aware 4px padding, and stage borders, plus a fixed two-line dock
+ * below the board (`dock`) or a rail column beside it (`rail`).
+ */
+function unfoldedStage(
+  shell: UnfoldedShell, viewportWidth: number, viewportHeight: number, textScale = 1, insets: SafeArea = NO_INSETS,
+) {
+  const rem = 16 * textScale
+  const pad = (inset: number) => Math.max(4, inset)
+  const gap = 4
+  const borders = 4
+  const width = viewportWidth - pad(insets.left) - pad(insets.right) - borders
+  const height = viewportHeight - pad(insets.top) - pad(insets.bottom) - 3.5 * rem - borders
+  return shell === 'dock'
+    ? { width, height: height - 2 * gap - (2 * 1.25 * 0.8125 * rem + Math.max(44, 1.125 * rem + 16) + 18) }
+    : { width: width - gap - railWidth(viewportWidth), height: height - gap }
+}
+
+/** Every rule in a css() source, with its selector list split. */
+const cssRules = (source: string) => [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .map(([, list, body]) => ({ selectors: list.split(',').map((selector) => selector.trim()), body: body.trim() }))
+
+/** The declarations of the rules whose selector list is exactly `selectors`. */
+const ruleBody = (source: string, ...selectors: string[]) => cssRules(source)
+  .filter((rule) => rule.selectors.join(', ') === selectors.join(', '))
+  .map((rule) => rule.body)
+  .join(' ')
+
+describe('Three.js unfolded dock and rail layouts', () => {
+  // The Milestone 0 main-screen postures: portrait gets the dock, landscape the rail.
+  const postures = FOLD4_POSTURES.flatMap(([name, width, height, { profile, short }]) =>
+    (profile === 'dock' || profile === 'rail') && !short ? [{ name, width, height, shell: profile }] : [])
+  const fold4Pwa: SafeArea = { top: 28, right: 0, bottom: 16, left: 0 }
+  // Single-line headers; only a hand with more pages reserves the pager row (board.ts applySize).
+  const headers = (scale: number, paged: boolean) => ({ far: 21 * scale, near: 21 * scale, hand: (paged ? 50 : 22) * scale })
+  const viewports = postures.flatMap(({ name, width, height, shell }) => (
+    [[1, NO_INSETS], [2, NO_INSETS], [1, fold4Pwa]] as const
+  ).flatMap(([scale, insets]) => [false, true].map((paged) => [
+    `${name} (${width}x${height}) at ${scale * 100}% text${insets === NO_INSETS ? '' : ' with safe areas'}${paged ? ' and a paged hand' : ''}`,
+    shell, unfoldedStage(shell, width, height, scale, insets), headers(scale, paged),
+  ] as const)))
+
+  it('covers both unfolded shells', () => {
+    expect(postures.map(({ shell }) => shell).sort()).toEqual(['dock', 'dock', 'rail', 'rail'])
+  })
+
+  it('derives dock and rail stage sizes from the fixed shells in renderer.css', () => {
+    const shell = css('renderer.css')
+    const unfolded = ruleBody(shell, '.three-root--game[data-shell="dock"]', '.three-root--game[data-shell="rail"]')
+    expect(unfolded).toContain('--three-topbar-height: 3.5rem;')
+    expect(unfolded).toContain('--three-dock-prompt-height: calc(2 * 1.25 * 0.8125rem);')
+    expect(unfolded).toContain('padding: 4px; padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));')
+    expect(unfolded).toContain('gap: 4px;')
+    const dock = ruleBody(shell, '.three-root--game[data-shell="dock"]')
+    expect(dock).toContain('--three-dock-height: calc(var(--three-dock-prompt-height) + max(44px, 1.125rem + 16px) + 18px);')
+    expect(dock).toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr) var(--three-dock-height);')
+    // The dock's action row reserves End Turn's height, which grows with the text.
+    const primary = ruleBody(shell, '.three-dock .three-board-primary')
+    expect(primary).toContain('padding: 6px 12px;')
+    expect(primary).toContain('font-size: 0.9375rem;')
+    const basePrimary = ruleBody(css('graphics.css'), '.three-board-primary')
+    expect(basePrimary).toContain('border: 2px solid #b1ffdd;')
+    expect(basePrimary).toContain('font: 700 1rem/1.2 system-ui, sans-serif;')
+    const dockBox = ruleBody(shell, '.three-root--game[data-shell="dock"] .three-dock',
+      '.three-root--game[data-shell="rail"] .three-dock', '.three-root--narrow .three-dock')
+    expect(dockBox).toContain('padding: 6px;')
+    expect(dockBox).toContain('border: 1px solid #476478;')
+    expect(dockBox).toContain('gap: 4px 6px;')
+    const rail = ruleBody(shell, '.three-root--game[data-shell="rail"]')
+    expect(rail).toContain('--three-rail-width: clamp(180px, 26vw, 240px);')
+    expect(rail).toContain('grid-template-columns: minmax(0, 1fr) var(--three-rail-width);')
+    expect(rail).toContain('grid-template-rows: var(--three-topbar-height) minmax(0, 1fr);')
+    expect(rail).toContain('grid-template-areas: "hud rail" "stage rail";')
+    // The top bar stays above the board; the rail spans both rows on the right.
+    expect(ruleBody(shell, '.three-root--game[data-shell="rail"] .three-hud-mount')).toBe('grid-area: hud;')
+    expect(ruleBody(shell, '.three-root--game[data-shell="rail"] .three-stage')).toBe('grid-area: stage;')
+    expect(ruleBody(shell, '.three-root--game[data-shell="rail"] .three-dock')).toContain('grid-area: rail;')
+    expect(unfoldedStage('dock', 690, 717)).toEqual({ width: 678, height: 546.5 })
+    expect(unfoldedStage('dock', 690, 717, 2).height).toBe(450)
+    expect(unfoldedStage('rail', 829, 578).width).toBeCloseTo(597.46, 6)
+    expect(unfoldedStage('rail', 829, 578).height).toBe(506)
+  })
+
+  it.each(postures.map((posture) => [posture.name, posture] as const))(
+    'fits the five-card opening hand in one row and 85x117 slots in the %s at 100%% text',
+    (_, { width, height, shell }) => {
+      const stage = unfoldedStage(shell, width, height)
+      const layout = narrowBoardLayout(stage.width, stage.height, headers(1, false), shell)
+      expect(layout.mode).toBe(shell)
+      // Nothing scrolls at 100% text.
+      expect(layout.height).toBe(stage.height)
+      expect(layout.cardHeight).toBe(117)
+      expect(layout.cardWidth).toBeCloseTo(117 * 0.73, 6)
+      const hand = narrowHandRects(DEFAULT_OPENING_HAND_SIZE, layout)
+      expect(hand).toHaveLength(DEFAULT_OPENING_HAND_SIZE)
+      expect(new Set(hand.map((rect) => rect.y)).size).toBe(1)
+      for (const rect of hand) {
+        expect(rect.width).toBeGreaterThanOrEqual(108)
+        expect(rect.height).toBeGreaterThanOrEqual(148)
+      }
+      // Portrait reaches the plan's 115x158 target.
+      if (shell === 'dock') expect(hand[0].height).toBe(158)
+    },
+  )
+
+  it.each(viewports)('keeps every target at least 44px and inside the board at %s', (_, shell, stage, rowHeaders) => {
+    const layout = narrowBoardLayout(stage.width, stage.height, rowHeaders, shell)
+    expect(layout.mode).toBe(shell)
+    // The board spans the stage's grid track, beside the rail and above the dock;
+    // large text grows it into the stage's own scroll area instead.
+    expect(layout.width).toBe(stage.width)
+    expect(layout.height).toBeGreaterThanOrEqual(stage.height)
+    expect(layout.height).toBeLessThanOrEqual(stage.height * NARROW_MAX_BOARD_GROWTH)
+    expect(layout.cardWidth).toBeGreaterThanOrEqual(44)
+    expect(layout.cardHeight).toBeGreaterThanOrEqual(44)
+    for (const row of ['far', 'near', 'hand'] as const) {
+      expect(layout.rows[row].labelHeight).toBeCloseTo(rowHeaders[row], 6)
+      const laneTop = layout.height / 2 - layout.rows[row].y - layout.rows[row].height / 2
+      expect(layout.rows[row].labelTop + layout.rows[row].labelHeight).toBeLessThanOrEqual(laneTop + 0.001)
+    }
+    const inside = (rect: BoardRect, bounds: ReturnType<typeof laneBounds>) =>
+      rect.x - rect.width / 2 >= bounds.left - 0.001 && rect.x + rect.width / 2 <= bounds.right + 0.001
+      && rect.y + rect.height / 2 <= bounds.top + 0.001 && rect.y - rect.height / 2 >= bounds.bottom - 0.001
+    const board = { left: -layout.width / 2, right: layout.width / 2, top: layout.height / 2, bottom: -layout.height / 2 }
+    expect(inside(layout.drop, board)).toBe(true)
+    for (const row of ['far', 'near'] as const) {
+      const slots = Array.from({ length: NARROW_TYPE_SLOTS }, (_, slot) => (
+        { x: typeSlotX(slot, layout), y: layout.rows[row].y, width: layout.cardWidth, height: layout.cardHeight }))
+      expect(slots.every((slot) => inside(slot, laneBounds(layout, row)))).toBe(true)
+      expect(slots.some((slot, index) => slots.slice(index + 1).some((other) => overlaps(slot, other)))).toBe(false)
+    }
+    const hand = laneBounds(layout, 'hand')
+    const pageSize = narrowHandPageSize(layout)
+    for (let count = 1; count <= 50; count++) {
+      for (let start = 0; start < count; start += pageSize) {
+        const rects = narrowHandRects(count - start, layout)
+        expect(rects).toHaveLength(Math.min(count - start, pageSize))
+        expect(rects.every((rect) => rect.width >= 44 && rect.height >= 44 && inside(rect, hand))).toBe(true)
+        expect(rects.some((rect, index) => rects.slice(index + 1).some((other) => overlaps(rect, other)))).toBe(false)
+      }
+    }
+  })
+
+  it('keeps every target at least 44px on the short cover-landscape rail by scrolling the board', () => {
+    const stage = unfoldedStage('rail', 882, 232)
+    const layout = narrowBoardLayout(stage.width, stage.height, headers(1, false), 'rail')
+    expect(layout.height).toBeGreaterThan(stage.height)
+    expect(layout.cardWidth).toBeGreaterThanOrEqual(44)
+    expect(narrowHandRects(narrowHandPageSize(layout), layout).every((rect) => rect.width >= 44)).toBe(true)
+  })
+
+  it('keeps the cover-screen geometry for narrow and unknown shells', () => {
+    const stage = narrowStage(344, 770)
+    const narrow = narrowBoardLayout(stage.width, stage.height, { far: 36, near: 36, hand: 50 })
+    expect(narrowBoardLayout(stage.width, stage.height, { far: 36, near: 36, hand: 50 }, 'narrow')).toEqual(narrow)
+    expect(narrowBoardLayout(stage.width, stage.height, { far: 36, near: 36, hand: 50 }, 'desktop' as never)).toEqual(narrow)
+    // The unfolded maxima never shrink a cover-screen board, which stays below them.
+    expect(narrowBoardLayout(stage.width, stage.height, { far: 36, near: 36, hand: 50 }, 'dock')).toEqual({ ...narrow, mode: 'dock' })
+  })
+
+  it('gives the unfolded boards every narrow header rule except the always-reserved pager row', () => {
+    const graphics = css('graphics.css')
+    expect(graphics).not.toContain('@media (max-width: 480px)')
+    expect(ruleBody(graphics, '.three-root[data-shell] .three-board-stage')).toBe('border-radius: 10px;')
+    const narrowRules = cssRules(graphics).filter(({ selectors }) => selectors.some((selector) => selector.includes('[data-layout="narrow"]')))
+    expect(narrowRules.length).toBeGreaterThan(5)
+    for (const { selectors, body } of narrowRules) {
+      if (body === 'min-height: 50px;') {
+        expect(selectors).toEqual(['.three-board-stage[data-layout="narrow"] .three-board-label[data-row="hand"]'])
+        continue
+      }
+      for (const selector of selectors.filter((candidate) => candidate.includes('[data-layout="narrow"]'))) {
+        for (const shell of ['dock', 'rail']) {
+          expect(selectors).toContain(selector.replace('[data-layout="narrow"]', `[data-layout="${shell}"]`))
+        }
+      }
+    }
+  })
+
+  it('gives the unfolded top bars every narrow top-bar rule', () => {
+    const styles = css('interface.css')
+    const narrowRules = cssRules(styles).filter(({ selectors }) => selectors.some((selector) => selector.includes('.three-hud[data-layout="narrow"]')))
+    expect(narrowRules.length).toBeGreaterThan(5)
+    for (const { selectors } of narrowRules) {
+      for (const selector of selectors.filter((candidate) => candidate.includes('.three-hud[data-layout="narrow"]'))) {
+        for (const shell of ['dock', 'rail']) {
+          expect(selectors).toContain(selector.replace('[data-layout="narrow"]', `[data-layout="${shell}"]`))
+        }
+      }
+    }
+    expect(styles).toMatch(/\.three-interface \.three-hud\[data-layout="rail"\] :focus-visible[^}]*outline-offset: -3px;/)
+  })
+
+  it('stacks rail actions at 48px and keeps overlays over the board column', () => {
+    const shell = css('renderer.css')
+    expect(ruleBody(shell, '.three-root--game[data-shell="rail"] .three-dock')).toContain('grid-template-areas: "prompt" "actions" "primary";')
+    const primary = ruleBody(shell, '.three-root--game[data-shell="rail"] .three-dock .three-board-primary')
+    expect(primary).toContain('width: 100%;')
+    expect(primary).toContain('min-height: 48px;')
+    const styles = css('interface.css')
+    expect(ruleBody(styles, '.three-root--game[data-shell="rail"] .three-dock-actions.three-interface')).toContain('flex-direction: column;')
+    expect(ruleBody(styles, '.three-root--game[data-shell="rail"] .three-dock-actions.three-interface button')).toContain('min-height: 48px;')
+    // The dock's target list opens above it; the rail's beside it, clear of the rail.
+    expect(ruleBody(styles, '.three-root--game[data-shell="dock"] .three-interface .three-target-panel', '.three-root--narrow .three-interface .three-target-panel'))
+      .toContain('bottom: calc(max(4px, env(safe-area-inset-bottom)) + var(--three-dock-height, 111px) + 8px);')
+    const clearOfRail = 'right: calc(16px + var(--three-rail-width, 180px)); right: calc(max(4px, env(safe-area-inset-right)) + var(--three-rail-width, 180px) + 12px);'
+    const panel = ruleBody(styles, '.three-root--game[data-shell="rail"] .three-interface .three-target-panel')
+    expect(panel).toContain(clearOfRail)
+    expect(panel).toContain('transform: none;')
+    expect(ruleBody(styles, '.three-root--game[data-shell="rail"] .three-interface .three-tutorial-banner')).toContain(clearOfRail)
+  })
+
+  it('precedes every safe-area declaration in the renderer styles with a plain fallback', () => {
+    for (const file of ['renderer.css', 'graphics.css', 'interface.css']) {
+      for (const { selectors, body } of cssRules(css(file))) {
+        const declarations = body.split(';').map((declaration) => declaration.trim()).filter(Boolean)
+        declarations.forEach((declaration, index) => {
+          if (!declaration.includes('env(')) return
+          const property = declaration.slice(0, declaration.indexOf(':')).trim()
+          const fallback = declarations.slice(0, index)
+            .some((earlier) => earlier.startsWith(`${property}:`) && !earlier.includes('env('))
+          expect(fallback, `${file}: ${selectors.join(', ')} { ${declaration} }`).toBe(true)
+        })
+      }
+    }
+  })
+})
+
 describe('Three.js shell profile', () => {
-  const NARROW: ThreeShell = { profile: 'narrow', short: false }
-  const DOCK: ThreeShell = { profile: 'dock', short: false }
-  const RAIL: ThreeShell = { profile: 'rail', short: false }
-  const SHORT_RAIL: ThreeShell = { profile: 'rail', short: true }
-  const DESKTOP: ThreeShell = { profile: 'desktop', short: false }
+  const NARROW: ThreeShell = NARROW_SHELL
+  const DOCK: ThreeShell = DOCK_SHELL
+  const RAIL: ThreeShell = RAIL_SHELL
+  const SHORT_RAIL: ThreeShell = SHORT_RAIL_SHELL
+  const DESKTOP: ThreeShell = DESKTOP_SHELL
   const touch = (width: number, height: number) => threeShellProfile({ width, height, coarse: true })
   const mouse = (width: number, height: number) => threeShellProfile({ width, height, coarse: false })
 
-  // Estimated layout viewports from the plan's Fold4 postures table. Milestone 0
-  // device measurements, keyboard-open variants included, replace these rows.
-  const fold4Postures: ReadonlyArray<readonly [string, number, number, ThreeShell, ThreeShell]> = [
-    ['cover portrait in a Chrome tab', 344, 770, NARROW, NARROW],
-    ['cover portrait as an installed PWA', 344, 834, NARROW, NARROW],
-    ['cover portrait at full screen', 344, 882, NARROW, NARROW],
-    ['cover landscape in a Chrome tab', 882, 232, SHORT_RAIL, DESKTOP],
-    ['main portrait in a Chrome tab', 690, 717, DOCK, DESKTOP],
-    ['main portrait at full screen', 690, 829, DOCK, DESKTOP],
-    ['main landscape in a Chrome tab', 829, 578, RAIL, DESKTOP],
-    ['main landscape at full screen', 829, 690, RAIL, DESKTOP],
-  ]
-
-  it.each(fold4Postures)('maps the Fold4 %s (%sx%s) by pointer type', (_, width, height, coarse, fine) => {
+  it.each(FOLD4_POSTURES)('maps the Fold4 %s (%sx%s) by pointer type', (_, width, height, coarse, fine) => {
     expect(touch(width, height)).toEqual(coarse)
     expect(mouse(width, height)).toEqual(fine)
   })

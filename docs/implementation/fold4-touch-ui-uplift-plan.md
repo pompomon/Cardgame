@@ -98,6 +98,19 @@ The approved decisions are:
   - [ ] Fold4 device check of Figure 4, callouts 1–4, and the second-finger
     policy (pending maintainer: needs a physical Galaxy Z Fold4)
 - [ ] Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
+  - [x] Shell wiring: `threeShellProfile` on `resize` and `(pointer: coarse)`
+    changes, `data-shell` and `data-shell-short` on the root, and the dock in
+    every touch shell, with focused tests
+  - [x] Per-shell touch layout with card maxima and a pager row only for a
+    multi-page hand; the cover-screen geometry is unchanged
+  - [x] `touchShellActive()`, keeping the selection, dock prompt, and target
+    list across touch shells
+  - [x] `[data-shell]` CSS for the `dock` and `rail` shells, with safe-area
+    fallbacks
+  - [x] Agent docs and README: touch shells, fold continuity, tap-select, and
+    the dock
+  - [ ] Fold4 device check of Figures 5 and 6 (pending maintainer: needs a
+    physical Galaxy Z Fold4)
 - [ ] Milestone 4 — Short landscape (cover screen and phones held sideways)
 - [ ] Milestone 5 — Documentation, hardening, and device release gate
 
@@ -796,6 +809,41 @@ The implementation differs from the scope above in these ways:
 - [`three-interface.md`](../agent/three-interface.md#mobile-layout) documents
   the shells and fold continuity.
 - README describes tap-select and the dock.
+
+**As built**
+
+The implementation differs from the scope above in these ways:
+
+- During a game, every touch shell sets `data-shell`, including `narrow`,
+  which also keeps its `three-root--narrow` class. Outside a game the root
+  has no `data-shell`, and the dock stays hidden.
+- A change to the `visualViewport` alone does not reclassify, so the
+  on-screen keyboard and pinch zoom keep the current shell.
+- `TOUCH_CARD_MAXIMA` caps the type-slot and hand-card heights per shell.
+  `dock` and `rail` therefore stop at about 85×117 slots and 115×158 hand
+  cards.
+- The 108×148 hand-card target holds for the five-card opening hand: about
+  115×158 in `dock` at 690×717 and 113×155 in `rail` at 829×578. Larger
+  hands stay on one row and shrink. In `dock` at 690×717, six cards are about
+  107×147 and seven about 91×125.
+- The stage's `data-layout` names the shell (`narrow`, `dock`, or `rail`).
+  `narrow` stays the cover-screen geometry key.
+- The rail gives its leftover height to the prompt. The target panel and the
+  tutorial banner move clear of the rail.
+- At 200% text, End Turn grows to 52 px. The `dock` action row grows with
+  it, so the two-line prompt stays whole. The `narrow` dock keeps the fixed
+  62 px allowance it had before this plan, so 8 px of its three-line prompt
+  scrolls at 200% text. Milestone 5 revisits it.
+- Entering `desktop` keeps a pending summon, as before this milestone. Its
+  target picker reopens on `desktop` with no target chosen.
+- Without a selection, a switch between touch shells keeps the browsed hand
+  page, or the first card of that page when the page size changes. Entering
+  or leaving `desktop` starts on the first page, because `desktop` shows the
+  whole hand.
+- Until Milestone 4, a short rail (the cover screen or a phone held sideways)
+  keeps the board at its 356 px minimum and scrolls it.
+- The geometry tests estimate the single-line header heights. The browser
+  evidence measures them.
 
 ### Milestone 4 — Short landscape
 

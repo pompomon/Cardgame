@@ -130,8 +130,9 @@ cannot scroll, so a peek opens only on a side where all of it fits:
 - The peek closes on `pointercancel`, capture loss, blur, Escape, a hidden
   document, a decision change, a refused preview, relayout, an opened menu,
   and disposal. Every path clears both timers.
-- The peek reuses the hover overlay and is `aria-hidden`. The narrow dock
-  prompt announces it, and Details stays the keyboard and screen-reader path.
+- The peek reuses the hover overlay and is `aria-hidden`. The dock prompt
+  announces it in every touch shell, and Details stays the keyboard and
+  screen-reader path.
 - `setPeek()` only re-renders the interface and never calls `onChange`. The
   peek is not part of `isBlocked()`.
 
@@ -182,25 +183,63 @@ stays in view.
 
 Viewport and observer callbacks interrupt gestures only when something really
 changed. A new layout ends the drag, cancels the interaction (closing a peek or
-long press), re-presents the board and re-anchors the near lane. A narrow board
-held at its 356 px minimum keeps its layout while the stage around it shrinks or
-grows. `relayout` therefore also compares the stage's client box with the one
+long press), re-presents the board and re-anchors the near lane. A touch-shell
+board held at its 356 px minimum keeps its layout while the stage around it
+shrinks or grows. `relayout` therefore also compares the stage's client box with the one
 from the last relayout. When only that box changed, it ends the drag, cancels the
 interaction and re-anchors the near lane, without re-presenting. A callback with
 neither change keeps a live gesture and the player's own scroll position.
 
-The narrow hand page follows the selected card across profile and page-size
-changes. It follows the retained selection even while Details or a menu blocks
+The touch-shell hand page follows the selected card across shell and page-size
+changes, including a shell switch that keeps the page size. It follows the
+retained selection even while Details or a menu blocks
 input and hides the highlight, so closing them finds the card on the shown
-page instead of clearing it as off-page. With no selection, a page-size change
-keeps the first card of the old page in view. A new acting player or a
-presentation boundary still resets the hand to page 0.
+page instead of clearing it as off-page. With no selection, a switch between
+touch shells keeps the browsed page, and a page-size change keeps the first
+card of the old page in view. Entering or leaving `desktop`, a new acting
+player, or a presentation boundary resets the hand to page 0.
 
 ## Layout
 
 Treat responsive layout as a pure projection from viewport and measured native
 HTML chrome. Reuse `clamp` from `src/renderers/shared/math.ts` and cover fitting
 from `src/renderers/shared/image-fit.ts`.
+
+### Touch shells
+
+`ThreeRenderer` classifies the viewport with `threeShellProfile()` on window
+`resize` and on `(pointer: coarse)` changes. It re-renders only when the
+profile or its short flag changes. A change to the `visualViewport` alone,
+such as the on-screen keyboard or a pinch zoom, never reclassifies. Unmount
+removes both listeners.
+
+- **Root.** During a game, every touch shell sets `data-shell` (`narrow`,
+  `dock`, or `rail`) on `.three-root` and shows the dock. A short rail also
+  sets `data-shell-short="true"`. Only `narrow` adds `three-root--narrow`.
+  Outside a game the shell is `desktop`.
+- **Geometry.** Every touch shell lays out with `narrowBoardLayout(width,
+  height, headers, shell)`. `TOUCH_CARD_MAXIMA` caps the type-slot and
+  hand-card heights per shell. The cover screen keeps its `narrow` geometry,
+  and `dock` and `rail` stop at about 85×117 slots and 115×158 hand cards.
+  The stage's `data-layout` names the shell, so `narrow` stays the
+  cover-screen key.
+- **Pager row.** `narrow` always reserves the 50 px hand pager row. `dock`
+  and `rail` reserve it only while the hand has more than one page. Only the
+  hand size changes the page count, so the row never moves during a drag.
+- **Viewport.** `compactBoardViewport` uses the layout viewport
+  (`window.innerHeight`) instead of the `visualViewport` height.
+- **Switching.** Any shell change ends a drag, cancels the interaction, and
+  makes the hand page follow the selection, or else keeps the browsed page.
+  Entering or leaving `desktop` instead starts on page 0 and moves the
+  primary button and the hand pager.
+- **CSS.** `[data-shell]` selectors replace the board's `max-width: 480px`
+  rules, and every `env(safe-area-inset-*)` value has a plain fallback first.
+  `dock` puts a fixed, rem-based two-line dock under the board; its action
+  row reserves End Turn's height, so large text never clips the prompt.
+  `rail` uses `grid-template-columns: minmax(0, 1fr) clamp(180px, 26vw, 240px)`:
+  the top bar stays above the board, and the full-height rail stacks the
+  prompt, 48 px actions, and the primary button. The target panel and the
+  tutorial banner stay clear of the rail.
 
 Keep action instructions and effect captions as stage-level overlays rather
 than row content. Changing a wrapped prompt during an active drag can trigger
@@ -216,7 +255,7 @@ and its acceptance from the last pointer. Touch and pen placement reserves the
 pill's band, measured once at drag start, so the pill never covers a touch
 card; a mouse card stays under the cursor. The pill's text changes only when
 acceptance changes, and the end of a drag restores the current idle text,
-which may be a response prompt. In the narrow profile it is hidden except as
+which may be a response prompt. In every touch shell it is hidden except as
 the pill and reserves no caption space. Drag feedback changes only colour,
 outline, and opacity, so measured headers keep their size.
 
@@ -229,7 +268,7 @@ the canvas, or outside the stage's visible box never drops.
 `ThreeBoard` owns one `ThreeDragLayer` (`drag-layer.ts`): an `aria-hidden`,
 pointer-transparent overlay inside `.three-board-stage`, so it scrolls with the
 board. It draws the lifted card above the HTML headers and labels the landing
-slot ("Lands here", or "+1" on an occupied narrow type slot). Each drag holds
+slot ("Lands here", or "+1" on an occupied touch-shell type slot). Each drag holds
 at most one extra card-face lease for it, released by `endDrag` on every path,
 including disposal. Without a 2D context, or when painting fails, the
 in-scene proxy stays visible instead. A move changes only CSS transforms.

@@ -55,8 +55,17 @@ query parameters and the hash, then discards the old stored renderer preference.
   During a match, the HUD above the table keeps Menu, turn/phase, status, and
   decision prompts available without opening the native card controls.
 - Drag a creature you can summon from your hand onto your Board. Touch and pen
-  movement must cross a threshold; tapping opens a preview. Multiple legal
-  targets are selected before committing the action.
+  movement must cross a threshold. In the desktop layout, tapping a card opens
+  a preview. Multiple legal targets are selected before committing the action.
+- Touch layouts add a fixed action dock with the prompt and the actions for
+  the current decision. Screens up to 480 px wide, such as a folded Galaxy
+  Z Fold4's cover screen, put it under the board. Larger touch screens, such as
+  the unfolded Fold4, put it under the board in portrait and in a right-hand
+  rail in landscape. Tap a hand card to select it, then choose **Summon**,
+  **Details**, or **Clear**. With touch or pen, tapping a target or an
+  Interception discard selects it until you confirm it in the dock; a mouse
+  click acts at once. Folding, unfolding, or rotating keeps the selection and
+  an open target list. A long hand pages with the arrows in its header.
 - With touch or pen, press and hold a card without moving it to peek at it. A
   ring fills, and after about half a second a large preview with the card's
   rules opens on the side of the screen away from your finger. Lift your finger
@@ -95,12 +104,12 @@ query parameters and the hash, then discards the old stored renderer preference.
   for display without rewriting recordings; unknown text remains unchanged.
   Opponent draw names and art remain hidden. Scrolling back stops automatic
   following; **Follow latest** resumes it.
-- Card rows remain centered and overlap cards as needed so the entire hand and
-  both Board rows stay visible without pagination. Short landscape layouts
-  place player information beside the cards. Active gameplay fits the viewport
-  without document or card-row scrolling; dialogs scroll internally when
-  space or enlarged text requires it. The camera stays fixed during dragging,
-  and Deck/Discard pile stacks distinguish empty piles.
+- In the desktop layout, card rows remain centered and overlap cards as needed
+  so the entire hand and both Board rows stay visible without pagination.
+  Short landscape layouts place player information beside the cards. Active
+  gameplay fits the viewport without document or card-row scrolling; dialogs
+  scroll internally when space or enlarged text requires it. The camera stays
+  fixed during dragging, and Deck/Discard pile stacks distinguish empty piles.
 - Card Visual Style, Monochrome, Board Theme, Render Quality, and Animations
   use persisted preferences.
   Backgrounds use aspect-correct cropping and keep the previous theme visible

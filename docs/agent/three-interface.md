@@ -96,8 +96,8 @@ several regions would speak the same text twice.
   totalSteps)` from `game-presentation.ts`, which the controller also uses.
   Any other status is announced, such as a refused recording save, and so
   are starting, pausing, stepping and reaching the final state.
-- The narrow dock prompt (`#three-dock-prompt`, `role="status"`) is a
-  second persistent region. It speaks decisions that the status line does
+- The dock prompt (`#three-dock-prompt`, `role="status"`) of every touch
+  shell is a second persistent region. It speaks decisions that the status line does
   not, such as the winner of a finished game. During replay it shows the
   transport's step count, which changes on every playback tick and repeats
   what the status line announces. `ThreeDockModel.quiet` marks that prompt,
@@ -105,15 +105,15 @@ several regions would speak the same text twice.
   before the new text, so a replay's first prompt stays silent and the
   first prompt after it, such as the winner, is spoken. The prompt keeps
   its role, id and text, and still describes the docked primary button.
-- The dock prompt is also the narrow drag announcer. `ThreeBoard` reports
+- The dock prompt is also the drag announcer. `ThreeBoard` reports
   `ThreeDragFeedback` (`cardId`, `accepted`) or `null`, and
   `setDragFeedback()` re-renders the interface without calling `onChange`, so
   the board never re-presents mid-gesture. `renderThreeDock` replaces only the
   prompt, with copy built from catalog names, and keeps the actions and
   selection. Stale or unsummonable feedback, an open menu, Cards, or a
-  preview leave the prompt alone. In the narrow profile the board
+  preview leave the prompt alone. In every touch shell the board
   instruction sets `aria-live="off"` before any drag text changes, so each
-  drag message is spoken once. Outside it, the board instruction stays the
+  drag message is spoken once. On `desktop`, the board instruction stays the
   live region.
 - The dock prompt also announces a long-press peek. `setPeek()` re-renders
   the interface without `onChange`, and `renderThreeDock` replaces only the
@@ -216,7 +216,7 @@ Rules:
   reads `interface.css` and fails if an Adventure or `three-sr-only` rule
   adds a transition or animation, or if the file adds `@keyframes`.
 - **Pending result.** While storage refuses a result, the finished board stays
-  open. The Game Menu, the wide game-controls panel and the narrow dock offer
+  open. The Game Menu, the wide game-controls panel and the touch dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
   wide panel is a fixed-height row that scrolls, so both buttons share its
   header row with Menu instead of falling below the fold. There, as in the
@@ -287,6 +287,27 @@ check; automated HTML assertions alone do not prove readable browser layout.
 
 Safe-area values need plain fallbacks for engines that reject `env()`. Bottom
 actions must remain reachable above browser chrome and display cutouts.
+
+### Touch shells and fold continuity
+
+The `narrow` cover screen and the unfolded `dock` (portrait) and `rail`
+(landscape) shells share one touch grammar through `touchShellActive()`.
+The HUD's `data-layout` names the shell; only the CSS differs between them.
+
+- A tap or click on a hand card selects it, and the dock offers Summon,
+  Details and Clear. A touch or pen tap on a target or an Intercept discard
+  waits for a dock confirmation; a mouse click submits at once.
+- The dock is the prompt followed by its actions, in the same order and with
+  the same unique ids in every shell. `dock` keeps it under the board, and
+  `rail` stacks it in a right-hand column with 48 px actions.
+- Folding, unfolding or rotating between touch shells keeps the selection,
+  the dock prompt and actions, and an open target list. A fold does not
+  change `threeDecisionKey`, so the dock's buttons stay live.
+- Entering `desktop` or a new decision clears them. On `desktop`, a pending
+  summon continues in the desktop target picker with no target chosen.
+- The board ends a drag on every shell change, and its hand page follows the
+  selected card (see
+  [`three-renderer.md`](three-renderer.md#touch-shells)).
 
 ## Visual verification
 

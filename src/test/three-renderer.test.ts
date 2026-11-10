@@ -8,7 +8,8 @@ import type { BoardHit, ThreePeek } from '../renderers/three/contracts'
 import type { ThreeInteractionOptions } from '../renderers/three/interaction'
 import { createInitialGame } from '../game/engine'
 import { threePrimaryAction, threeResponse, threeTargets, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { NARROW_LAYOUT_QUERY } from '../renderers/three/layout'
+import { COARSE_POINTER_QUERY } from '../renderers/three/layout'
+import { FOLD4_POSTURES } from './helpers/fold4-postures'
 
 const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
@@ -42,7 +43,11 @@ function view(): AppViewModel {
   } as unknown as AppViewModel
 }
 
-function harness(narrow = false) {
+interface Posture { readonly width: number; readonly height: number; readonly coarse: boolean }
+const DESKTOP_POSTURE: Posture = { width: 1280, height: 800, coarse: false }
+const COVER_POSTURE: Posture = { width: 344, height: 770, coarse: true }
+
+function harness(posture: Posture = DESKTOP_POSTURE) {
   const elements: Array<{ hidden: boolean; className: string; append: ReturnType<typeof vi.fn> }> = []
   const document = {
     hidden: false,
@@ -54,16 +59,37 @@ function harness(narrow = false) {
     addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }
   const media = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
-  const narrowMedia = { matches: narrow, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  const coarseMedia = { matches: posture.coarse, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  // The visual viewport is what a keyboard or pinch zoom resizes; the shell must ignore it.
+  const visualViewport = { width: posture.width, height: posture.height, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  const windowStub = {
+    innerWidth: posture.width, innerHeight: posture.height, visualViewport,
+    matchMedia: (query: string) => query === COARSE_POINTER_QUERY ? coarseMedia : media,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }
   vi.stubGlobal('document', document)
-  vi.stubGlobal('window', { matchMedia: (query: string) => query === NARROW_LAYOUT_QUERY ? narrowMedia : media })
+  vi.stubGlobal('window', windowStub)
   const container = {
     classList: { add: vi.fn(), remove: vi.fn() },
+    dataset: {},
     replaceChildren: vi.fn(),
   } as unknown as HTMLElement
   const renderer = new ThreeRenderer()
   renderer.mount(container, {} as ControllerApi)
-  return { renderer, document, media, narrowMedia, elements, container }
+  const listeners = (type: string) => windowStub.addEventListener.mock.calls
+    .filter(([name]) => name === type).map(([, listener]) => listener as () => void)
+  /** Moves the layout viewport, as a fold or rotation does, and fires its resize event. */
+  const resize = (width: number, height: number): void => {
+    windowStub.innerWidth = width
+    windowStub.innerHeight = height
+    for (const listener of listeners('resize')) listener()
+  }
+  /** Connects or disconnects a mouse: the primary pointer changes without a resize. */
+  const setCoarse = (coarse: boolean): void => {
+    coarseMedia.matches = coarse
+    for (const [, listener] of coarseMedia.addEventListener.mock.calls) (listener as () => void)()
+  }
+  return { renderer, document, media, coarseMedia, visualViewport, window: windowStub, elements, container, listeners, resize, setCoarse }
 }
 
 afterEach(() => {
@@ -84,7 +110,7 @@ describe('Three.js composition', () => {
     // HUD, stage, action dock, then the fixed overlay controls.
     expect(container.replaceChildren).toHaveBeenLastCalledWith(elements[2], elements[0], elements[3], elements[1])
     expect(mocks.uiConstruct).toHaveBeenLastCalledWith(elements[1], expect.anything(), expect.any(Function), expect.any(Function), elements[2],
-      { dockHost: elements[3], narrow: expect.any(Function), dragActive: expect.any(Function) })
+      { dockHost: elements[3], shell: expect.any(Function), dragActive: expect.any(Function) })
     expect(elements[3].className).toBe('three-dock')
     expect(elements[3].append).toHaveBeenCalledExactlyOnceWith(elements[4])
     expect(mocks.boardConstruct.mock.calls.at(-1)![4]).toBe(elements[4])
@@ -339,39 +365,136 @@ describe('Three.js composition', () => {
     expect(media.removeEventListener).toHaveBeenCalledOnce()
   })
 
-  it('switches the narrow in-game profile with the shared breakpoint and releases its listener', () => {
-    const { renderer, narrowMedia, elements, container } = harness(true)
+  it.each(FOLD4_POSTURES.flatMap(([name, width, height, touch, mouse]) => [
+    [name, 'touch', width, height, true, touch] as const,
+    [name, 'mouse', width, height, false, mouse] as const,
+  ]))('marks the root for the Fold4 %s with a %s pointer (%sx%s) only during a game', (_, _pointer, width, height, coarse, expected) => {
+    const { renderer, elements, container } = harness({ width, height, coarse })
     const dock = elements[3]
     const presentation = mocks.boardConstruct.mock.calls.at(-1)![5] as () => unknown
-    const narrow = (mocks.uiConstruct.mock.calls.at(-1)![5] as { narrow: () => boolean }).narrow
-    expect(narrowMedia.addEventListener).toHaveBeenCalledExactlyOnceWith('change', expect.any(Function))
-    // The lobby keeps its wide layout even on a narrow screen.
-    renderer.render({ ...view(), game: null })
-    expect(narrow()).toBe(false)
-    expect(dock.hidden).toBe(true)
-    expect(presentation()).toEqual({ narrow: false, selection: { cardId: null, targetId: null, discardId: null } })
+    const shell = (mocks.uiConstruct.mock.calls.at(-1)![5] as { shell: () => string }).shell
+    const touch = expected.profile !== 'desktop'
     renderer.render(view())
-    expect(narrow()).toBe(true)
-    expect(dock.hidden).toBe(false)
-    expect(container.classList.add).toHaveBeenCalledWith('three-root--narrow')
-    expect(presentation()).toEqual({ narrow: true, selection: mocks.ui.selection })
+    expect(container.dataset.shell).toBe(touch ? expected.profile : undefined)
+    expect(container.dataset.shellShort).toBe(touch && expected.short ? 'true' : undefined)
+    expect(dock.hidden).toBe(!touch)
+    expect(shell()).toBe(expected.profile)
+    expect(presentation()).toEqual(touch
+      ? { shell: expected.profile, selection: mocks.ui.selection }
+      : { shell: 'desktop', selection: { cardId: null, targetId: null, discardId: null } })
+    if (expected.profile === 'narrow') expect(container.classList.add).toHaveBeenCalledWith('three-root--narrow')
+    else expect(container.classList.add).not.toHaveBeenCalledWith('three-root--narrow')
+    // The lobby keeps its wide layout on every screen.
+    renderer.render({ ...view(), game: null })
+    expect(container.dataset.shell).toBeUndefined()
+    expect(container.dataset.shellShort).toBeUndefined()
+    expect(dock.hidden).toBe(true)
+    expect(shell()).toBe('desktop')
+    expect(presentation()).toEqual({ shell: 'desktop', selection: { cardId: null, targetId: null, discardId: null } })
+    renderer.unmount()
+  })
+
+  it('reclassifies the in-game shell when the layout viewport or primary pointer changes', () => {
+    const { renderer, elements, container, resize, setCoarse } = harness(COVER_POSTURE)
+    const dock = elements[3]
+    const shell = (mocks.uiConstruct.mock.calls.at(-1)![5] as { shell: () => string }).shell
+    const presentation = mocks.boardConstruct.mock.calls.at(-1)![5] as () => unknown
+    renderer.render(view())
+    expect(container.dataset.shell).toBe('narrow')
     // Paging the narrow hand drops a selection that is no longer visible.
     const handPage = mocks.boardConstruct.mock.calls.at(-1)![6] as () => void
     handPage()
     expect(mocks.ui.clearHandSelection).toHaveBeenCalledOnce()
-    // Leaving the breakpoint re-renders through the media listener.
-    narrowMedia.matches = false
-    const change = narrowMedia.addEventListener.mock.calls[0][1] as () => void
-    change()
-    expect(narrow()).toBe(false)
+    // Unfolding to the main screen re-renders once, in the dock shell.
+    mocks.board.render.mockClear()
+    resize(690, 717)
+    expect(mocks.board.render).toHaveBeenCalledOnce()
+    expect(container.dataset.shell).toBe('dock')
+    expect(container.classList.remove).toHaveBeenLastCalledWith('three-root--narrow')
+    expect(shell()).toBe('dock')
+    expect(dock.hidden).toBe(false)
+    expect(presentation()).toEqual({ shell: 'dock', selection: mocks.ui.selection })
+    // A resize within the same shell is left to the board's own relayout.
+    mocks.board.render.mockClear()
+    resize(690, 829)
+    expect(mocks.board.render).not.toHaveBeenCalled()
+    resize(829, 578)
+    expect(container.dataset.shell).toBe('rail')
+    expect(container.dataset.shellShort).toBeUndefined()
+    resize(882, 232)
+    expect(container.dataset.shell).toBe('rail')
+    expect(container.dataset.shellShort).toBe('true')
+    resize(829, 690)
+    expect(container.dataset.shellShort).toBeUndefined()
+    expect(mocks.board.render).toHaveBeenCalledTimes(3)
+    // A mouse takes over the primary pointer: the desktop layout returns without a resize.
+    setCoarse(false)
+    expect(container.dataset.shell).toBeUndefined()
+    expect(shell()).toBe('desktop')
     expect(dock.hidden).toBe(true)
-    expect(container.classList.remove).toHaveBeenCalledWith('three-root--narrow')
+    expect(presentation()).toEqual({ shell: 'desktop', selection: { cardId: null, targetId: null, discardId: null } })
+    setCoarse(true)
+    expect(container.dataset.shell).toBe('rail')
     renderer.unmount()
-    expect(narrowMedia.removeEventListener).toHaveBeenCalledExactlyOnceWith('change', change)
+  })
+
+  it('ignores visual viewport changes from an on-screen keyboard or pinch zoom', () => {
+    const { renderer, container, visualViewport, listeners } = harness({ width: 690, height: 717, coarse: true })
+    renderer.render(view())
+    expect(container.dataset.shell).toBe('dock')
+    mocks.board.render.mockClear()
+    // The keyboard and a pinch zoom shrink only the visual viewport, then the window reports a resize.
+    visualViewport.height = 380
+    visualViewport.width = 300
+    for (const listener of listeners('resize')) listener()
+    expect(mocks.board.render).not.toHaveBeenCalled()
+    expect(container.dataset.shell).toBe('dock')
+    expect(visualViewport.addEventListener).not.toHaveBeenCalled()
+    renderer.unmount()
+  })
+
+  it('releases the resize and pointer listeners and clears the shell on unmount', () => {
+    const { renderer, coarseMedia, window, container, listeners, resize } = harness(COVER_POSTURE)
+    renderer.render(view())
+    const [reclassify] = listeners('resize')
+    expect(window.addEventListener).toHaveBeenCalledExactlyOnceWith('resize', reclassify)
+    expect(coarseMedia.addEventListener).toHaveBeenCalledExactlyOnceWith('change', reclassify)
+    // mount() starts with a defensive unmount; count only this one.
+    window.removeEventListener.mockClear()
+    renderer.unmount()
+    expect(window.removeEventListener).toHaveBeenCalledExactlyOnceWith('resize', reclassify)
+    expect(coarseMedia.removeEventListener).toHaveBeenCalledExactlyOnceWith('change', reclassify)
+    expect(container.dataset.shell).toBeUndefined()
+    expect(container.dataset.shellShort).toBeUndefined()
+    expect(container.classList.remove).toHaveBeenCalledWith('three-root--narrow')
+    // A late event after unmount must not reach the disposed board.
+    mocks.board.render.mockClear()
+    resize(690, 717)
+    expect(mocks.board.render).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the legacy pointer listener API', () => {
+    const coarseMedia = { matches: true, addListener: vi.fn(), removeListener: vi.fn() }
+    const media = { matches: false, addListener: vi.fn(), removeListener: vi.fn() }
+    vi.stubGlobal('document', { hidden: false, createElement: () => ({ hidden: false, className: '', setAttribute: vi.fn(), append: vi.fn() }),
+      addEventListener: vi.fn(), removeEventListener: vi.fn() })
+    vi.stubGlobal('window', { innerWidth: 690, innerHeight: 717, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      matchMedia: (query: string) => query === COARSE_POINTER_QUERY ? coarseMedia : media })
+    const container = { classList: { add: vi.fn(), remove: vi.fn() }, dataset: {}, replaceChildren: vi.fn() } as unknown as HTMLElement
+    const renderer = new ThreeRenderer()
+    renderer.mount(container, {} as ControllerApi)
+    renderer.render(view())
+    expect(container.dataset.shell).toBe('dock')
+    const [reclassify] = coarseMedia.addListener.mock.calls[0] as [() => void]
+    coarseMedia.matches = false
+    reclassify()
+    expect(container.dataset.shell).toBeUndefined()
+    renderer.unmount()
+    expect(coarseMedia.removeListener).toHaveBeenCalledExactlyOnceWith(reclassify)
   })
 
   it('forwards board drag feedback to the interface and ignores it after unmount', () => {
-    const { renderer } = harness(true)
+    const { renderer } = harness(COVER_POSTURE)
     const feedback = mocks.boardConstruct.mock.calls.at(-1)![7] as (value: unknown) => void
     feedback({ cardId: 'card', accepted: true })
     expect(mocks.ui.setDragFeedback).toHaveBeenCalledExactlyOnceWith({ cardId: 'card', accepted: true })
@@ -384,7 +507,7 @@ describe('Three.js composition', () => {
   })
 
   it('wires long-press peek and drag activity between the interaction and interface until unmount', () => {
-    const { renderer } = harness(true)
+    const { renderer } = harness(COVER_POSTURE)
     const { dragActive } = mocks.uiConstruct.mock.calls.at(-1)![5] as { dragActive: () => boolean }
     const options = mocks.inputConstruct.mock.calls.at(-1)![6] as ThreeInteractionOptions
     expect(dragActive()).toBe(false)

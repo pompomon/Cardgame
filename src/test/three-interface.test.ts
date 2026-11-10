@@ -37,6 +37,7 @@ import {
   type InterfaceUi,
 } from '../renderers/three/interface-model'
 import { NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit } from '../renderers/three/contracts'
+import type { ThreeShellProfile } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 import { createTrackedStorage, type TrackedStorage } from './helpers/tracked-storage'
 
@@ -270,7 +271,7 @@ class DocumentStub {
   emit(name: string, event: unknown): unknown { return this.listeners.get(name)?.(event as never) }
 }
 
-function setup(view = makeView(), separateHud = false, narrow: { enabled: boolean } | null = null, dragActive?: () => boolean) {
+function setup(view = makeView(), separateHud = false, narrow: { enabled: boolean; shell?: ThreeShellProfile } | null = null, dragActive?: () => boolean) {
   let current = view
   const document = new DocumentStub()
   const host = document.createElement('section')
@@ -294,7 +295,7 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   const onChange = vi.fn()
   const onBlock = vi.fn()
   const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock, hud as unknown as HTMLElement | null, {
-    ...(dock ? { dockHost: dock as unknown as HTMLElement, narrow: () => narrow!.enabled } : {}),
+    ...(dock ? { dockHost: dock as unknown as HTMLElement, shell: () => (narrow!.enabled ? narrow!.shell ?? 'narrow' : 'desktop') } : {}),
     ...(dragActive ? { dragActive } : {}),
   })
   ui.update(view, view.game?.actor ?? 0)
@@ -2686,10 +2687,10 @@ describe('Three narrow profile', () => {
     h.ui.setDragFeedback({ cardId: 'source', accepted: true })
     expect(h.content.innerHTML).toBe(content)
     expect(h.hud!.innerHTML).toBe(hud)
-    expect(renderThreeDock(makeView(), { ...defaultUi, narrow: true, dragFeedback: { cardId: 'source', accepted: true } }).prompt)
+    expect(renderThreeDock(makeView(), { ...defaultUi, shell: 'narrow', dragFeedback: { cardId: 'source', accepted: true } }).prompt)
       .toBe(`Release to summon ${displayCardName('Mountain')}. Drag back to your hand to cancel.`)
     expect(renderThreeDock(makeView(), {
-      ...defaultUi, narrow: true, menuOpen: true, dragFeedback: { cardId: 'source', accepted: true },
+      ...defaultUi, shell: 'narrow', menuOpen: true, dragFeedback: { cardId: 'source', accepted: true },
     }).prompt).not.toContain('Release to summon')
     h.ui.dispose()
   })
@@ -2709,6 +2710,225 @@ describe('Three narrow profile', () => {
     expect(ids).toContain(THREE_STATUS_ANNOUNCER_ID)
     expect(new Set(ids).size).toBe(ids.length)
     h.ui.dispose()
+  })
+
+  describe('across the dock and rail touch shells', () => {
+    const islandTarget = (): BoardHit => hit({ key: 'target-2', cardId: 'card-2', instanceId: 'target-2', name: 'Island' })
+    /** A shell the test can fold, as the renderer re-reads it on every update. */
+    const touchShell = (shell: ThreeShellProfile = 'narrow') => ({ enabled: true, shell })
+    const fold = (h: Harness, shell: { shell: ThreeShellProfile }, next: ThreeShellProfile, view: AppViewModel): void => {
+      shell.shell = next
+      h.update({ ...view, status: `Shell ${next}` })
+    }
+    /** Selects a card and, for `target`, a battlefield target; for `response`, an Intercept discard. */
+    const choose = (h: Harness, kind: 'target' | 'response'): void => {
+      if (kind === 'target') {
+        h.ui.activate(mountainHand, 'touch')
+        h.click('[data-action="select-summon"]')
+        h.ui.activate(islandTarget(), 'touch')
+      } else h.ui.activate(responseHit('discard-forest-2'), 'touch')
+    }
+    const attempted = {
+      target: { type: 'play_land', actor: 0, cardId: 'source', effectTargetId: 'target-2' },
+      response: { type: 'counter_land', actor: 0, discardCardId: 'discard-forest-2' },
+    } as const
+
+    it.each(['dock', 'rail'] as const)('gives the %s shell the touch top bar, dock prompt and tap-to-select', (shell) => {
+      const h = setup(makeView(), true, touchShell(shell))
+      expect(h.hud!.innerHTML).toContain(`data-layout="${shell}"`)
+      expect(h.hud!.innerHTML).not.toContain('three-required-prompt')
+      expect(h.dockPrompt!.id).toBe(THREE_DOCK_PROMPT_ID)
+      expect(promptText(h)).toBe('Drag a highlighted creature onto your board, or select a card for options.')
+      h.ui.activate(mountainHand, 'touch')
+      expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+      expect(dockActionNames(h)).toEqual(selectedCardActions)
+      h.click('[data-action="select-summon"]')
+      h.ui.activate(islandTarget(), 'touch')
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      expect(h.ui.selection).toEqual({ cardId: 'source', targetId: 'target-2', discardId: null })
+      h.click('[data-action="confirm-target"]')
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(attempted.target)
+      h.ui.dispose()
+    })
+
+    it('keeps the selection, dock prompt and open target list while folding narrow, dock and rail', () => {
+      const view = makeView()
+      const shell = touchShell()
+      const h = setup(view, true, shell)
+      choose(h, 'target')
+      h.click('[data-action="target-list"]')
+      const selection = h.ui.selection
+      const prompt = promptText(h)
+      const actions = dockActionNames(h)
+      expect(selection).toEqual({ cardId: 'source', targetId: 'target-2', discardId: null })
+      expect(actions).toContain('confirm-target')
+      for (const next of ['dock', 'rail', 'narrow', 'rail', 'dock'] as const) {
+        fold(h, shell, next, view)
+        expect(h.hud!.innerHTML).toContain(`data-layout="${next}"`)
+        expect(h.ui.selection).toEqual(selection)
+        expect(promptText(h)).toBe(prompt)
+        expect(dockActionNames(h)).toEqual(actions)
+        expect(h.content.querySelector('.three-target-panel')).not.toBeNull()
+        expect(h.dockActions!.querySelector('[data-action="target-list"]')?.getAttribute('aria-expanded')).toBe('true')
+      }
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.click('[data-action="confirm-target"]')
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(attempted.target)
+      h.ui.dispose()
+    })
+
+    it.each(['dock', 'rail'] as const)('clears a %s selection and touch target list on entering desktop or a new decision', (start) => {
+      const view = makeView()
+      const shell = touchShell(start)
+      const h = setup(view, true, shell)
+      choose(h, 'target')
+      h.click('[data-action="target-list"]')
+      h.update({ ...view, status: 'Saved' })
+      expect(h.ui.selection.targetId).toBe('target-2')
+      const next = structuredClone(view)
+      next.game!.turn = 2
+      h.update(next)
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(h.content.querySelector('.three-target-panel')).toBeNull()
+      choose(h, 'target')
+      h.click('[data-action="target-list"]')
+      fold(h, shell, 'desktop', next)
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(dockActionNames(h)).toEqual([])
+      expect(promptText(h)).toBe('')
+      expect(h.hud!.innerHTML).not.toContain(`data-layout="${start}"`)
+      // As before this shell, the pending summon continues in the desktop
+      // target picker; only the touch list and the chosen target are dropped.
+      expect(h.content.querySelector('[data-action="target-list-hide"]')).toBeNull()
+      expect(h.content.querySelectorAll('[data-action="target"]').map((button) => button.dataset.targetId)).toEqual(['target-1', 'target-2'])
+      // Folding back resumes that target mode with nothing chosen and the list closed.
+      fold(h, shell, start, next)
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(dockActionNames(h)).toEqual(['target-list', 'close'])
+      expect(h.content.querySelector('.three-target-panel')).toBeNull()
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
+
+    it.each(['target', 'response'] as const)('submits a %s confirmed after a fold once, clearing it on a synchronous accepted update', (kind) => {
+      const view = kind === 'target' ? makeView() : responseView()
+      const shell = touchShell()
+      const h = setup(view, true, shell)
+      choose(h, kind)
+      fold(h, shell, 'dock', view)
+      const confirm = h.dockActions!.querySelector(`[data-action="confirm-${kind}"]`)!
+      h.controller.submitAction.mockImplementation(() => {
+        const next = structuredClone(view)
+        next.game!.phase = kind === 'target' ? 'respond' : 'main'
+        next.game!.canInput = false
+        h.update(next)
+        expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      })
+      h.click(`[data-action="confirm-${kind}"]`)
+      // A duplicate activation of the same button cannot submit again.
+      h.dockActions!.emit('click', { target: confirm })
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(attempted[kind])
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(dockActionNames(h)).toEqual([])
+      h.ui.dispose()
+    })
+
+    it.each(['target', 'response'] as const)('retries the same %s after a status-only rejection and a fold', (kind) => {
+      const view = kind === 'target' ? makeView() : responseView()
+      const shell = touchShell('dock')
+      const h = setup(view, true, shell)
+      choose(h, kind)
+      const selection = h.ui.selection
+      h.controller.submitAction.mockImplementationOnce(() => h.update({ ...view, status: 'Send failed. Try again.' }))
+      h.click(`[data-action="confirm-${kind}"]`)
+      expect(h.ui.selection).toEqual(selection)
+      fold(h, shell, 'rail', view)
+      expect(h.ui.selection).toEqual(selection)
+      h.controller.submitAction.mockImplementationOnce(() => {
+        const next = structuredClone(view)
+        next.game!.canInput = false
+        h.update(next)
+      })
+      h.click(`[data-action="confirm-${kind}"]`)
+      expect(h.controller.submitAction.mock.calls).toEqual([[attempted[kind]], [attempted[kind]]])
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      h.ui.dispose()
+    })
+
+    it.each(['target', 'response'] as const)('drops a %s confirmation once the decision moved on during a fold', (kind) => {
+      const view = kind === 'target' ? makeView() : responseView()
+      const shell = touchShell('rail')
+      const h = setup(view, true, shell)
+      choose(h, kind)
+      fold(h, shell, 'dock', view)
+      // The controller has moved on before the folded frame presents it.
+      const next = structuredClone(view)
+      next.game!.turn = 2
+      h.latest(next)
+      h.click(`[data-action="confirm-${kind}"]`)
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(dockActionNames(h)).toEqual([])
+      h.ui.dispose()
+    })
+
+    it('steps back with Escape after a fold and disposes cleanly after another', () => {
+      const view = makeView()
+      const shell = touchShell()
+      const h = setup(view, true, shell)
+      choose(h, 'target')
+      h.click('[data-action="target-list"]')
+      fold(h, shell, 'rail', view)
+      escape(h)
+      expect(h.content.querySelector('.three-target-panel')).toBeNull()
+      expect(h.document.activeElement).toBe(h.dockActions!.querySelector('[data-action="target-list"]'))
+      escape(h)
+      expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+      fold(h, shell, 'dock', view)
+      escape(h)
+      expect(dockActionNames(h)).toEqual(selectedCardActions)
+      escape(h)
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      choose(h, 'target')
+      fold(h, shell, 'narrow', view)
+      h.ui.dispose()
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(h.dock!.children).toHaveLength(0)
+      fold(h, shell, 'rail', view)
+      escape(h)
+      expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+    })
+
+    it('keeps ids unique and one dock reading and focus order in every touch shell', () => {
+      const view = makeView()
+      const shell = touchShell()
+      const h = setup(view, true, shell)
+      choose(h, 'target')
+      h.click('[data-action="target-list"]')
+      const order = (root: ElementStub): string[] => root.querySelectorAll(TAB_STOPS).map((element) => element.dataset.action ?? element.id)
+      let first: Record<'hud' | 'dock' | 'content', string[]> | null = null
+      for (const next of ['narrow', 'dock', 'rail'] as const) {
+        fold(h, shell, next, view)
+        const roots = [h.hud!, h.host, h.dock!]
+        const ids = roots.flatMap((root) => root.querySelectorAll('[id]').map((element) => element.id))
+        expect(ids).toContain(THREE_DOCK_PROMPT_ID)
+        expect(new Set(ids).size).toBe(ids.length)
+        const positive = roots.flatMap((root) => root.querySelectorAll('[tabindex]'))
+          .filter((element) => Number(element.getAttribute('tabindex')) > 0)
+        expect(positive).toEqual([])
+        // The prompt reads before the actions it describes.
+        expect(h.dock!.children).toHaveLength(2)
+        expect(h.dock!.children[0].matches(`.three-dock-prompt#${THREE_DOCK_PROMPT_ID}`)).toBe(true)
+        expect(h.dock!.children[1].matches('.three-dock-actions')).toBe(true)
+        const stops = { hud: order(h.hud!), dock: order(h.dock!), content: order(h.content) }
+        expect(stops.dock).toContain('confirm-target')
+        expect(stops.content).toContain('target-list-hide')
+        first ??= stops
+        expect(stops).toEqual(first)
+      }
+      h.ui.dispose()
+    })
   })
 })
 
@@ -2929,24 +3149,24 @@ describe('Three Adventure hub', () => {
     expect(renderThreeHud({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, defaultUi))
       .not.toMatch(/adventure-retry-completion|abandon-adventure|pause-adventure/)
     expect(renderThreeHud(view, { ...defaultUi, menuOpen: true })).not.toContain('Retry Saving Result')
-    const dock = renderThreeDock(view, { ...defaultUi, narrow: true })
+    const dock = renderThreeDock(view, { ...defaultUi, shell: 'narrow' })
     expect(dock.prompt).toBe('Player 1 wins! The result is not saved yet.')
     // The view model's own winner text has no closing punctuation.
     const winnerView = (winnerText: string): AppViewModel => ({ ...view, game: { ...view.game!, winnerText } })
-    expect(renderThreeDock(winnerView('Winner: Player 1'), { ...defaultUi, narrow: true }).prompt)
+    expect(renderThreeDock(winnerView('Winner: Player 1'), { ...defaultUi, shell: 'narrow' }).prompt)
       .toBe('Winner: Player 1. The result is not saved yet.')
-    expect(renderThreeDock(winnerView('Draw game.'), { ...defaultUi, narrow: true }).prompt)
+    expect(renderThreeDock(winnerView('Draw game.'), { ...defaultUi, shell: 'narrow' }).prompt)
       .toBe('Draw game. The result is not saved yet.')
-    expect(renderThreeDock(winnerView(''), { ...defaultUi, narrow: true }).prompt)
+    expect(renderThreeDock(winnerView(''), { ...defaultUi, shell: 'narrow' }).prompt)
       .toBe('Game over. The result is not saved yet.')
-    expect(renderThreeDock({ ...winnerView('Winner: Player 1'), adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, narrow: true }).prompt)
+    expect(renderThreeDock({ ...winnerView('Winner: Player 1'), adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, shell: 'narrow' }).prompt)
       .toBe('Winner: Player 1')
     expect(dock.actions).toContain('aria-label="Retry Saving Result"')
     expect(dock.actions).not.toContain('rematch')
     // Both have no room for the full labels, which stay as accessible names.
     expect(dock.actions).toMatch(/>Retry<\/button>[\s\S]*>Reset<\/button>/)
     expect(header).toContain(dock.actions)
-    expect(renderThreeDock({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, narrow: true }).actions).toBe('')
+    expect(renderThreeDock({ ...view, adventure: { ...view.adventure, pendingCompletion: null } }, { ...defaultUi, shell: 'narrow' }).actions).toBe('')
     const h = setup(view)
     h.click('[data-action="adventure-retry-completion"]')
     expect(h.controller.retryAdventureCompletion).toHaveBeenCalledTimes(1)

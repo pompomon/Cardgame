@@ -77,9 +77,12 @@
 }
 
 /*
- * Narrow in-game profile (shares NARROW_LAYOUT_QUERY with the board): a fixed
- * top bar, the board, and a fixed-height action dock. Every row has a constant
- * height, so prompts and actions can change without moving the board.
+ * Touch shells. index.ts sets data-shell from threeShellProfile() during a
+ * game; the narrow shell also keeps its .three-root--narrow class. Every track
+ * has a constant size, so prompts and actions can change without moving the
+ * board.
+ *
+ * narrow (cover screen): a fixed top bar, the board, and a three-line dock.
  */
 .three-root--game.three-root--narrow {
   --three-topbar-height: 3.5rem;
@@ -92,16 +95,63 @@
   gap: 4px;
 }
 
+/* The unfolded shells keep the narrow top bar with a two-line prompt. */
+.three-root--game[data-shell="dock"],
+.three-root--game[data-shell="rail"] {
+  --three-topbar-height: 3.5rem;
+  --three-dock-prompt-height: calc(2 * 1.25 * 0.8125rem);
+  padding: 4px;
+  padding: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-right))
+    max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));
+  gap: 4px;
+}
+
+/*
+ * dock (unfolded portrait): the board above a fixed two-line dock. Its action
+ * row grows with End Turn (a 0.9375rem × 1.2 line, 12px padding, and a 4px
+ * border) so large text never clips the prompt; 18px covers the dock's
+ * padding, border, and row gap.
+ */
+.three-root--game[data-shell="dock"] {
+  --three-dock-height: calc(var(--three-dock-prompt-height) + max(44px, 1.125rem + 16px) + 18px);
+  grid-template-rows: var(--three-topbar-height) minmax(0, 1fr) var(--three-dock-height);
+}
+
+/*
+ * rail (unfolded landscape): the top bar stays above the board, and the dock
+ * becomes a full-height right-hand rail with stacked actions.
+ */
+.three-root--game[data-shell="rail"] {
+  --three-rail-width: clamp(180px, 26vw, 240px);
+  grid-template-columns: minmax(0, 1fr) var(--three-rail-width);
+  grid-template-rows: var(--three-topbar-height) minmax(0, 1fr);
+  grid-template-areas:
+    "hud rail"
+    "stage rail";
+}
+
+.three-root--game[data-shell="rail"] .three-hud-mount {
+  grid-area: hud;
+}
+
+.three-root--game[data-shell="rail"] .three-stage {
+  grid-area: stage;
+}
+
+.three-root--game[data-shell="dock"] .three-hud-mount,
+.three-root--game[data-shell="rail"] .three-hud-mount,
 .three-root--narrow .three-hud-mount {
   padding: 0;
   overflow: hidden;
   scrollbar-gutter: auto;
 }
 
-.three-root--narrow .three-stage {
+.three-root--game[data-shell] .three-stage {
   border-radius: 12px;
 }
 
+.three-root--game[data-shell="dock"] .three-dock,
+.three-root--game[data-shell="rail"] .three-dock,
 .three-root--narrow .three-dock {
   box-sizing: border-box;
   display: grid;
@@ -123,6 +173,19 @@
   overflow: hidden;
 }
 
+/* The rail stacks the prompt above its actions, with the primary action last. */
+.three-root--game[data-shell="rail"] .three-dock {
+  grid-area: rail;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(var(--three-dock-prompt-height), 1fr) minmax(0, max-content) auto;
+  grid-template-areas:
+    "prompt"
+    "actions"
+    "primary";
+  gap: 6px;
+}
+
+.three-root--game[data-shell] .three-dock[hidden],
 .three-root--narrow .three-dock[hidden],
 .three-dock [hidden] {
   display: none;
@@ -152,6 +215,12 @@
 
 .three-dock .three-board-primary:focus-visible {
   outline-offset: -3px;
+}
+
+.three-root--game[data-shell="rail"] .three-dock .three-board-primary {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
 }
 
 .three-root--game .three-controls .three-tutorial-banner {

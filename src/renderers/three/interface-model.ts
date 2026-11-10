@@ -37,6 +37,7 @@ import { isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { BoardHit, RendererCardIdentity, ThreeDragFeedback, ThreePeek } from './contracts'
 import { renderThreeLog } from './interface-log'
+import { isTouchLayoutMode, type ThreeShellProfile } from './layout'
 import { escapeHtml, renderCardRules, renderCardTile, renderInstallControls, renderP2P } from './native-html'
 
 export type ThreeLobbyPage = 'root' | 'settings' | 'recording'
@@ -52,17 +53,25 @@ export interface InterfaceUi {
   readonly hostAnswerDraft: string
   readonly joinOfferDraft: string
   readonly lobbyPage?: ThreeLobbyPage
-  /** Narrow profile: compact top bar, fixed action dock and select→confirm. */
-  readonly narrow?: boolean
+  /**
+   * The in-game shell. Touch shells (`narrow`, `dock`, `rail`) use a compact
+   * top bar, a fixed action dock and select→confirm; omitted means `desktop`.
+   */
+  readonly shell?: ThreeShellProfile
   readonly selectedCardId?: string | null
   readonly selectedTargetId?: string | null
   readonly selectedDiscardId?: string | null
   readonly targetListOpen?: boolean
   readonly tutorialHidden?: boolean
-  /** The hand card being dragged on the board, mirrored by the narrow dock prompt. */
+  /** The hand card being dragged on the board, mirrored by the dock prompt. */
   readonly dragFeedback?: ThreeDragFeedback | null
-  /** The card a long press is peeking at, announced by the narrow dock prompt. */
+  /** The card a long press is peeking at, announced by the dock prompt. */
   readonly peek?: BoardHit | null
+}
+
+/** Whether `ui` is in a touch shell, which has the action dock and select→confirm. */
+export function isTouchShell(ui: Pick<InterfaceUi, 'shell'>): boolean {
+  return isTouchLayoutMode(ui.shell)
 }
 
 export interface ThreeDockModel {
@@ -309,7 +318,7 @@ function renderAdventureGameActions(view: AppViewModel): string {
     + button('abandon-adventure', 'Reset Adventure Run')
 }
 
-// The narrow dock and the wide panel's header row have no room for the full
+// The touch shells' top bar and the wide panel's header row have no room for the full
 // labels, which stay as the accessible names.
 function renderAdventurePendingActions(): string {
   return button('adventure-retry-completion', 'Retry', false, ' aria-label="Retry Saving Result"')
@@ -566,11 +575,11 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
 
 function renderTargets(view: AppViewModel, ui: InterfaceUi, target: TargetModel): string {
   if (ui.phaseDismissed && !ui.pendingCardId) {
-    // The narrow dock offers its own Choose Target action.
-    return ui.narrow ? '' : `<section aria-label="Pending target selection"><p>${escapeHtml(target.title)}</p>${button('resume-target', 'Choose Target')}</section>`
+    // The touch shells' dock offers its own Choose Target action.
+    return isTouchShell(ui) ? '' : `<section aria-label="Pending target selection"><p>${escapeHtml(target.title)}</p>${button('resume-target', 'Choose Target')}</section>`
   }
-  // Narrow boards are targeted directly; the list opens only on request.
-  if (target.battlefield && ui.narrow && !ui.targetListOpen) return ''
+  // Touch-shell boards are targeted directly; the list opens only on request.
+  if (target.battlefield && isTouchShell(ui) && !ui.targetListOpen) return ''
   const options = `<div class="three-targets" data-scroll-key="targets">${target.options.map((option) =>
     `<button type="button" data-action="target"${option.effectTargetId === undefined ? '' : ` data-target-id="${escapeHtml(option.effectTargetId)}"`}>${renderCardTile({
       name: option.cardName,
@@ -582,7 +591,7 @@ function renderTargets(view: AppViewModel, ui: InterfaceUi, target: TargetModel)
   const close = button('close', ui.pendingCardId ? 'Cancel Target Selection' : 'Close Target Selection')
   return target.battlefield
     ? `<section class="three-target-panel" role="region" aria-label="${escapeHtml(target.title)}"><h3>${escapeHtml(target.title)}</h3>
-      <p>Select a highlighted creature on the board, or use a target button below.</p>${options}${ui.narrow
+      <p>Select a highlighted creature on the board, or use a target button below.</p>${options}${isTouchShell(ui)
         ? `<div class="three-actions">${button('target-list-hide', 'Back to Board')}${close}</div>` : close}</section>`
     : modal('target', target.title, options)
 }
@@ -643,9 +652,9 @@ function renderNativeCards(view: AppViewModel, ui: InterfaceUi, blocked: boolean
 export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
   if (!isThreeInGame(view)) return ''
   const game = view.game!
-  if (ui.narrow) {
+  if (isTouchShell(ui)) {
     // One fixed-height bar: decisions live in the dock, extras in the menu.
-    return `<section class="three-hud" data-layout="narrow" aria-label="Game controls">
+    return `<section class="three-hud" data-layout="${ui.shell}" aria-label="Game controls">
       ${button('menu', '☰', false, ` aria-label="Menu" aria-haspopup="dialog" aria-expanded="${ui.menuOpen}"`)}
       <h2>Turn ${game.turn} · ${escapeHtml(displayGamePhase(game.phase))} <span>· Player ${game.actor + 1}</span></h2>
       <p>${escapeHtml(view.status)}</p>
@@ -703,7 +712,7 @@ function pendingSummonName(game: GameUiState): string {
 }
 
 /**
- * Narrow profile dock: one prompt plus the actions for the current decision.
+ * Touch-shell dock: one prompt plus the actions for the current decision.
  * The dock has a fixed height, so changing decisions never moves the board.
  * Buttons act on the interface's own selection, never on ids in the markup.
  * An open long-press peek replaces only the prompt, so it is announced once
@@ -861,7 +870,7 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includ
   const nativeBlocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
   const previewCard = ui.preview ? threePreviewCard(game, ui.preview) : null
   return `${includeHud ? renderThreeHud(view, ui) : ''}<section class="three-secondary-controls" aria-label="Additional game controls">
-    ${ui.narrow ? renderTutorialBanner(view, ui) : ''}
+    ${isTouchShell(ui) ? renderTutorialBanner(view, ui) : ''}
     ${targets && !ui.menuOpen && !ui.cardsOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${ui.menuOpen ? renderMenu(view) : ''}
     ${ui.cardsOpen ? renderNativeCards(view, ui, nativeBlocked, response) : ''}
