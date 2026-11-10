@@ -553,6 +553,45 @@ describe('constructed Three battlefield controls', () => {
     expect(h.activate).not.toHaveBeenCalled()
   })
 
+  it('keeps the browsed page without a selection between touch shells, but not through the desktop', () => {
+    const presentation = { shell: NARROW, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+      Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 22 : 21 })
+    }
+    const stage = h.host.all('three-board-stage')[0]
+    const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
+    const page = () => Number(h.host.all('three-board-pagination')[0].children[1].textContent.split('/')[0]) - 1
+    const fold = (shell: ThreeShellProfile, [width, height]: readonly [number, number]) => {
+      stage.clientWidth = width
+      stage.clientHeight = height
+      presentation.shell = shell
+      h.present()
+    }
+    fold(NARROW, [332, 583.25])
+    const coverPageSize = narrowHandPageSize(layout())
+    emit(h.host.all('three-board-pagination')[0].children[2], 'click')
+    emit(h.host.all('three-board-pagination')[0].children[2], 'click')
+    expect(page()).toBe(2)
+    h.handPage.mockClear()
+    // The same stage keeps the same page size, so the page itself is kept.
+    fold('dock', [332, 583.25])
+    expect(page()).toBe(2)
+    // A new page size keeps the first card of the browsed page in view.
+    fold('rail', [597.46, 506])
+    const railPageSize = narrowHandPageSize(layout())
+    expect(railPageSize).not.toBe(coverPageSize)
+    expect(page()).toBe(Math.floor(2 * coverPageSize / railPageSize))
+    expect(page()).toBeGreaterThan(0)
+    // The desktop shows the whole hand, so returning to touch starts over.
+    fold('desktop', [900, 600])
+    fold(NARROW, [332, 583.25])
+    expect(page()).toBe(0)
+    expect(h.handPage).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['narrow', [332, 583.25], '50px'],
     ['dock', [678, 546.5], '22px'],

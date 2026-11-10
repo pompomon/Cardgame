@@ -836,6 +836,10 @@ The implementation differs from the scope above in these ways:
   scrolls at 200% text. Milestone 5 revisits it.
 - Entering `desktop` keeps a pending summon, as before this milestone. Its
   target picker reopens on `desktop` with no target chosen.
+- Without a selection, a switch between touch shells keeps the browsed hand
+  page, or the first card of that page when the page size changes. Entering
+  or leaving `desktop` starts on the first page, because `desktop` shows the
+  whole hand.
 - Until Milestone 4, a short rail (the cover screen or a phone held sideways)
   keeps the board at its 356 px minimum and scrolls it.
 - The geometry tests estimate the single-line header heights. The browser

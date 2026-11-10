@@ -410,10 +410,13 @@ export class ThreeBoard implements ThreeBoardApi {
     if (switched) {
       // Switching shells moves every card, so no gesture can survive it.
       this.endDrag(false)
-      this.handPage = 0
       this.handPageFollow = !reoriented
       this.onResize()
       if (touchLayout !== this.touchLayout) {
+        // The desktop shows the whole hand, so paging starts over when it is
+        // entered or left; touch-to-touch switches keep the browsed page.
+        this.handPage = 0
+        this.handPageSize = 0
         if (touchLayout) this.chrome.get('hand')!.header.append(this.handPagination)
         else this.handPagination.remove()
       }
@@ -524,7 +527,7 @@ export class ThreeBoard implements ThreeBoardApi {
       // follows it there too and closing them finds the card in view.
       const selected = hand.findIndex((card) => card.id === selection.cardId || card.id === selection.discardId)
       this.handPage = selected >= 0 ? Math.floor(selected / pageSize)
-        : pageSizeChanged ? Math.floor(this.handPage * this.handPageSize / pageSize) : 0
+        : pageSizeChanged ? Math.floor(this.handPage * this.handPageSize / pageSize) : this.handPage
     }
     this.handPageFollow = false
     this.handPageSize = pageSize

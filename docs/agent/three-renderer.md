@@ -194,9 +194,10 @@ The touch-shell hand page follows the selected card across shell and page-size
 changes, including a shell switch that keeps the page size. It follows the
 retained selection even while Details or a menu blocks
 input and hides the highlight, so closing them finds the card on the shown
-page instead of clearing it as off-page. With no selection, a page-size change
-keeps the first card of the old page in view. A new acting player or a
-presentation boundary still resets the hand to page 0.
+page instead of clearing it as off-page. With no selection, a switch between
+touch shells keeps the browsed page, and a page-size change keeps the first
+card of the old page in view. Entering or leaving `desktop`, a new acting
+player, or a presentation boundary resets the hand to page 0.
 
 ## Layout
 
@@ -228,8 +229,9 @@ removes both listeners.
 - **Viewport.** `compactBoardViewport` uses the layout viewport
   (`window.innerHeight`) instead of the `visualViewport` height.
 - **Switching.** Any shell change ends a drag, cancels the interaction, and
-  makes the hand page follow the selection. Entering or leaving `desktop`
-  also moves the primary button and the hand pager.
+  makes the hand page follow the selection, or else keeps the browsed page.
+  Entering or leaving `desktop` instead starts on page 0 and moves the
+  primary button and the hand pager.
 - **CSS.** `[data-shell]` selectors replace the board's `max-width: 480px`
   rules, and every `env(safe-area-inset-*)` value has a plain fallback first.
   `dock` puts a fixed, rem-based two-line dock under the board; its action
