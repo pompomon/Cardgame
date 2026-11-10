@@ -1177,12 +1177,24 @@ describe('Three touch drag feedback', () => {
   const RELEASE = 'Release to summon · back to hand cancels'
   type Harness = ReturnType<typeof setup>
   interface DragInternals {
-    readonly drag: { layered: boolean; accepted: boolean; returning: boolean; proxy: { group: Group } } | null
+    readonly drag: {
+      layered: boolean; accepted: boolean; returning: boolean; proxy: { group: Group }
+      readonly width: number; readonly height: number
+    } | null
     readonly layout: ThreeLayout
     readonly surfaces: Map<string, { material: MeshBasicMaterial }>
     readonly dropMaterial: MeshBasicMaterial
   }
   const internals = (h: Harness) => h.board as unknown as DragInternals
+  /** The lifted card's box in drag-layer pixels (top-left origin), from the scene proxy that mirrors it. */
+  const lifted = (h: Harness) => {
+    const { drag, layout } = internals(h)
+    const { position, scale } = drag!.proxy.group
+    const x = position.x + layout.width / 2
+    const y = layout.height / 2 - position.y
+    const height = drag!.height * scale.y
+    return { x, y, top: y - height / 2, bottom: y + height / 2 }
+  }
   const island = (cardId = '0-0') => ({
     key: boardCardKey(cardId, 0), cardId, owner: 0, zone: 'hand' as const, name: 'Island', playable: true,
   })
@@ -1502,6 +1514,86 @@ describe('Three touch drag feedback', () => {
     expect(prompt.dataset.drag).toBeUndefined()
     expect({ prompt: prompt.style.top, caption: caption.style.top }).toEqual(idle)
   })
+
+  it('keeps a touch card clear of the drag pill near the stage top, while a mouse card stays under the cursor', () => {
+    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const canvas = h.host.all('three-board-canvas')[0]
+    const prompt = h.host.all('three-board-instruction')[0]
+    const { layout } = internals(h)
+    // One client pixel per board unit, so layer pixels are client pixels.
+    Object.assign(canvas, { clientWidth: layout.width, clientHeight: layout.height })
+    h.board.beginDrag(island())
+    const pillBottom = Number.parseFloat(prompt.style.top) + prompt.offsetHeight
+    expect(pillBottom).toBe(48)
+    let checked = 0
+    for (const x of [6, layout.width / 2, layout.width - 6]) {
+      for (let y = 0; y <= 160; y += 4) {
+        h.board.moveDrag(x, y, true)
+        expect(lifted(h).top).toBeGreaterThanOrEqual(pillBottom)
+        h.board.moveDrag(x, y, false)
+        expect(lifted(h)).toMatchObject({ x, y })
+        checked++
+      }
+    }
+    expect(checked).toBe(123)
+  })
+
+  it.each([['mouse', false], ['touch', true]] as const)(
+    'keeps the drag pill pinned and the %s card in place when the stage scrolls mid-drag',
+    (_, touch) => {
+      const added = vi.spyOn(ElementStub.prototype, 'addEventListener')
+      const removed = vi.spyOn(ElementStub.prototype, 'removeEventListener')
+      const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+      const stage = h.host.all('three-board-stage')[0]
+      const canvas = h.host.all('three-board-canvas')[0]
+      const prompt = h.host.all('three-board-instruction')[0]
+      const { layout } = internals(h)
+      // A real canvas moves up with the stage's content as the stage scrolls.
+      Object.assign(stage, { scrollTop: 0 })
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: -(stage as unknown as { scrollTop: number }).scrollTop, width: layout.width, height: layout.height,
+      })
+      const scroll = (top: number) => {
+        Object.assign(stage, { scrollTop: top })
+        stage.dispatchEvent(new Event('scroll'))
+      }
+      // Just inside the drop zone's edge that faces the hand, so a scroll moves the hand under the pointer.
+      const pointer = client(h, layout.drop.x, layout.drop.y - layout.drop.height / 2 + 10)
+      expect(pointer[1]).toBeLessThan(stage.clientHeight - 140)
+      h.board.beginDrag(island())
+      h.board.moveDrag(...pointer, touch)
+      expect(internals(h).drag!.accepted).toBe(true)
+      expect(prompt.style.top).toBe('4px')
+      const before = lifted(h)
+      h.feedback.mockClear()
+      scroll(120)
+      expect(prompt.style.top).toBe('124px')
+      // The content moved up under a resting pointer, so the card moves down the content to stay put.
+      expect(lifted(h).x).toBeCloseTo(before.x)
+      expect(lifted(h).y).toBeCloseTo(before.y + 120)
+      if (touch) expect(lifted(h).top).toBeGreaterThanOrEqual(124 + prompt.offsetHeight)
+      expect(h.board.containsDrop(...pointer, touch)).toBe(false)
+      expect(internals(h).drag!.accepted).toBe(false)
+      expect(h.near.dataset.dropAccepted).toBeUndefined()
+      expect(h.feedback).toHaveBeenCalledExactlyOnceWith({ cardId: '0-0', accepted: false })
+      scroll(0)
+      expect(prompt.style.top).toBe('4px')
+      expect(internals(h).drag!.accepted).toBe(true)
+      expect(lifted(h)).toMatchObject({ x: before.x, y: before.y })
+      h.board.endDrag(false)
+      const idle = prompt.style.top
+      h.feedback.mockClear()
+      scroll(200)
+      expect(prompt.style.top).toBe(idle)
+      expect(h.feedback).not.toHaveBeenCalled()
+      const listeners = added.mock.calls.filter(([type]) => type === 'scroll').map(([, listener]) => listener)
+      expect(listeners).toHaveLength(1)
+      h.board.dispose()
+      expect(removed.mock.calls.filter(([type]) => type === 'scroll').map(([, listener]) => listener)).toEqual(listeners)
+      added.mockRestore()
+      removed.mockRestore()
+    },
+  )
 
   it('marks the narrow type slot as "Lands here", or "+1" when it already holds a card', () => {
     const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })

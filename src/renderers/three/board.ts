@@ -53,6 +53,12 @@ interface DragVisual {
   /** The source card's unscaled size in board units. */
   readonly width: number
   readonly height: number
+  /** Client pixels from the visible stage's top to the drag pill's bottom, measured once per drag. */
+  pillBottom: number
+  /** The last pointer (NaN before the first move), so a scrolling stage can keep the card by a resting finger. */
+  pointerX: number
+  pointerY: number
+  pointerTouch: boolean
   returning: boolean
   elapsed: number
   fromX: number
@@ -318,6 +324,7 @@ export class ThreeBoard implements ThreeBoardApi {
       this.handNext.addEventListener('click', this.nextHandPage)
       this.handPagination.append(this.handPrevious, this.handPageLabel, this.handNext)
       this.stage.append(this.instruction, this.dragLayer.element)
+      this.stage.addEventListener('scroll', this.stageScrolled, { passive: true })
       host.append(this.stage)
       this.canvas.addEventListener('webglcontextlost', this.contextLost)
       window.addEventListener('resize', this.resize)
@@ -779,6 +786,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const { width, height } = source.anchor()
     const drag: DragVisual = {
       source, proxy, layered: false, accepted: false, side: undefined, width, height,
+      pillBottom: 0, pointerX: Number.NaN, pointerY: Number.NaN, pointerTouch: false,
       returning: false, elapsed: 0, fromX: 0, fromY: 0,
     }
     this.drag = drag
@@ -790,6 +798,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.instruction.hidden = false
     this.writeInstruction(CANCEL_INSTRUCTION)
     this.positionInstruction()
+    // The reserved height also covers the release text, so one read lasts the whole drag.
+    drag.pillBottom = OVERLAY_GAP + Math.max(0, this.instruction.offsetHeight || 0)
     this.showLanding()
     this.dragLayer.setAccepted(false)
     this.paintDropFeedback()
@@ -804,17 +814,22 @@ export class ThreeBoard implements ThreeBoardApi {
     if (!drag || drag.returning || !this.usable()) return
     const rect = this.canvas.getBoundingClientRect()
     if (!(rect.width > 0 && rect.height > 0) || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return
+    drag.pointerX = clientX
+    drag.pointerY = clientY
+    drag.pointerTouch = touch
     const visible = this.visibleStage()
     const accepted = this.dropAt(clientX, clientY, touch, rect, visible)
     // Board units with a top-left origin, which are also drag-layer pixels.
     const scaleX = this.layout.width / rect.width
     const scaleY = this.layout.height / rect.height
+    // A touch card stays below the pill, which is drawn above it; a mouse card stays under the cursor.
+    const pill = touch ? Math.min(drag.pillBottom, visible.height / 2) : 0
     const placement = dragProxyPlacement({
       pointer: { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY },
       card: { width: drag.width, height: drag.height },
       stage: {
-        left: (visible.left - rect.left) * scaleX, top: (visible.top - rect.top) * scaleY,
-        width: visible.width * scaleX, height: visible.height * scaleY,
+        left: (visible.left - rect.left) * scaleX, top: (visible.top + pill - rect.top) * scaleY,
+        width: visible.width * scaleX, height: (visible.height - pill) * scaleY,
       },
       touch, side: drag.side,
     })
@@ -1119,6 +1134,18 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   /**
+   * A wheel (or any scroll) moves the stage's content under a held pointer:
+   * pin the drag pill to the visible top again, and re-place the card and its
+   * acceptance from the last pointer instead of waiting for the next move.
+   */
+  private stageScrolled = (): void => {
+    const drag = this.drag
+    if (!drag || drag.returning) return
+    this.positionInstruction()
+    if (Number.isFinite(drag.pointerX)) this.moveDrag(drag.pointerX, drag.pointerY, drag.pointerTouch)
+  }
+
+  /**
    * Viewport and observer callbacks only interrupt gestures when the layout
    * really changed; otherwise overlays are re-anchored in place.
    */
@@ -1383,6 +1410,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.primaryButton.removeEventListener('blur', this.clearPrimaryPress)
     this.handPrevious.removeEventListener('click', this.previousHandPage)
     this.handNext.removeEventListener('click', this.nextHandPage)
+    this.stage.removeEventListener('scroll', this.stageScrolled)
     this.primaryAction = null
     this.pressedAction = null
     window.removeEventListener('resize', this.resize)

@@ -109,11 +109,15 @@ height.
 
 During a live drag the instruction becomes a pill at the top of the visible
 stage (`scrollTop` + 4 px), clear of the drop zone, and returns to the near row
-when the drag ends. Its text changes only when acceptance changes, and the end
-of a drag restores the current idle text, which may be a response prompt. In
-the narrow profile it is hidden except as the pill and reserves no caption
-space. Drag feedback changes only colour, outline, and opacity, so measured
-headers keep their size.
+when the drag ends. A passive stage `scroll` listener keeps it there when the
+board scrolls mid-drag (a wheel, or later auto-scroll), and re-places the card
+and its acceptance from the last pointer. Touch and pen placement reserves the
+pill's band, measured once at drag start, so the pill never covers a touch
+card; a mouse card stays under the cursor. The pill's text changes only when
+acceptance changes, and the end of a drag restores the current idle text,
+which may be a response prompt. In the narrow profile it is hidden except as
+the pill and reserves no caption space. Drag feedback changes only colour,
+outline, and opacity, so measured headers keep their size.
 
 `dropAccepts()` in `layout.ts` is the one drop predicate behind both the
 highlight (`moveDrag`) and the release (`containsDrop`). Touch and pen get

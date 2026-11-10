@@ -546,6 +546,9 @@ The implementation differs from the scope above in these ways:
   of the summon text.
 - Only `narrow` has a dock in this milestone. Milestone 3 extends the quiet
   board instruction to every shell with a dock.
+- From review: touch placement reserves the measured pill band, so the pill
+  never covers a touch card. A stage `scroll` listener keeps the pill and the
+  card in place when the board scrolls mid-drag.
 
 ### Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
 
