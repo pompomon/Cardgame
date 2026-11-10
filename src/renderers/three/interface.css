@@ -751,6 +751,43 @@
   width: 100%;
 }
 
+/*
+ * The long-press peek reuses the hover panel at the board's placement (set
+ * inline): beside the held card, never over it, opening above it when the
+ * finger is low on the stage.
+ */
+.three-interface .three-hover-preview.three-peek {
+  right: auto;
+  bottom: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
+  gap: 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: #f5f8ff;
+  font: 14px/1.35 system-ui, sans-serif;
+}
+
+.three-interface .three-hover-preview.three-peek[data-side="above"] {
+  transform: translateY(-100%);
+}
+
+.three-interface .three-peek > .card-tile {
+  /* Stay inside the panel's height: the art is square and the name adds about 76px. */
+  max-width: max(48px, calc(var(--three-peek-max-height, 320px) - 96px));
+}
+
+.three-interface .three-peek .three-card-rules {
+  margin: 0;
+}
+
+.three-interface .three-peek-hint {
+  margin: 0;
+  color: #b9c7d6;
+  font-size: 12px;
+}
+
 .three-root--game .three-interface .three-target-panel {
   position: fixed;
   left: 50%;

@@ -18,7 +18,7 @@ import type { GameAction } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { DragPointerType } from '../shared/drag-state'
 import {
-  NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit, type ThreeBoardSelection, type ThreeDragFeedback,
+  NO_BOARD_SELECTION, THREE_DOCK_PROMPT_ID, type BoardHit, type ThreeBoardSelection, type ThreeDragFeedback, type ThreePeek,
 } from './contracts'
 import { resetRasterCardArtLoadFailures } from './native-html'
 import {
@@ -31,6 +31,7 @@ import {
   renderThreeHover,
   renderThreeHud,
   renderThreeInterface,
+  renderThreePeek,
   threeDecisionKey,
   threePreviewCard,
   threePrimaryAction,
@@ -67,6 +68,11 @@ export interface ThreeInterfaceOptions {
   readonly dockHost?: HTMLElement | null
   /** Whether the narrow profile is active (it also requires a dock). */
   readonly narrow?: () => boolean
+  /**
+   * Whether a card is following a pointer on the board. Native buttons stay
+   * inert until it drops, so a second finger cannot act mid-drag.
+   */
+  readonly dragActive?: () => boolean
 }
 
 function focusKey(element: HTMLElement): string {
@@ -86,6 +92,7 @@ export class ThreeInterface {
   private preview: BoardHit | null = null
   private previewReturnToCards = false
   private hover: BoardHit | null = null
+  private peek: ThreePeek | null = null
   private dragFeedback: ThreeDragFeedback | null = null
   private lobbyPage: ThreeLobbyPage = 'root'
   private hostAnswerDraft = ''
@@ -135,6 +142,7 @@ export class ThreeInterface {
   private readonly dockPrompt: HTMLElement | null
   private readonly dockActions: HTMLElement | null
   private readonly narrowEnabled: () => boolean
+  private readonly dragActive: () => boolean
   private readonly fileInput: HTMLInputElement
   private readonly document: Document
   private readonly host: HTMLElement
@@ -165,6 +173,7 @@ export class ThreeInterface {
     this.document = host.ownerDocument
     this.dockHost = options.dockHost ?? null
     this.narrowEnabled = options.narrow ?? (() => false)
+    this.dragActive = options.dragActive ?? (() => false)
     if (this.dockHost) {
       this.dockPrompt = this.document.createElement('p')
       this.dockPrompt.classList.add('three-dock-prompt')
@@ -223,6 +232,7 @@ export class ThreeInterface {
       selectedDiscardId: this.selectedDiscardId, targetListOpen: this.targetListOpen,
       tutorialHidden: this.tutorialDismissed !== null && this.tutorialDismissed === (this.view?.tutorial.hint ?? ''),
       dragFeedback: this.dragFeedback,
+      peek: this.peek?.hit ?? null,
     }
   }
 
@@ -274,6 +284,31 @@ export class ThreeInterface {
   }
 
   /**
+   * Whether a long press on `hit` may peek now. It uses the same projection
+   * and gates as Details, so a peek reveals nothing a preview would hide.
+   * Eligible Interception cards qualify, unlike hover.
+   */
+  canPeek(hit: BoardHit): boolean {
+    const view = this.view
+    if (this.disposed || !view?.game || this.document.hidden || !isThreeInGame(view)
+      || this.menuOpen || this.cardsOpen || this.preview) return false
+    const isTarget = hit.zone === 'battlefield' && hit.instanceId !== undefined
+      && !!threeTargets(view, this.ui())?.options.some((option) => option.effectTargetId === hit.instanceId)
+    return canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen }, isTarget)
+      && threePreviewCard(view.game, hit) !== null
+  }
+
+  /**
+   * Opens a long-press peek, or closes it with null. Like a drag it only
+   * re-renders the interface; the board keeps the press.
+   */
+  setPeek(peek: ThreePeek | null): void {
+    if (this.disposed || !peek && !this.peek) return
+    this.peek = peek ? { hit: { ...peek.hit }, placement: { ...peek.placement } } : null
+    this.render()
+  }
+
+  /**
    * Mirrors the board's drag in the dock prompt. It only re-renders the
    * interface: the board already shows the drag and must not re-present
    * mid-gesture.
@@ -289,11 +324,13 @@ export class ThreeInterface {
 
   private renderHover(): void {
     const view = this.view
-    if (!view?.game || this.document.hidden || this.isBlocked()
+    // A peek outlives hover's response and blocking gates, but not Details' own.
+    if (this.peek && !this.canPeek(this.peek.hit)) this.peek = null
+    if (this.peek || !view?.game || this.document.hidden || this.isBlocked()
       || threeResponse(view, this.ui())
       || !canPreviewCard({ phase: view.game.phase, pendingPlayLandTargetSelection: !!this.pendingCardId, menuOpen: this.menuOpen })
       || !isThreeInGame(view)) this.hover = null
-    const markup = view ? renderThreeHover(view, this.hover) : ''
+    const markup = !view ? '' : this.peek ? renderThreePeek(view, this.peek) : renderThreeHover(view, this.hover)
     if (markup !== this.hoverMarkup) {
       this.hoverContent.innerHTML = markup
       this.hoverMarkup = markup
@@ -367,6 +404,7 @@ export class ThreeInterface {
       this.preview = null
       this.previewReturnToCards = false
       this.hover = null
+      this.peek = null
       this.cardsReturnFocus = null
       this.previewReturnFocus = null
       this.targetReturnFocus = null
@@ -758,7 +796,9 @@ export class ThreeInterface {
   }
 
   private readonly handleVisibility = (): void => {
-    if (this.document.hidden) this.setHover(null)
+    if (!this.document.hidden) return
+    this.setHover(null)
+    this.setPeek(null)
   }
 
   private close(): void {
@@ -871,6 +911,9 @@ export class ThreeInterface {
 
   private readonly handleClick = (event: MouseEvent): void => {
     if (this.disposed || !(event.target instanceof Element)) return
+    // While a card follows one pointer, another cannot press a native button;
+    // the drop itself goes through playCard, not here.
+    if (this.dragActive()) return
     const element = event.target.closest<HTMLElement>('button')
     if (!element || !this.roots.some((root) => root.contains(element)) || element.hasAttribute('disabled')) return
     const modal = this.content.querySelector('dialog')
@@ -1095,6 +1138,7 @@ export class ThreeInterface {
     this.preview = null
     this.previewReturnToCards = false
     this.hover = null
+    this.peek = null
     this.dragFeedback = null
     this.cardsReturnFocus = null
     this.previewReturnFocus = null
@@ -1150,6 +1194,7 @@ export class ThreeInterface {
     this.preview = null
     this.previewReturnToCards = false
     this.hover = null
+    this.peek = null
     this.pendingCardId = null
     this.clearSelection()
     this.targetListOpen = false

@@ -66,8 +66,8 @@ function lease(ready?: boolean) {
 
 function parts(layer: ThreeDragLayer) {
   const element = layer.element as unknown as NodeStub
-  const [landing, card] = element.children
-  return { element, landing, card }
+  const [landing, card, ring] = element.children
+  return { element, landing, card, ring }
 }
 
 let ctx: Context2d
@@ -287,5 +287,29 @@ describe('Three.js drag layer', () => {
     expect(element.dataset.accepted).toBe('true')
     layer.end()
     expect(element.dataset).not.toHaveProperty('accepted')
+  })
+
+  it('centres the long-press ring on the finger and hides it with the layer', () => {
+    const layer = new ThreeDragLayer()
+    const { element, ring } = parts(layer)
+    expect(ring.className).toBe('three-peek-ring')
+    expect(ring.hidden).toBe(true)
+    layer.setRing({ x: 140, y: 610 })
+    expect(ring.hidden).toBe(false)
+    expect(element.hidden).toBe(false)
+    expect(ring.style).toMatchObject({ left: '140px', top: '610px' })
+    layer.setRing({ x: Number.NaN, y: 10 })
+    expect(ring.hidden).toBe(true)
+    expect(element.hidden).toBe(true)
+    layer.setRing({ x: 1, y: 2 })
+    layer.end()
+    expect([ring.hidden, element.hidden]).toEqual([true, true])
+    layer.setRing({ x: 1, y: 2 })
+    layer.setLanding({ left: 0, top: 0, width: 56, height: 78 }, 'Lands here')
+    layer.setRing(null)
+    expect(element.hidden).toBe(false)
+    layer.dispose()
+    layer.setRing({ x: 1, y: 2 })
+    expect(ring.hidden).toBe(true)
   })
 })

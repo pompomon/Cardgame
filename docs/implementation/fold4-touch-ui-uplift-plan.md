@@ -88,6 +88,15 @@ The approved decisions are:
   - [ ] Fold4 device check of Figure 3, callouts 1–5 (pending maintainer:
     needs a physical Galaxy Z Fold4)
 - [ ] Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
+  - [x] `peeking` drag phase, ring, `peekPlacement`, and the decorative peek
+    with its dock announcement, with focused tests
+  - [x] Multi-touch policy, the second-finger guard, and touch context-menu
+    and callout suppression
+  - [x] Edge auto-scroll, near-lane anchoring, and a hand page that follows
+    the selection
+  - [x] Agent docs and README: pointer policy, peek, and auto-scroll
+  - [ ] Fold4 device check of Figure 4, callouts 1–4, and the second-finger
+    policy (pending maintainer: needs a physical Galaxy Z Fold4)
 - [ ] Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
 - [ ] Milestone 4 — Short landscape (cover screen and phones held sideways)
 - [ ] Milestone 5 — Documentation, hardening, and device release gate

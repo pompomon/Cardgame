@@ -331,6 +331,43 @@
   text-align: center;
   overflow-wrap: anywhere;
 }
+/*
+ * The long-press ring fills under a held finger until the peek opens. The
+ * registered property lets the conic gradient animate; without it the ring
+ * still appears, only without the fill.
+ */
+@property --three-peek-progress {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+.three-peek-ring {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  border-radius: 50%;
+  background: conic-gradient(#94ffc9 var(--three-peek-progress), rgb(148 255 201 / 25%) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  animation: three-peek-fill 300ms linear forwards;
+}
+@keyframes three-peek-fill {
+  from { --three-peek-progress: 0%; }
+  to { --three-peek-progress: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .three-peek-ring {
+    --three-peek-progress: 100%;
+    animation: none;
+  }
+}
+/* A long press on the board never selects label text or opens a callout. */
+.three-root--game .three-board-stage {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 /* Drag feedback changes only colour, outline, and opacity, so measured headers keep their size. */
 .three-board-instruction[data-drag] {
   z-index: 4;

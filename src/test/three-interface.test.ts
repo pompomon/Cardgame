@@ -270,7 +270,7 @@ class DocumentStub {
   emit(name: string, event: unknown): unknown { return this.listeners.get(name)?.(event as never) }
 }
 
-function setup(view = makeView(), separateHud = false, narrow: { enabled: boolean } | null = null) {
+function setup(view = makeView(), separateHud = false, narrow: { enabled: boolean } | null = null, dragActive?: () => boolean) {
   let current = view
   const document = new DocumentStub()
   const host = document.createElement('section')
@@ -293,8 +293,10 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   } satisfies ControllerApi
   const onChange = vi.fn()
   const onBlock = vi.fn()
-  const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock, hud as unknown as HTMLElement | null,
-    dock ? { dockHost: dock as unknown as HTMLElement, narrow: () => narrow!.enabled } : {})
+  const ui = new ThreeInterface(host as unknown as HTMLElement, controller, onChange, onBlock, hud as unknown as HTMLElement | null, {
+    ...(dock ? { dockHost: dock as unknown as HTMLElement, narrow: () => narrow!.enabled } : {}),
+    ...(dragActive ? { dragActive } : {}),
+  })
   ui.update(view, view.game?.actor ?? 0)
   const content = host.children[0]
   // The interface owns the dock's prompt (first child) and action row (second).
@@ -1094,6 +1096,184 @@ describe('Three non-modal hover previews', () => {
       view.game!.players[0], { ...view.game!.players[1], battlefield: [] },
     ] } })
     expect(h.host.children[2].innerHTML).toBe('')
+    h.ui.dispose()
+  })
+})
+
+describe('Three long-press peek', () => {
+  type Harness = ReturnType<typeof setup>
+  const placement = { left: 12.4, width: 220, y: 300.6, maxHeight: 260, side: 'above' as const }
+  const mountainHand: BoardHit = { key: 'source', cardId: 'source', owner: 0, zone: 'hand', name: 'Mountain', playable: true }
+  const islandHit = (): BoardHit => hit({ key: 'target-2', cardId: 'card-2', instanceId: 'target-2', name: 'Island' })
+  const overlay = (h: Harness): ElementStub => h.host.children[2]
+  const promptText = (h: Harness): string => (h.dockPrompt as unknown as { textContent?: string }).textContent ?? ''
+  const summary = (name: BasicLand): string => {
+    const ability = cardCatalogEntry(name).primaryAbility
+    return `${displayCardName(name)} · ${ability.name}: ${ability.rulesText}`
+  }
+
+  it('opens a decorative peek with the Details rules at the board placement, without focus, blocking or notifications', () => {
+    const h = setup(responseView(), true)
+    h.board.focus()
+    const builds = [h.content.builds, h.hud!.builds]
+    const changes = h.onChange.mock.calls.length
+    // An Interception card peeks although a response suppresses hover.
+    const island = responseHit('required-island')
+    expect(h.ui.canPeek(island)).toBe(true)
+    h.ui.setPeek({ hit: island, placement })
+    const peek = overlay(h).children[0]
+    expect(peek.tagName).toBe('ASIDE')
+    expect(peek.getAttribute('class')).toBe('three-hover-preview three-peek')
+    expect(peek.getAttribute('aria-hidden')).toBe('true')
+    expect(peek.getAttribute('data-side')).toBe('above')
+    expect(peek.getAttribute('style')).toBe('left:12px;top:301px;width:220px;max-height:260px;--three-peek-max-height:260px')
+    const entry = cardCatalogEntry('Island')
+    expect(entry.responseAbility).toBeDefined()
+    for (const ability of [entry.primaryAbility, entry.responseAbility!]) {
+      expect(overlay(h).innerHTML).toContain(`<dt>${escapeHtml(ability.name)}</dt><dd>${escapeHtml(ability.rulesText)}</dd>`)
+    }
+    expect(overlay(h).innerHTML).toContain('Lift your finger to close.')
+    expect(overlay(h).querySelector('button')).toBeNull()
+    expect(overlay(h).querySelector('dialog')).toBeNull()
+    expect(h.document.activeElement).toBe(h.board)
+    expect(h.ui.isBlocked()).toBe(false)
+    expect([h.content.builds, h.hud!.builds]).toEqual(builds)
+    expect(h.onChange).toHaveBeenCalledTimes(changes)
+    expect(h.onBlock).not.toHaveBeenCalled()
+    h.ui.setPeek(null)
+    expect(overlay(h).innerHTML).toBe('')
+    expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    h.ui.dispose()
+  })
+
+  it('replaces hover while open, survives status updates, and leaves no hover behind', () => {
+    const view = makeView()
+    const h = setup(view)
+    h.ui.setHover(hit())
+    expect(overlay(h).innerHTML).toContain('class="three-hover-preview" aria-hidden="true"')
+    h.ui.setPeek({ hit: islandHit(), placement: { ...placement, side: 'below' } })
+    expect(overlay(h).children[0].getAttribute('data-side')).toBe('below')
+    h.ui.setHover(hit())
+    h.update({ ...view, status: 'Saved' })
+    expect(overlay(h).innerHTML).toContain('three-peek')
+    expect(overlay(h).innerHTML).toContain(escapeHtml(cardCatalogEntry('Island').primaryAbility.rulesText))
+    h.ui.setPeek(null)
+    expect(overlay(h).innerHTML).toBe('')
+    h.ui.setHover(hit())
+    expect(overlay(h).innerHTML).toContain('class="three-hover-preview" aria-hidden="true"')
+    h.ui.dispose()
+  })
+
+  it('announces a narrow peek in the dock prompt without touching its actions or the selection', () => {
+    const h = setup(makeView(), true, { enabled: true })
+    h.ui.activate(mountainHand, 'touch')
+    const selected = promptText(h)
+    const actions = h.dockActions!.innerHTML
+    const changes = h.onChange.mock.calls.length
+    h.ui.setPeek({ hit: hit(), placement })
+    expect(promptText(h)).toBe(summary('Forest'))
+    expect(h.dockPrompt!.getAttribute('aria-live')).toBe('polite')
+    expect(h.dockActions!.innerHTML).toBe(actions)
+    h.ui.setPeek(null)
+    expect(promptText(h)).toBe(selected)
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+    expect(h.onChange).toHaveBeenCalledTimes(changes)
+    h.ui.dispose()
+  })
+
+  it('speaks a peek during a quiet replay, then silences the prompt before restoring it', () => {
+    const base = makeView()
+    const replay: AppViewModel = {
+      ...base, status: 'Replay paused at step 2/10.', replay: { active: true, step: 2, totalSteps: 10, isPlaying: false },
+      game: { ...base.game!, isReplay: true, canInput: false },
+    }
+    const h = setup(replay, true, { enabled: true })
+    const prompt = h.dockPrompt!
+    expect([prompt.getAttribute('aria-live'), promptText(h)]).toEqual(['off', 'Replay · Step 2/10 · Paused'])
+    // Each politeness change records the text it finds, which must still be the old text.
+    const changes: Array<[string, string]> = []
+    const setAttribute = prompt.setAttribute.bind(prompt)
+    vi.spyOn(prompt, 'setAttribute').mockImplementation((name, value) => {
+      if (name === 'aria-live') changes.push([value, promptText(h)])
+      setAttribute(name, value)
+    })
+    expect(h.ui.canPeek(hit())).toBe(true)
+    h.ui.setPeek({ hit: hit(), placement })
+    expect(promptText(h)).toBe(summary('Forest'))
+    h.ui.setPeek(null)
+    expect(promptText(h)).toBe('Replay · Step 2/10 · Paused')
+    expect(changes).toEqual([['polite', 'Replay · Step 2/10 · Paused'], ['off', summary('Forest')]])
+    h.ui.dispose()
+  })
+
+  const boundaries: ReadonlyArray<readonly [string, (h: Harness, view: AppViewModel) => void, boolean]> = [
+    ['a decision change', (h, view) => { h.update({ ...view, game: { ...view.game!, turn: 2 } }) }, false],
+    ['opening the menu', (h) => { h.click('[data-action="menu"]') }, true],
+    ['opening Cards', (h) => { h.openCards() }, true],
+    ['opening Details', (h) => { h.ui.activate(islandHit()) }, true],
+    ['choosing a summon target', (h) => { h.ui.playCard('source') }, true],
+    ['a Plains target phase', (h, view) => { h.update({ ...view, game: { ...view.game!, phase: 'plains_target' } }) }, true],
+    ['a Swamp target phase', (h, view) => { h.update({ ...view, game: { ...view.game!, phase: 'swamp_target' } }) }, true],
+    ['a hidden document', (h) => { h.document.hidden = true; h.document.emit('visibilitychange', {}) }, true],
+    ['the card leaving the board', (h, view) => {
+      h.update({ ...view, status: 'Saved', game: { ...view.game!, players: [view.game!.players[0], { ...view.game!.players[1], battlefield: [] }] } })
+    }, true],
+    ['reset', (h) => { h.ui.reset() }, false],
+    ['disposal', (h) => { h.ui.dispose() }, true],
+  ]
+
+  it.each(boundaries)('closes on %s', (name, close, refusesAnother) => {
+    const view = makeView()
+    const h = setup(view)
+    const preview = overlay(h)
+    h.ui.setPeek({ hit: hit(), placement })
+    expect(preview.innerHTML).toContain('three-peek')
+    close(h, view)
+    expect(name === 'disposal' ? preview.isConnected : preview.innerHTML.includes('three-peek')).toBe(false)
+    expect(h.ui.canPeek(hit())).toBe(!refusesAnother)
+    h.ui.setPeek({ hit: hit(), placement })
+    expect(name !== 'disposal' && preview.innerHTML.includes('three-peek')).toBe(!refusesAnother)
+    h.ui.dispose()
+  })
+
+  it('never peeks at a hidden card or outside a game', () => {
+    const view = makeView()
+    view.game!.players[1].handCards = [{ id: 'secret', name: HIDDEN_HAND_CARD_NAME }]
+    const h = setup(view)
+    const secret: BoardHit = { key: 'secret', cardId: 'secret', owner: 1, zone: 'hand', name: 'Secret Forest', playable: false }
+    expect(h.ui.canPeek(secret)).toBe(false)
+    h.ui.setPeek({ hit: secret, placement })
+    expect(overlay(h).innerHTML).toBe('')
+    h.update({ ...view, mode: 'p2p-host', p2pStarted: false })
+    expect(h.ui.canPeek(hit())).toBe(false)
+    h.update({ ...view, game: null })
+    expect(h.ui.canPeek(hit())).toBe(false)
+    h.ui.dispose()
+  })
+
+  it('keeps native buttons inert while a card follows a pointer, yet accepts the drop, so a second finger never submits twice', () => {
+    let dragging = false
+    const view = makeView()
+    view.game!.legal.playLandByCard.source = [view.game!.legal.playLandByCard.source[0]]
+    const h = setup(view, true, { enabled: true }, () => dragging)
+    h.ui.activate(mountainHand, 'touch')
+    const endTurn = h.ui.primaryAction!
+    const summon = h.dockActions!.querySelector('[data-action="select-summon"]')!
+    dragging = true
+    for (const action of ['select-summon', 'select-details', 'select-clear', 'menu']) h.click(`[data-action="${action}"]`)
+    expect(h.controller.submitAction).not.toHaveBeenCalled()
+    expect(h.ui.selection).toEqual({ cardId: 'source', targetId: null, discardId: null })
+    expect(h.content.querySelector('dialog')).toBeNull()
+    expect(h.ui.isBlocked()).toBe(false)
+    // The drop is not a click, so the guard never rejects it.
+    h.controller.submitAction.mockImplementation(() => h.update({ ...view, game: { ...view.game!, turn: 2 } }))
+    h.ui.playCard('source')
+    dragging = false
+    // The second finger lifts after the drop presented a new decision.
+    h.ui.activatePrimaryAction(endTurn)
+    h.dockActions!.emit('click', { target: summon })
+    expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith(view.game!.legal.playLandByCard.source[0].action)
     h.ui.dispose()
   })
 })

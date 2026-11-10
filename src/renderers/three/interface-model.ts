@@ -35,7 +35,7 @@ import {
 } from '../../app/types'
 import { isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
-import type { BoardHit, RendererCardIdentity, ThreeDragFeedback } from './contracts'
+import type { BoardHit, RendererCardIdentity, ThreeDragFeedback, ThreePeek } from './contracts'
 import { renderThreeLog } from './interface-log'
 import { escapeHtml, renderCardRules, renderCardTile, renderInstallControls, renderP2P } from './native-html'
 
@@ -61,6 +61,8 @@ export interface InterfaceUi {
   readonly tutorialHidden?: boolean
   /** The hand card being dragged on the board, mirrored by the narrow dock prompt. */
   readonly dragFeedback?: ThreeDragFeedback | null
+  /** The card a long press is peeking at, announced by the narrow dock prompt. */
+  readonly peek?: BoardHit | null
 }
 
 export interface ThreeDockModel {
@@ -671,6 +673,30 @@ export function renderThreeHover(view: AppViewModel, hit: BoardHit | null): stri
   return card ? `<aside class="three-hover-preview" aria-hidden="true">${renderCardTile(card, view.cardVisualStyle, view.monochromeCards)}</aside>` : ''
 }
 
+const px = (value: number): string => `${Math.round(value)}px`
+
+/**
+ * The long-press peek: the hover preview's card with the same rules as
+ * Details, at the board's `peekPlacement` (client pixels). Like hover it is
+ * decorative; the dock prompt announces the card and Details stays the
+ * keyboard and screen-reader path.
+ */
+export function renderThreePeek(view: AppViewModel, peek: ThreePeek | null): string {
+  const card = view.game && peek ? threePreviewCard(view.game, peek.hit) : null
+  if (!card || !peek) return ''
+  const { left, width, y, maxHeight, side } = peek.placement
+  if (![left, width, y, maxHeight].every(Number.isFinite) || width <= 0 || maxHeight <= 0) return ''
+  const style = `left:${px(left)};top:${px(y)};width:${px(width)};max-height:${px(maxHeight)};--three-peek-max-height:${px(maxHeight)}`
+  return `<aside class="three-hover-preview three-peek" aria-hidden="true" data-side="${side === 'above' ? 'above' : 'below'}" style="${style}">${
+    renderCardTile(card, view.cardVisualStyle, view.monochromeCards)}<div class="three-peek-copy">${renderCardRules(card)}<p class="three-peek-hint">Lift your finger to close.</p></div></aside>`
+}
+
+/** A card's name and primary ability, as the dock describes a selected or peeked card. */
+function cardSummary(card: ThreeCardPresentation): string {
+  const ability = card.serializedKey ? cardCatalogEntry(card.serializedKey).primaryAbility : null
+  return `${card.displayName}${ability ? ` · ${ability.name}: ${ability.rulesText}` : ''}`
+}
+
 function pendingSummonName(game: GameUiState): string {
   return game.pendingLandDisplayName
     ?? (isBasicLand(game.pendingLandName) ? displayCardName(game.pendingLandName) : 'this creature')
@@ -680,8 +706,16 @@ function pendingSummonName(game: GameUiState): string {
  * Narrow profile dock: one prompt plus the actions for the current decision.
  * The dock has a fixed height, so changing decisions never moves the board.
  * Buttons act on the interface's own selection, never on ids in the markup.
+ * An open long-press peek replaces only the prompt, so it is announced once
+ * while the actions stay put.
  */
 export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockModel {
+  const dock = threeDockModel(view, ui)
+  const peeked = view.game && ui.peek && isThreeInGame(view) ? threePreviewCard(view.game, ui.peek) : null
+  return peeked ? { prompt: cardSummary(peeked), actions: dock.actions } : dock
+}
+
+function threeDockModel(view: AppViewModel, ui: InterfaceUi): ThreeDockModel {
   const game = view.game
   if (!game || !isThreeInGame(view)) return EMPTY_THREE_DOCK
   if (view.replay.active) {
@@ -768,10 +802,9 @@ export function renderThreeDock(view: AppViewModel, ui: InterfaceUi): ThreeDockM
   const presentation = cardPresentation(card)
   if (card && presentation) {
     const name = presentation.displayName
-    const ability = presentation.serializedKey ? cardCatalogEntry(presentation.serializedKey).primaryAbility : null
     const playable = (game.legal.playLandByCard[card.id]?.length ?? 0) > 0
     return {
-      prompt: dragPrompt ?? `${name}${ability ? ` · ${ability.name}: ${ability.rulesText}` : ''}${playable ? '' : ' Cannot be summoned now.'}`,
+      prompt: dragPrompt ?? `${cardSummary(presentation)}${playable ? '' : ' Cannot be summoned now.'}`,
       actions: button('select-summon', 'Summon', !playable || ui.menuOpen || ui.cardsOpen || !!ui.preview || !!ui.pendingCardId,
         ` aria-label="${escapeHtml(`Summon ${name}`)}"`)
         + button('select-details', 'Details', false, ` aria-label="${escapeHtml(`Details for ${name}`)}"`)

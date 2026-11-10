@@ -11,6 +11,7 @@ import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
 import { BASIC_LANDS, isBasicLand, type BasicLand } from '../../game/types'
 import { effectFeedbackForDescriptor } from '../shared/interaction-feedback'
+import { clamp } from '../shared/math'
 import { ThreeAssets } from './assets'
 import { ThreeBackground } from './background'
 import { boardCardKey, ThreeCardRegistry, type CardAnchor, type CardDescriptor, type RetainedCard } from './card-registry'
@@ -23,10 +24,10 @@ import { EffectGeometry, EffectVisual, effectRecipe } from './effect-visual'
 import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
 import {
-  boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, dragProxyPlacement, dropAccepts,
-  landingSlotRect, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns, narrowBoardLayout,
-  narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, TOUCH_DROP_SLOP_PX, typeSlotX,
-  type BoardLayoutMode, type BoardRow, type DragProxySide, type LayerRect, type ThreeLayout,
+  autoScrollVelocity, boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, dragProxyPlacement,
+  dropAccepts, landingSlotRect, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns, narrowBoardLayout,
+  narrowHandPageSize, narrowHandRects, peekPlacement, pendingCardRect, pointInRect, TOUCH_DROP_SLOP_PX, typeSlotX,
+  type BoardLayoutMode, type BoardRow, type DragProxySide, type LayerRect, type PeekPlacement, type ThreeLayout,
 } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
@@ -159,6 +160,10 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly handNext = document.createElement('button')
   private readonly handPageLabel = document.createElement('span')
   private handPage = 0
+  /** The page size the hand was last paged at; zero after a reset. */
+  private handPageSize = 0
+  /** A profile switch re-pages the hand onto its selection at the next presentation. */
+  private handPageFollow = false
   private primaryAction: ThreePrimaryAction | null = null
   private pressedAction: ThreePrimaryAction | null = null
   private readonly point = { x: 0, y: 0 }
@@ -206,6 +211,10 @@ export class ThreeBoard implements ThreeBoardApi {
   private effectCardSequence = 0
   private lastFrame: number | null = null
   private drag: DragVisual | null = null
+  /** Edge auto-scroll: its pending frame, last frame time, and sub-pixel carry. */
+  private scrollFrame: number | null = null
+  private scrollTime: number | null = null
+  private scrollCarry = 0
   private canDrop = false
   private inputBlocked = false
   private sized = false
@@ -365,7 +374,10 @@ export class ThreeBoard implements ThreeBoardApi {
     const reoriented = this.actor !== presentedActor || boundary
     if (reoriented) {
       this.endDrag(false)
+      // A new acting player or presentation starts on the first page.
       this.handPage = 0
+      this.handPageSize = 0
+      this.handPageFollow = false
     }
     if (boundary) {
       for (const effect of this.effects) effect.cancel()
@@ -384,10 +396,12 @@ export class ThreeBoard implements ThreeBoardApi {
     // there. Politeness changes before any text does.
     const live = narrow ? 'off' : 'polite'
     if (this.instruction.getAttribute('aria-live') !== live) this.instruction.setAttribute('aria-live', live)
-    if (narrow !== this.narrow) {
+    const switched = narrow !== this.narrow
+    if (switched) {
       // Switching profiles moves every card, so no gesture can survive it.
       this.endDrag(false)
       this.handPage = 0
+      this.handPageFollow = !reoriented
       this.onResize()
       if (narrow) this.chrome.get('hand')!.header.append(this.handPagination)
       else this.handPagination.remove()
@@ -398,6 +412,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
     this.present(!reoriented, reoriented)
+    if (switched) this.anchorNearLane()
     this.invalidate()
   }
 
@@ -481,14 +496,24 @@ export class ThreeBoard implements ThreeBoardApi {
     const pageSize = narrowHandPageSize(this.layout)
     const hand = game.players[this.actor].handCards
     const pages = Math.max(1, Math.ceil(hand.length / pageSize))
+    const selection = this.narrow ? this.selection : NO_BOARD_SELECTION
+    // Hand selections only exist while this player may act on them.
+    const handSelection = input ? selection : NO_BOARD_SELECTION
+    const pageSizeChanged = this.handPageSize > 0 && pageSize !== this.handPageSize
+    if (this.handPageFollow || pageSizeChanged) {
+      // A profile or page-size change keeps the selected card in view, or
+      // else the first card of the current page, instead of clearing it.
+      const selected = hand.findIndex((card) => card.id === handSelection.cardId || card.id === handSelection.discardId)
+      this.handPage = selected >= 0 ? Math.floor(selected / pageSize)
+        : pageSizeChanged ? Math.floor(this.handPage * this.handPageSize / pageSize) : 0
+    }
+    this.handPageFollow = false
+    this.handPageSize = pageSize
     this.handPage = Math.min(this.handPage, pages - 1)
     this.handPagination.hidden = !this.narrow || pages === 1
     this.handPrevious.disabled = this.handPage === 0
     this.handNext.disabled = this.handPage === pages - 1
     this.handPageLabel.textContent = `${this.handPage + 1}/${pages}`
-    const selection = this.narrow ? this.selection : NO_BOARD_SELECTION
-    // Hand selections only exist while this player may act on them.
-    const handSelection = input ? selection : NO_BOARD_SELECTION
     const visibleHand = this.narrow ? hand.slice(this.handPage * pageSize, (this.handPage + 1) * pageSize) : hand
     const hiddenHandSelection = [handSelection.cardId, handSelection.discardId]
       .some((id) => id !== null && !visibleHand.some((card) => card.id === id))
@@ -755,6 +780,11 @@ export class ThreeBoard implements ThreeBoardApi {
     else this.pressedAction = this.primaryAction
   }
   private readonly activatePrimary = (): void => {
+    // A second finger cannot end the turn, or take any other action, mid-drag.
+    if (this.drag && !this.drag.returning) {
+      this.clearPrimaryPress()
+      return
+    }
     const action = this.pressedAction ?? this.primaryAction
     this.clearPrimaryPress()
     if (!action || !this.usable() || this.primaryButton.hidden || this.primaryButton.disabled) return
@@ -842,6 +872,7 @@ export class ThreeBoard implements ThreeBoardApi {
       drag.proxy.group.visible = true
     }
     this.invalidate()
+    this.syncAutoScroll()
     if (accepted === drag.accepted) return
     // Feedback changes only on transitions, so a move never rewrites text.
     drag.accepted = accepted
@@ -858,6 +889,7 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   endDrag(animateReturn: boolean): void {
+    this.stopAutoScroll()
     const drag = this.drag
     if (!drag) return
     // A returning proxy already restored the feedback when its drag ended.
@@ -890,6 +922,115 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     this.invalidate()
     if (active) this.onDragFeedback(null)
+  }
+
+  showPeekRing(clientX: number, clientY: number): void {
+    const rect = this.canvas.getBoundingClientRect()
+    if (!this.usable() || !(rect.width > 0 && rect.height > 0)) return
+    this.dragLayer.setRing({
+      x: (clientX - rect.left) * this.layout.width / rect.width,
+      y: (clientY - rect.top) * this.layout.height / rect.height,
+    })
+  }
+
+  hidePeekRing(): void {
+    this.dragLayer.setRing(null)
+  }
+
+  peekPlacement(hit: BoardHit, clientX: number, clientY: number): PeekPlacement | null {
+    const card = this.cards?.get(hit.key)
+    const rect = this.canvas.getBoundingClientRect()
+    if (!this.usable() || !card?.descriptor.visible || !card.group.visible || !(rect.width > 0 && rect.height > 0)) return null
+    const anchor = card.anchor()
+    const scaleX = rect.width / this.layout.width
+    const scaleY = rect.height / this.layout.height
+    return peekPlacement({
+      stage: this.visibleStage(),
+      card: {
+        left: rect.left + (this.layout.width / 2 + anchor.x - anchor.width / 2) * scaleX,
+        top: rect.top + (this.layout.height / 2 - anchor.y - anchor.height / 2) * scaleY,
+        width: anchor.width * scaleX,
+        height: anchor.height * scaleY,
+      },
+      pointer: { x: clientX, y: clientY },
+    })
+  }
+
+  /** The stage's furthest scroll position; zero unless the narrow board overflows it. */
+  private maxScroll(): number {
+    return this.stage.dataset.scrollable === 'true' ? Math.max(0, this.layout.height - (this.stage.clientHeight || 0)) : 0
+  }
+
+  /** Edge auto-scroll speed for the live touch drag, or zero when the stage cannot scroll that way. */
+  private autoScrollSpeed(): number {
+    const drag = this.drag
+    if (!drag || drag.returning || !drag.pointerTouch || !this.usable()) return 0
+    const max = this.maxScroll()
+    const top = this.stage.scrollTop || 0
+    const visible = this.visibleStage()
+    const speed = autoScrollVelocity(drag.pointerY, visible.top, visible.top + visible.height)
+    return speed < 0 && top > 0 || speed > 0 && top < max ? speed : 0
+  }
+
+  /** Starts or stops edge auto-scroll for the drag's latest pointer. */
+  private syncAutoScroll(): void {
+    if (this.autoScrollSpeed() === 0) this.stopAutoScroll()
+    else if (this.scrollFrame === null) {
+      this.scrollTime = null
+      this.scrollCarry = 0
+      this.scrollFrame = requestAnimationFrame(this.autoScroll)
+    }
+  }
+
+  private stopAutoScroll(): void {
+    if (this.scrollFrame !== null) cancelAnimationFrame(this.scrollFrame)
+    this.scrollFrame = null
+    this.scrollTime = null
+    this.scrollCarry = 0
+  }
+
+  /**
+   * One edge auto-scroll step: scroll by whole pixels for the elapsed time,
+   * then re-place the card and its acceptance under the resting finger.
+   */
+  private readonly autoScroll = (time: number): void => {
+    const drag = this.drag
+    const speed = this.autoScrollSpeed()
+    if (!drag || speed === 0) {
+      this.stopAutoScroll()
+      return
+    }
+    // The first frame, and frames after a stall, step a bounded amount.
+    const elapsed = this.scrollTime === null || !Number.isFinite(time) ? 16 : clamp(time - this.scrollTime, 0, 64)
+    this.scrollTime = Number.isFinite(time) ? time : null
+    const distance = speed * elapsed / 1000 + this.scrollCarry
+    const step = Math.trunc(distance)
+    this.scrollCarry = distance - step
+    const top = this.stage.scrollTop || 0
+    const next = clamp(top + step, 0, this.maxScroll())
+    if (next !== top) {
+      this.stage.scrollTop = next
+      this.positionInstruction()
+      // Bounds are read fresh, so the card stays under the finger over the moved board.
+      this.moveDrag(drag.pointerX, drag.pointerY, drag.pointerTouch)
+    }
+    // moveDrag or its listener may have stopped the scroll or ended the drag.
+    if (this.scrollFrame === null || this.drag !== drag) return
+    this.scrollFrame = requestAnimationFrame(this.autoScroll)
+  }
+
+  /** Scrolls the narrow stage the least amount that shows the near lane, header included. */
+  private anchorNearLane(): void {
+    const max = this.maxScroll()
+    if (!this.narrow || max === 0 || !this.usable()) return
+    const row = this.layout.rows.near
+    const laneTop = Math.min(row.labelTop, this.layout.height / 2 - row.y - row.height / 2)
+    const laneBottom = Math.max(row.labelTop + row.labelHeight, this.layout.height / 2 - row.y + row.height / 2)
+    const view = this.stage.clientHeight || 0
+    const top = this.stage.scrollTop || 0
+    const next = clamp(laneBottom - laneTop >= view || laneTop < top ? laneTop
+      : laneBottom > top + view ? laneBottom - view : top, 0, max)
+    if (next !== top) this.stage.scrollTop = next
   }
 
   /** Draws the lifted card in the HTML drag layer, so it stays above the board's headers. */
@@ -1160,6 +1301,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.endDrag(false)
     this.onResize()
     this.present(false, true)
+    this.anchorNearLane()
     this.invalidate()
   }
 
@@ -1424,6 +1566,7 @@ export class ThreeBoard implements ThreeBoardApi {
     if (this.motionQuery?.removeEventListener) this.motionQuery.removeEventListener('change', this.motionChanged)
     else this.motionQuery?.removeListener(this.motionChanged)
     this.endDrag(false)
+    this.stopAutoScroll()
     this.dragLayer.dispose()
     for (const effect of this.effects) effect.cancel()
     this.effects.clear()
