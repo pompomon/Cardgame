@@ -3,8 +3,9 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   boardLayout, cardSlotX, clientToBoard, compactBoardViewport, isNarrowWidth, NARROW_LAYOUT_MAX_WIDTH,
-  NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect, typeSlotX,
-  type BoardRect, type ThreeLayout,
+  NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect,
+  SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
+  type BoardRect, type ThreeLayout, type ThreeShell,
 } from '../renderers/three/layout'
 
 function laneBounds(layout: ThreeLayout, row: 'far' | 'near' | 'hand') {
@@ -399,5 +400,91 @@ describe('Three.js narrow single-column layout', () => {
     const chrome = layout.rows.far.labelHeight + layout.rows.near.labelHeight + layout.rows.hand.labelHeight
     expect(chrome).toBeLessThanOrEqual(layout.height - 655 * 0.7 + 0.001)
     expect(layout.cardHeight).toBeGreaterThan(60)
+  })
+})
+
+describe('Three.js shell profile', () => {
+  const NARROW: ThreeShell = { profile: 'narrow', short: false }
+  const DOCK: ThreeShell = { profile: 'dock', short: false }
+  const RAIL: ThreeShell = { profile: 'rail', short: false }
+  const SHORT_RAIL: ThreeShell = { profile: 'rail', short: true }
+  const DESKTOP: ThreeShell = { profile: 'desktop', short: false }
+  const touch = (width: number, height: number) => threeShellProfile({ width, height, coarse: true })
+  const mouse = (width: number, height: number) => threeShellProfile({ width, height, coarse: false })
+
+  // Estimated layout viewports from the plan's Fold4 postures table. Milestone 0
+  // device measurements, keyboard-open variants included, replace these rows.
+  const fold4Postures: ReadonlyArray<readonly [string, number, number, ThreeShell, ThreeShell]> = [
+    ['cover portrait in a Chrome tab', 344, 770, NARROW, NARROW],
+    ['cover portrait as an installed PWA', 344, 834, NARROW, NARROW],
+    ['cover portrait at full screen', 344, 882, NARROW, NARROW],
+    ['cover landscape in a Chrome tab', 882, 232, SHORT_RAIL, DESKTOP],
+    ['main portrait in a Chrome tab', 690, 717, DOCK, DESKTOP],
+    ['main portrait at full screen', 690, 829, DOCK, DESKTOP],
+    ['main landscape in a Chrome tab', 829, 578, RAIL, DESKTOP],
+    ['main landscape at full screen', 829, 690, RAIL, DESKTOP],
+  ]
+
+  it.each(fold4Postures)('maps the Fold4 %s (%sx%s) by pointer type', (_, width, height, coarse, fine) => {
+    expect(touch(width, height)).toEqual(coarse)
+    expect(mouse(width, height)).toEqual(fine)
+  })
+
+  it('switches at the 480px narrow and 1024px desktop widths', () => {
+    expect(TOUCH_SHELL_MAX_WIDTH).toBe(1024)
+    expect(touch(NARROW_LAYOUT_MAX_WIDTH, 700)).toEqual(NARROW)
+    expect(touch(NARROW_LAYOUT_MAX_WIDTH + 1, 700)).toEqual(DOCK)
+    expect(mouse(NARROW_LAYOUT_MAX_WIDTH, 700)).toEqual(NARROW)
+    expect(mouse(NARROW_LAYOUT_MAX_WIDTH + 1, 700)).toEqual(DESKTOP)
+    expect(touch(1024, 768)).toEqual(RAIL)
+    expect(touch(1025, 768)).toEqual(DESKTOP)
+    expect(touch(1024, 1366)).toEqual(DOCK)
+    expect(touch(1025, 1366)).toEqual(DESKTOP)
+  })
+
+  it('uses the short rail for landscape touch screens at most 480px high', () => {
+    expect(SHORT_SHELL_MAX_HEIGHT).toBe(480)
+    expect(touch(882, 480)).toEqual(SHORT_RAIL)
+    expect(touch(882, 481)).toEqual(RAIL)
+    // Phones held sideways, including wide ones beyond the desktop cap.
+    expect(touch(844, 390)).toEqual(SHORT_RAIL)
+    expect(touch(932, 430)).toEqual(SHORT_RAIL)
+    expect(touch(1100, 480)).toEqual(SHORT_RAIL)
+    expect(touch(1100, 481)).toEqual(DESKTOP)
+    // Only a landscape rail is ever short.
+    expect(touch(344, 200)).toEqual(NARROW)
+    expect(touch(481, 481)).toEqual(DOCK)
+  })
+
+  it('splits square touch screens on orientation', () => {
+    expect(touch(700, 700)).toEqual(DOCK)
+    expect(touch(701, 700)).toEqual(RAIL)
+    expect(touch(700, 701)).toEqual(DOCK)
+    expect(touch(1024, 1024)).toEqual(DOCK)
+    expect(touch(1025, 1025)).toEqual(DESKTOP)
+    expect(mouse(700, 700)).toEqual(DESKTOP)
+  })
+
+  it('keeps fine pointers wider than 480px on the desktop layouts', () => {
+    for (const [width, height] of [[481, 900], [690, 717], [829, 578], [882, 232], [1024, 768], [1440, 960]]) {
+      expect(mouse(width, height)).toEqual(DESKTOP)
+    }
+  })
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'falls back to desktop for a %s viewport size',
+    (invalid) => {
+      for (const coarse of [true, false]) {
+        expect(threeShellProfile({ width: invalid, height: 700, coarse })).toEqual(DESKTOP)
+        expect(threeShellProfile({ width: 344, height: invalid, coarse })).toEqual(DESKTOP)
+        expect(threeShellProfile({ width: invalid, height: invalid, coarse })).toEqual(DESKTOP)
+      }
+    },
+  )
+
+  it('returns immutable results', () => {
+    for (const result of [touch(344, 770), touch(690, 717), touch(829, 578), touch(882, 232), mouse(1440, 960)]) {
+      expect(Object.isFrozen(result)).toBe(true)
+    }
   })
 })

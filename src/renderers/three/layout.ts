@@ -74,6 +74,51 @@ export function compactBoardViewport(width: number, height: number): boolean {
     && width >= 760 && height > 0 && width > height && height <= 740
 }
 
+/**
+ * `narrow`, `dock`, and `rail` share the touch grammar (tap selects, the dock
+ * or rail confirms). `desktop` keeps the stacked and compact layouts.
+ */
+export type ThreeShellProfile = 'narrow' | 'dock' | 'rail' | 'desktop'
+
+export interface ThreeShellInput {
+  /** Layout viewport (`innerWidth`, `innerHeight`), never `visualViewport`. */
+  readonly width: number
+  readonly height: number
+  /** `matchMedia('(pointer: coarse)')`: the primary pointer is coarse. */
+  readonly coarse: boolean
+}
+
+export interface ThreeShell {
+  readonly profile: ThreeShellProfile
+  /** Only a `rail` can be short: a landscape screen too low for stacked rows. */
+  readonly short: boolean
+}
+
+/** Coarse pointers wider than this, unless the screen is short, keep `desktop`. */
+export const TOUCH_SHELL_MAX_WIDTH = 1024
+/** Landscape touch screens at or below this height use the short rail. */
+export const SHORT_SHELL_MAX_HEIGHT = 480
+
+const shell = (profile: ThreeShellProfile, short = false): ThreeShell => Object.freeze({ profile, short })
+const DESKTOP_SHELL = shell('desktop')
+const NARROW_SHELL = shell('narrow')
+const DOCK_SHELL = shell('dock')
+const RAIL_SHELL = shell('rail')
+const SHORT_RAIL_SHELL = shell('rail', true)
+
+/**
+ * Classifies the layout viewport and primary pointer; the first matching rule
+ * wins. The inputs never depend on the shell, so no hysteresis is needed.
+ */
+export function threeShellProfile({ width, height, coarse }: ThreeShellInput): ThreeShell {
+  if (!(Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0)) return DESKTOP_SHELL
+  if (isNarrowWidth(width)) return NARROW_SHELL
+  if (coarse !== true) return DESKTOP_SHELL
+  if (width > TOUCH_SHELL_MAX_WIDTH && height > SHORT_SHELL_MAX_HEIGHT) return DESKTOP_SHELL
+  if (width > height) return height <= SHORT_SHELL_MAX_HEIGHT ? SHORT_RAIL_SHELL : RAIL_SHELL
+  return DOCK_SHELL
+}
+
 export function boardColumns(width: number, compact: boolean): BoardColumns {
   const w = Number.isFinite(width) && width > 0 ? width : 1
   const labelWidth = compact ? Math.min(240, w * 0.26) : Math.max(1, w - 24)
