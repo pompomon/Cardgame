@@ -25,6 +25,7 @@ import {
   canThreeInput,
   EMPTY_THREE_DOCK,
   isThreeAdventureHub,
+  isTouchShell,
   isThreeInGame,
   isThreeMode,
   renderThreeDock,
@@ -42,6 +43,7 @@ import {
   type ThreeLobbyPage,
   type ThreePrimaryAction,
 } from './interface-model'
+import { isTouchLayoutMode, type ThreeShellProfile } from './layout'
 import './interface.css'
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]'
@@ -64,10 +66,10 @@ interface SavedFocus {
 }
 
 export interface ThreeInterfaceOptions {
-  /** Narrow-profile action dock; the interface owns its prompt and buttons. */
+  /** The touch shells' action dock; the interface owns its prompt and buttons. */
   readonly dockHost?: HTMLElement | null
-  /** Whether the narrow profile is active (it also requires a dock). */
-  readonly narrow?: () => boolean
+  /** The in-game shell; a touch shell also requires a dock. Omitted means `desktop`. */
+  readonly shell?: () => ThreeShellProfile
   /**
    * Whether a card is following a pointer on the board. Native buttons stay
    * inert until it drops, so a second finger cannot act mid-drag.
@@ -105,13 +107,14 @@ export class ThreeInterface {
   private hoverMarkup = ''
   private dockMarkup = ''
   private dockPromptText = ''
-  // Narrow select→confirm state; cleared whenever the decision changes.
+  // Touch-shell select→confirm state; cleared whenever the decision changes
+  // and on entering desktop, but kept across touch shells (fold continuity).
   private selectedCardId: string | null = null
   private selectedTargetId: string | null = null
   private selectedDiscardId: string | null = null
   private targetListOpen = false
   private tutorialDismissed: string | null = null
-  private wasNarrow = false
+  private wasTouchShell = false
   private readonly scrollPositions = new Map<string, [number, number]>()
   private readonly detailStates = new Map<string, boolean>()
   private followLatest = true
@@ -141,7 +144,7 @@ export class ThreeInterface {
   private readonly dockHost: HTMLElement | null
   private readonly dockPrompt: HTMLElement | null
   private readonly dockActions: HTMLElement | null
-  private readonly narrowEnabled: () => boolean
+  private readonly currentShell: () => ThreeShellProfile
   private readonly dragActive: () => boolean
   private readonly fileInput: HTMLInputElement
   private readonly document: Document
@@ -172,7 +175,7 @@ export class ThreeInterface {
     this.hudHost = hudHost
     this.document = host.ownerDocument
     this.dockHost = options.dockHost ?? null
-    this.narrowEnabled = options.narrow ?? (() => false)
+    this.currentShell = options.shell ?? (() => 'desktop')
     this.dragActive = options.dragActive ?? (() => false)
     if (this.dockHost) {
       this.dockPrompt = this.document.createElement('p')
@@ -227,7 +230,7 @@ export class ThreeInterface {
       previewReturnToCards: this.previewReturnToCards,
       hostAnswerDraft: this.hostAnswerDraft, joinOfferDraft: this.joinOfferDraft,
       lobbyPage: this.lobbyPage,
-      narrow: this.narrowActive(),
+      shell: this.activeShell(),
       selectedCardId: this.selectedCardId, selectedTargetId: this.selectedTargetId,
       selectedDiscardId: this.selectedDiscardId, targetListOpen: this.targetListOpen,
       tutorialHidden: this.tutorialDismissed !== null && this.tutorialDismissed === (this.view?.tutorial.hint ?? ''),
@@ -240,8 +243,14 @@ export class ThreeInterface {
     return [this.hudHost, this.host, this.dockActions].filter((root): root is HTMLElement => root !== null)
   }
 
-  private narrowActive(): boolean {
-    return this.dockActions !== null && this.narrowEnabled()
+  /** The shell this interface presents: touch shells need the dock, else `desktop`. */
+  private activeShell(): ThreeShellProfile {
+    const shell = this.dockActions === null ? 'desktop' : this.currentShell()
+    return isTouchLayoutMode(shell) ? shell : 'desktop'
+  }
+
+  private touchShellActive(): boolean {
+    return this.activeShell() !== 'desktop'
   }
 
   private hasSelection(): boolean {
@@ -254,7 +263,7 @@ export class ThreeInterface {
     this.selectedDiscardId = null
   }
 
-  /** Paging the narrow hand hides its selected card, so drop that selection. */
+  /** Paging a touch-shell hand hides its selected card, so drop that selection. */
   clearHandSelection(): void {
     if (this.disposed || this.selectedCardId === null && this.selectedDiscardId === null) return
     this.selectedCardId = null
@@ -262,14 +271,14 @@ export class ThreeInterface {
     this.changed()
   }
 
-  /** Narrow touch and pen taps select first; a dock button confirms. */
+  /** In touch shells, touch and pen taps select first; a dock button confirms. */
   private confirmsTaps(pointerType: DragPointerType): boolean {
-    return pointerType !== 'mouse' && this.narrowActive()
+    return pointerType !== 'mouse' && this.touchShellActive()
   }
 
-  /** Selection highlights for the narrow board; empty in other profiles. */
+  /** Selection highlights for touch-shell boards; empty on desktop. */
   get selection(): ThreeBoardSelection {
-    if (this.disposed || !this.narrowActive() || !this.hasSelection()) return NO_BOARD_SELECTION
+    if (this.disposed || !this.touchShellActive() || !this.hasSelection()) return NO_BOARD_SELECTION
     return { cardId: this.selectedCardId, targetId: this.selectedTargetId, discardId: this.selectedDiscardId }
   }
 
@@ -434,12 +443,14 @@ export class ThreeInterface {
       this.clearSelection()
       this.targetListOpen = false
     }
-    const narrow = this.narrowActive()
-    if (this.wasNarrow && !narrow) {
+    // Unfolding or rotating between touch shells keeps the selection and the
+    // open target list; only entering desktop drops them.
+    const touchShell = this.touchShellActive()
+    if (this.wasTouchShell && !touchShell) {
       this.clearSelection()
       this.targetListOpen = false
     }
-    this.wasNarrow = narrow
+    this.wasTouchShell = touchShell
     this.view = view
     this.presentedActor = presentedActor
     this.decision = decision
@@ -552,7 +563,7 @@ export class ThreeInterface {
     const resolution = resolvePlayLandDrop(view.game, cardId)
     // Drags and buttons may act on a card other than the selected one; record
     // it so a rejected submission keeps offering the card actually attempted.
-    if (this.narrowActive() && resolution.kind !== 'invalid') this.selectedCardId = cardId
+    if (this.touchShellActive() && resolution.kind !== 'invalid') this.selectedCardId = cardId
     if (resolution.kind === 'single') {
       this.submit(resolution.action)
     } else if (resolution.kind === 'needs_target') {
@@ -593,8 +604,8 @@ export class ThreeInterface {
         return
       }
     }
-    // Narrow hand taps (any pointer) select a card; the dock offers its actions.
-    if (this.narrowActive() && hit.zone === 'hand' && hit.owner === view.game.actor && view.game.phase === 'main'
+    // Touch-shell hand taps (any pointer) select a card; the dock offers its actions.
+    if (this.touchShellActive() && hit.zone === 'hand' && hit.owner === view.game.actor && view.game.phase === 'main'
       && canThreeInput(view, this.presentedActor) && !this.nativeActionBlocked() && threePreviewCard(view.game, hit) !== null) {
       this.selectedCardId = this.selectedCardId === hit.cardId ? null : hit.cardId
       this.changed()
@@ -610,7 +621,7 @@ export class ThreeInterface {
     if (!choice) return
     // Mixed input can submit a card other than the selected one; a rejected
     // submission must keep offering the card that was actually attempted.
-    if (this.narrowActive()) this.selectedDiscardId = cardId
+    if (this.touchShellActive()) this.selectedDiscardId = cardId
     this.submit(choice.action)
   }
 
@@ -636,7 +647,7 @@ export class ThreeInterface {
       : game.phase === 'plains_target' ? resolvePlainsReuseAction(game, id)
         : game.phase === 'swamp_target' ? resolveSwampDiscardAction(game, id) : null
     if (!action) return
-    if (this.narrowActive() && id !== undefined && threeTargets(view, this.ui())?.battlefield) this.selectedTargetId = id
+    if (this.touchShellActive() && id !== undefined && threeTargets(view, this.ui())?.battlefield) this.selectedTargetId = id
     this.submit(action)
   }
 
@@ -705,7 +716,7 @@ export class ThreeInterface {
     const ui = this.ui()
     const markup = renderThreeInterface(this.view, ui, !this.hudHost)
     const hudMarkup = this.hudHost ? renderThreeHud(this.view, ui) : ''
-    const dock = ui.narrow ? renderThreeDock(this.view, ui) : EMPTY_THREE_DOCK
+    const dock = isTouchShell(ui) ? renderThreeDock(this.view, ui) : EMPTY_THREE_DOCK
     if (this.dockPrompt) {
       // Politeness changes before the text: a replay's first prompt stays
       // silent, and the first prompt after it, such as the winner, is spoken.
@@ -854,8 +865,8 @@ export class ThreeInterface {
 
   private readonly handleKeydown = (event: KeyboardEvent): void => {
     if (this.disposed) return
-    if (event.key === 'Escape' && this.narrowActive() && !this.menuOpen && !this.cardsOpen && !this.preview) {
-      // Step back one narrow layer: the target list, a selected target, then
+    if (event.key === 'Escape' && this.touchShellActive() && !this.menuOpen && !this.cardsOpen && !this.preview) {
+      // Step back one touch-shell layer: the target list, a selected target, then
       // (once no picker is open) the selected card or discard.
       if (this.targetListOpen) {
         event.preventDefault()
@@ -995,21 +1006,21 @@ export class ThreeInterface {
         break
       }
       case 'target': this.chooseTarget(element.dataset.targetId); break
-      case 'select-summon': if (this.selectedCardId && this.narrowActive()) this.playCard(this.selectedCardId); break
+      case 'select-summon': if (this.selectedCardId && this.touchShellActive()) this.playCard(this.selectedCardId); break
       case 'select-details': {
         const cardId = this.selectedCardId
-        if (!cardId || !view.game || !this.narrowActive()) break
+        if (!cardId || !view.game || !this.touchShellActive()) break
         this.previewCard({ key: '', cardId, name: '', owner: view.game.actor, zone: 'hand', playable: false })
         break
       }
       case 'select-clear': this.clearSelection(); this.changed(); break
-      case 'confirm-target': if (this.selectedTargetId && this.narrowActive()) this.chooseTarget(this.selectedTargetId); break
+      case 'confirm-target': if (this.selectedTargetId && this.touchShellActive()) this.chooseTarget(this.selectedTargetId); break
       case 'confirm-response':
-        if (this.selectedDiscardId && view.game && this.narrowActive()) this.respondWithCard(this.selectedDiscardId, view.game.actor)
+        if (this.selectedDiscardId && view.game && this.touchShellActive()) this.respondWithCard(this.selectedDiscardId, view.game.actor)
         break
       case 'target-list':
       case 'target-list-hide':
-        if (!this.narrowActive()) break
+        if (!this.touchShellActive()) break
         this.targetListOpen = action === 'target-list'
         this.changed()
         break

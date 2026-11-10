@@ -25,9 +25,10 @@ import { presentationBoundary } from './effects'
 import type { ThreePrimaryAction } from './interface-model'
 import {
   autoScrollVelocity, boardColumns, boardLayout, cardSlotX, clientToBoard, compactBoardViewport, dragProxyPlacement,
-  dropAccepts, landingSlotRect, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns, narrowBoardLayout,
-  narrowHandPageSize, narrowHandRects, peekPlacement, pendingCardRect, pointInRect, TOUCH_DROP_SLOP_PX, typeSlotX,
-  type BoardLayoutMode, type BoardRow, type DragProxySide, type LayerRect, type PeekPlacement, type ThreeLayout,
+  dropAccepts, isTouchLayoutMode, landingSlotRect, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardColumns,
+  narrowBoardLayout, narrowHandPageSize, narrowHandRects, peekPlacement, pendingCardRect, pointInRect, TOUCH_DROP_SLOP_PX,
+  typeSlotX, type BoardLayoutMode, type BoardRow, type DragProxySide, type LayerRect, type PeekPlacement, type ThreeLayout,
+  type ThreeShellProfile,
 } from './layout'
 import { threeQualityProfile, type ThreeQualityProfile } from './quality'
 import './graphics.css'
@@ -78,7 +79,7 @@ const RELEASE_INSTRUCTION = 'Release to summon · back to hand cancels'
 const MAX_INSTRUCTION_WIDTH = 544
 const OVERLAY_GAP = 4
 const LANDING_LABEL = 'Lands here'
-/** The summoned card joins a narrow type stack that already holds a card. */
+/** The summoned card joins a type stack that already holds a card. */
 const LANDING_STACK_LABEL = '+1'
 const ACTIVE_SURFACE = '#214c3b'
 const IDLE_SURFACE = '#152b3b'
@@ -99,6 +100,8 @@ const SIZER_STACKS = ['Deck 99', 'Discard 99'] as const
 const PRIMARY_LABELS = ['End Turn', 'Let It Through'] as const
 const NARROW_TARGET_LABEL_MIN = 46
 const TARGET_LABEL_MIN = 64
+/** A hand header holding the pager: 44px buttons plus its padding and border (graphics.css). */
+const PAGED_HAND_HEADER_MIN = 50
 
 /** Presentation-only grouping: unknown cards share the first slot. */
 function typeSlot(card: { readonly name: string; readonly serializedKey?: BasicLand }): number {
@@ -182,7 +185,7 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly landingGroup = new Group()
   private readonly dragLayer = new ThreeDragLayer()
   private readonly onDragFeedback: (feedback: ThreeDragFeedback | null) => void
-  /** Cards per narrow type slot on the near battlefield. */
+  /** Cards per type slot on the near battlefield in a touch layout. */
   private nearSlotCounts: readonly number[] = []
   /** The instruction shown when no drag is live: the summon hint or a response prompt. */
   private idleInstruction = SUMMON_INSTRUCTION
@@ -190,7 +193,8 @@ export class ThreeBoard implements ThreeBoardApi {
   private readonly countBadges = new Map<string, HTMLSpanElement>()
   private typeSlotsShown = false
   private primaryDocked = false
-  private narrow = false
+  /** The in-game shell; every shell but `desktop` uses the typed-slot touch layout. */
+  private shell: ThreeShellProfile = 'desktop'
   private selection: ThreeBoardSelection = NO_BOARD_SELECTION
   private renderer: WebGLRenderer | null = null
   private assets: ThreeAssets | null = null
@@ -396,23 +400,26 @@ export class ThreeBoard implements ThreeBoardApi {
     this.primaryAction = primaryAction
     this.inputBlocked = blocked
     const presentation = this.presentation()
-    const narrow = presentation.narrow === true
-    // The narrow dock prompt announces drags, so this overlay stays quiet
-    // there. Politeness changes before any text does.
-    const live = narrow ? 'off' : 'polite'
+    const shell: ThreeShellProfile = isTouchLayoutMode(presentation.shell) ? presentation.shell : 'desktop'
+    const touchLayout = shell !== 'desktop'
+    // The dock prompt announces drags in every touch shell, so this overlay
+    // stays quiet there. Politeness changes before any text does.
+    const live = touchLayout ? 'off' : 'polite'
     if (this.instruction.getAttribute('aria-live') !== live) this.instruction.setAttribute('aria-live', live)
-    const switched = narrow !== this.narrow
+    const switched = shell !== this.shell
     if (switched) {
-      // Switching profiles moves every card, so no gesture can survive it.
+      // Switching shells moves every card, so no gesture can survive it.
       this.endDrag(false)
       this.handPage = 0
       this.handPageFollow = !reoriented
       this.onResize()
-      if (narrow) this.chrome.get('hand')!.header.append(this.handPagination)
-      else this.handPagination.remove()
+      if (touchLayout !== this.touchLayout) {
+        if (touchLayout) this.chrome.get('hand')!.header.append(this.handPagination)
+        else this.handPagination.remove()
+      }
     }
-    this.narrow = narrow
-    this.selection = narrow ? presentation.selection : NO_BOARD_SELECTION
+    this.shell = shell
+    this.selection = touchLayout ? presentation.selection : NO_BOARD_SELECTION
     this.placePrimaryButton()
     this.updateQuality()
     this.setBackground(view.boardTheme ?? DEFAULT_BOARD_THEME)
@@ -421,9 +428,14 @@ export class ThreeBoard implements ThreeBoardApi {
     this.invalidate()
   }
 
-  /** The narrow profile docks the primary action beside the action prompt. */
+  /** Every touch shell uses the typed-slot layout, paging, and the action dock. */
+  private get touchLayout(): boolean {
+    return isTouchLayoutMode(this.shell)
+  }
+
+  /** Touch shells dock the primary action beside the action prompt. */
   private placePrimaryButton(): void {
-    const docked = this.narrow && this.dockSlot !== null
+    const docked = this.touchLayout && this.dockSlot !== null
     if (docked === this.primaryDocked) return
     const focused = this.primaryButton.ownerDocument.activeElement === this.primaryButton
     const host = docked && this.dockSlot ? this.dockSlot : this.chrome.get('near')!.header
@@ -466,10 +478,10 @@ export class ThreeBoard implements ThreeBoardApi {
     if (primaryFocused && (this.primaryButton.hidden || this.primaryButton.disabled)) {
       this.chrome.get('near')!.label.focus({ preventScroll: true })
     }
-    // The narrow dock carries the instructions; the overlay only returns to
-    // give live feedback while a card is being dragged.
+    // The touch shells' dock carries the instructions; the overlay only
+    // returns to give live feedback while a card is being dragged.
     const dragging = this.drag !== null && !this.drag.returning
-    this.instruction.hidden = this.narrow ? !dragging : !this.canDrop && !response
+    this.instruction.hidden = this.touchLayout ? !dragging : !this.canDrop && !response
     for (const size of this.instructionSizes) size.hidden = !this.canDrop
     this.idleInstruction = response
       ? primary?.prompt || (response.choices.length
@@ -501,7 +513,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const pageSize = narrowHandPageSize(this.layout)
     const hand = game.players[this.actor].handCards
     const pages = Math.max(1, Math.ceil(hand.length / pageSize))
-    const selection = this.narrow ? this.selection : NO_BOARD_SELECTION
+    const selection = this.touchLayout ? this.selection : NO_BOARD_SELECTION
     // Hand selections only exist while this player may act on them.
     const handSelection = input ? selection : NO_BOARD_SELECTION
     const pageSizeChanged = this.handPageSize > 0 && pageSize !== this.handPageSize
@@ -517,11 +529,11 @@ export class ThreeBoard implements ThreeBoardApi {
     this.handPageFollow = false
     this.handPageSize = pageSize
     this.handPage = Math.min(this.handPage, pages - 1)
-    this.handPagination.hidden = !this.narrow || pages === 1
+    this.handPagination.hidden = !this.touchLayout || pages === 1
     this.handPrevious.disabled = this.handPage === 0
     this.handNext.disabled = this.handPage === pages - 1
     this.handPageLabel.textContent = `${this.handPage + 1}/${pages}`
-    const visibleHand = this.narrow ? hand.slice(this.handPage * pageSize, (this.handPage + 1) * pageSize) : hand
+    const visibleHand = this.touchLayout ? hand.slice(this.handPage * pageSize, (this.handPage + 1) * pageSize) : hand
     const hiddenHandSelection = [handSelection.cardId, handSelection.discardId]
       .some((id) => id !== null && !visibleHand.some((card) => card.id === id))
     const slotCounts: number[][] = []
@@ -531,7 +543,7 @@ export class ThreeBoard implements ThreeBoardApi {
       const entries = row === 'hand'
         ? visibleHand
         : player.battlefield
-      const placements = this.narrow ? this.narrowPlacements(row, entries, row === 'hand' ? handSelection : selection) : null
+      const placements = this.touchLayout ? this.narrowPlacements(row, entries, row === 'hand' ? handSelection : selection) : null
       if (placements && row !== 'hand') slotCounts.push(placements.counts)
       for (let index = 0; index < entries.length; index++) {
         const card = entries[index]
@@ -577,8 +589,8 @@ export class ThreeBoard implements ThreeBoardApi {
     if (resized || invalidateHistory) this.cards?.invalidateHistoricalAnchors()
     this.reanchorEffects()
     this.syncTargetLabels(descriptors)
-    this.syncTypeSlots(this.narrow ? slotCounts : null)
-    this.nearSlotCounts = this.narrow ? slotCounts[1] ?? [] : []
+    this.syncTypeSlots(this.touchLayout ? slotCounts : null)
+    this.nearSlotCounts = this.touchLayout ? slotCounts[1] ?? [] : []
     if (this.drag && !this.drag.returning) {
       this.drag.source.setOpacity(0.35)
       this.showLanding()
@@ -603,7 +615,7 @@ export class ThreeBoard implements ThreeBoardApi {
   }
 
   /**
-   * Narrow placement: battlefield creatures share one fixed slot per type,
+   * Touch-layout placement: battlefield creatures share one fixed slot per type,
    * stacked with targets and the selection on top; the hand wraps onto lines.
    */
   private narrowPlacements(
@@ -721,7 +733,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.pendingCaption.textContent = `${pending.displayName ?? displayCardName(pending.name)} · awaiting interception`
     this.pendingCaption.style.left = `${this.layout.width / 2 + rect.x}px`
     this.pendingCaption.style.top = `${this.layout.height / 2 - rect.y - rect.height / 2 + 4}px`
-    this.pendingCaption.style.width = this.narrow
+    this.pendingCaption.style.width = this.touchLayout
       ? `${Math.min(160, this.layout.columns.cardsWidth - 8)}px`
       : `${rect.width - 8}px`
   }
@@ -769,7 +781,7 @@ export class ThreeBoard implements ThreeBoardApi {
         : anchor.x + anchor.width / 2
       const exposedCenter = right > left ? (left + right) / 2 : anchor.x
       const exposedWidth = Math.max(1, right - left)
-      const compact = exposedWidth < (this.narrow ? NARROW_TARGET_LABEL_MIN : TARGET_LABEL_MIN)
+      const compact = exposedWidth < (this.touchLayout ? NARROW_TARGET_LABEL_MIN : TARGET_LABEL_MIN)
       targetLabel.element.dataset.compact = String(compact)
       targetLabel.element.textContent = compact ? '' : 'Target'
       targetLabel.element.style.width = compact ? `${Math.min(12, exposedWidth)}px` : ''
@@ -923,7 +935,7 @@ export class ThreeBoard implements ThreeBoardApi {
       const near = this.chrome.get('near')
       if (near) delete near.header.dataset.dropAccepted
       this.writeInstruction(this.idleInstruction)
-      if (this.narrow) this.instruction.hidden = true
+      if (this.touchLayout) this.instruction.hidden = true
       this.positionInstruction()
       this.paintDropFeedback()
       this.paintSurfaces()
@@ -1028,10 +1040,10 @@ export class ThreeBoard implements ThreeBoardApi {
     this.scrollFrame = requestAnimationFrame(this.autoScroll)
   }
 
-  /** Scrolls the narrow stage the least amount that shows the near lane, header included. */
+  /** Scrolls a touch-layout stage the least amount that shows the near lane, header included. */
   private anchorNearLane(): void {
     const max = this.maxScroll()
-    if (!this.narrow || max === 0 || !this.usable()) return
+    if (!this.touchLayout || max === 0 || !this.usable()) return
     const row = this.layout.rows.near
     const laneTop = Math.min(row.labelTop, this.layout.height / 2 - row.y - row.height / 2)
     const laneBottom = Math.max(row.labelTop + row.labelHeight, this.layout.height / 2 - row.y + row.height / 2)
@@ -1076,7 +1088,7 @@ export class ThreeBoard implements ThreeBoardApi {
     }
   }
 
-  /** Marks where a release would summon the dragged card: its type slot when narrow, else the append slot. */
+  /** Marks where a release would summon the dragged card: its type slot in a touch layout, else the append slot. */
   private showLanding(): void {
     const drag = this.drag
     const game = this.view?.game
@@ -1328,12 +1340,16 @@ export class ThreeBoard implements ThreeBoardApi {
 
   private applySize(): boolean {
     const width = Math.max(1, this.stage.clientWidth || this.host.clientWidth || window.innerWidth || 1000)
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight ?? this.stage.clientHeight
+    // The layout viewport, as for the shell: an on-screen keyboard or a pinch
+    // zoom resizes only the visual viewport and never switches layouts.
+    const viewportHeight = window.innerHeight ?? this.stage.clientHeight
     const compact = compactBoardViewport(width, viewportHeight)
-    const mode: BoardLayoutMode = this.narrow ? 'narrow' : compact ? 'compact' : 'stacked'
+    const shell = this.shell
+    const touchLayout = isTouchLayoutMode(shell)
+    const mode: BoardLayoutMode = touchLayout ? shell : compact ? 'compact' : 'stacked'
     // Set before measuring: the sizers' copy depends on the mode's styles.
     this.stage.dataset.layout = mode
-    const columns = this.narrow ? narrowBoardColumns(width) : boardColumns(width, compact)
+    const columns = touchLayout ? narrowBoardColumns(width) : boardColumns(width, compact)
     const headers = { far: 0, near: 0, hand: 0 }
     for (const row of ROWS) {
       const chrome = this.chrome.get(row)!
@@ -1342,17 +1358,28 @@ export class ThreeBoard implements ThreeBoardApi {
         element.style.width = `${columns.labelWidth}px`
       }
       headers[row] = Math.max(chrome.sizer.offsetHeight, chrome.sizer.scrollHeight || 0)
-      if (this.narrow && row === 'hand') headers[row] = Math.max(50, headers[row])
     }
-    const stageHeight = Math.max(this.narrow ? NARROW_MIN_BOARD_HEIGHT : 1,
+    // The narrow hand header always holds the pager.
+    if (shell === 'narrow') headers.hand = Math.max(PAGED_HAND_HEADER_MIN, headers.hand)
+    const stageHeight = Math.max(touchLayout ? NARROW_MIN_BOARD_HEIGHT : 1,
       this.stage.clientHeight || this.host.clientHeight || viewportHeight || 750)
-    const nextLayout = this.narrow ? narrowBoardLayout(width, stageHeight, headers) : boardLayout(width, stageHeight, headers, compact)
-    // Narrow layouts may grow taller than the stage to keep headers and touch targets intact.
+    let nextLayout = touchLayout
+      ? narrowBoardLayout(width, stageHeight, headers, shell)
+      : boardLayout(width, stageHeight, headers, compact)
+    // The unfolded shells keep single-line headers and reserve the pager's
+    // height only for a hand with more pages. The reserve can only shrink a
+    // page, so the page count still depends on the hand size alone, which a
+    // drag never changes.
+    if (touchLayout && shell !== 'narrow' && this.handCount() > narrowHandPageSize(nextLayout)) {
+      headers.hand = Math.max(PAGED_HAND_HEADER_MIN, headers.hand)
+      nextLayout = narrowBoardLayout(width, stageHeight, headers, shell)
+    }
+    // Touch layouts may grow taller than the stage to keep headers and touch targets intact.
     const height = nextLayout.height
-    this.canvas.style.height = this.narrow ? `${height}px` : ''
+    this.canvas.style.height = touchLayout ? `${height}px` : ''
     // The drag layer spans the whole scrolling board, like the canvas.
-    this.dragLayer.element.style.height = this.narrow ? `${height}px` : ''
-    const scrollable = this.narrow && height > this.stage.clientHeight
+    this.dragLayer.element.style.height = touchLayout ? `${height}px` : ''
+    const scrollable = touchLayout && height > this.stage.clientHeight
     this.stage.dataset.scrollable = String(scrollable)
     for (const chrome of this.chrome.values()) {
       chrome.header.title = scrollable ? 'Swipe this player header to scroll the board' : ''
@@ -1381,8 +1408,8 @@ export class ThreeBoard implements ThreeBoardApi {
     this.instruction.style.left = `${columns.cardsLeft + columns.cardsWidth / 2}px`
     this.positionInstruction()
     this.instruction.style.width = `${Math.min(MAX_INSTRUCTION_WIDTH, Math.max(1, columns.cardsWidth - 24))}px`
-    // The narrow instruction only appears as the drag pill, never at the near row.
-    const instructionHeight = this.narrow || this.instruction.hidden
+    // The touch shells' instruction only appears as the drag pill, never at the near row.
+    const instructionHeight = touchLayout || this.instruction.hidden
       ? 0 : Math.max(this.instruction.offsetHeight, this.instruction.scrollHeight || 0)
     this.effectCaption.style.left = `${width / 2 + this.layout.drop.x}px`
     this.effectCaption.style.top = `${instructionTop + instructionHeight + (instructionHeight ? OVERLAY_GAP : 0)}px`
@@ -1400,6 +1427,11 @@ export class ThreeBoard implements ThreeBoardApi {
     }
     this.paintSurfaces()
     return layoutChanged
+  }
+
+  /** Cards in the presented player's hand, which decide the hand's page count. */
+  private handCount(): number {
+    return this.view?.game?.players[this.actor]?.handCards.length ?? 0
   }
 
   private updateQuality(): void {

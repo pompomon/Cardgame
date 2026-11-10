@@ -842,8 +842,10 @@
   }
 }
 
-/* Narrow in-game profile: a fixed top bar; decisions live in the action dock. */
-.three-interface .three-hud[data-layout="narrow"] {
+/* Touch shells (narrow, dock, rail): a fixed top bar; decisions live in the action dock or rail. */
+.three-interface .three-hud[data-layout="narrow"],
+.three-interface .three-hud[data-layout="dock"],
+.three-interface .three-hud[data-layout="rail"] {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
   grid-template-rows: auto minmax(0, 1fr);
@@ -859,26 +861,34 @@
   overflow: hidden;
 }
 
-.three-interface .three-hud[data-layout="narrow"] > [data-action="menu"] {
+.three-interface .three-hud[data-layout="narrow"] > [data-action="menu"],
+.three-interface .three-hud[data-layout="dock"] > [data-action="menu"],
+.three-interface .three-hud[data-layout="rail"] > [data-action="menu"] {
   grid-area: menu;
   padding: 0;
   font-size: 1.25rem;
   line-height: 1;
 }
 
-.three-interface .three-hud[data-layout="narrow"] > h2 {
+.three-interface .three-hud[data-layout="narrow"] > h2,
+.three-interface .three-hud[data-layout="dock"] > h2,
+.three-interface .three-hud[data-layout="rail"] > h2 {
   grid-area: title;
   margin: 0;
   font-size: 0.875rem;
   line-height: 1.25;
 }
 
-.three-interface .three-hud[data-layout="narrow"] > h2 span {
+.three-interface .three-hud[data-layout="narrow"] > h2 span,
+.three-interface .three-hud[data-layout="dock"] > h2 span,
+.three-interface .three-hud[data-layout="rail"] > h2 span {
   font-weight: normal;
   white-space: nowrap;
 }
 
-.three-interface .three-hud[data-layout="narrow"] > p {
+.three-interface .three-hud[data-layout="narrow"] > p,
+.three-interface .three-hud[data-layout="dock"] > p,
+.three-interface .three-hud[data-layout="rail"] > p {
   grid-area: status;
   align-self: start;
   max-height: 100%;
@@ -887,10 +897,14 @@
   font-size: 0.75rem;
 }
 
-.three-interface .three-hud[data-layout="narrow"] > [data-action="tutorial-show"] {
+.three-interface .three-hud[data-layout="narrow"] > [data-action="tutorial-show"],
+.three-interface .three-hud[data-layout="dock"] > [data-action="tutorial-show"],
+.three-interface .three-hud[data-layout="rail"] > [data-action="tutorial-show"] {
   grid-area: extra;
 }
 
+.three-root--game[data-shell="dock"] .three-interface .three-tutorial-banner,
+.three-root--game[data-shell="rail"] .three-interface .three-tutorial-banner,
 .three-root--narrow .three-interface .three-tutorial-banner {
   position: fixed;
   top: calc(4px + var(--three-topbar-height, 3.5rem) + 8px);
@@ -916,14 +930,24 @@
   line-height: 1.25;
 }
 
+.three-root--game[data-shell="dock"] .three-interface .three-tutorial-banner p,
+.three-root--game[data-shell="rail"] .three-interface .three-tutorial-banner p,
 .three-root--narrow .three-interface .three-tutorial-banner p {
   flex: 1;
   margin: 0;
 }
 
+.three-root--game[data-shell="dock"] .three-interface .three-tutorial-banner button,
+.three-root--game[data-shell="rail"] .three-interface .three-tutorial-banner button,
 .three-root--narrow .three-interface .three-tutorial-banner button {
   flex: 0 0 auto;
   padding: 6px 10px;
+}
+
+/* The rail keeps the banner over the board column. */
+.three-root--game[data-shell="rail"] .three-interface .three-tutorial-banner {
+  right: calc(16px + var(--three-rail-width, 180px));
+  right: calc(max(4px, env(safe-area-inset-right)) + var(--three-rail-width, 180px) + 12px);
 }
 
 /* The dock's action row: one line of short labels that scrolls, never clips. */
@@ -949,6 +973,8 @@
 }
 
 .three-interface .three-hud[data-layout="narrow"] :focus-visible,
+.three-interface .three-hud[data-layout="dock"] :focus-visible,
+.three-interface .three-hud[data-layout="rail"] :focus-visible,
 .three-dock-actions.three-interface :focus-visible {
   outline-offset: -3px;
 }
@@ -961,10 +987,37 @@
 }
 
 /* The optional target list opens above the dock, keeping Confirm/Cancel visible. */
+.three-root--game[data-shell="dock"] .three-interface .three-target-panel,
 .three-root--narrow .three-interface .three-target-panel {
   bottom: calc(4px + var(--three-dock-height, 111px) + 8px);
   bottom: calc(max(4px, env(safe-area-inset-bottom)) + var(--three-dock-height, 111px) + 8px);
   max-height: min(45vh, calc(100vh - var(--three-topbar-height, 3.5rem) - var(--three-dock-height, 111px) - 40px));
   max-height: min(45dvh, calc(100dvh - var(--three-topbar-height, 3.5rem) - var(--three-dock-height, 111px) - 40px
     - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+}
+
+/* The rail opens it over the board column instead, beside Confirm/Cancel. */
+.three-root--game[data-shell="rail"] .three-interface .three-target-panel {
+  right: calc(16px + var(--three-rail-width, 180px));
+  right: calc(max(4px, env(safe-area-inset-right)) + var(--three-rail-width, 180px) + 12px);
+  left: 12px;
+  left: max(12px, env(safe-area-inset-left));
+  width: auto;
+  transform: none;
+  max-height: min(45vh, calc(100vh - var(--three-topbar-height, 3.5rem) - 40px));
+  max-height: min(45dvh, calc(100dvh - var(--three-topbar-height, 3.5rem) - 40px
+    - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+}
+
+/* The rail stacks its actions full width at 48px; a long list scrolls, never clips. */
+.three-root--game[data-shell="rail"] .three-dock-actions.three-interface {
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.three-root--game[data-shell="rail"] .three-dock-actions.three-interface button {
+  min-height: 48px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

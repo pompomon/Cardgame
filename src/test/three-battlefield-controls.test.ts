@@ -15,7 +15,9 @@ import {
 } from '../renderers/three/contracts'
 import { ThreeInteraction } from '../renderers/three/interaction'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type PeekPlacement, type ThreeLayout } from '../renderers/three/layout'
+import {
+  cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type PeekPlacement, type ThreeLayout, type ThreeShellProfile,
+} from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
@@ -159,8 +161,12 @@ function counterEffect(actor: number, discard: 'Island' | 'Mountain' = 'Mountain
   }
 }
 
+// Typed as the union, so a test can move one presentation between shells.
+const NARROW = 'narrow' as ThreeShellProfile
+const DESKTOP = 'desktop' as ThreeShellProfile
+
 const boards: ThreeBoard[] = []
-function setup(presentation: ThreeBoardPresentation = { narrow: false, selection: NO_BOARD_SELECTION }) {
+function setup(presentation: ThreeBoardPresentation = { shell: DESKTOP, selection: NO_BOARD_SELECTION }) {
   const document = new DocumentStub()
   const window = Object.assign(new EventTarget(), { innerWidth: 390, devicePixelRatio: 1 })
   vi.stubGlobal('document', document)
@@ -228,7 +234,7 @@ afterEach(() => {
 
 describe('constructed Three battlefield controls', () => {
   it('docks the narrow primary button, preserves focus when unfolding, and removes its listeners on disposal', () => {
-    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const presentation = { shell: NARROW, selection: NO_BOARD_SELECTION }
     const h = setup(presentation)
     expect(h.button.parent).toBe(h.dock)
     expect(h.button.getAttribute('aria-describedby')).toBe(THREE_DOCK_PROMPT_ID)
@@ -236,12 +242,12 @@ describe('constructed Three battlefield controls', () => {
     emit(h.button, 'click')
     expect(h.activate).toHaveBeenCalledExactlyOnceWith(h.present())
     h.button.focus()
-    presentation.narrow = false
+    presentation.shell = 'desktop'
     h.present()
     expect(h.button.parent).toBe(h.near)
     expect(h.document.activeElement).toBe(h.button)
     expect(h.button.getAttribute('aria-describedby')).toBe('three-battlefield-prompt')
-    presentation.narrow = true
+    presentation.shell = 'narrow'
     h.present()
     expect(h.button.parent).toBe(h.dock)
     h.board.dispose()
@@ -253,7 +259,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it('orders narrow type stacks by target then selection, updates badges and ghosts, and clears them on profile and session changes', () => {
-    const presentation = { narrow: true, selection: { cardId: null, targetId: 'target-0', discardId: null } }
+    const presentation = { shell: NARROW, selection: { cardId: null, targetId: 'target-0', discardId: null } }
     const h = setup(presentation)
     h.app.game!.players[1].battlefield = Array.from({ length: 3 }, (_, index) => ({
       instanceId: `target-${index}`, card: { id: `card-${index}`, name: 'Forest', type: 'land' },
@@ -276,11 +282,11 @@ describe('constructed Three battlefield controls', () => {
     h.app.game!.players[1].battlefield = h.app.game!.players[1].battlefield.slice(0, 1)
     h.present({}, false, 0, targets)
     expect(h.host.all('three-board-count')).toHaveLength(0)
-    presentation.narrow = false
+    presentation.shell = 'desktop'
     h.present({}, false, 0, targets)
     expect(cards[0].descriptor.selected).toBeUndefined()
     expect(ghosts.every((ghost) => !ghost.visible)).toBe(true)
-    presentation.narrow = true
+    presentation.shell = 'narrow'
     h.present()
     h.app.game = null
     h.board.render(buildViewModel(h.app, false), 0, new Set(), null, null)
@@ -293,7 +299,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it.each(['cardId', 'discardId'] as const)('lifts and frames the narrow hand %s selection, then clears it when input ends', (field) => {
-    const presentation = { narrow: true, selection: { cardId: null as string | null, targetId: null, discardId: null as string | null } }
+    const presentation = { shell: NARROW, selection: { cardId: null as string | null, targetId: null, discardId: null as string | null } }
     const h = setup(presentation)
     const id = h.app.game!.players[0].hand[0].id
     const card = h.registry.get(boardCardKey(id, 0))!
@@ -313,7 +319,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it('pages all fifty narrow hand cards with full hit targets and clamps or resets the page when the hand or actor changes', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const stage = h.host.all('three-board-stage')[0]
     stage.clientWidth = 344
     stage.clientHeight = 655
@@ -369,7 +375,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it('extends the narrow canvas inside its scrolling stage on short viewports and restores its height on unfold', () => {
-    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const presentation = { shell: NARROW, selection: NO_BOARD_SELECTION }
     const h = setup(presentation)
     const stage = h.host.all('three-board-stage')[0]
     stage.clientWidth = 344
@@ -384,7 +390,7 @@ describe('constructed Three battlefield controls', () => {
     expect(css).toMatch(/\[data-scrollable="true"\] \.three-board-label\s*\{[^}]*pointer-events: auto;[^}]*touch-action: pan-y;/)
     const id = h.app.game!.players[0].hand[0].id
     expect(h.registry.get(boardCardKey(id, 0))!.descriptor.width).toBeGreaterThanOrEqual(44)
-    presentation.narrow = false
+    presentation.shell = 'desktop'
     h.present()
     expect(h.board.canvas.style.height).toBe('')
     expect(stage.dataset.scrollable).toBe('false')
@@ -393,7 +399,7 @@ describe('constructed Three battlefield controls', () => {
 
   describe.each(['cardId', 'discardId'] as const)('responsive narrow %s selection', (field) => {
     it.each(['width', 'height'] as const)('follows a selection to its page after a %s resize, then resets for a new actor', (dimension) => {
-      const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+      const presentation = { shell: NARROW, selection: { ...NO_BOARD_SELECTION } }
       const h = setup(presentation)
       const player = h.app.game!.players[0]
       player.hand.push(...player.deck.splice(0))
@@ -467,7 +473,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it('follows the selection to its page when the narrow profile returns', () => {
-    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const presentation = { shell: NARROW, selection: { ...NO_BOARD_SELECTION } }
     const h = setup(presentation)
     const player = h.app.game!.players[0]
     player.hand.push(...player.deck.splice(0))
@@ -477,19 +483,116 @@ describe('constructed Three battlefield controls', () => {
     h.present()
     const pageSize = narrowHandPageSize((h.board as unknown as { layout: ThreeLayout }).layout)
     const id = player.hand[2 * pageSize].id
-    presentation.narrow = false
+    presentation.shell = 'desktop'
     h.present()
     // The wide profile shows no selection; the narrow one follows it to its page.
     presentation.selection = { ...NO_BOARD_SELECTION, cardId: id }
-    presentation.narrow = true
+    presentation.shell = 'narrow'
     h.present()
     expect(h.host.all('three-board-pagination')[0].children[1].textContent).toMatch(/^3\//)
     expect(h.registry.get(boardCardKey(id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
     expect(h.handPage).not.toHaveBeenCalled()
   })
 
+  it('keeps the selection on its page and cancels a live drag when folding between touch shells', () => {
+    const presentation = { shell: NARROW, selection: { ...NO_BOARD_SELECTION } }
+    const h = setup(presentation)
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+      Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 22 : 21 })
+    }
+    const stage = h.host.all('three-board-stage')[0]
+    const [, label, next] = h.host.all('three-board-pagination')[0].children
+    const layout = () => (h.board as unknown as { layout: ThreeLayout }).layout
+    // Inner stages of the Fold4 cover portrait, main portrait and main landscape Chrome tabs.
+    const COVER = [332, 583.25] as const
+    const MAIN_PORTRAIT = [678, 546.5] as const
+    const MAIN_LANDSCAPE = [597.46, 506] as const
+    const fold = (shell: ThreeShellProfile, size: readonly [number, number]) => {
+      [stage.clientWidth, stage.clientHeight] = size
+      presentation.shell = shell
+      h.present()
+    }
+    fold(NARROW, COVER)
+    const coverPageSize = narrowHandPageSize(layout())
+    // Page to the last card, as a player would, and select it there.
+    while (!next.disabled) emit(next, 'click')
+    const card = player.hand.at(-1)!
+    presentation.selection = { ...NO_BOARD_SELECTION, cardId: card.id }
+    h.present()
+    expect(h.registry.get(boardCardKey(card.id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
+    h.handPage.mockClear()
+    const pageSizes: number[] = []
+    // The first fold keeps the cover stage and so the page size: only the
+    // shell switch itself can move the page to the selection.
+    for (const [shell, size] of [
+      ['dock', COVER], ['rail', MAIN_LANDSCAPE], ['narrow', COVER], ['rail', MAIN_LANDSCAPE], ['dock', MAIN_PORTRAIT],
+    ] as const) {
+      h.board.beginDrag({ key: boardCardKey(card.id, 0), cardId: card.id, owner: 0, zone: 'hand', name: card.name, playable: true })
+      expect(h.feedback).toHaveBeenLastCalledWith({ cardId: card.id, accepted: false })
+      h.cancel.mockClear()
+      fold(shell, size)
+      expect(stage.dataset.layout).toBe(shell)
+      // Folding cancels the gesture without submitting it.
+      expect(h.cancel).toHaveBeenCalled()
+      expect(h.feedback).toHaveBeenLastCalledWith(null)
+      expect(stage.dataset.dragging).toBeUndefined()
+      // The selection stays lifted on the page that now holds it.
+      const pageSize = narrowHandPageSize(layout())
+      pageSizes.push(pageSize)
+      const pages = Math.ceil(player.hand.length / pageSize)
+      expect(pages).toBeGreaterThan(1)
+      expect(label.textContent).toBe(`${pages}/${pages}`)
+      expect(h.registry.get(boardCardKey(card.id, 0))!.descriptor).toMatchObject({ visible: true, selected: true })
+      expect(h.button.parent).toBe(h.dock)
+    }
+    expect(pageSizes[0]).toBe(coverPageSize)
+    expect(new Set(pageSizes).size).toBeGreaterThan(1)
+    expect(h.handPage).not.toHaveBeenCalled()
+    expect(h.activate).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['narrow', [332, 583.25], '50px'],
+    ['dock', [678, 546.5], '22px'],
+    ['rail', [597.46, 506], '22px'],
+  ] as const)('reserves the %s hand pager row while the hand has one page: %s', (shell, [width, height], onePage) => {
+    const h = setup({ shell: shell as ThreeShellProfile, selection: NO_BOARD_SELECTION })
+    for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+      Object.defineProperty(sizer, 'offsetHeight', { value: sizer.dataset.row === 'hand' ? 22 : 21 })
+    }
+    const stage = h.host.all('three-board-stage')[0]
+    stage.clientWidth = width
+    stage.clientHeight = height
+    h.present()
+    const hand = h.host.all('three-board-label').find((entry) => entry.dataset.row === 'hand')!
+    const pagination = h.host.all('three-board-pagination')[0]
+    expect(stage.dataset.layout).toBe(shell)
+    expect(h.button.parent).toBe(h.dock)
+    expect(hand.style.height).toBe(onePage)
+    expect(pagination.hidden).toBe(true)
+    // Only a hand with more pages shows the pager, in every touch shell.
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0))
+    h.present()
+    expect(hand.style.height).toBe('50px')
+    expect(pagination.hidden).toBe(false)
+    // A drag never changes the hand size, so it never moves the pager row.
+    const visible = player.hand.find((card) => h.registry.get(boardCardKey(card.id, 0))?.descriptor.visible)!
+    h.board.beginDrag({ key: boardCardKey(visible.id, 0), cardId: visible.id, owner: 0, zone: 'hand', name: visible.name, playable: true })
+    expect(stage.dataset.dragging).toBe('true')
+    ObserverStub.latest.callback()
+    expect(hand.style.height).toBe('50px')
+    h.board.endDrag(false)
+    player.hand = player.hand.slice(0, 5)
+    h.present()
+    expect(hand.style.height).toBe(onePage)
+    expect(pagination.hidden).toBe(true)
+  })
+
   it.each(['cardId', 'discardId'] as const)('follows a %s selection held behind Details through a resize, so closing Details keeps it', (field) => {
-    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const presentation = { shell: NARROW, selection: { ...NO_BOARD_SELECTION } }
     const h = setup(presentation)
     const player = h.app.game!.players[0]
     player.hand.push(...player.deck.splice(0))
@@ -525,7 +628,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it.each(['cardId', 'discardId'] as const)('keeps the lifted %s selection inside its lane without overlapping another hand line', (field) => {
-    const presentation = { narrow: true, selection: { ...NO_BOARD_SELECTION } }
+    const presentation = { shell: NARROW, selection: { ...NO_BOARD_SELECTION } }
     const h = setup(presentation)
     const player = h.app.game!.players[0]
     player.hand.push(...player.deck.splice(0))
@@ -551,7 +654,7 @@ describe('constructed Three battlefield controls', () => {
   })
 
   it('keeps short-board battlefield hit targets at least 44px wide for both players', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const stage = h.host.all('three-board-stage')[0]
     stage.clientWidth = 344
     stage.clientHeight = 200
@@ -1597,7 +1700,7 @@ describe('Three touch drag feedback', () => {
   })
 
   it('quiets the board instruction before narrow drag text changes and restores it on unfold', () => {
-    const presentation = { narrow: false, selection: NO_BOARD_SELECTION }
+    const presentation = { shell: DESKTOP, selection: NO_BOARD_SELECTION }
     const h = setup(presentation)
     const prompt = h.host.all('three-board-instruction')[0]
     expect(prompt.getAttribute('aria-live')).toBe('polite')
@@ -1610,7 +1713,7 @@ describe('Three touch drag feedback', () => {
     }
     h.board.beginDrag(island())
     log.length = 0
-    presentation.narrow = true
+    presentation.shell = 'narrow'
     h.present()
     // The profile switch ends the drag only after the region went quiet.
     expect(log[0]).toBe('aria-live=off')
@@ -1623,13 +1726,13 @@ describe('Three touch drag feedback', () => {
     h.board.endDrag(false)
     expect(prompt.hidden).toBe(true)
     expect(log.filter((entry) => entry.startsWith('aria-live'))).toEqual([])
-    presentation.narrow = false
+    presentation.shell = 'desktop'
     h.present()
     expect(prompt.getAttribute('aria-live')).toBe('polite')
   })
 
   it('lifts the narrow drag pill to the top of the scrolled stage without moving the effect caption', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const stage = h.host.all('three-board-stage')[0]
     const prompt = h.host.all('three-board-instruction')[0]
     const caption = h.host.all('three-board-effect-caption')[0]
@@ -1652,7 +1755,7 @@ describe('Three touch drag feedback', () => {
   })
 
   it('keeps a touch card clear of the drag pill near the stage top, while a mouse card stays under the cursor', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const canvas = h.host.all('three-board-canvas')[0]
     const prompt = h.host.all('three-board-instruction')[0]
     const { layout } = internals(h)
@@ -1679,7 +1782,7 @@ describe('Three touch drag feedback', () => {
     (_, touch) => {
       const added = vi.spyOn(ElementStub.prototype, 'addEventListener')
       const removed = vi.spyOn(ElementStub.prototype, 'removeEventListener')
-      const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+      const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
       const stage = h.host.all('three-board-stage')[0]
       const canvas = h.host.all('three-board-canvas')[0]
       const prompt = h.host.all('three-board-instruction')[0]
@@ -1732,7 +1835,7 @@ describe('Three touch drag feedback', () => {
   )
 
   it('marks the narrow type slot as "Lands here", or "+1" when it already holds a card', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const landing = h.scene.getObjectByName('three-landing-slot')!
     const label = h.host.all('three-drag-landing')[0]
     const slot = BASIC_LANDS.indexOf('Island')
@@ -1864,7 +1967,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     let id = 0
     const frames = vi.fn((_callback: FrameRequestCallback) => ++id)
     vi.stubGlobal('requestAnimationFrame', frames)
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const stage = stageOf(h)
     stage.clientWidth = 344
     stage.clientHeight = 200
@@ -1952,8 +2055,8 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     let id = 0
     const frames = vi.fn((_callback: FrameRequestCallback) => ++id)
     vi.stubGlobal('requestAnimationFrame', frames)
-    for (const narrow of [false, true]) {
-      const h = setup({ narrow, selection: NO_BOARD_SELECTION })
+    for (const shell of [DESKTOP, NARROW]) {
+      const h = setup({ shell, selection: NO_BOARD_SELECTION })
       expect(stageOf(h).dataset.scrollable).toBe('false')
       h.board.beginDrag(handHit(h))
       for (const y of [4, 740]) h.board.moveDrag(195, y, true)
@@ -2009,7 +2112,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
   })
 
   it('places the peek beside the held card in client pixels, and offers none for a card off the page', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const player = h.app.game!.players[0]
     player.hand.push(...player.deck.splice(0))
     h.present()
@@ -2050,7 +2153,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
   })
 
   it('scrolls the least distance that shows the near lane after a relayout or on returning to narrow', () => {
-    const presentation = { narrow: true, selection: NO_BOARD_SELECTION }
+    const presentation = { shell: NARROW, selection: NO_BOARD_SELECTION }
     const h = setup(presentation)
     const stage = stageOf(h)
     stage.clientWidth = 344
@@ -2084,10 +2187,10 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     stage.scrollTop = 266
     relayout()
     expect(stage.scrollTop).toBeCloseTo(lane().top)
-    presentation.narrow = false
+    presentation.shell = 'desktop'
     h.present()
     stage.scrollTop = 0
-    presentation.narrow = true
+    presentation.shell = 'narrow'
     h.present()
     expect(stage.scrollTop).toBeCloseTo(lane().bottom - 200)
   })
@@ -2104,7 +2207,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
   })
 
   it('ignores hand page buttons while a card is lifted, and turns the page once the card drops or returns', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const player = h.app.game!.players[0]
     player.hand.push(...player.deck.splice(0))
     h.present()
@@ -2124,7 +2227,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
   })
 
   it('cancels gestures and shows the near lane when only the visible stage changes, but not on unchanged callbacks', () => {
-    const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+    const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
     const stage = stageOf(h)
     // Both stages are below the 356px minimum board, so the layout stays the same.
     stage.clientWidth = 344
@@ -2166,7 +2269,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     (first) => {
       ElementStub.context2d = context2d()
       const leases = countLeases()
-      const h = setup({ narrow: true, selection: NO_BOARD_SELECTION })
+      const h = setup({ shell: NARROW, selection: NO_BOARD_SELECTION })
       const stage = stageOf(h)
       const canvas = h.host.all('three-board-canvas')[0]
       const captures = new Set<number>()

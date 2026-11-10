@@ -235,47 +235,70 @@
 .three-board-stage[data-layout="compact"] .three-board-stacks {
   display: none;
 }
-@media (max-width: 480px) {
-  .three-board-stage { border-radius: 10px; }
-  .three-board-label { font-size: 13px; }
-  .three-board-primary { min-width: 120px; width: 100%; }
-}
-/* Narrow single-column profile: one compact line per header, no stack art. */
-.three-board-stage[data-layout="narrow"] .three-board-label {
+/* Every touch shell (data-shell on the root, see renderer.css). */
+.three-root[data-shell] .three-board-stage { border-radius: 10px; }
+/* Touch layouts (narrow, dock, rail): one compact line per header, no stack art. */
+.three-board-stage[data-layout="narrow"] .three-board-label,
+.three-board-stage[data-layout="dock"] .three-board-label,
+.three-board-stage[data-layout="rail"] .three-board-label {
   display: block;
   padding: 2px 6px;
   border-radius: 6px;
   font-size: 12px;
   line-height: 1.25;
 }
-.three-board-stage[data-layout="narrow"] .three-board-label > div {
+.three-board-stage[data-layout="narrow"] .three-board-label > div,
+.three-board-stage[data-layout="dock"] .three-board-label > div,
+.three-board-stage[data-layout="rail"] .three-board-label > div {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   column-gap: 8px;
 }
-.three-board-stage[data-layout="narrow"] .three-board-stats { font-size: 11px; }
-.three-board-stage[data-layout="narrow"] .three-board-label[data-row="hand"] {
+.three-board-stage[data-layout="narrow"] .three-board-stats,
+.three-board-stage[data-layout="dock"] .three-board-stats,
+.three-board-stage[data-layout="rail"] .three-board-stats { font-size: 11px; }
+.three-board-stage[data-layout="narrow"] .three-board-label[data-row="hand"],
+.three-board-stage[data-layout="dock"] .three-board-label[data-row="hand"],
+.three-board-stage[data-layout="rail"] .three-board-label[data-row="hand"] {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: 50px;
 }
-.three-board-stage[data-layout="narrow"] .three-board-label > .three-board-pagination {
+/*
+ * The cover screen always reserves the hand pager's 44px buttons; the unfolded
+ * shells reserve them only for a hand with more pages (board.ts applySize).
+ */
+.three-board-stage[data-layout="narrow"] .three-board-label[data-row="hand"] { min-height: 50px; }
+.three-board-stage[data-layout="narrow"] .three-board-label > .three-board-pagination,
+.three-board-stage[data-layout="dock"] .three-board-label > .three-board-pagination,
+.three-board-stage[data-layout="rail"] .three-board-label > .three-board-pagination {
   flex-wrap: nowrap;
 }
-.three-board-stage[data-layout="narrow"] .three-board-pagination[hidden] { display: none; }
-.three-board-stage[data-layout="narrow"][data-scrollable="true"] .three-board-label {
+.three-board-stage[data-layout="narrow"] .three-board-pagination[hidden],
+.three-board-stage[data-layout="dock"] .three-board-pagination[hidden],
+.three-board-stage[data-layout="rail"] .three-board-pagination[hidden] { display: none; }
+.three-board-stage[data-layout="narrow"][data-scrollable="true"] .three-board-label,
+.three-board-stage[data-layout="dock"][data-scrollable="true"] .three-board-label,
+.three-board-stage[data-layout="rail"][data-scrollable="true"] .three-board-label {
   pointer-events: auto;
   touch-action: pan-y;
 }
 .three-board-stage[data-layout="narrow"] .three-board-stacks,
-.three-board-stage[data-layout="narrow"] .three-board-primary-size { display: none; }
-.three-board-stage[data-layout="narrow"] .three-board-target-label {
+.three-board-stage[data-layout="narrow"] .three-board-primary-size,
+.three-board-stage[data-layout="dock"] .three-board-stacks,
+.three-board-stage[data-layout="dock"] .three-board-primary-size,
+.three-board-stage[data-layout="rail"] .three-board-stacks,
+.three-board-stage[data-layout="rail"] .three-board-primary-size { display: none; }
+.three-board-stage[data-layout="narrow"] .three-board-target-label,
+.three-board-stage[data-layout="dock"] .three-board-target-label,
+.three-board-stage[data-layout="rail"] .three-board-target-label {
   padding: 1px 4px;
   font-size: 10px;
 }
-.three-board-stage[data-layout="narrow"] .three-board-instruction { font-size: 0.8125rem; }
+.three-board-stage[data-layout="narrow"] .three-board-instruction,
+.three-board-stage[data-layout="dock"] .three-board-instruction,
+.three-board-stage[data-layout="rail"] .three-board-instruction { font-size: 0.8125rem; }
 .three-board-count {
   position: absolute;
   z-index: 2;

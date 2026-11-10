@@ -8,8 +8,10 @@ import { ThreeEffects, presentationBoundary } from './effects'
 import { ThreeInterface } from './interface'
 import { threeSessionKey } from './interface-model'
 import { ThreeInteraction } from './interaction'
-import { NARROW_LAYOUT_QUERY } from './layout'
+import { COARSE_POINTER_QUERY, threeShellProfile, type ThreeShell, type ThreeShellProfile } from './layout'
 import './renderer.css'
+
+const DESKTOP_SHELL = threeShellProfile({ width: 0, height: 0, coarse: false })
 
 export class ThreeRenderer implements AppRenderer {
   private readonly onFailure: (message: string) => void
@@ -22,10 +24,12 @@ export class ThreeRenderer implements AppRenderer {
   private view: AppViewModel | null = null
   private presentedView: AppViewModel | null = null
   private motionQuery: MediaQueryList | null = null
-  private narrowQuery: MediaQueryList | null = null
+  private coarseQuery: MediaQueryList | null = null
   private dock: HTMLElement | null = null
-  /** In-game narrow profile: top bar, board, and a fixed action dock. */
-  private narrow = false
+  /** The classified layout viewport and pointer; only a game uses it. */
+  private shell: ThreeShell = DESKTOP_SHELL
+  /** The in-game shell: every touch shell adds a fixed action dock or rail beside the board. */
+  private gameShell: ThreeShellProfile = 'desktop'
 
   constructor(onFailure: (message: string) => void = () => {}) {
     this.onFailure = onFailure
@@ -43,8 +47,8 @@ export class ThreeRenderer implements AppRenderer {
     const hud = document.createElement('section')
     hud.className = 'three-hud-mount'
     hud.hidden = true
-    // The dock keeps a fixed height in the narrow profile, so prompts and
-    // actions can change without moving the board above it.
+    // The dock keeps a fixed size in every touch shell, so prompts and
+    // actions can change without moving the board beside it.
     const dock = document.createElement('section')
     dock.className = 'three-dock'
     dock.setAttribute('aria-label', 'Game actions')
@@ -55,11 +59,20 @@ export class ThreeRenderer implements AppRenderer {
     this.stage = stage
     this.dock = dock
     try {
+      // The shell follows the layout viewport and the primary pointer, never
+      // the visual viewport, so a keyboard or pinch zoom cannot switch it.
+      // Classifying before the board listens lets a resize lay the board out
+      // once, in its new shell.
+      this.coarseQuery = window.matchMedia?.(COARSE_POINTER_QUERY) ?? null
+      if (this.coarseQuery?.addEventListener) this.coarseQuery.addEventListener('change', this.reclassify)
+      else this.coarseQuery?.addListener(this.reclassify)
+      window.addEventListener('resize', this.reclassify)
+      this.shell = this.classify()
       this.board = new ThreeBoard(stage, this.onFailure, () => this.interaction?.cancel(),
         (action) => this.ui?.activatePrimaryAction(action), dockPrimary, this.boardPresentation,
         () => this.ui?.clearHandSelection(), (feedback) => this.ui?.setDragFeedback(feedback))
       this.ui = new ThreeInterface(controls, controller, this.refresh, () => this.interaction?.cancel(), hud,
-        { dockHost: dock, narrow: () => this.narrow, dragActive: () => this.interaction?.dragging === true })
+        { dockHost: dock, shell: () => this.gameShell, dragActive: () => this.interaction?.dragging === true })
       dock.append(dockPrimary)
       this.interaction = new ThreeInteraction(
         this.board,
@@ -81,10 +94,6 @@ export class ThreeRenderer implements AppRenderer {
       this.motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null
       if (this.motionQuery?.addEventListener) this.motionQuery.addEventListener('change', this.refresh)
       else this.motionQuery?.addListener(this.refresh)
-      // Shares renderer.css's breakpoint so the shell and board switch together.
-      this.narrowQuery = window.matchMedia?.(NARROW_LAYOUT_QUERY) ?? null
-      if (this.narrowQuery?.addEventListener) this.narrowQuery.addEventListener('change', this.refresh)
-      else this.narrowQuery?.addListener(this.refresh)
     } catch (error) {
       this.unmount()
       throw error
@@ -110,13 +119,20 @@ export class ThreeRenderer implements AppRenderer {
     } else {
       this.container?.classList.remove('three-root--game')
     }
-    this.narrow = inGame && this.narrowQuery?.matches === true
-    if (this.narrow) {
+    this.gameShell = inGame ? this.shell.profile : 'desktop'
+    const touchShell = this.gameShell !== 'desktop'
+    if (this.gameShell === 'narrow') {
       this.container?.classList.add('three-root--narrow')
     } else {
       this.container?.classList.remove('three-root--narrow')
     }
-    if (this.dock) this.dock.hidden = !this.narrow
+    if (this.container) {
+      if (touchShell) this.container.dataset.shell = this.gameShell
+      else delete this.container.dataset.shell
+      if (touchShell && this.shell.short) this.container.dataset.shellShort = 'true'
+      else delete this.container.dataset.shellShort
+    }
+    if (this.dock) this.dock.hidden = !touchShell
     const effectView = inGame ? view : { ...view, game: null }
     const actor = this.effects?.update(effectView, document.hidden || prefersReducedMotion()) ?? 0
     this.presentedView = view.game && actor !== view.game.actor
@@ -135,8 +151,22 @@ export class ThreeRenderer implements AppRenderer {
     if (this.view) this.render(this.view)
   }
 
-  private readonly boardPresentation = (): ThreeBoardPresentation => this.narrow && this.ui
-    ? { narrow: true, selection: this.ui.selection }
+  private classify(): ThreeShell {
+    return threeShellProfile({
+      width: window.innerWidth, height: window.innerHeight, coarse: this.coarseQuery?.matches === true,
+    })
+  }
+
+  /** Re-renders only when the shell changes, so ordinary resizes stay with the board's own relayout. */
+  private readonly reclassify = (): void => {
+    const next = this.classify()
+    if (next.profile === this.shell.profile && next.short === this.shell.short) return
+    this.shell = next
+    this.refresh()
+  }
+
+  private readonly boardPresentation = (): ThreeBoardPresentation => this.gameShell !== 'desktop' && this.ui
+    ? { shell: this.gameShell, selection: this.ui.selection }
     : DEFAULT_BOARD_PRESENTATION
 
   unmount(): void {
@@ -144,10 +174,12 @@ export class ThreeRenderer implements AppRenderer {
     if (this.motionQuery?.removeEventListener) this.motionQuery.removeEventListener('change', this.refresh)
     else this.motionQuery?.removeListener(this.refresh)
     this.motionQuery = null
-    if (this.narrowQuery?.removeEventListener) this.narrowQuery.removeEventListener('change', this.refresh)
-    else this.narrowQuery?.removeListener(this.refresh)
-    this.narrowQuery = null
-    this.narrow = false
+    if (this.coarseQuery?.removeEventListener) this.coarseQuery.removeEventListener('change', this.reclassify)
+    else this.coarseQuery?.removeListener(this.reclassify)
+    this.coarseQuery = null
+    window.removeEventListener('resize', this.reclassify)
+    this.shell = DESKTOP_SHELL
+    this.gameShell = 'desktop'
     this.interaction?.dispose()
     this.effects?.dispose()
     this.ui?.dispose()
@@ -159,6 +191,10 @@ export class ThreeRenderer implements AppRenderer {
     this.container?.classList.remove('three-root')
     this.container?.classList.remove('three-root--game')
     this.container?.classList.remove('three-root--narrow')
+    if (this.container) {
+      delete this.container.dataset.shell
+      delete this.container.dataset.shellShort
+    }
     this.container?.replaceChildren()
     this.container = null
     this.stage = null

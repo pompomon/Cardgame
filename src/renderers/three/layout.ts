@@ -26,12 +26,15 @@ export interface BoardColumns {
   readonly cardsWidth: number
 }
 
-export type BoardLayoutMode = 'stacked' | 'compact' | 'narrow'
+/** Every touch shell lays its board out with narrowBoardLayout(); `desktop` uses boardLayout(). */
+export type TouchLayoutMode = Exclude<ThreeShellProfile, 'desktop'>
+
+export type BoardLayoutMode = 'stacked' | 'compact' | TouchLayoutMode
 
 export interface ThreeLayout {
   readonly width: number
   readonly height: number
-  /** Battlefield card size; narrow hands are sized separately by narrowHandRects(). */
+  /** Battlefield card size; touch-layout hands are sized separately by narrowHandRects(). */
   readonly cardWidth: number
   readonly cardHeight: number
   readonly gap: number
@@ -42,22 +45,23 @@ export interface ThreeLayout {
   readonly drop: BoardRect
 }
 
-/** The single-column phone profile; renderer.css uses the same breakpoint. */
+/**
+ * The single-column phone width. threeShellProfile() applies it through
+ * isNarrowWidth(); the lobby's interface.css rules share the same breakpoint.
+ */
 export const NARROW_LAYOUT_QUERY = '(max-width: 480px)'
 export const NARROW_LAYOUT_MAX_WIDTH = 480
-/** Narrow battlefields reserve one stacked slot per creature type. */
+/** Touch-layout battlefields reserve one stacked slot per creature type. */
 export const NARROW_TYPE_SLOTS = 5
 /** Large-text headers may grow the scrollable board up to this multiple of its stage height. */
 export const NARROW_MAX_BOARD_GROWTH = 2
 /** Header chrome fits within this share of the stage before the board grows. */
 const NARROW_CHROME_SHARE = 0.3
 const CARD_ASPECT = 0.73
-const MAX_CARD_HEIGHT = 204
 const NARROW_INSET = 8
 const NARROW_SPACING = 4
 const NARROW_GAP = 4
 const NARROW_FRAME_ROOM = 6
-const NARROW_MAX_SLOT_HEIGHT = 148
 const NARROW_MAX_HAND_LINES = 3
 const MIN_TOUCH_WIDTH = 44
 const NARROW_BATTLEFIELD_SHARE = 0.3
@@ -66,6 +70,24 @@ export const NARROW_MIN_BOARD_HEIGHT = Math.ceil(
   ((MIN_TOUCH_WIDTH / CARD_ASPECT + NARROW_FRAME_ROOM) / NARROW_BATTLEFIELD_SHARE
     + NARROW_SPACING * 7) / (1 - NARROW_CHROME_SHARE),
 )
+
+interface TouchCardMaxima {
+  /** Tallest battlefield type-slot card. */
+  readonly slot: number
+  /** Tallest hand card. */
+  readonly hand: number
+}
+
+/**
+ * Card height maxima per touch shell. Both unfolded shells stop at the plan's
+ * 85×117 slots and 115×158 hand cards, so rotating the main screen between
+ * `dock` and `rail` keeps card sizes steady.
+ */
+const TOUCH_CARD_MAXIMA: Readonly<Record<TouchLayoutMode, TouchCardMaxima>> = Object.freeze({
+  narrow: Object.freeze({ slot: 148, hand: 204 }),
+  dock: Object.freeze({ slot: 117, hand: 158 }),
+  rail: Object.freeze({ slot: 117, hand: 158 }),
+})
 
 export function isNarrowWidth(width: number): boolean {
   return Number.isFinite(width) && width > 0 && width <= NARROW_LAYOUT_MAX_WIDTH
@@ -81,6 +103,13 @@ export function compactBoardViewport(width: number, height: number): boolean {
  * or rail confirms). `desktop` keeps the stacked and compact layouts.
  */
 export type ThreeShellProfile = 'narrow' | 'dock' | 'rail' | 'desktop'
+
+/** The primary pointer input for threeShellProfile(). */
+export const COARSE_POINTER_QUERY = '(pointer: coarse)'
+
+export function isTouchLayoutMode(mode: unknown): mode is TouchLayoutMode {
+  return mode === 'narrow' || mode === 'dock' || mode === 'rail'
+}
 
 export interface ThreeShellInput {
   /** Layout viewport (`innerWidth`, `innerHeight`), never `visualViewport`. */
@@ -235,16 +264,20 @@ export function narrowBoardColumns(width: number): BoardColumns {
 }
 
 /**
- * Full-width rows for portrait phones and cover screens. Each battlefield row
- * has fixed creature-type slots, so its height never depends on the number of
- * creatures; the hand receives the remaining height. Tall (large-text) headers
- * grow the scrollable board rather than shrinking below their measured height.
+ * Full-width rows for every touch shell: portrait phones and cover screens
+ * (`narrow`), and the unfolded `dock` and `rail`, which differ only in their
+ * card maxima. Each battlefield row has fixed creature-type slots, so its
+ * height never depends on the number of creatures; the hand receives the
+ * remaining height. Tall (large-text) headers grow the scrollable board rather
+ * than shrinking below their measured height.
  */
 export function narrowBoardLayout(
   width: number,
   height: number,
   headers: Readonly<Record<BoardRow, number>> = { far: 36, near: 36, hand: 22 },
+  shell: TouchLayoutMode = 'narrow',
 ): ThreeLayout {
+  const mode = isTouchLayoutMode(shell) ? shell : 'narrow'
   const w = Number.isFinite(width) && width > 0 ? width : 1
   const stage = Math.max(NARROW_MIN_BOARD_HEIGHT, Number.isFinite(height) && height > 0 ? height : 1)
   const columns = narrowBoardColumns(w)
@@ -262,7 +295,7 @@ export function narrowBoardLayout(
   const slotWidth = Math.max(1, (columns.cardsWidth - (NARROW_TYPE_SLOTS - 1) * NARROW_GAP) / NARROW_TYPE_SLOTS)
   // The two battlefields together never take more than 60% of the card space.
   const cardHeight = Math.max(1, Math.min(
-    NARROW_MAX_SLOT_HEIGHT, slotWidth / CARD_ASPECT, lanes * NARROW_BATTLEFIELD_SHARE - NARROW_FRAME_ROOM,
+    TOUCH_CARD_MAXIMA[mode].slot, slotWidth / CARD_ASPECT, lanes * NARROW_BATTLEFIELD_SHARE - NARROW_FRAME_ROOM,
   ))
   const cardWidth = Math.max(1, Math.min(slotWidth, cardHeight * CARD_ASPECT))
   const boardLane = cardHeight + NARROW_FRAME_ROOM
@@ -279,7 +312,7 @@ export function narrowBoardLayout(
   const dropTop = rows.near.labelTop
   const dropBottom = h / 2 - rows.near.y + rows.near.height / 2
   return {
-    width: w, height: h, cardWidth, cardHeight, gap: NARROW_GAP, compact: false, mode: 'narrow', columns, rows,
+    width: w, height: h, cardWidth, cardHeight, gap: NARROW_GAP, compact: false, mode, columns, rows,
     drop: {
       x: columns.cardsLeft + columns.cardsWidth / 2 - w / 2,
       y: h / 2 - (dropTop + dropBottom) / 2,
@@ -289,7 +322,7 @@ export function narrowBoardLayout(
   }
 }
 
-/** Centre x of a fixed creature-type slot in a narrow battlefield row. */
+/** Centre x of a fixed creature-type slot in a touch-layout battlefield row. */
 export function typeSlotX(slot: number, layout: ThreeLayout): number {
   const index = Number.isFinite(slot) ? Math.min(NARROW_TYPE_SLOTS - 1, Math.max(0, Math.floor(slot))) : 0
   const used = NARROW_TYPE_SLOTS * layout.cardWidth + (NARROW_TYPE_SLOTS - 1) * layout.gap
@@ -307,13 +340,14 @@ export function narrowHandPageSize(layout: ThreeLayout): number {
 }
 
 /**
- * Lays one narrow hand page out in up to three centred lines, choosing the line count
+ * Lays one touch-layout hand page out in up to three centred lines, choosing the line count
  * that gives the largest cards. Cards never overlap: overlapping would enlarge
  * the art but shrink each card's exposed, tappable width.
  */
 export function narrowHandRects(count: number, layout: ThreeLayout): BoardRect[] {
   const total = Number.isFinite(count) ? Math.min(narrowHandPageSize(layout), Math.max(0, Math.floor(count))) : 0
   if (!total) return []
+  const maxHeight = TOUCH_CARD_MAXIMA[isTouchLayoutMode(layout.mode) ? layout.mode : 'narrow'].hand
   const lane = layout.columns.cardsWidth
   const row = layout.rows.hand
   const laneHeight = Math.max(1, row.height - NARROW_FRAME_ROOM)
@@ -326,7 +360,7 @@ export function narrowHandRects(count: number, layout: ThreeLayout): BoardRect[]
     if (Math.ceil(total / candidatePerLine) !== candidate) continue
     const byWidth = (lane - (candidatePerLine - 1) * gap) / candidatePerLine / CARD_ASPECT
     const byHeight = (laneHeight - (candidate - 1) * gap) / candidate
-    const candidateHeight = Math.min(MAX_CARD_HEIGHT, byWidth, byHeight)
+    const candidateHeight = Math.min(maxHeight, byWidth, byHeight)
     if (candidateHeight * CARD_ASPECT < MIN_TOUCH_WIDTH && total > 1) continue
     if (candidateHeight > height + 0.5) {
       lines = candidate
@@ -608,28 +642,28 @@ export function autoScrollVelocity(pointerY: number, top: number, bottom: number
 }
 
 export interface LandingSlotInput {
-  /** The dragged card's creature-type slot; only the narrow layout uses it. */
+  /** The dragged card's creature-type slot; only touch layouts use it. */
   readonly typeSlot: number
-  /** Cards already in that narrow type slot. */
+  /** Cards already in that type slot. */
   readonly slotCount: number
   /** Cards already on the near battlefield; other layouts append after them. */
   readonly nearCount: number
 }
 
 export interface LandingSlotRect extends BoardRect {
-  /** Narrow only: the card joins an existing stack ("+1") instead of an empty slot. */
+  /** Touch layouts only: the card joins an existing stack ("+1") instead of an empty slot. */
   readonly occupied: boolean
 }
 
 /** Where a summoned card lands on the near battlefield, in board units. */
 export function landingSlotRect(layout: ThreeLayout, { typeSlot, slotCount, nearCount }: LandingSlotInput): LandingSlotRect {
-  const narrow = layout.mode === 'narrow'
+  const typed = isTouchLayoutMode(layout.mode)
   const count = Number.isFinite(nearCount) ? Math.max(0, Math.floor(nearCount)) : 0
   return {
-    x: narrow ? typeSlotX(typeSlot, layout) : cardSlotX(count, count + 1, layout),
+    x: typed ? typeSlotX(typeSlot, layout) : cardSlotX(count, count + 1, layout),
     y: layout.rows.near.y,
     width: layout.cardWidth,
     height: layout.cardHeight,
-    occupied: narrow && Number.isFinite(slotCount) && slotCount > 0,
+    occupied: typed && Number.isFinite(slotCount) && slotCount > 0,
   }
 }

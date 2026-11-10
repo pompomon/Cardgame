@@ -3,7 +3,7 @@ import type { CounterHandOptions } from '../../app/response-options'
 import type { VisualEffectDescriptor } from '../../app/visual-effects'
 import type { BasicLand } from '../../game/types'
 import type { ThreePrimaryAction } from './interface-model'
-import type { PeekPlacement } from './layout'
+import type { PeekPlacement, ThreeShellProfile } from './layout'
 
 export interface RendererCardIdentity {
   readonly name: string
@@ -29,13 +29,16 @@ export interface ThreeBoardSelection {
 }
 
 export interface ThreeBoardPresentation {
-  /** Narrow single-column profile; the primary action then lives in the action dock. */
-  readonly narrow: boolean
+  /**
+   * The in-game shell. Every touch shell (`narrow`, `dock`, `rail`) uses the
+   * typed-slot touch layout, and its primary action lives in the action dock.
+   */
+  readonly shell: ThreeShellProfile
   readonly selection: ThreeBoardSelection
 }
 
 export const NO_BOARD_SELECTION: ThreeBoardSelection = Object.freeze({ cardId: null, targetId: null, discardId: null })
-export const DEFAULT_BOARD_PRESENTATION: ThreeBoardPresentation = Object.freeze({ narrow: false, selection: NO_BOARD_SELECTION })
+export const DEFAULT_BOARD_PRESENTATION: ThreeBoardPresentation = Object.freeze({ shell: 'desktop', selection: NO_BOARD_SELECTION })
 /** The action dock's live prompt, which also describes the docked primary button. */
 export const THREE_DOCK_PROMPT_ID = 'three-dock-prompt'
 
