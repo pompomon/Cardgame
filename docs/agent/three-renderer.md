@@ -170,11 +170,41 @@ its visible top or bottom.
   finger is in the band (`autoScrollVelocity()` in `layout.ts`).
 - **Steps.** `requestAnimationFrame` drives the steps. The first assumes
   16 ms, and later steps are clamped to 64 ms. Fractions carry, so slow speeds
-  still move. After each step the board reruns `moveDrag` with the last
-  pointer.
+  still move. After each step the board pins the pill and reruns `moveDrag`
+  with the last pointer. A step reuses the drag's measured geometry (see
+  [Drag geometry](#drag-geometry)).
 - **Stops.** The loop stops when the finger leaves the band, at either scroll
   end, and on release, cancellation, relayout, and disposal. A late frame does
   nothing. The mouse never auto-scrolls.
+
+### Drag geometry
+
+A live drag measures its geometry once and keeps it until something may move
+the stage. Its first move measures the canvas's client box, the stage's
+visible box, and the stage's scroll range (`DragGeometry` in `board.ts`).
+Later moves, edge auto-scroll steps, and the release reuse them:
+
+- **Scroll offset.** The stage scrolls only vertically, so the drag tracks its
+  `scrollTop` and moves the measured canvas box by the difference. An
+  auto-scroll step tracks the offset it wrote instead of reading it back. Each
+  stage `scroll` event reads `scrollTop` once. When the offset differs from
+  the tracked one, as after a wheel or a browser-rounded write, the board pins
+  the pill and re-places the card; the step's own event changes nothing.
+- **Invalidation.** A render, or a relayout that keeps the drag, discards the
+  geometry, and the next move measures again. A scroll of the page or of an
+  ancestor of the stage reaches a capturing, passive window `scroll` listener,
+  which measures again at once and re-places the card; other scrollers are
+  ignored. A measurement that finds an untracked offset also pins the pill.
+  Drag feedback re-renders only the fixed-size dock prompt, so it keeps the
+  geometry.
+- **Release.** `containsDrop` uses the geometry behind the highlight, so a
+  release at the last move's point does what the highlight shows, even before
+  a pending scroll event arrives. A render or relayout that keeps the drag
+  leaves the highlight until the next move or scroll; a release in between,
+  or without a live drag, measures afresh.
+
+New drag behaviour must not read layout per move or per frame, and anything
+that can move the stage without resizing it must discard the geometry.
 
 ### Relayout
 
@@ -244,8 +274,9 @@ removes both listeners.
   hand in view. A rail turning short or back is a shell switch.
 - **CSS.** `[data-shell]` selectors replace the board's `max-width: 480px`
   rules, and every `env(safe-area-inset-*)` value has a plain fallback first.
-  `dock` puts a fixed, rem-based two-line dock under the board; its action
-  row reserves End Turn's height, so large text never clips the prompt.
+  `narrow` and `dock` put a fixed, rem-based dock under the board, with room
+  for a three-line and a two-line prompt. Its action row reserves End Turn's
+  height, so large text never takes those lines; longer prompts scroll.
   `rail` uses `grid-template-columns: minmax(0, 1fr) clamp(180px, 26vw, 240px)`:
   the top bar stays above the board, and the full-height rail stacks the
   prompt, 48 px actions, and the primary button. The target panel and the
@@ -264,7 +295,8 @@ During a live drag the instruction becomes a pill at the top of the visible
 stage (`scrollTop` + 4 px), clear of the drop zone, and returns to the near row
 when the drag ends. A passive stage `scroll` listener keeps it there when the
 board scrolls mid-drag (a wheel, or edge auto-scroll), and re-places the card
-and its acceptance from the last pointer. Touch and pen lift a smaller card
+and its acceptance from the last pointer; edge auto-scroll does both itself (see
+[Drag geometry](#drag-geometry)). Touch and pen lift a smaller card
 above the finger, or beside it without room above, and keep its side while it
 fits (`dragProxyPlacement()` in `layout.ts`); the short rail prefers a side.
 Touch and pen placement reserves the pill's band, measured once at drag
@@ -276,7 +308,8 @@ the pill and reserves no caption space. Drag feedback changes only colour,
 outline, and opacity, so measured headers keep their size.
 
 `dropAccepts()` in `layout.ts` is the one drop predicate behind both the
-highlight (`moveDrag`) and the release (`containsDrop`). Touch and pen get
+highlight (`moveDrag`) and the release (`containsDrop`), which during a drag
+also share one geometry. Touch and pen get
 `TOUCH_DROP_SLOP_PX` (12 client px) on the top and side edges, never on the
 edge facing the hand, and the mouse gets none. A point over the hand, outside
 the canvas, or outside the stage's visible box never drops.

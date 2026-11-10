@@ -1983,11 +1983,56 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
   type StageStub = ElementStub & { scrollTop: number }
   interface BoardInternals {
     readonly layout: ThreeLayout
-    readonly drag: { returning: boolean } | null
+    readonly drag: { returning: boolean; readonly accepted: boolean; readonly proxy: { readonly group: Group } } | null
     readonly autoScroll: (time: number) => void
+    readonly pageScrolled: (event: Event) => void
   }
   const internals = (h: Harness) => h.board as unknown as BoardInternals
   const stageOf = (h: Harness) => h.host.all('three-board-stage')[0] as StageStub
+  const LAYOUT_METRICS = ['clientWidth', 'clientHeight', 'clientLeft', 'clientTop', 'offsetHeight', 'scrollTop', 'scrollHeight'] as const
+  const CANVAS_BOX = 'three-board-canvas box'
+  const STAGE_BOX = 'three-board-stage box'
+  /** The reads that measure a drag's geometry. */
+  const boxes = (reads: readonly string[]) => reads.filter((read) => read.endsWith(' box'))
+  /**
+   * Logs every layout read from now on: any board or dock element's box,
+   * client or offset metrics, and scroll offsets. A read made inside another
+   * logged read, such as the stubbed canvas box reading the stage's scroll,
+   * belongs to that read. `quiet` reads without logging, for the test's own checks.
+   */
+  const recordReads = (h: Harness) => {
+    const reads: string[] = []
+    let depth = 0
+    const quiet = <T>(read: () => T): T => {
+      depth += 1
+      try {
+        return read()
+      } finally {
+        depth -= 1
+      }
+    }
+    const logged = <T>(name: string, read: () => T): T => {
+      if (depth === 0) reads.push(name)
+      return quiet(read)
+    }
+    const tree = (element: ElementStub): ElementStub[] => [element, ...element.children.flatMap(tree)]
+    for (const element of [...tree(h.host), ...tree(h.dock)]) {
+      const name = element.className || element.tagName
+      const box = element.getBoundingClientRect
+      element.getBoundingClientRect = () => logged(`${name} box`, () => box.call(element))
+      for (const metric of LAYOUT_METRICS) {
+        const own = Object.getOwnPropertyDescriptor(element, metric)
+        const getter = own ? own.get : Object.getOwnPropertyDescriptor(ElementStub.prototype, metric)?.get
+        let value: unknown = own?.value
+        Object.defineProperty(element, metric, {
+          configurable: true,
+          get: () => logged(`${name}.${metric}`, () => getter ? getter.call(element) : value),
+          set: (next: unknown) => { value = next },
+        })
+      }
+    }
+    return { reads, quiet }
+  }
   /** A playable hand card that the board currently shows. */
   const handHit = (h: Harness) => {
     const card = h.app.game!.players[0].hand.find((entry) => h.registry.get(boardCardKey(entry.id, 0))?.descriptor.visible)!
@@ -2023,7 +2068,12 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     const scrollFrames = () => frames.mock.calls.flatMap(([callback], index) =>
       callback === internals(h).autoScroll ? [frames.mock.results[index].value as number] : [])
     const step = (time: number) => internals(h).autoScroll(time)
-    return { ...h, stage, scrollFrames, step }
+    /** Scrolls the stage as a wheel or a script would, so the browser fires a scroll event. */
+    const scrollTo = (top: number) => {
+      stage.scrollTop = top
+      stage.dispatchEvent(new Event('scroll'))
+    }
+    return { ...h, stage, scrollFrames, step, scrollTo }
   }
 
   it('scrolls a touch drag held in the bottom band in whole pixels, carrying fractions and rerunning moveDrag', () => {
@@ -2065,7 +2115,7 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     // 306.25px/s, then 550px/s 4px from the edge, then the 600px/s maximum past it.
     expect(firstStep(176.5)).toBe(4)
     expect(firstStep(196)).toBe(8)
-    h.stage.scrollTop = 100
+    h.scrollTo(100)
     expect(firstStep(230)).toBe(9)
     // Leaving the band cancels the frame; a late frame does nothing.
     const frames = h.scrollFrames().length
@@ -2075,20 +2125,162 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     expect(h.stage.scrollTop).toBe(109)
     expect(h.scrollFrames()).toHaveLength(frames)
     // The top band scrolls up, and stops at the top.
-    h.stage.scrollTop = 3
+    h.scrollTo(3)
     expect(firstStep(10)).toBe(-3)
     expect(h.scrollFrames()).toHaveLength(frames + 1)
     expect(firstStep(10)).toBe(0)
     // ...and the bottom band stops at the end of the board.
-    h.stage.scrollTop = 264
+    h.scrollTo(264)
     h.board.moveDrag(172, 100, true)
     expect(firstStep(176.5)).toBe(2)
     expect(h.stage.scrollTop).toBe(266)
     expect(firstStep(176.5)).toBe(0)
     // A mouse drag never auto-scrolls.
-    h.stage.scrollTop = 100
+    h.scrollTo(100)
     expect(firstStep(196, false)).toBe(0)
     expect(firstStep(10, false)).toBe(0)
+  })
+
+  it('measures a drag once, so its moves and auto-scroll steps read no layout yet place it as measuring again would', () => {
+    const h = scrollingBoard()
+    const prompt = h.host.all('three-board-instruction')[0]
+    h.board.beginDrag(handHit(h))
+    const { reads, quiet } = recordReads(h)
+    h.board.moveDrag(172, 100, true)
+    expect(boxes(reads)).toEqual([CANVAS_BOX, STAGE_BOX])
+    expect(reads.filter((read) => read === 'three-board-stage.scrollTop')).toHaveLength(1)
+    reads.length = 0
+    h.board.moveDrag(172, 176.5, true)
+    const tops = [1000, 9000, 9016, 9046].map((time) => {
+      h.step(time)
+      return quiet(() => h.stage.scrollTop)
+    })
+    expect(tops).toEqual([4, 24, 29, 38])
+    expect(prompt.style.top).toBe('42px')
+    h.board.moveDrag(172, 120, true)
+    expect(reads).toEqual([])
+    // The tracked scroll offset moved the measured canvas with the board.
+    const { position } = internals(h).drag!.proxy.group
+    const tracked = position.clone()
+    h.window.dispatchEvent(new Event('scroll'))
+    h.board.moveDrag(172, 120, true)
+    expect(boxes(reads)).toEqual([CANVAS_BOX, STAGE_BOX])
+    expect(position).toEqual(tracked)
+  })
+
+  it('reads only the scroll offset on a stage scroll, and re-places the card only for a scroll that it did not make', () => {
+    const h = scrollingBoard()
+    const prompt = h.host.all('three-board-instruction')[0]
+    h.board.beginDrag(handHit(h))
+    h.board.moveDrag(172, 176.5, true)
+    h.step(1000)
+    const { reads } = recordReads(h)
+    const move = vi.spyOn(h.board, 'moveDrag')
+    // An auto-scroll step's own scroll event arrives after the step placed the card.
+    h.stage.dispatchEvent(new Event('scroll'))
+    expect(reads).toEqual(['three-board-stage.scrollTop'])
+    expect(move).not.toHaveBeenCalled()
+    reads.length = 0
+    h.scrollTo(60)
+    expect(reads).toEqual(['three-board-stage.scrollTop'])
+    expect(move).toHaveBeenCalledExactlyOnceWith(172, 176.5, true)
+    expect(prompt.style.top).toBe('64px')
+  })
+
+  it.each([
+    ['a render', (h: Harness) => { h.present() }],
+    ['a relayout that keeps the drag', () => { ObserverStub.latest.callback() }],
+  ] as const)('measures a drag again on the move after %s', (_, trigger) => {
+    const h = scrollingBoard()
+    // The browser's first observation of the resized stage, which a later relayout compares against.
+    ObserverStub.latest.callback()
+    h.board.beginDrag(handHit(h))
+    h.board.moveDrag(172, 100, true)
+    const { reads } = recordReads(h)
+    trigger(h)
+    expect(internals(h).drag).not.toBeNull()
+    reads.length = 0
+    h.board.moveDrag(172, 110, true)
+    expect(boxes(reads)).toEqual([CANVAS_BOX, STAGE_BOX])
+    reads.length = 0
+    h.board.moveDrag(172, 120, true)
+    expect(reads).toEqual([])
+  })
+
+  it('decides a release from the geometry behind its highlight, and measures afresh without a live drag', () => {
+    const h = scrollingBoard()
+    h.board.beginDrag(handHit(h))
+    // The drop zone's centre, scrolled to the middle of the 200px stage.
+    const [x, y] = dropCentre(h)
+    h.scrollTo(y - 100)
+    h.board.moveDrag(x, 100, true)
+    expect(internals(h).drag!.accepted).toBe(true)
+    const { reads } = recordReads(h)
+    // A scroll whose event is still to come moves the zone away, yet the release does what the highlight shows.
+    h.stage.scrollTop = 0
+    h.board.moveDrag(x, 100, true)
+    expect(h.board.containsDrop(x, 100, true)).toBe(true)
+    expect(reads).toEqual([])
+    // Its event re-places the card, and the release follows.
+    h.stage.dispatchEvent(new Event('scroll'))
+    expect(internals(h).drag!.accepted).toBe(false)
+    expect(h.board.containsDrop(x, 100, true)).toBe(false)
+    h.board.endDrag(false)
+    reads.length = 0
+    expect(h.board.containsDrop(x, 100, true)).toBe(false)
+    expect(boxes(reads)).toEqual([CANVAS_BOX, STAGE_BOX])
+  })
+
+  it('pins the pill to a stage scroll that a fresh measurement finds before the stage reports it', () => {
+    const h = scrollingBoard()
+    const prompt = h.host.all('three-board-instruction')[0]
+    h.board.beginDrag(handHit(h))
+    const [x, y] = dropCentre(h)
+    h.scrollTo(y - 100)
+    h.board.moveDrag(x, 100, true)
+    expect(prompt.style.top).toBe(`${y - 96}px`)
+    // A scroll chained from the stage to the page: the page's event arrives first.
+    h.stage.scrollTop = 0
+    h.window.dispatchEvent(new Event('scroll'))
+    expect(prompt.style.top).toBe('4px')
+    expect(internals(h).drag!.accepted).toBe(false)
+    const move = vi.spyOn(h.board, 'moveDrag')
+    h.stage.dispatchEvent(new Event('scroll'))
+    expect(move).not.toHaveBeenCalled()
+    expect(prompt.style.top).toBe('4px')
+  })
+
+  it('re-places a drag at once when the page or an ancestor scrolls, ignores other scrollers, and removes its listener', () => {
+    const added = vi.spyOn(EventTarget.prototype, 'addEventListener')
+    const removed = vi.spyOn(EventTarget.prototype, 'removeEventListener')
+    const h = scrollingBoard()
+    const { pageScrolled } = internals(h)
+    const scrolled = (target: unknown) => pageScrolled({ target } as unknown as Event)
+    h.board.beginDrag(handHit(h))
+    h.board.moveDrag(172, 100, true)
+    const { reads } = recordReads(h)
+    const move = vi.spyOn(h.board, 'moveDrag')
+    // The stage's own scroll is tracked, and other scrollers outside its ancestors cannot move it.
+    scrolled(h.stage)
+    scrolled({ contains: () => false })
+    expect(reads).toEqual([])
+    expect(move).not.toHaveBeenCalled()
+    // An ancestor's scroll can, like the page's: the event reaches the window's capture listener.
+    scrolled({ contains: (node: unknown) => node === h.stage })
+    expect(boxes(reads)).toEqual([CANVAS_BOX, STAGE_BOX])
+    expect(move).toHaveBeenCalledExactlyOnceWith(172, 100, true)
+    h.window.dispatchEvent(new Event('scroll'))
+    expect(boxes(reads)).toEqual([CANVAS_BOX, STAGE_BOX, CANVAS_BOX, STAGE_BOX])
+    expect(move).toHaveBeenCalledTimes(2)
+    reads.length = 0
+    h.board.moveDrag(172, 110, true)
+    expect(reads).toEqual([])
+    const listener = (calls: readonly unknown[][]) => calls.filter(([, callback]) => callback === pageScrolled)
+    expect(listener(added.mock.calls)).toEqual([['scroll', pageScrolled, { capture: true, passive: true }]])
+    h.board.dispose()
+    expect(listener(removed.mock.calls)).toEqual([['scroll', pageScrolled, { capture: true }]])
+    added.mockRestore()
+    removed.mockRestore()
   })
 
   it('never auto-scrolls a stage that fits its board', () => {

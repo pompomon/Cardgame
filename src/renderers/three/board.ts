@@ -42,6 +42,25 @@ interface RowChrome {
   readonly stacks: readonly HTMLSpanElement[]
 }
 
+/**
+ * A live drag's client geometry. It is measured on the first move and kept
+ * until something may move the stage: a render or a relayout that keeps the
+ * drag (the next move measures again), or a scroll outside the stage (which
+ * measures again at once). Drag feedback only rewrites the fixed-size dock's
+ * prompt, so it keeps the geometry. While it is kept, moves, auto-scroll steps
+ * and the release read no layout, and a release decides with the geometry
+ * behind the highlight.
+ */
+interface DragGeometry {
+  /** The canvas's client box, measured with the stage scrolled to `scrollTop`. */
+  readonly canvas: LayerRect
+  /** The stage's padding box in client pixels. */
+  readonly visible: LayerRect
+  readonly scrollTop: number
+  /** The stage's furthest scroll position. */
+  readonly maxScroll: number
+}
+
 interface DragVisual {
   readonly source: RetainedCard
   /** The in-scene card. It stays hidden while the drag layer draws the card, and always animates the return. */
@@ -63,6 +82,9 @@ interface DragVisual {
   pointerX: number
   pointerY: number
   pointerTouch: boolean
+  /** The stage's scroll position, tracked so that moves and auto-scroll steps need not read it while the geometry is kept. */
+  scrollTop: number
+  geometry: DragGeometry | null
   returning: boolean
   elapsed: number
   fromX: number
@@ -352,6 +374,8 @@ export class ThreeBoard implements ThreeBoardApi {
       window.addEventListener('resize', this.resize)
       window.addEventListener('orientationchange', this.resize)
       window.visualViewport?.addEventListener('resize', this.resize)
+      // Capture sees every element's scroll, although scroll events do not bubble.
+      window.addEventListener('scroll', this.pageScrolled, { capture: true, passive: true })
       document.addEventListener('visibilitychange', this.visibilityChanged)
       if (typeof window.matchMedia === 'function') {
         this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -383,6 +407,8 @@ export class ThreeBoard implements ThreeBoardApi {
     blocked = false,
   ): void {
     if (this.disposed || this.failed) return
+    // The interface renders first and may have moved the stage.
+    if (this.drag) this.drag.geometry = null
     const boundary = presentationBoundary(this.view, view)
     const sessionBoundary = !this.view?.game || !view.game
       || this.view.seed !== view.seed || this.view.mode !== view.mode
@@ -831,8 +857,18 @@ export class ThreeBoard implements ThreeBoardApi {
     return this.cards?.hitTest(this.point) ?? null
   }
 
+  /**
+   * Decides a release with the drag highlight's predicate. A live drag uses
+   * the geometry behind its highlight, so a release at the last move's point
+   * does what the highlight shows, even before a pending scroll event. After
+   * a render or relayout has discarded that geometry, or without a live drag,
+   * it measures afresh, as the next move would.
+   */
   containsDrop(clientX: number, clientY: number, touch = false): boolean {
-    return this.dropAt(clientX, clientY, touch, this.canvas.getBoundingClientRect(), this.visibleStage())
+    const drag = this.drag && !this.drag.returning ? this.drag : null
+    if (!drag) return this.dropAt(clientX, clientY, touch, this.canvas.getBoundingClientRect(), this.visibleStage())
+    const geometry = this.dragGeometry(drag)
+    return this.dropAt(clientX, clientY, touch, this.dragCanvas(drag, geometry), geometry.visible)
   }
 
   beginDrag(hit: BoardHit): void {
@@ -850,6 +886,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const drag: DragVisual = {
       source, proxy, layered: false, accepted: false, side: undefined, landing: undefined, width, height,
       pillBottom: 0, pointerX: Number.NaN, pointerY: Number.NaN, pointerTouch: false,
+      scrollTop: this.stage.scrollTop || 0, geometry: null,
       returning: false, elapsed: 0, fromX: 0, fromY: 0,
     }
     this.drag = drag
@@ -875,12 +912,13 @@ export class ThreeBoard implements ThreeBoardApi {
   moveDrag(clientX: number, clientY: number, touch: boolean): void {
     const drag = this.drag
     if (!drag || drag.returning || !this.usable()) return
-    const rect = this.canvas.getBoundingClientRect()
+    const geometry = this.dragGeometry(drag)
+    const rect = this.dragCanvas(drag, geometry)
     if (!(rect.width > 0 && rect.height > 0) || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return
     drag.pointerX = clientX
     drag.pointerY = clientY
     drag.pointerTouch = touch
-    const visible = this.visibleStage()
+    const { visible } = geometry
     const accepted = this.dropAt(clientX, clientY, touch, rect, visible)
     // Board units with a top-left origin, which are also drag-layer pixels.
     const scaleX = this.layout.width / rect.width
@@ -999,11 +1037,10 @@ export class ThreeBoard implements ThreeBoardApi {
   private autoScrollSpeed(): number {
     const drag = this.drag
     if (!drag || drag.returning || !drag.pointerTouch || !this.usable()) return 0
-    const max = this.maxScroll()
-    const top = this.stage.scrollTop || 0
-    const visible = this.visibleStage()
+    const { visible, maxScroll } = this.dragGeometry(drag)
+    const top = drag.scrollTop
     const speed = autoScrollVelocity(drag.pointerY, visible.top, visible.top + visible.height)
-    return speed < 0 && top > 0 || speed > 0 && top < max ? speed : 0
+    return speed < 0 && top > 0 || speed > 0 && top < maxScroll ? speed : 0
   }
 
   /** Starts or stops edge auto-scroll for the drag's latest pointer. */
@@ -1040,12 +1077,15 @@ export class ThreeBoard implements ThreeBoardApi {
     const distance = speed * elapsed / 1000 + this.scrollCarry
     const step = Math.trunc(distance)
     this.scrollCarry = distance - step
-    const top = this.stage.scrollTop || 0
-    const next = clamp(top + step, 0, this.maxScroll())
+    const { maxScroll } = this.dragGeometry(drag)
+    const top = drag.scrollTop
+    const next = clamp(top + step, 0, maxScroll)
     if (next !== top) {
       this.stage.scrollTop = next
+      // Tracked rather than read back, which would be a layout read.
+      drag.scrollTop = next
       this.positionInstruction()
-      // Bounds are read fresh, so the card stays under the finger over the moved board.
+      // The card stays under the finger over the moved board.
       this.moveDrag(drag.pointerX, drag.pointerY, drag.pointerTouch)
     }
     // moveDrag or its listener may have stopped the scroll or ended the drag.
@@ -1094,7 +1134,7 @@ export class ThreeBoard implements ThreeBoardApi {
    * must be inside the canvas and the stage's visible box, so a finger over a
    * scrolled-away part of the board or the dock below it never drops.
    */
-  private dropAt(clientX: number, clientY: number, touch: boolean, rect: DOMRect, visible: LayerRect): boolean {
+  private dropAt(clientX: number, clientY: number, touch: boolean, rect: LayerRect, visible: LayerRect): boolean {
     if (!this.usable() || !this.canDrop || !clientToBoard(clientX, clientY, rect, this.layout, this.point)) return false
     if (clientX < visible.left || clientX > visible.left + visible.width
       || clientY < visible.top || clientY > visible.top + visible.height) return false
@@ -1110,6 +1150,31 @@ export class ThreeBoard implements ThreeBoardApi {
       width: this.stage.clientWidth || rect.width,
       height: this.stage.clientHeight || rect.height,
     }
+  }
+
+  /** The live drag's geometry, measured only when nothing valid is kept. */
+  private dragGeometry(drag: DragVisual): DragGeometry {
+    if (drag.geometry) return drag.geometry
+    const canvas = this.canvas.getBoundingClientRect()
+    const scrollTop = this.stage.scrollTop || 0
+    drag.geometry = {
+      canvas: { left: canvas.left, top: canvas.top, width: canvas.width, height: canvas.height },
+      visible: this.visibleStage(),
+      scrollTop,
+      maxScroll: this.maxScroll(),
+    }
+    if (scrollTop !== drag.scrollTop) {
+      // The stage scrolled, but its event is still to come and will find the offset tracked: pin the pill now.
+      drag.scrollTop = scrollTop
+      this.positionInstruction()
+    }
+    return drag.geometry
+  }
+
+  /** The canvas's client box now: it scrolls with the stage's content, which only scrolls vertically. */
+  private dragCanvas(drag: DragVisual, geometry: DragGeometry): LayerRect {
+    const { canvas } = geometry
+    return { ...canvas, top: canvas.top - (drag.scrollTop - geometry.scrollTop) }
   }
 
   /** Marks where a release would summon the dragged card: its type slot in a touch layout, else the append slot. */
@@ -1147,7 +1212,7 @@ export class ThreeBoard implements ThreeBoardApi {
   /** A live drag lifts the instruction to a pill at the top of the visible stage, clear of the drop zone. */
   private positionInstruction(): void {
     const top = this.drag && !this.drag.returning
-      ? (this.stage.scrollTop || 0) + OVERLAY_GAP
+      ? this.drag.scrollTop + OVERLAY_GAP
       : this.instructionTop
     const value = `${top}px`
     if (this.instruction.style.top !== value) this.instruction.style.top = value
@@ -1325,11 +1390,31 @@ export class ThreeBoard implements ThreeBoardApi {
    * A wheel (or any scroll) moves the stage's content under a held pointer:
    * pin the drag pill to the visible top again, and re-place the card and its
    * acceptance from the last pointer instead of waiting for the next move.
+   * Each scroll event reads `scrollTop` once. An auto-scroll step already
+   * placed the card at the position it wrote, so its own event stops there.
    */
   private stageScrolled = (): void => {
     const drag = this.drag
     if (!drag || drag.returning) return
+    const top = this.stage.scrollTop || 0
+    if (top === drag.scrollTop) return
+    drag.scrollTop = top
     this.positionInstruction()
+    if (Number.isFinite(drag.pointerX)) this.moveDrag(drag.pointerX, drag.pointerY, drag.pointerTouch)
+  }
+
+  /**
+   * A scroll outside the stage, such as the page's, may move the canvas under
+   * a held pointer: measure the live drag again, and re-place the card and its
+   * acceptance from the last pointer, as for a scroll of the stage itself.
+   */
+  private pageScrolled = (event: Event): void => {
+    const drag = this.drag
+    const target = event.target as { contains?: (node: Node) => boolean } | null
+    if (!drag || drag.returning || target === this.stage) return
+    // A scroll beside or inside the stage leaves it in place.
+    if (typeof target?.contains === 'function' && !target.contains(this.stage)) return
+    drag.geometry = null
     if (Number.isFinite(drag.pointerX)) this.moveDrag(drag.pointerX, drag.pointerY, drag.pointerTouch)
   }
 
@@ -1352,6 +1437,9 @@ export class ThreeBoard implements ThreeBoardApi {
         this.endDrag(false)
         this.onResize()
         this.anchorNearLane()
+      } else if (this.drag) {
+        // Nothing was resized, but the viewport changed, so the stage may have moved.
+        this.drag.geometry = null
       }
       this.positionTargetLabels()
       this.invalidate()
@@ -1641,6 +1729,7 @@ export class ThreeBoard implements ThreeBoardApi {
     window.removeEventListener('resize', this.resize)
     window.removeEventListener('orientationchange', this.resize)
     window.visualViewport?.removeEventListener('resize', this.resize)
+    window.removeEventListener('scroll', this.pageScrolled, { capture: true })
     document.removeEventListener('visibilitychange', this.visibilityChanged)
     if (this.motionQuery?.removeEventListener) this.motionQuery.removeEventListener('change', this.motionChanged)
     else this.motionQuery?.removeListener(this.motionChanged)

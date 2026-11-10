@@ -348,3 +348,51 @@ Desktop emulation cannot show safe-area insets, a coarse pointer, reduced
 motion, or real phones and tablets. Record the CSS and unit coverage for
 those, and mark them pending maintainer device verification. Do not waive
 them.
+
+### Fold4 posture check
+
+Run this sweep for changes to the touch shells, the dock, or drag and peek
+behaviour, before the
+[Fold4 device checklist](../implementation/fold4-touch-ui-uplift-plan.md#fold4-device-checklist).
+Use the production preview at the base path in Chromium. Unlike plain desktop
+emulation, touch emulation (Playwright's `hasTouch`) makes `(pointer: coarse)`
+match, and Chromium can emulate `prefers-reduced-motion`. Check each posture
+at 100% and 200% root font size, and each shell once with reduced motion.
+
+| Posture | Viewport | Shell (`data-shell`) |
+| --- | --- | --- |
+| Cover screen, portrait | 344×770 | `narrow` |
+| Main screen, portrait | 690×717 | `dock` |
+| Main screen, landscape | 829×578 | `rail` |
+| Cover screen, landscape | 882×232 | `rail`, short |
+| Phone held sideways | 844×390 | `rail`, short |
+
+The viewports are the plan's estimates until its
+[device measurements](../implementation/fold4-touch-ui-uplift-plan.md#device-measurements)
+replace them. In each posture, check that:
+
+- the root's `data-shell` and `data-shell-short` match the table;
+- the page has no horizontal overflow, and the headers, End Turn, and the hand
+  never overlap;
+- the idle dock prompt is whole, except in the short rail at 200% text, where
+  it scrolls inside its two-line box and the dock scrolls to End Turn. Longer
+  prompts, such as a selected card's rules, may scroll inside the prompt;
+- every control is at least 44 CSS pixels in both dimensions;
+- tap-select then Summon, a drag that summons, and a drag back to the hand
+  that cancels all work, and each release does what the highlight showed;
+- where the board scrolls, edge auto-scroll reaches the drop zone and the pill
+  stays at the visible top;
+- a peek opens on the side away from the finger. Where neither side fits, as
+  for a hand card on the 232 px cover screen held sideways, a held press
+  stays a tap;
+- reduced motion skips the card's return animation. The stage's
+  `data-dragging` clears as the return starts, so count animation frames
+  after the release instead.
+
+Then resize 344×770 to 690×717, and 690×717 to 829×578, first with a card
+selected and then during a drag. The selection, dock prompt, and hand page
+survive, and the drag is cancelled without a summon.
+
+Touch emulation cannot show safe-area insets, Android's browser chrome or
+font scaling, TalkBack, or real touch timing. Record the sweep as emulation,
+and leave the device checklist pending maintainer verification.
