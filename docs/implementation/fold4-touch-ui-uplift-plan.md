@@ -1058,8 +1058,9 @@ The implementation differs from the scope above in these ways:
   - All 10 tap-selects with Summon and all 10 drag summons summoned one
     card, and all 10 drags back to the hand summoned nothing. Each of the 20
     releases did what the highlight showed before it.
-  - At 882×232, holding a drag in the top band scrolled the board 132 px to
-    the drop zone, with the pill pinned to the visible top.
+  - At 882×232, at both text sizes, holding a drag in the top band
+    auto-scrolled the board from 132 px to its top, with the pill pinned to
+    the visible top, and the drag then summoned.
   - Peeks opened above the finger in four postures. On the cover screen held
     sideways, the hand card's peek did not fit at either text size, so each
     held press stayed a tap, as the Milestone 2 fallback describes.
