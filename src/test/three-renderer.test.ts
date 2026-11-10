@@ -380,7 +380,7 @@ describe('Three.js composition', () => {
     expect(dock.hidden).toBe(!touch)
     expect(shell()).toBe(expected.profile)
     expect(presentation()).toEqual(touch
-      ? { shell: expected.profile, selection: mocks.ui.selection }
+      ? { shell: expected.profile, short: expected.short, selection: mocks.ui.selection }
       : { shell: 'desktop', selection: { cardId: null, targetId: null, discardId: null } })
     if (expected.profile === 'narrow') expect(container.classList.add).toHaveBeenCalledWith('three-root--narrow')
     else expect(container.classList.add).not.toHaveBeenCalledWith('three-root--narrow')
@@ -413,7 +413,7 @@ describe('Three.js composition', () => {
     expect(container.classList.remove).toHaveBeenLastCalledWith('three-root--narrow')
     expect(shell()).toBe('dock')
     expect(dock.hidden).toBe(false)
-    expect(presentation()).toEqual({ shell: 'dock', selection: mocks.ui.selection })
+    expect(presentation()).toEqual({ shell: 'dock', short: false, selection: mocks.ui.selection })
     // A resize within the same shell is left to the board's own relayout.
     mocks.board.render.mockClear()
     resize(690, 829)
@@ -421,11 +421,14 @@ describe('Three.js composition', () => {
     resize(829, 578)
     expect(container.dataset.shell).toBe('rail')
     expect(container.dataset.shellShort).toBeUndefined()
+    // A rail turning short re-renders the board, which moves beside the rail.
     resize(882, 232)
     expect(container.dataset.shell).toBe('rail')
     expect(container.dataset.shellShort).toBe('true')
+    expect(presentation()).toEqual({ shell: 'rail', short: true, selection: mocks.ui.selection })
     resize(829, 690)
     expect(container.dataset.shellShort).toBeUndefined()
+    expect(presentation()).toEqual({ shell: 'rail', short: false, selection: mocks.ui.selection })
     expect(mocks.board.render).toHaveBeenCalledTimes(3)
     // A mouse takes over the primary pointer: the desktop layout returns without a resize.
     setCoarse(false)

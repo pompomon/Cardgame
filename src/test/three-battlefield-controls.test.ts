@@ -16,7 +16,8 @@ import {
 import { ThreeInteraction } from '../renderers/three/interaction'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
 import {
-  cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type PeekPlacement, type ThreeLayout, type ThreeShellProfile,
+  cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, TOUCH_DRAG_SCALE, typeSlotX, type LayerRect, type PeekPlacement,
+  type ThreeLayout, type ThreeShellProfile,
 } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
@@ -2367,5 +2368,254 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
     expect(css).toMatch(
       /\.three-root--game \.three-board-stage\s*\{[^}]*-webkit-touch-callout:\s*none;[^}]*-webkit-user-select:\s*none;[^}]*user-select:\s*none;/,
     )
+  })
+})
+
+describe('Three short-landscape rail board', () => {
+  type Harness = ReturnType<typeof setup>
+  type StageStub = ElementStub & { scrollTop: number }
+  interface BoardInternals {
+    readonly layout: ThreeLayout
+    readonly drag: {
+      readonly side: string; readonly accepted: boolean; readonly width: number; readonly height: number
+      readonly proxy: { readonly group: Group }
+    } | null
+    readonly landing: Mesh
+    readonly autoScroll: (time: number) => void
+  }
+  const RAIL = 'rail' as ThreeShellProfile
+  /** The stage's visible height. */
+  const VIEW = 220
+  const internals = (h: Harness) => h.board as unknown as BoardInternals
+  /** A playable hand card that the board currently shows. */
+  const handHit = (h: Harness) => {
+    const card = h.app.game!.players[0].hand.find((entry) => h.registry.get(boardCardKey(entry.id, 0))?.descriptor.visible)!
+    return { ...h.registry.get(boardCardKey(card.id, 0))!.descriptor.hit }
+  }
+  /** A row's lane bottom in board pixels from the top. */
+  const bottomOf = (h: Harness, row: 'near' | 'hand') => {
+    const { layout } = internals(h)
+    return layout.height / 2 - layout.rows[row].y + layout.rows[row].height / 2
+  }
+  /**
+   * The Fold4 cover screen held sideways (882x232): a 637x220 stage beside the
+   * rail, with single-line headers, so the 356px minimum board scrolls 136px.
+   */
+  const coverBoard = (presentation: ThreeBoardPresentation) => {
+    // Numbered frames tell the auto-scroll's own frames apart from drawing.
+    let id = 0
+    const frames = vi.fn((_callback: FrameRequestCallback) => ++id)
+    vi.stubGlobal('requestAnimationFrame', frames)
+    const h = setup(presentation)
+    const stage = h.host.all('three-board-stage')[0] as StageStub
+    for (const sizer of h.host.all('three-board-label three-board-sizer')) {
+      Object.defineProperty(sizer, 'offsetHeight', { configurable: true, value: sizer.dataset.row === 'hand' ? 22 : 21 })
+    }
+    Object.assign(stage, { scrollTop: 0 })
+    stage.clientWidth = 637
+    stage.clientHeight = VIEW
+    ObserverStub.latest.callback()
+    expect(internals(h).layout.height).toBe(356)
+    expect(stage.dataset.scrollable).toBe('true')
+    // A real canvas moves up with the stage's content as it scrolls.
+    const canvas = h.host.all('three-board-canvas')[0]
+    canvas.getBoundingClientRect = () => {
+      const { layout } = internals(h)
+      return { left: 0, top: -stage.scrollTop, width: layout.width, height: layout.height }
+    }
+    const scrollFrames = () => frames.mock.calls.filter(([callback]) => callback === internals(h).autoScroll).length
+    const step = (time: number) => internals(h).autoScroll(time)
+    return { ...h, stage, canvas, scrollFrames, step }
+  }
+
+  it('anchors the near lane and the whole hand in view, where the plain rail leaves the hand below the fold', () => {
+    const presentation = { shell: RAIL, short: true, selection: NO_BOARD_SELECTION }
+    const h = coverBoard(presentation)
+    const { layout } = internals(h)
+    const nearTop = layout.height / 2 - layout.rows.near.y - layout.rows.near.height / 2
+    // End Turn lives in the rail, off the board.
+    expect(h.button.parent).toBe(h.dock)
+    expect(h.stage.scrollTop).toBeCloseTo(bottomOf(h, 'hand') - VIEW)
+    expect(nearTop).toBeGreaterThanOrEqual(h.stage.scrollTop)
+    expect(layout.rows.hand.labelTop).toBeGreaterThanOrEqual(h.stage.scrollTop)
+    // From the top, the plain rail already shows its near lane, so it stays put.
+    h.stage.scrollTop = 0
+    presentation.short = false
+    h.present()
+    expect(h.stage.scrollTop).toBe(0)
+    expect(internals(h).layout.rows.hand.labelTop).toBeGreaterThanOrEqual(VIEW)
+    presentation.short = true
+    h.present()
+    expect(h.stage.scrollTop).toBeCloseTo(bottomOf(h, 'hand') - VIEW)
+  })
+
+  it('reserves a 44px pager strip for a paged short-rail hand, and 50px in the other unfolded shells', () => {
+    const presentation = { shell: RAIL, short: true, selection: NO_BOARD_SELECTION }
+    const h = coverBoard(presentation)
+    const header = h.host.all('three-board-label').find((entry) => entry.dataset.row === 'hand')!
+    const player = h.app.game!.players[0]
+    player.hand.push(...player.deck.splice(0, 20))
+    h.present()
+    expect(narrowHandPageSize(internals(h).layout)).toBeLessThan(player.hand.length)
+    expect(internals(h).layout.rows.hand.labelHeight).toBe(44)
+    expect(header.style.height).toBe('44px')
+    presentation.short = false
+    h.present()
+    expect(internals(h).layout.rows.hand.labelHeight).toBe(50)
+    expect(header.style.height).toBe('50px')
+    // Only a rail can be short.
+    presentation.shell = 'dock'
+    presentation.short = true
+    h.present()
+    expect(internals(h).layout.rows.hand.labelHeight).toBe(50)
+  })
+
+  it('lifts a touch drag beside the finger even with room above it, where the plain rail lifts it above', () => {
+    const presentation = { shell: RAIL, short: true, selection: NO_BOARD_SELECTION }
+    const h = coverBoard(presentation)
+    /** Lifts a hand card with the finger low over the hand, and returns the card's client box. */
+    const lift = () => {
+      h.board.beginDrag(handHit(h))
+      h.board.moveDrag(200, 180, true)
+      const { drag, layout } = internals(h)
+      const { position, scale } = drag!.proxy.group
+      const x = position.x + layout.width / 2
+      const y = layout.height / 2 - position.y - h.stage.scrollTop
+      const width = drag!.width * scale.x
+      const height = drag!.height * scale.y
+      return { side: drag!.side, left: x - width / 2, bottom: y + height / 2 }
+    }
+    const beside = lift()
+    // The roomier side, clear of the finger.
+    expect(beside.side).toBe('right')
+    expect(beside.left).toBeGreaterThanOrEqual(200 + 20 - 0.001)
+    presentation.short = false
+    h.present()
+    const above = lift()
+    expect(above.side).toBe('above')
+    expect(above.bottom).toBeLessThanOrEqual(180 - 20 + 0.001)
+  })
+
+  it('lifts the card to the side of the finger that leaves the landing ghost in view', () => {
+    const h = coverBoard({ shell: RAIL, short: true, selection: NO_BOARD_SELECTION })
+    h.board.beginDrag(handHit(h))
+    const { drag, layout, landing } = internals(h)
+    /** Board pixels from the top-left corner, which are also client pixels plus the scroll. */
+    const ghost: LayerRect = {
+      left: layout.width / 2 + landing.position.x - landing.scale.x / 2,
+      top: layout.height / 2 - landing.position.y - landing.scale.y / 2,
+      width: landing.scale.x, height: landing.scale.y,
+    }
+    const card = (): LayerRect => {
+      const { position, scale } = drag!.proxy.group
+      const width = drag!.width * scale.x
+      const height = drag!.height * scale.y
+      return { left: layout.width / 2 + position.x - width / 2, top: layout.height / 2 - position.y - height / 2, width, height }
+    }
+    const spans = (a: number, aSize: number, b: number, bSize: number) => a < b + bSize && b < a + aSize
+    // The anchored stage shows the ghost, and a card fits on either side of a finger 10px from it.
+    expect(ghost.top).toBeGreaterThanOrEqual(h.stage.scrollTop)
+    expect(ghost.top + ghost.height).toBeLessThanOrEqual(h.stage.scrollTop + VIEW)
+    const reach = 10 + 20 + drag!.width * TOUCH_DRAG_SCALE
+    expect(ghost.left - reach).toBeGreaterThan(4)
+    expect(ghost.left + ghost.width + reach).toBeLessThan(layout.width - 4)
+    const y = ghost.top + ghost.height / 2 - h.stage.scrollTop
+    const left = ghost.left - 10
+    const right = ghost.left + ghost.width + 10
+    for (const [x, side] of [[left, 'left'], [right, 'right'], [left, 'left']] as const) {
+      h.board.moveDrag(x, y, true)
+      expect(drag!.side).toBe(side)
+      const box = card()
+      // Level with the ghost, so only the side keeps it uncovered.
+      expect(spans(box.top, box.height, ghost.top, ghost.height)).toBe(true)
+      expect(spans(box.left, box.width, ghost.left, ghost.width)).toBe(false)
+    }
+  })
+
+  it('ends a live drag and re-anchors when the rail turns short or back, but keeps it across other renders', () => {
+    const presentation = { shell: RAIL, short: false, selection: NO_BOARD_SELECTION }
+    const h = coverBoard(presentation)
+    expect(h.stage.scrollTop).toBe(0)
+    const nearLabelTop = internals(h).layout.rows.near.labelTop
+    for (const short of [true, false]) {
+      h.board.beginDrag(handHit(h))
+      h.cancel.mockClear()
+      h.present()
+      expect(internals(h).drag).not.toBeNull()
+      presentation.short = short
+      h.present()
+      expect(internals(h).drag).toBeNull()
+      expect(h.cancel).toHaveBeenCalledOnce()
+      expect(h.stage.scrollTop).toBeCloseTo(short ? bottomOf(h, 'hand') - VIEW : nearLabelTop)
+    }
+  })
+
+  it('summons once from a touch drag that auto-scrolls over the drop zone, and a drag scrolled back over the hand submits nothing', () => {
+    const h = coverBoard({ shell: RAIL, short: true, selection: NO_BOARD_SELECTION })
+    const captures = new Set<number>()
+    Object.assign(h.canvas, {
+      setPointerCapture: (pointer: number) => captures.add(pointer),
+      hasPointerCapture: (pointer: number) => captures.has(pointer),
+      releasePointerCapture: (pointer: number) => captures.delete(pointer),
+    })
+    const playCard = vi.fn()
+    const activate = vi.fn()
+    const interaction = new ThreeInteraction(h.board, () => buildViewModel(h.app, false), () => false, playCard, activate)
+    h.cancel.mockImplementation(() => interaction.cancel())
+    const { layout } = internals(h)
+    const pointer = { pointerId: 7, pointerType: 'touch', buttons: 1 }
+    const move = (clientX: number, clientY: number) => emit(h.canvas, 'pointermove', { ...pointer, clientX, clientY })
+    const release = (clientX: number, clientY: number) =>
+      emit(h.canvas, 'pointerup', { ...pointer, buttons: 0, clientX, clientY })
+    /** Presses a hand card where the scrolled board shows it. */
+    const press = () => {
+      const hit = handHit(h)
+      const anchor = h.registry.get(hit.key)!.anchor()
+      const clientY = layout.height / 2 - anchor.y - h.stage.scrollTop
+      expect(clientY).toBeGreaterThan(0)
+      expect(clientY).toBeLessThan(VIEW)
+      emit(h.canvas, 'pointerdown', { ...pointer, clientX: layout.width / 2 + anchor.x, clientY })
+      return hit
+    }
+    const x = layout.width / 2 + layout.drop.x
+    // Scrolled to the end of the board, a finger held in the top band over the
+    // drop zone scrolls it back up, and the landing ghost stays in view.
+    h.stage.scrollTop = 136
+    const hit = press()
+    move(x, 30)
+    expect(interaction.dragging).toBe(true)
+    expect(internals(h).drag!.accepted).toBe(true)
+    expect(h.scrollFrames()).toBe(1)
+    for (const time of [1000, 1064, 1128]) h.step(time)
+    const scrolled = h.stage.scrollTop
+    expect(scrolled).toBeLessThan(120)
+    expect(internals(h).drag!.accepted).toBe(true)
+    const { landing } = internals(h)
+    const landingTop = layout.height / 2 - landing.position.y - landing.scale.y / 2
+    expect(landing.visible).toBe(true)
+    expect(landingTop).toBeGreaterThanOrEqual(scrolled)
+    expect(landingTop + landing.scale.y).toBeLessThanOrEqual(scrolled + VIEW)
+    release(x, 30)
+    expect(playCard).toHaveBeenCalledExactlyOnceWith(hit.cardId)
+    expect(interaction.dragging).toBe(false)
+    // The scroll ended with the drag; a late frame does nothing.
+    h.step(1192)
+    expect(h.stage.scrollTop).toBe(scrolled)
+    // A second drag goes over the drop zone, then back down over the hand,
+    // which scrolls the board to its end again; releasing there cancels.
+    press()
+    move(x, 30)
+    expect(internals(h).drag!.accepted).toBe(true)
+    move(x, 200)
+    expect(internals(h).drag!.accepted).toBe(false)
+    for (const time of [2000, 2064, 2128, 2192]) h.step(time)
+    expect(h.stage.scrollTop).toBe(136)
+    release(x, 200)
+    expect(playCard).toHaveBeenCalledOnce()
+    expect(activate).not.toHaveBeenCalled()
+    expect(interaction.dragging).toBe(false)
+    expect(captures.size).toBe(0)
+    expect(h.feedback).toHaveBeenLastCalledWith(null)
+    interaction.dispose()
   })
 })

@@ -185,6 +185,26 @@
   gap: 6px;
 }
 
+/*
+ * Short rail (a landscape screen at most 480px tall, such as the cover screen
+ * held sideways): a top bar above the board would leave it too little height,
+ * so the board takes the full height and the top bar heads the rail instead.
+ * The actions wrap in rows (interface.css) and keep their full height; when
+ * large text outgrows the rail, the dock below the top bar scrolls as a whole,
+ * End Turn included, rather than clipping.
+ */
+.three-root--game[data-shell="rail"][data-shell-short="true"] {
+  grid-template-areas:
+    "stage hud"
+    "stage rail";
+}
+
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-dock {
+  grid-template-rows: minmax(var(--three-dock-prompt-height), 1fr) max-content auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .three-root--game[data-shell] .three-dock[hidden],
 .three-root--narrow .three-dock[hidden],
 .three-dock [hidden] {

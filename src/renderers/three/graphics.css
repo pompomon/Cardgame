@@ -270,6 +270,11 @@
  * shells reserve them only for a hand with more pages (board.ts applySize).
  */
 .three-board-stage[data-layout="narrow"] .three-board-label[data-row="hand"] { min-height: 50px; }
+/*
+ * The short rail's paged hand header is a 44px strip: the pager buttons bleed
+ * into its padding and border instead of growing it.
+ */
+.three-root[data-shell-short="true"] .three-board-stage[data-layout="rail"] .three-board-pagination button { margin-block: -3px; }
 .three-board-stage[data-layout="narrow"] .three-board-label > .three-board-pagination,
 .three-board-stage[data-layout="dock"] .three-board-label > .three-board-pagination,
 .three-board-stage[data-layout="rail"] .three-board-label > .three-board-pagination {

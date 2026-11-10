@@ -1021,3 +1021,44 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/*
+ * Short rail (renderer.css): the top bar heads the rail column. Its title and
+ * status scroll together, with the menu and Hint buttons pinned beside them.
+ */
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-interface .three-hud[data-layout="rail"] {
+  grid-template-rows: auto auto;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-interface .three-hud[data-layout="rail"] > [data-action="menu"],
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-interface .three-hud[data-layout="rail"] > [data-action="tutorial-show"] {
+  position: sticky;
+  top: 0;
+  align-self: start;
+}
+
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-interface .three-hud[data-layout="rail"] > p {
+  max-height: none;
+  overflow: visible;
+}
+
+/* The short rail's board starts at the top of the screen, and so does the banner. */
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-interface .three-tutorial-banner {
+  top: 12px;
+  top: calc(max(4px, env(safe-area-inset-top)) + 8px);
+}
+
+/* Short-rail actions share rows at 48px; the dock scrolls rather than this row. */
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-dock-actions.three-interface {
+  flex-direction: row;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.three-root--game[data-shell="rail"][data-shell-short="true"] .three-dock-actions.three-interface button {
+  flex: 1 1 auto;
+  padding-inline: 6px;
+}

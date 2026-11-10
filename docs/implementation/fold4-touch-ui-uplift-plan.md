@@ -112,6 +112,17 @@ The approved decisions are:
   - [ ] Fold4 device check of Figures 5 and 6 (pending maintainer: needs a
     physical Galaxy Z Fold4)
 - [ ] Milestone 4 — Short landscape (cover screen and phones held sideways)
+  - [x] Short-rail CSS: the top bar heads the rail, the board takes the full
+    height beside it, and the dock wraps its actions and scrolls at large
+    text sizes
+  - [x] A 44 px paged hand strip, a sideways lift (`preferSide`) that leaves
+    the landing ghost in view, and a near-lane anchor that keeps the hand in
+    view, with focused tests
+  - [x] 882×232 and 844×390 geometry at 100% and 200% text, and a summon and
+    a cancel after edge auto-scroll
+  - [x] Agent docs and README: the short rail
+  - [ ] Fold4 device check of Figure 7 (pending maintainer: needs a physical
+    Galaxy Z Fold4)
 - [ ] Milestone 5 — Documentation, hardening, and device release gate
 
 Each milestone is a separately reviewable change. It includes its own focused
@@ -840,8 +851,10 @@ The implementation differs from the scope above in these ways:
   page, or the first card of that page when the page size changes. Entering
   or leaving `desktop` starts on the first page, because `desktop` shows the
   whole hand.
-- Until Milestone 4, a short rail (the cover screen or a phone held sideways)
-  keeps the board at its 356 px minimum and scrolls it.
+- In this milestone, a short rail (the cover screen or a phone held sideways)
+  keeps the top bar above the board, which stays at its 356 px minimum and
+  scrolls. [Milestone 4](#milestone-4--short-landscape) moves the top bar into
+  the rail.
 - The geometry tests estimate the single-line header heights. The browser
   evidence measures them.
 
@@ -893,6 +906,46 @@ The implementation differs from the scope above in these ways:
 
 - On device, a full game can be played by touch alone on the cover screen in
   landscape.
+
+**As built**
+
+The implementation differs from the scope above in these ways:
+
+- Milestone 3 already gave the top bar a fixed rem height
+  (`--three-topbar-height`), so this milestone only moves it. In the short
+  rail it heads the rail column at that height. The narrower column wraps the
+  title onto two lines, so at 100% text one status line stays in view. As in
+  the other touch shells, the top bar keeps its height rather than growing
+  with the status. Longer statuses and larger text scroll the title and
+  status together under the pinned menu and Hint buttons.
+- The actions keep their 48 px height and wrap in rows. When large text
+  outgrows the rail, the dock below the top bar scrolls as a whole, End Turn
+  included, instead of clipping them. At 200% text on the cover screen, the
+  top bar takes 112 of the column's 224 px, so End Turn starts below the
+  dock's fold. With a card selected, the dock scrolls 137 px. Milestone 5
+  revisits it.
+- The near-lane anchor also keeps the whole hand in view, so a drag starts
+  and lands without scrolling. When the near lane and the hand cannot both
+  fit, the near header leaves the view first, then the top of the near lane.
+  On the cover screen at 100% text, the anchor scrolls 132 of 136 px and the
+  near lane's cards stay whole. At 200% text with a paged hand, about half of
+  the near lane stays in view.
+- At 844×390 the stage is 378 px tall, or 361 px with a notch and gesture
+  bar. Both are above the 356 px minimum board, so at 100% text the board
+  fits without scrolling.
+- With `preferSide`, the card keeps its current side while it fits, then
+  takes the only side that fits, then the roomier side, with ties going left.
+  It goes above only when neither side fits but above does.
+- A sideways card shares the near lane's rows with the landing ghost, so it
+  first takes the only side that fits without covering the ghost. Near the
+  ghost's centre both sides cover it, or neither does, so the card keeps its
+  side there instead of flickering. Without this rule, a card dragged
+  straight up from the hand hid the ghost at both 882×232 and 844×390.
+- The 44 px paged hand strip applies only to the short rail. `dock` and the
+  taller `rail` keep 50 px.
+- The summon and cancel tests drive the real `ThreeInteraction` and
+  `ThreeBoard` in `three-battlefield-controls.test.ts`, because
+  `three-interaction.test.ts` uses a stub board that cannot scroll.
 
 ### Milestone 5 — Documentation, hardening, and device release gate
 

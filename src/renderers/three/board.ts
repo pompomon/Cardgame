@@ -52,6 +52,8 @@ interface DragVisual {
   accepted: boolean
   /** The touch card's side of the finger, kept so it does not flip while it fits. */
   side: DragProxySide | undefined
+  /** The landing ghost in drag-layer pixels, which a sideways card leaves in view. */
+  landing: LayerRect | undefined
   /** The source card's unscaled size in board units. */
   readonly width: number
   readonly height: number
@@ -102,6 +104,8 @@ const NARROW_TARGET_LABEL_MIN = 46
 const TARGET_LABEL_MIN = 64
 /** A hand header holding the pager: 44px buttons plus its padding and border (graphics.css). */
 const PAGED_HAND_HEADER_MIN = 50
+/** The short rail's paged hand header: a strip no taller than its 44px pager buttons (graphics.css). */
+const SHORT_PAGED_HAND_HEADER_MIN = 44
 
 /** Presentation-only grouping: unknown cards share the first slot. */
 function typeSlot(card: { readonly name: string; readonly serializedKey?: BasicLand }): number {
@@ -195,6 +199,8 @@ export class ThreeBoard implements ThreeBoardApi {
   private primaryDocked = false
   /** The in-game shell; every shell but `desktop` uses the typed-slot touch layout. */
   private shell: ThreeShellProfile = 'desktop'
+  /** A short `rail` (see ThreeBoardPresentation.short). */
+  private short = false
   private selection: ThreeBoardSelection = NO_BOARD_SELECTION
   private renderer: WebGLRenderer | null = null
   private assets: ThreeAssets | null = null
@@ -401,12 +407,15 @@ export class ThreeBoard implements ThreeBoardApi {
     this.inputBlocked = blocked
     const presentation = this.presentation()
     const shell: ThreeShellProfile = isTouchLayoutMode(presentation.shell) ? presentation.shell : 'desktop'
+    const short = shell === 'rail' && presentation.short === true
     const touchLayout = shell !== 'desktop'
     // The dock prompt announces drags in every touch shell, so this overlay
     // stays quiet there. Politeness changes before any text does.
     const live = touchLayout ? 'off' : 'polite'
     if (this.instruction.getAttribute('aria-live') !== live) this.instruction.setAttribute('aria-live', live)
-    const switched = shell !== this.shell
+    // A rail turning short (or back) moves the board beside the rail, which
+    // moves every card, so it is a switch too.
+    const switched = shell !== this.shell || short !== this.short
     if (switched) {
       // Switching shells moves every card, so no gesture can survive it.
       this.endDrag(false)
@@ -422,6 +431,7 @@ export class ThreeBoard implements ThreeBoardApi {
       }
     }
     this.shell = shell
+    this.short = short
     this.selection = touchLayout ? presentation.selection : NO_BOARD_SELECTION
     this.placePrimaryButton()
     this.updateQuality()
@@ -838,7 +848,7 @@ export class ThreeBoard implements ThreeBoardApi {
     source.setOpacity(0.35)
     const { width, height } = source.anchor()
     const drag: DragVisual = {
-      source, proxy, layered: false, accepted: false, side: undefined, width, height,
+      source, proxy, layered: false, accepted: false, side: undefined, landing: undefined, width, height,
       pillBottom: 0, pointerX: Number.NaN, pointerY: Number.NaN, pointerTouch: false,
       returning: false, elapsed: 0, fromX: 0, fromY: 0,
     }
@@ -884,7 +894,7 @@ export class ThreeBoard implements ThreeBoardApi {
         left: (visible.left - rect.left) * scaleX, top: (visible.top + pill - rect.top) * scaleY,
         width: visible.width * scaleX, height: (visible.height - pill) * scaleY,
       },
-      touch, side: drag.side,
+      touch, side: drag.side, preferSide: this.short, landing: drag.landing,
     })
     drag.side = placement.side
     drag.proxy.group.position.x = placement.x - this.layout.width / 2
@@ -1043,14 +1053,25 @@ export class ThreeBoard implements ThreeBoardApi {
     this.scrollFrame = requestAnimationFrame(this.autoScroll)
   }
 
-  /** Scrolls a touch-layout stage the least amount that shows the near lane, header included. */
+  /**
+   * Scrolls a touch-layout stage the least amount that shows the near lane,
+   * header included. The short rail also keeps the hand below it in view, so
+   * a drag starts and lands without scrolling: when they cannot all fit, the
+   * near header goes first, then the top of the near lane.
+   */
   private anchorNearLane(): void {
     const max = this.maxScroll()
     if (!this.touchLayout || max === 0 || !this.usable()) return
     const row = this.layout.rows.near
-    const laneTop = Math.min(row.labelTop, this.layout.height / 2 - row.y - row.height / 2)
-    const laneBottom = Math.max(row.labelTop + row.labelHeight, this.layout.height / 2 - row.y + row.height / 2)
+    const nearTop = this.layout.height / 2 - row.y - row.height / 2
+    let laneTop = Math.min(row.labelTop, nearTop)
+    let laneBottom = Math.max(row.labelTop + row.labelHeight, this.layout.height / 2 - row.y + row.height / 2)
     const view = this.stage.clientHeight || 0
+    if (this.short) {
+      const hand = this.layout.rows.hand
+      laneBottom = this.layout.height / 2 - hand.y + hand.height / 2
+      if (laneBottom - laneTop > view) laneTop = Math.max(nearTop, laneBottom - view)
+    }
     const top = this.stage.scrollTop || 0
     const next = clamp(laneBottom - laneTop >= view || laneTop < top ? laneTop
       : laneBottom > top + view ? laneBottom - view : top, 0, max)
@@ -1096,6 +1117,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const drag = this.drag
     const game = this.view?.game
     if (!drag || drag.returning || !game) {
+      if (drag) drag.landing = undefined
       this.landing.visible = false
       this.dragLayer.setLanding(null)
       return
@@ -1109,12 +1131,13 @@ export class ThreeBoard implements ThreeBoardApi {
     this.landing.position.set(rect.x, rect.y, 0)
     this.landing.scale.set(rect.width, rect.height, 1)
     this.landing.visible = true
-    this.dragLayer.setLanding({
+    drag.landing = {
       left: this.layout.width / 2 + rect.x - rect.width / 2,
       top: this.layout.height / 2 - rect.y - rect.height / 2,
       width: rect.width,
       height: rect.height,
-    }, rect.occupied ? LANDING_STACK_LABEL : LANDING_LABEL)
+    }
+    this.dragLayer.setLanding(drag.landing, rect.occupied ? LANDING_STACK_LABEL : LANDING_LABEL)
   }
 
   private writeInstruction(text: string): void {
@@ -1374,7 +1397,7 @@ export class ThreeBoard implements ThreeBoardApi {
     // page, so the page count still depends on the hand size alone, which a
     // drag never changes.
     if (touchLayout && shell !== 'narrow' && this.handCount() > narrowHandPageSize(nextLayout)) {
-      headers.hand = Math.max(PAGED_HAND_HEADER_MIN, headers.hand)
+      headers.hand = Math.max(this.short ? SHORT_PAGED_HAND_HEADER_MIN : PAGED_HAND_HEADER_MIN, headers.hand)
       nextLayout = narrowBoardLayout(width, stageHeight, headers, shell)
     }
     // Touch layouts may grow taller than the stage to keep headers and touch targets intact.

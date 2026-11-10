@@ -166,7 +166,7 @@ export class ThreeRenderer implements AppRenderer {
   }
 
   private readonly boardPresentation = (): ThreeBoardPresentation => this.gameShell !== 'desktop' && this.ui
-    ? { shell: this.gameShell, selection: this.ui.selection }
+    ? { shell: this.gameShell, short: this.shell.short, selection: this.ui.selection }
     : DEFAULT_BOARD_PRESENTATION
 
   unmount(): void {

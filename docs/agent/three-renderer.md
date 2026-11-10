@@ -179,7 +179,9 @@ its visible top or bottom.
 ### Relayout
 
 On relayout the board anchors the stage scroll to the near lane, so the lane
-stays in view.
+stays in view. The short rail also keeps the whole hand below it in view, so a
+drag starts and lands without scrolling. When they cannot all fit, the near
+header leaves the view first, then the top of the near lane.
 
 Viewport and observer callbacks interrupt gestures only when something really
 changed. A new layout ends the drag, cancels the interaction (closing a peek or
@@ -226,12 +228,20 @@ removes both listeners.
 - **Pager row.** `narrow` always reserves the 50 px hand pager row. `dock`
   and `rail` reserve it only while the hand has more than one page. Only the
   hand size changes the page count, so the row never moves during a drag.
+  The short rail's row is a 44 px strip, and its buttons bleed into the
+  header's padding.
 - **Viewport.** `compactBoardViewport` uses the layout viewport
   (`window.innerHeight`) instead of the `visualViewport` height.
 - **Switching.** Any shell change ends a drag, cancels the interaction, and
   makes the hand page follow the selection, or else keeps the browsed page.
   Entering or leaving `desktop` instead starts on page 0 and moves the
   primary button and the hand pager.
+- **Short rail.** A rail on a landscape screen at most 480 px tall, such as
+  the cover screen held sideways, passes `short: true` in
+  `ThreeBoardPresentation`; other shells ignore it. The board then takes the
+  full height beside the rail, a lifted touch card goes beside the finger
+  whenever a side fits (`preferSide`), and the near-lane anchor keeps the
+  hand in view. A rail turning short or back is a shell switch.
 - **CSS.** `[data-shell]` selectors replace the board's `max-width: 480px`
   rules, and every `env(safe-area-inset-*)` value has a plain fallback first.
   `dock` puts a fixed, rem-based two-line dock under the board; its action
@@ -239,7 +249,10 @@ removes both listeners.
   `rail` uses `grid-template-columns: minmax(0, 1fr) clamp(180px, 26vw, 240px)`:
   the top bar stays above the board, and the full-height rail stacks the
   prompt, 48 px actions, and the primary button. The target panel and the
-  tutorial banner stay clear of the rail.
+  tutorial banner stay clear of the rail. In the short rail the top bar heads
+  the rail column instead. Its title and status scroll under the pinned menu
+  and Hint buttons, and the actions wrap in rows. When large text outgrows the
+  rail, the dock below the top bar scrolls as a whole, End Turn included.
 
 Keep action instructions and effect captions as stage-level overlays rather
 than row content. Changing a wrapped prompt during an active drag can trigger
@@ -251,9 +264,12 @@ During a live drag the instruction becomes a pill at the top of the visible
 stage (`scrollTop` + 4 px), clear of the drop zone, and returns to the near row
 when the drag ends. A passive stage `scroll` listener keeps it there when the
 board scrolls mid-drag (a wheel, or edge auto-scroll), and re-places the card
-and its acceptance from the last pointer. Touch and pen placement reserves the
-pill's band, measured once at drag start, so the pill never covers a touch
-card; a mouse card stays under the cursor. The pill's text changes only when
+and its acceptance from the last pointer. Touch and pen lift a smaller card
+above the finger, or beside it without room above, and keep its side while it
+fits (`dragProxyPlacement()` in `layout.ts`); the short rail prefers a side.
+Touch and pen placement reserves the pill's band, measured once at drag
+start, so the pill never covers a touch card; a mouse card stays under the
+cursor. The pill's text changes only when
 acceptance changes, and the end of a drag restores the current idle text,
 which may be a response prompt. In every touch shell it is hidden except as
 the pill and reserves no caption space. Drag feedback changes only colour,
@@ -268,7 +284,10 @@ the canvas, or outside the stage's visible box never drops.
 `ThreeBoard` owns one `ThreeDragLayer` (`drag-layer.ts`): an `aria-hidden`,
 pointer-transparent overlay inside `.three-board-stage`, so it scrolls with the
 board. It draws the lifted card above the HTML headers and labels the landing
-slot ("Lands here", or "+1" on an occupied touch-shell type slot). Each drag holds
+slot ("Lands here", or "+1" on an occupied touch-shell type slot). A touch card
+lifts above the finger, or beside it without room above (and whenever a side
+fits on the short rail). When exactly one side fits without covering the
+landing slot, a sideways card takes that side. Each drag holds
 at most one extra card-face lease for it, released by `endDrag` on every path,
 including disposal. Without a 2D context, or when painting fails, the
 in-scene proxy stays visible instead. A move changes only CSS transforms.
