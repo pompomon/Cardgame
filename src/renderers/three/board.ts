@@ -82,7 +82,7 @@ interface DragVisual {
   pointerX: number
   pointerY: number
   pointerTouch: boolean
-  /** The stage's scroll position, tracked so that a move or an auto-scroll step never reads it. */
+  /** The stage's scroll position, tracked so that moves and auto-scroll steps need not read it while the geometry is kept. */
   scrollTop: number
   geometry: DragGeometry | null
   returning: boolean
@@ -1082,7 +1082,7 @@ export class ThreeBoard implements ThreeBoardApi {
     const next = clamp(top + step, 0, maxScroll)
     if (next !== top) {
       this.stage.scrollTop = next
-      // Tracked rather than read back, so a step never forces a layout.
+      // Tracked rather than read back, which would be a layout read.
       drag.scrollTop = next
       this.positionInstruction()
       // The card stays under the finger over the moved board.

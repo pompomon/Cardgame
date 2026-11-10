@@ -124,8 +124,9 @@ The approved decisions are:
   - [ ] Fold4 device check of Figure 7 (pending maintainer: needs a physical
     Galaxy Z Fold4)
 - [ ] Milestone 5 — Documentation, hardening, and device release gate
-  - [x] Drag geometry measured once per drag: moves, edge auto-scroll steps,
-    and the release read no layout, with read-counting tests
+  - [x] Drag geometry measured on the first move and reused by later moves,
+    edge auto-scroll steps, and the release until something may move the
+    stage, with read-counting tests
   - [x] The `narrow` dock's action row grows with End Turn, so its
     three-line prompt stays whole at 200% text
   - [x] Final pass over the README controls and agent docs, and the

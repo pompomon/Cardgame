@@ -171,7 +171,7 @@ its visible top or bottom.
 - **Steps.** `requestAnimationFrame` drives the steps. The first assumes
   16 ms, and later steps are clamped to 64 ms. Fractions carry, so slow speeds
   still move. After each step the board pins the pill and reruns `moveDrag`
-  with the last pointer. A step reads no layout (see
+  with the last pointer. A step reuses the drag's measured geometry (see
   [Drag geometry](#drag-geometry)).
 - **Stops.** The loop stops when the finger leaves the band, at either scroll
   end, and on release, cancellation, relayout, and disposal. A late frame does
@@ -179,9 +179,10 @@ its visible top or bottom.
 
 ### Drag geometry
 
-A live drag reads layout once. Its first move measures the canvas's client
-box, the stage's visible box, and the stage's scroll range (`DragGeometry` in
-`board.ts`). Later moves, edge auto-scroll steps, and the release reuse them:
+A live drag measures its geometry once and keeps it until something may move
+the stage. Its first move measures the canvas's client box, the stage's
+visible box, and the stage's scroll range (`DragGeometry` in `board.ts`).
+Later moves, edge auto-scroll steps, and the release reuse them:
 
 - **Scroll offset.** The stage scrolls only vertically, so the drag tracks its
   `scrollTop` and moves the measured canvas box by the difference. An
