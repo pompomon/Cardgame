@@ -65,8 +65,11 @@ export interface ThreeBoardApi {
   /** Shows the long-press ring under a held finger. */
   showPeekRing(clientX: number, clientY: number): void
   hidePeekRing(): void
-  /** Where a peek of `hit` opens for a finger at the given point, or null when it cannot open. */
-  peekPlacement(hit: BoardHit, clientX: number, clientY: number): PeekPlacement | null
+  /**
+   * Where a peek of `hit` opens for a finger at the given point, or null when
+   * it cannot open. `fits` can refuse a side whose room would clip the peek.
+   */
+  peekPlacement(hit: BoardHit, clientX: number, clientY: number, fits?: (placement: PeekPlacement) => boolean): PeekPlacement | null
   playEffect(effect: VisualEffectDescriptor, duration: number, done: () => void): () => void
   setVisible(visible: boolean): void
   dispose(): void

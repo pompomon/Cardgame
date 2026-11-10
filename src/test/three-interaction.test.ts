@@ -205,6 +205,8 @@ function createHarness() {
     /** Whether the interface would preview a card; off unless a test exercises the long-press peek. */
     previewable: false,
     placement: placement as PeekPlacement | null,
+    /** Whether the whole peek would show at the placement. */
+    fits: true,
   }
   const board = {
     canvas: canvas as unknown as HTMLCanvasElement,
@@ -220,19 +222,22 @@ function createHarness() {
     setVisible: vi.fn(),
     showPeekRing: vi.fn(),
     hidePeekRing: vi.fn(),
-    peekPlacement: vi.fn((): PeekPlacement | null => controls.placement && { ...controls.placement }),
+    peekPlacement: vi.fn((_hit: BoardHit, _x: number, _y: number, fits?: (placement: PeekPlacement) => boolean): PeekPlacement | null => (
+      controls.placement && (!fits || fits({ ...controls.placement })) ? { ...controls.placement } : null
+    )),
     dispose: vi.fn(),
   } satisfies ThreeBoardApi
   const playCard = vi.fn()
   const activate = vi.fn()
   const hover = vi.fn()
   const canPeek = vi.fn((_hit: BoardHit) => controls.previewable)
+  const peekFits = vi.fn((_peek: ThreePeek) => controls.fits)
   const peek = vi.fn<(peek: ThreePeek | null) => void>()
   const interaction = new ThreeInteraction(
-    board, () => controls.view, () => controls.blocked, playCard, activate, hover, { canPeek, onPeek: peek },
+    board, () => controls.view, () => controls.blocked, playCard, activate, hover, { canPeek, peekFits, onPeek: peek },
   )
   return {
-    interaction, canvas, board, playCard, activate, hover, canPeek, peek, controls,
+    interaction, canvas, board, playCard, activate, hover, canPeek, peekFits, peek, controls,
     document: canvas.ownerDocument,
     window: canvas.ownerDocument.defaultView,
     start: (fields: EventFields = {}) => canvas.emit('pointerdown', fields),
@@ -1063,8 +1068,9 @@ describe('ThreeInteraction long-press peek', () => {
     expect(h.peek).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(h.peek).toHaveBeenCalledExactlyOnceWith({ hit: handHit, placement })
-    // The peek is placed from where the press began, beside the held card.
-    expect(h.board.peekPlacement).toHaveBeenLastCalledWith(handHit, 180, 620)
+    // The peek is placed from where the press began, beside the held card, where all of it fits.
+    expect(h.board.peekPlacement).toHaveBeenLastCalledWith(handHit, 180, 620, expect.any(Function))
+    expect(h.peekFits).toHaveBeenLastCalledWith({ hit: handHit, placement })
     expect(h.board.beginDrag).not.toHaveBeenCalled()
     expect(h.board.hidePeekRing).not.toHaveBeenCalled()
     expect(h.interaction.dragging).toBe(false)
@@ -1175,6 +1181,29 @@ describe('ThreeInteraction long-press peek', () => {
     expect(h.board.showPeekRing).not.toHaveBeenCalled()
     expect(h.peek).not.toHaveBeenCalled()
     expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, fields.pointerType)
+  }))
+
+  it.each([
+    ['at its ring', 0, false],
+    ['once it opens', PEEK_RING_DELAY_MS, true],
+  ] as const)('keeps a press a tap when the whole peek would not fit %s', (_name, ms, ring) => withFakeTimers(() => {
+    const h = createHarness()
+    h.controls.previewable = true
+    h.controls.fits = ring
+    h.start({ pointerType: 'touch' })
+    // Pointerdown only checks for room; the interface measures from the ring on.
+    expect(h.peekFits).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(ms)
+    h.controls.fits = false
+    vi.advanceTimersByTime(PEEK_HOLD_MS)
+    expect(h.peekFits).toHaveBeenCalledTimes(2)
+    expect(h.peekFits).toHaveBeenLastCalledWith({ hit: handHit, placement })
+    expect(h.peek).not.toHaveBeenCalled()
+    expect(h.board.showPeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    expect(h.board.hidePeekRing).toHaveBeenCalledTimes(ring ? 1 : 0)
+    h.release({ pointerType: 'touch' })
+    expect(h.activate).toHaveBeenCalledExactlyOnceWith(handHit, 'touch')
+    expect(vi.getTimerCount()).toBe(0)
   }))
 
   it.each([

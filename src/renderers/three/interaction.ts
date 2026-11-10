@@ -12,11 +12,14 @@ import {
 } from '../shared/drag-state'
 import type { BoardHit, ThreeBoardApi, ThreePeek } from './contracts'
 import { threeDecisionKey } from './interface-model'
+import type { PeekPlacement } from './layout'
 
 /** Long-press peek wiring. Without `canPeek`, a held press stays a tap. */
 export interface ThreeInteractionOptions {
   /** Whether the interface would preview `hit` now. */
   readonly canPeek?: (hit: BoardHit) => boolean
+  /** Whether the whole peek would show at its placement; a clipped peek stays a tap. */
+  readonly peekFits?: (peek: ThreePeek) => boolean
   /** Opens a peek, or closes it with `null`. */
   readonly onPeek?: (peek: ThreePeek | null) => void
   /** The long-press timers; injectable for tests. */
@@ -90,6 +93,7 @@ export class ThreeInteraction {
   private readonly activate: (hit: BoardHit, pointerType: DragPointerType) => void
   private readonly onHover: (hit: BoardHit | null) => void
   private readonly canPeek: (hit: BoardHit) => boolean
+  private readonly peekFits: (peek: ThreePeek) => boolean
   private readonly onPeek: (peek: ThreePeek | null) => void
   private readonly document: Document
   private readonly window: Window | null
@@ -117,6 +121,7 @@ export class ThreeInteraction {
     this.activate = activate
     this.onHover = onHover
     this.canPeek = options.canPeek ?? (() => false)
+    this.peekFits = options.peekFits ?? (() => true)
     this.onPeek = options.onPeek ?? (() => {})
     this.state = new DragStateMachine(options.timers)
     this.document = board.canvas.ownerDocument
@@ -277,18 +282,28 @@ export class ThreeInteraction {
   }
 
   private ringPeek(gesture: Gesture): void {
-    if (this.gesture !== gesture || !this.isCurrent(gesture) || !this.canPeek(gesture.hit)) {
+    // Measure before ringing, so a press whose peek cannot fit shows no ring.
+    if (this.gesture !== gesture || !this.isCurrent(gesture) || !this.canPeek(gesture.hit) || !this.placePeek(gesture)) {
       return
     }
     gesture.ringShown = true
     this.board.showPeekRing(gesture.startX, gesture.startY)
   }
 
+  /**
+   * Where the held card's peek opens with all of it in view, from where the
+   * press began. Null keeps the press a tap: the panel cannot be scrolled.
+   */
+  private placePeek(gesture: Gesture): PeekPlacement | null {
+    const hit = gesture.hit
+    return this.board.peekPlacement(hit, gesture.startX, gesture.startY, (placement) => this.peekFits({ hit: { ...hit }, placement }))
+  }
+
   /** Opens the peek once the press is held; refusing it keeps the press a tap. */
   private openPeek(gesture: Gesture): boolean {
     const view = this.getView()
     const placement = view && this.gesture === gesture && this.isCurrent(gesture) && this.canPeek(gesture.hit)
-      ? this.board.peekPlacement(gesture.hit, gesture.startX, gesture.startY)
+      ? this.placePeek(gesture)
       : null
     if (!view || !placement) {
       this.closePeek(gesture)

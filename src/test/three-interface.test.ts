@@ -1237,6 +1237,46 @@ describe('Three long-press peek', () => {
     h.ui.dispose()
   })
 
+  it('fits a peek only when all of it shows, measuring a probe in the overlay that it removes again', () => {
+    const view = makeView()
+    const h = setup(view)
+    h.ui.setHover(hit())
+    const hover = [...overlay(h).children]
+    const builds = [h.content.builds, overlay(h).builds]
+    const changes = h.onChange.mock.calls.length
+    // The panel clips at 260px; layout rounds each height to whole pixels.
+    const size = { scrollHeight: 261, clientHeight: 260 }
+    const measured: boolean[] = []
+    const create = h.document.createElement.bind(h.document)
+    vi.spyOn(h.document, 'createElement').mockImplementation((tag: string) => {
+      const element = create(tag)
+      if (element.tagName !== 'ASIDE') return element
+      // The probe is measured inside the overlay, where the peek's styles apply.
+      Object.defineProperty(element, 'clientHeight', { get: () => { measured.push(overlay(h).contains(element)); return size.clientHeight } })
+      Object.defineProperty(element, 'scrollHeight', { get: () => size.scrollHeight })
+      return element
+    })
+    expect(h.ui.peekFits({ hit: islandHit(), placement })).toBe(true)
+    size.scrollHeight = 262
+    expect(h.ui.peekFits({ hit: islandHit(), placement })).toBe(false)
+    // A panel with no layout box would show nothing.
+    Object.assign(size, { scrollHeight: 0, clientHeight: 0 })
+    expect(h.ui.peekFits({ hit: islandHit(), placement })).toBe(false)
+    expect(measured).toEqual([true, true, true])
+    // The hover underneath is untouched, and nothing is announced or rebuilt.
+    expect(overlay(h).children).toHaveLength(hover.length)
+    expect(overlay(h).children.every((child, index) => child === hover[index])).toBe(true)
+    expect(overlay(h).querySelector('.three-peek')).toBeNull()
+    expect([h.content.builds, overlay(h).builds]).toEqual(builds)
+    expect(h.onChange).toHaveBeenCalledTimes(changes)
+    // A card the interface would not preview, or an unusable placement, never fits.
+    expect(h.ui.peekFits({ hit: { ...islandHit(), key: 'missing', instanceId: 'missing' }, placement })).toBe(false)
+    expect(h.ui.peekFits({ hit: islandHit(), placement: { ...placement, maxHeight: Number.NaN } })).toBe(false)
+    expect(measured).toHaveLength(3)
+    h.ui.dispose()
+    expect(h.ui.peekFits({ hit: islandHit(), placement })).toBe(false)
+  })
+
   it('never peeks at a hidden card or outside a game', () => {
     const view = makeView()
     view.game!.players[1].handCards = [{ id: 'secret', name: HIDDEN_HAND_CARD_NAME }]

@@ -109,8 +109,19 @@ same projection and gates as Details, so a peek reveals nothing a preview
 would hide. Eligible Interception cards qualify, unlike hover.
 
 `peekPlacement()` in `layout.ts` places the peek in client pixels, on the half
-of the stage away from the finger, and never over the held card. Without a
-preview or room, a held press stays a tap.
+of the stage away from the finger, and never over the held card. The panel
+cannot scroll, so a peek opens only on a side where all of it fits:
+
+- Pointerdown checks only the geometry, so a tap never measures the DOM.
+- When the ring is due, and again when the peek opens, the interaction passes
+  a `fits` check through `ThreeBoardApi.peekPlacement()`. The tile shrinks
+  with the room, so each side is measured on its own.
+- `ThreeInterface.peekFits()` renders a probe of the peek into the hover
+  overlay, compares its `scrollHeight` with its `clientHeight`, and removes it
+  in the same task, so the probe never paints.
+- If the preferred side would clip the peek, the other side is tried. With no
+  preview, or no side where the whole peek fits, no ring shows and a held
+  press stays a tap.
 
 - Releasing a peek closes it without a tap, so it never selects, previews,
   intercepts, or submits.

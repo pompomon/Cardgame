@@ -937,7 +937,7 @@ export class ThreeBoard implements ThreeBoardApi {
     this.dragLayer.setRing(null)
   }
 
-  peekPlacement(hit: BoardHit, clientX: number, clientY: number): PeekPlacement | null {
+  peekPlacement(hit: BoardHit, clientX: number, clientY: number, fits?: (placement: PeekPlacement) => boolean): PeekPlacement | null {
     const card = this.cards?.get(hit.key)
     const rect = this.canvas.getBoundingClientRect()
     if (!this.usable() || !card?.descriptor.visible || !card.group.visible || !(rect.width > 0 && rect.height > 0)) return null
@@ -953,6 +953,7 @@ export class ThreeBoard implements ThreeBoardApi {
         height: anchor.height * scaleY,
       },
       pointer: { x: clientX, y: clientY },
+      fits,
     })
   }
 

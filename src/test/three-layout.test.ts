@@ -7,7 +7,7 @@ import {
   landingSlotRect, MOUSE_DRAG_SCALE, NARROW_LAYOUT_MAX_WIDTH, PEEK_MIN_HEIGHT, peekPlacement,
   NARROW_LAYOUT_QUERY, NARROW_MAX_BOARD_GROWTH, NARROW_MIN_BOARD_HEIGHT, NARROW_TYPE_SLOTS, narrowBoardLayout, narrowHandPageSize, narrowHandRects, pendingCardRect, pointInRect,
   SHORT_SHELL_MAX_HEIGHT, threeShellProfile, TOUCH_DRAG_SCALE, TOUCH_DROP_SLOP_PX, TOUCH_SHELL_MAX_WIDTH, typeSlotX,
-  type BoardRect, type DragProxyInput, type LayerRect, type ThreeLayout, type ThreeShell,
+  type BoardRect, type DragProxyInput, type LayerRect, type PeekPlacement, type PeekSide, type ThreeLayout, type ThreeShell,
 } from '../renderers/three/layout'
 
 function laneBounds(layout: ThreeLayout, row: 'far' | 'near' | 'hand') {
@@ -721,6 +721,32 @@ describe('Three.js long-press peek and edge auto-scroll geometry', () => {
     const short: LayerRect = { left: 0, top: 0, width: 332, height: 180 }
     expect(peekPlacement({ stage: short, card: { left: 100, top: 60, width: 60, height: 84 }, pointer: { x: 130, y: 100 } })).toBeNull()
     expect(peekPlacement({ stage: { ...cover, width: 150 }, card: handCard, pointer: { x: 160, y: 560 } })).toBeNull()
+  })
+
+  it('tries the other side when the preferred one would clip the whole peek, and opens nowhere when neither fits', () => {
+    const tried: PeekSide[] = []
+    const needs = (height: number) => (placement: PeekPlacement) => {
+      tried.push(placement.side)
+      return placement.maxHeight >= height
+    }
+    const stage: LayerRect = { left: 0, top: 0, width: 332, height: 600 }
+    const card: LayerRect = { left: 100, top: 254, width: 60, height: 84 }
+    // The finger is low, so above is preferred, but only below has 240px.
+    const pointer = { x: 130, y: 300 }
+    expect(peekPlacement({ stage, card, pointer })).toMatchObject({ side: 'above', maxHeight: 238 })
+    expect(peekPlacement({ stage, card, pointer, fits: needs(240) })).toEqual({ left: 8, width: 316, side: 'below', y: 346, maxHeight: 246 })
+    expect(tried).toEqual(['above', 'below'])
+    tried.length = 0
+    expect(peekPlacement({ stage, card, pointer, fits: needs(250) })).toBeNull()
+    expect(tried).toEqual(['above', 'below'])
+    // A 332x300 stage leaves 104px above an 84px card at top 120, and 80px below:
+    // too short for Signal Siren's two abilities, and for any peek.
+    tried.length = 0
+    const short: LayerRect = { left: 0, top: 0, width: 332, height: 300 }
+    const held: LayerRect = { left: 100, top: 120, width: 60, height: 84 }
+    expect(peekPlacement({ stage: short, card: held, pointer: { x: 130, y: 160 } })).toMatchObject({ side: 'above', maxHeight: 104 })
+    expect(peekPlacement({ stage: short, card: held, pointer: { x: 130, y: 160 }, fits: needs(200) })).toBeNull()
+    expect(tried).toEqual(['above'])
   })
 
   it('places the peek relative to a scrolled stage and handles invalid input', () => {

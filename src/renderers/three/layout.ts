@@ -529,6 +529,11 @@ export interface PeekPlacementInput {
   readonly card: LayerRect
   /** The finger in client pixels. */
   readonly pointer: Point
+  /**
+   * Whether the whole peek fits a candidate placement. The panel cannot be
+   * scrolled, so a side that would clip the card is skipped.
+   */
+  readonly fits?: (placement: PeekPlacement) => boolean
 }
 
 export interface PeekPlacement {
@@ -553,9 +558,9 @@ export const PEEK_MIN_HEIGHT = 96
  * Where the long-press peek opens: on the half of the visible stage away from
  * the finger, as wide as the stage allows up to a readable maximum, and never
  * over the held card. Falls back to the other side when the preferred one is
- * too short, and returns null when neither side has room.
+ * too short or `fits` refuses it, and returns null when neither side has room.
  */
-export function peekPlacement({ stage, card, pointer }: PeekPlacementInput): PeekPlacement | null {
+export function peekPlacement({ stage, card, pointer, fits }: PeekPlacementInput): PeekPlacement | null {
   const values = [stage.left, stage.top, stage.width, stage.height, card.left, card.top, card.width, card.height]
   if (!values.every(Number.isFinite) || stage.width <= 0 || stage.height <= 0) return null
   const width = Math.min(PEEK_MAX_WIDTH, stage.width - 2 * PEEK_MARGIN)
@@ -568,13 +573,16 @@ export function peekPlacement({ stage, card, pointer }: PeekPlacementInput): Pee
   const preferred: PeekSide = fingerY >= stage.top + stage.height / 2 ? 'above' : 'below'
   const room = (side: PeekSide) => side === 'above' ? above : below
   const other: PeekSide = preferred === 'above' ? 'below' : 'above'
-  const side = room(preferred) < PEEK_MIN_HEIGHT && room(other) > room(preferred) ? other : preferred
-  if (room(side) < PEEK_MIN_HEIGHT) return null
   const left = clamp(card.left + card.width / 2 - width / 2, stage.left + PEEK_MARGIN, stage.left + stage.width - PEEK_MARGIN - width)
-  return {
-    left, width, side, maxHeight: room(side),
-    y: side === 'above' ? card.top - PEEK_GAP : card.top + card.height + PEEK_GAP,
+  for (const side of [preferred, other]) {
+    if (room(side) < PEEK_MIN_HEIGHT) continue
+    const placement: PeekPlacement = {
+      left, width, side, maxHeight: room(side),
+      y: side === 'above' ? card.top - PEEK_GAP : card.top + card.height + PEEK_GAP,
+    }
+    if (!fits || fits({ ...placement })) return placement
   }
+  return null
 }
 
 /** Depth of the edge bands, in CSS pixels, that scroll a scrollable stage during a touch drag. */

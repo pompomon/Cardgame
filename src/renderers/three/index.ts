@@ -68,7 +68,8 @@ export class ThreeRenderer implements AppRenderer {
         (cardId) => this.ui?.playCard(cardId),
         (hit, pointerType) => this.ui?.activate(hit, pointerType),
         (hit) => this.ui?.setHover(hit),
-        { canPeek: (hit) => this.ui?.canPeek(hit) ?? false, onPeek: (peek) => this.ui?.setPeek(peek) },
+        { canPeek: (hit) => this.ui?.canPeek(hit) ?? false, peekFits: (peek) => this.ui?.peekFits(peek) ?? false,
+          onPeek: (peek) => this.ui?.setPeek(peek) },
       )
       this.effects = new ThreeEffects(
         (effect, duration, done) => this.board!.playEffect(effect, duration, done),

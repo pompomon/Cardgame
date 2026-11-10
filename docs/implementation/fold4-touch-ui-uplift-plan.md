@@ -676,6 +676,11 @@ The implementation differs from the scope above in these ways:
   in view instead of clamping the page.
 - The cover-screen peek tile is about 114 px wide. The peek name therefore
   uses less padding and 13 px type, so "Doppelgänger" stays on one line.
+- The peek panel clips instead of scrolling, so a peek opens only on a side
+  where all of it fits. From the ring on, `ThreeInterface.peekFits()`
+  measures a probe of the peek at each candidate placement. If neither side
+  fits, no ring shows and the press stays a tap, as the
+  [fallback](#long-press-peek) describes.
 
 ### Milestone 3 — Unfolded `dock` and `rail` shells with fold continuity
 

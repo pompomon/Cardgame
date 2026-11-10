@@ -754,7 +754,8 @@
 /*
  * The long-press peek reuses the hover panel at the board's placement (set
  * inline): beside the held card, never over it, opening above it when the
- * finger is low on the stage.
+ * finger is low on the stage. It cannot scroll, so it only opens on a side
+ * where all of it fits (`ThreeInterface.peekFits`).
  */
 .three-interface .three-hover-preview.three-peek {
   right: auto;

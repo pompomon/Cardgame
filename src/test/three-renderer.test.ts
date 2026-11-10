@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   board: { render: vi.fn(), setVisible: vi.fn(), dispose: vi.fn(), announceEffect: vi.fn(), playEffect: vi.fn(), retainEffectTargets: vi.fn(), canvas: {} },
   ui: { update: vi.fn(), isBlocked: vi.fn(() => false), reset: vi.fn(), dispose: vi.fn(), targetIds: new Set(),
     response: null as CounterHandOptions | null, primaryAction: null as ThreePrimaryAction | null, activatePrimaryAction: vi.fn(), setHover: vi.fn(),
-    activate: vi.fn(), clearHandSelection: vi.fn(), setDragFeedback: vi.fn(), canPeek: vi.fn(() => true), setPeek: vi.fn(),
+    activate: vi.fn(), clearHandSelection: vi.fn(), setDragFeedback: vi.fn(), canPeek: vi.fn(() => true), peekFits: vi.fn(() => true), setPeek: vi.fn(),
     selection: { cardId: 'selected', targetId: null, discardId: null } },
   boardConstruct: vi.fn(),
   uiConstruct: vi.fn(),
@@ -73,6 +73,7 @@ afterEach(() => {
   mocks.ui.response = null
   mocks.ui.primaryAction = null
   mocks.ui.canPeek.mockReturnValue(true)
+  mocks.ui.peekFits.mockReturnValue(true)
   mocks.input.dragging = false
   vi.unstubAllGlobals()
 })
@@ -395,12 +396,17 @@ describe('Three.js composition', () => {
     expect(options.canPeek!(hit)).toBe(true)
     expect(mocks.ui.canPeek).toHaveBeenLastCalledWith(hit)
     const peek: ThreePeek = { hit, placement: { left: 8, width: 200, y: 100, maxHeight: 300, side: 'above' } }
+    mocks.ui.peekFits.mockReturnValueOnce(false)
+    expect(options.peekFits!(peek)).toBe(false)
+    expect(options.peekFits!(peek)).toBe(true)
+    expect(mocks.ui.peekFits).toHaveBeenLastCalledWith(peek)
     options.onPeek!(peek)
     expect(mocks.ui.setPeek).toHaveBeenCalledExactlyOnceWith(peek)
     renderer.unmount()
     // A gesture that finishes while unmounting must not reach a disposed interface.
     expect(dragActive()).toBe(false)
     expect(options.canPeek!(hit)).toBe(false)
+    expect(options.peekFits!(peek)).toBe(false)
     expect(() => options.onPeek!(null)).not.toThrow()
     expect(mocks.ui.setPeek).toHaveBeenCalledOnce()
   })

@@ -15,7 +15,7 @@ import {
 } from '../renderers/three/contracts'
 import { ThreeInteraction } from '../renderers/three/interaction'
 import { threePrimaryAction, threeResponse, type InterfaceUi, type ThreePrimaryAction } from '../renderers/three/interface-model'
-import { cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type ThreeLayout } from '../renderers/three/layout'
+import { cardSlotX, narrowHandPageSize, peekPlacement, pendingCardRect, typeSlotX, type PeekPlacement, type ThreeLayout } from '../renderers/three/layout'
 import { withFakeTimers } from './helpers/timers'
 
 const gpu = vi.hoisted(() => ({
@@ -1995,6 +1995,12 @@ describe('Three long-press ring, peek placement and edge auto-scroll', () => {
       if (placement.side === 'above') expect(placement.y).toBeLessThanOrEqual(card.top)
       else expect(placement.y).toBeGreaterThanOrEqual(card.top + card.height)
     }
+    // The interface's fit check reaches the layout: a refused peek opens nowhere.
+    const fitted = h.board.peekPlacement(hit, card.left + 2, 700)!
+    const offered: PeekPlacement[] = []
+    expect(h.board.peekPlacement(hit, card.left + 2, 700, (placement) => { offered.push(placement); return true })).toEqual(fitted)
+    expect(offered).toEqual([fitted])
+    expect(h.board.peekPlacement(hit, card.left + 2, 700, () => false)).toBeNull()
     const hidden = player.hand.find((entry) => !h.registry.get(boardCardKey(entry.id, 0))?.descriptor.visible)!
     expect(hidden).toBeDefined()
     expect(h.board.peekPlacement({ ...hit, key: boardCardKey(hidden.id, 0), cardId: hidden.id }, 50, 50)).toBeNull()

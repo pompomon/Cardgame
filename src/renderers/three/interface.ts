@@ -299,6 +299,27 @@ export class ThreeInterface {
   }
 
   /**
+   * Whether all of `peek` shows at its placement. The panel cannot be
+   * scrolled, so a peek that clips its card's rules must not open. A probe
+   * copy is measured and removed in the same task, so it never paints.
+   */
+  peekFits(peek: ThreePeek): boolean {
+    const view = this.view
+    const markup = view && this.canPeek(peek.hit) ? renderThreePeek(view, peek) : ''
+    if (!markup) return false
+    const probe = this.document.createElement('div')
+    probe.innerHTML = markup
+    this.hoverContent.append(probe)
+    const panel = probe.querySelector<HTMLElement>('.three-peek')
+    // Layout rounds both heights to whole pixels. A panel with no layout box
+    // would show nothing, so it never fits.
+    const height = panel?.clientHeight ?? 0
+    const fits = !!panel && height > 0 && panel.scrollHeight <= height + 1
+    probe.remove()
+    return fits
+  }
+
+  /**
    * Opens a long-press peek, or closes it with null. Like a drag it only
    * re-renders the interface; the board keeps the press.
    */
