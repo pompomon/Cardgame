@@ -1370,6 +1370,10 @@ export class ThreeBoard implements ThreeBoardApi {
       drag.proxy.group.position.y = drag.fromY + (drag.source.descriptor.y - drag.fromY) * ease
       drag.proxy.setOpacity(1 - t * 0.65)
       if (t >= 1) this.endDrag(false)
+    } else if (drag?.layered && !this.dragLayer.refresh()) {
+      // Artwork that loads under a still finger schedules this frame; a failed repaint shows the in-scene proxy.
+      drag.layered = false
+      drag.proxy.group.visible = true
     }
     try {
       this.renderer?.render(this.scene, this.camera)

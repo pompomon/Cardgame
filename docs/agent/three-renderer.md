@@ -132,6 +132,8 @@ slot ("Lands here", or "+1" on an occupied narrow type slot). Each drag holds
 at most one extra card-face lease for it, released by `endDrag` on every path,
 including disposal. Without a 2D context, or when painting fails, the
 in-scene proxy stays visible instead. A move changes only CSS transforms.
+Artwork that loads mid-drag replaces the fallback face once, on the next board
+frame, so the card updates even while the finger is still.
 `onDragFeedback` reports drag start, acceptance changes, and the end of a live
 drag. It is called last, after the board's state is updated, because the
 listener renders the interface synchronously and may end or dispose the board.

@@ -548,7 +548,8 @@ The implementation differs from the scope above in these ways:
   board instruction to every shell with a dock.
 - From review: touch placement reserves the measured pill band, so the pill
   never covers a touch card. A stage `scroll` listener keeps the pill and the
-  card in place when the board scrolls mid-drag.
+  card in place when the board scrolls mid-drag. Artwork that loads under a
+  still finger repaints the lifted card on the next board frame.
 
 ### Milestone 2 — Long-press peek, multi-touch policy, and edge auto-scroll
 

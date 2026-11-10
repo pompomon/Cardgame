@@ -20,6 +20,8 @@ import { withFakeTimers } from './helpers/timers'
 const gpu = vi.hoisted(() => ({
   render: vi.fn(), setSize: vi.fn(), setPixelRatio: vi.fn(), dispose: vi.fn(),
   acquireCard: vi.fn(), release: vi.fn(),
+  /** The board's callback for finished artwork, as the real asset cache calls it. */
+  assetsChanged: (): void => {},
 }))
 
 vi.mock('three', async (importOriginal) => ({
@@ -37,6 +39,9 @@ vi.mock('three', async (importOriginal) => ({
 vi.mock('../renderers/three/assets', async (importOriginal) => ({
   ...await importOriginal<typeof import('../renderers/three/assets')>(),
   ThreeAssets: class {
+    constructor(invalidate: () => void) {
+      gpu.assetsChanged = invalidate
+    }
     acquireCard = gpu.acquireCard
     acquireBoard() { return { texture: new CanvasTexture({} as HTMLCanvasElement), release: gpu.release } }
     dispose(): void {}
@@ -1363,6 +1368,55 @@ describe('Three touch drag feedback', () => {
       expect(leases.repeated).toBe(0)
     },
   )
+
+  it('repaints the lifted card on the next board frame when its artwork loads under a still finger', () => {
+    const context = context2d()
+    ElementStub.context2d = context
+    const leases = countLeases()
+    const counted = gpu.acquireCard.getMockImplementation()!
+    const art = { ready: false }
+    gpu.acquireCard.mockImplementation((...args: unknown[]) =>
+      Object.defineProperty(counted(...args), 'ready', { get: () => art.ready }))
+    const h = setup()
+    const card = h.host.all('three-drag-card')[0]
+    const frames = vi.mocked(requestAnimationFrame).mock.calls
+    const runFrame = () => frames.at(-1)![0](16)
+    const resting = leases.live
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    runFrame()
+    // The fallback face is drawn once, and frames before the artwork loads leave it.
+    expect(context.drawImage).toHaveBeenCalledOnce()
+    const scheduled = frames.length
+    art.ready = true
+    gpu.assetsChanged()
+    expect(frames).toHaveLength(scheduled + 1)
+    runFrame()
+    expect(context.drawImage).toHaveBeenCalledTimes(2)
+    expect(card.hidden).toBe(false)
+    expect(internals(h).drag).toMatchObject({ layered: true })
+    expect(internals(h).drag!.proxy.group.visible).toBe(false)
+    runFrame()
+    expect(context.drawImage).toHaveBeenCalledTimes(2)
+    h.board.endDrag(false)
+    expect(leases.live).toBe(resting)
+
+    // When that repaint fails, the frame shows the in-scene proxy and releases the layer's lease.
+    art.ready = false
+    h.board.beginDrag(island())
+    h.board.moveDrag(...dropCentre(h), true)
+    art.ready = true
+    context.drawImage.mockImplementationOnce(() => { throw new Error('lost') })
+    gpu.assetsChanged()
+    runFrame()
+    expect(internals(h).drag).toMatchObject({ layered: false })
+    expect(internals(h).drag!.proxy.group.visible).toBe(true)
+    expect(card.hidden).toBe(true)
+    expect(leases.live).toBe(resting + 1)
+    h.board.endDrag(false)
+    expect(leases.live).toBe(resting)
+    expect(leases.repeated).toBe(0)
+  })
 
   it('keeps a live drag through re-presentation with animations off and ends it without a return', () => {
     const h = setup()

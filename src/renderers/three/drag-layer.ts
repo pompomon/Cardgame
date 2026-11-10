@@ -86,14 +86,7 @@ export class ThreeDragLayer {
    * caller can show its in-scene proxy instead.
    */
   move(x: number, y: number, scale: number): boolean {
-    const lease = this.lease
-    if (!lease || this.disposed) return false
-    // Artwork that finishes loading mid-drag replaces the fallback face once.
-    if (!this.paintedReady && lease.ready !== false && !this.paint()) {
-      this.endCard()
-      this.sync()
-      return false
-    }
+    if (!this.refresh()) return false
     if (Number.isFinite(x) && Number.isFinite(y)) {
       const size = Number.isFinite(scale) && scale > 0 ? scale : 1
       this.card.style.transform = `translate(${x - this.width / 2}px, ${y - this.height / 2}px) `
@@ -102,6 +95,21 @@ export class ThreeDragLayer {
       this.sync()
     }
     return true
+  }
+
+  /**
+   * Replaces the fallback face once, when the artwork has loaded. The board
+   * also calls this on each frame, so the art appears while the finger is
+   * still. Returns false when the layer is not drawing a card, including after
+   * a failed repaint, so the caller can show its in-scene proxy instead.
+   */
+  refresh(): boolean {
+    const lease = this.lease
+    if (!lease || this.disposed) return false
+    if (this.paintedReady || lease.ready === false || this.paint()) return true
+    this.endCard()
+    this.sync()
+    return false
   }
 
   /** Labels the landing slot, given in layer pixels, or hides the label for null. */
