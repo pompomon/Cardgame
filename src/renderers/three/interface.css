@@ -528,83 +528,459 @@
 }
 
 .three-interface .three-adventure-route,
-.three-interface .three-adventure-nodes {
+.three-interface .three-adventure-nodes,
+.three-interface .three-adventure-map-key ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/*
+ * The route as a map. Each tier is a grid: its badge in the first column,
+ * and in the second its incoming line band above its node slots. The band
+ * and slots share that column, so a lane's line x (25%, 50% or 75%) is the
+ * center of its slot: left spans tracks 1-2, right 3-4, center all four.
+ */
 .three-interface .three-adventure-route {
+  container: adventure-route / inline-size;
   display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
+  max-width: 40em;
+  margin: 0 auto 14px;
 }
 
 .three-interface .three-adventure-tier {
-  padding: 4px 12px 12px;
-  border: 1px solid #476478;
-  border-radius: 10px;
+  display: grid;
+  grid-template-columns: 2.5em minmax(0, 1fr);
+  grid-template-areas: ". edges" "badge nodes";
+  column-gap: 8px;
 }
 
-.three-interface .three-adventure-tier[data-tier-state="current"] {
-  border: 2px solid #ffda7b;
-}
-
-.three-interface .three-adventure-tier h3 {
+.three-interface .three-adventure-tier-badge {
+  position: relative;
+  grid-area: badge;
+  align-self: start;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 2.25em;
+  height: 2.25em;
+  margin: 10px 0 0;
+  border: 2px solid #8aa4b8;
+  border-radius: 50%;
+  background: #0e2029;
   font-size: 1rem;
+  line-height: 1;
+}
+
+.three-interface .three-adventure-tier[data-tier-state="current"] .three-adventure-tier-badge {
+  border: 4px double #ffda7b;
+}
+
+.three-interface .three-adventure-tier[data-tier-state="failed"] .three-adventure-tier-badge {
+  border: 2px dashed #e59a9a;
+}
+
+/* Read by the heading; shown only in the trail layout. */
+.three-interface .three-adventure-tier-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.three-interface .three-adventure-edges {
+  grid-area: edges;
+  display: block;
+  width: 100%;
+  height: 36px;
+  overflow: visible;
+}
+
+.three-interface .three-adventure-edge,
+.three-interface .three-adventure-key-edge {
+  fill: none;
+  stroke: #8aa4b8;
+  stroke-width: 2;
+}
+
+.three-interface .three-adventure-edge[data-edge-state="traveled"],
+.three-interface .three-adventure-key-edge[data-edge-state="traveled"] {
+  stroke: #7fd49a;
+  stroke-width: 4;
+}
+
+.three-interface .three-adventure-edge[data-edge-state="next"],
+.three-interface .three-adventure-key-edge[data-edge-state="next"] {
+  stroke: #ffda7b;
+  stroke-width: 3;
+  stroke-dasharray: 8 6;
+}
+
+.three-interface .three-adventure-edge[data-edge-state="bypassed"],
+.three-interface .three-adventure-key-edge[data-edge-state="bypassed"] {
+  stroke: #c6d6e4;
+  stroke-width: 3;
+  stroke-dasharray: 1 7;
+  stroke-linecap: round;
+}
+
+.three-interface .three-adventure-start {
+  fill: #7fd49a;
 }
 
 .three-interface .three-adventure-nodes {
+  grid-area: nodes;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.three-interface .three-adventure-node-slot {
+  position: relative;
+  grid-row: 1;
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.three-interface .three-adventure-node-slot[data-lane="left"] {
+  grid-column: 1 / span 2;
+}
+
+.three-interface .three-adventure-node-slot[data-lane="right"] {
+  grid-column: 3 / span 2;
+}
+
+/* The stem runs from the token's center to the next tier's band, behind the node. */
+.three-interface .three-adventure-node-slot[data-stem]::before {
+  content: "";
+  position: absolute;
+  top: 28px;
+  bottom: 0;
+  left: calc(50% - 1px);
+  border-left: 2px solid #8aa4b8;
+}
+
+.three-interface .three-adventure-node-slot[data-stem="traveled"]::before {
+  left: calc(50% - 2px);
+  border-left: 4px solid #7fd49a;
+}
+
+.three-interface .three-adventure-node-slot[data-stem="next"]::before {
+  left: calc(50% - 1.5px);
+  border-left: 3px dashed #ffda7b;
+}
+
+.three-interface .three-adventure-node-slot[data-stem="bypassed"]::before {
+  left: calc(50% - 1.5px);
+  border-left: 3px dotted #c6d6e4;
 }
 
 .three-interface .three-adventure-node {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  height: 100%;
-  padding: 10px 12px;
-  border: 1px solid #476478;
-  border-radius: 8px;
-  text-align: start;
-}
-
-.three-interface .three-adventure-node[data-status="available"] {
-  border: 2px solid #7bc9ff;
-}
-
-.three-interface .three-adventure-node[data-status="current"] {
-  border: 2px solid #ffda7b;
-}
-
-.three-interface .three-adventure-node[data-status="completed"] {
-  border-color: #7fd49a;
-}
-
-.three-interface .three-adventure-node[data-status="bypassed"],
-.three-interface .three-adventure-node[data-status="locked"] {
-  border-style: dashed;
-  color: #c6d6e4;
-}
-
-.three-interface .three-adventure-node-heading {
-  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  width: 100%;
+  max-width: 15em;
+  padding: 0;
+  text-align: center;
+}
+
+.three-interface button.three-adventure-node {
+  padding: 6px;
+  border: 2px solid #7bc9ff;
+  background: #172d3c;
+}
+
+.three-interface button.three-adventure-node[data-status="current"] {
+  border-color: #ffda7b;
+}
+
+.three-interface .three-adventure-node-token {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 3px dashed #8aa4b8;
+  border-radius: 50%;
+  background: #132a37;
+}
+
+.three-interface .three-adventure-node[data-status="completed"] .three-adventure-node-token {
+  border: 3px solid #7fd49a;
+}
+
+.three-interface .three-adventure-node[data-status="available"] .three-adventure-node-token {
+  border: 3px solid #7bc9ff;
+}
+
+.three-interface .three-adventure-node[data-status="current"] .three-adventure-node-token {
+  border: 4px double #ffda7b;
+}
+
+.three-interface .three-adventure-node-emblem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 20px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.three-interface .three-adventure-node-emblem[data-kind="standard"] {
+  width: 36px;
+  gap: 3px;
+}
+
+/* Two 24px icons fill the 48px inside the current token's 4px double ring. */
+.three-interface .three-adventure-node-emblem[data-kind="dual"] {
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.three-interface .three-adventure-node-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dot, #8aa4b8);
+}
+
+.three-interface .three-adventure-node-art,
+.three-interface .three-adventure-key-art {
+  display: block;
+  flex: none;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.three-interface .three-adventure-node-badge {
+  position: absolute;
+  right: -8px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid #c6d6e4;
+  border-radius: 11px;
+  background: #0e2029;
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1;
+}
+
+.three-interface .three-adventure-node-caption {
+  max-width: 100%;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #0e2029;
+  color: #c6d6e4;
   font-size: 0.9rem;
 }
 
-.three-interface .three-adventure-node-opponent {
+.three-interface .three-adventure-node-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.three-interface .three-adventure-node-label {
   font-weight: bold;
 }
 
 .three-interface .three-adventure-node-action {
-  margin-top: 4px;
   text-decoration: underline;
+}
+
+.three-interface .three-adventure-map-key {
+  max-width: 40em;
+  margin: 0 auto 14px;
+  font-size: 0.9rem;
+}
+
+.three-interface .three-adventure-map-key h3 {
+  font-size: 1rem;
+}
+
+.three-interface .three-adventure-map-key ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 6px;
+}
+
+.three-interface .three-adventure-map-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.three-interface .three-adventure-key-glyph {
+  min-width: 1.25em;
+  text-align: center;
+}
+
+.three-interface .three-adventure-key-sample {
+  flex: none;
+  width: 32px;
+  height: 10px;
+  overflow: visible;
+}
+
+/*
+ * The trail: when the route is narrower than 18em, each tier stacks its
+ * visible name above full-width nodes, along a rail behind the tokens.
+ */
+@container adventure-route (max-width: 18em) {
+  .three-interface .three-adventure-tier {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "badge" "nodes";
+    padding-bottom: 12px;
+  }
+
+  .three-interface .three-adventure-tier::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 35px;
+    border-left: 2px solid #8aa4b8;
+  }
+
+  .three-interface .three-adventure-tier[data-tier-state="cleared"]::before {
+    left: 34px;
+    border-left: 4px solid #7fd49a;
+  }
+
+  .three-interface .three-adventure-tier[data-tier-state="current"]::before {
+    left: 34.5px;
+    border-left: 3px dashed #ffda7b;
+  }
+
+  .three-interface .three-adventure-tier:last-child::before {
+    bottom: auto;
+    height: calc(8px + 0.75rem);
+  }
+
+  .three-interface .three-adventure-edges,
+  .three-interface .three-adventure-tier-mark,
+  .three-interface .three-adventure-node-slot[data-stem]::before {
+    display: none;
+  }
+
+  .three-interface .three-adventure-tier[data-tier-state] .three-adventure-tier-badge {
+    justify-self: stretch;
+    display: block;
+    width: auto;
+    height: auto;
+    margin: 8px 0 6px 76px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    line-height: inherit;
+  }
+
+  .three-interface .three-adventure-tier-name {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+
+  .three-interface .three-adventure-tier[data-tier-state="current"] .three-adventure-tier-name {
+    text-decoration: underline;
+  }
+
+  .three-interface .three-adventure-nodes {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  .three-interface .three-adventure-node-slot[data-lane] {
+    grid-row: auto;
+    grid-column: 1;
+    justify-content: stretch;
+    padding: 0;
+  }
+
+  .three-interface .three-adventure-node {
+    flex-direction: row;
+    gap: 12px;
+    max-width: none;
+    padding: 0 0 0 8px;
+    text-align: start;
+  }
+
+  .three-interface .three-adventure-node-text {
+    align-items: flex-start;
+  }
+
+  .three-interface .three-adventure-node-caption {
+    padding: 0;
+    background: transparent;
+  }
+}
+
+/* Dash patterns and widths still tell the line states apart. */
+@media (forced-colors: active) {
+  .three-interface .three-adventure-edge,
+  .three-interface .three-adventure-key-edge,
+  .three-interface .three-adventure-edge[data-edge-state="bypassed"],
+  .three-interface .three-adventure-key-edge[data-edge-state="bypassed"] {
+    stroke: GrayText;
+  }
+
+  .three-interface .three-adventure-edge[data-edge-state="traveled"],
+  .three-interface .three-adventure-key-edge[data-edge-state="traveled"] {
+    stroke: CanvasText;
+  }
+
+  .three-interface .three-adventure-edge[data-edge-state="next"],
+  .three-interface .three-adventure-key-edge[data-edge-state="next"] {
+    stroke: Highlight;
+  }
+
+  .three-interface .three-adventure-start {
+    fill: CanvasText;
+  }
+
+  .three-interface .three-adventure-node-dot {
+    background: CanvasText;
+  }
+
+  .three-interface .three-adventure-node-slot[data-stem]::before,
+  .three-interface .three-adventure-tier::before {
+    border-color: GrayText;
+  }
+
+  .three-interface .three-adventure-node-slot[data-stem="traveled"]::before,
+  .three-interface .three-adventure-tier[data-tier-state="cleared"]::before {
+    border-color: CanvasText;
+  }
+
+  .three-interface .three-adventure-node-slot[data-stem="next"]::before,
+  .three-interface .three-adventure-tier[data-tier-state="current"]::before {
+    border-color: Highlight;
+  }
 }
 
 .three-interface .three-adventure-relics h3 {

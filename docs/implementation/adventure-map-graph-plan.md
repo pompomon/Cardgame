@@ -94,13 +94,13 @@ The approved decisions are:
     tests; no callers
   - [x] `displayAdventureOpponentKind` in `game-presentation.ts`, with tests
   - [x] `architecture.md` module map entry
-- [ ] Milestone 2 — Map rendering
-  - [ ] Tier badges, line bands, node slots, tokens and captions
-  - [ ] Map key
-  - [ ] Graph, trail and forced-colors CSS replacing the route rules
-  - [ ] Hub test updates and new map tests; markup size and render time
+- [x] Milestone 2 — Map rendering
+  - [x] Tier badges, line bands, node slots, tokens and captions
+  - [x] Map key
+  - [x] Graph, trail and forced-colors CSS replacing the route rules
+  - [x] Hub test updates and new map tests; markup size and render time
     recorded
-  - [ ] Agent docs: the Adventure hub section of `three-interface.md`, and the
+  - [x] Agent docs: the Adventure hub section of `three-interface.md`, and the
     test DOM stub rule in `testing.md`
 - [ ] Milestone 3 — Browser sweep, docs and release gate
   - [ ] Adventure hub check at the documented viewports plus 320×568, with
@@ -278,9 +278,11 @@ row 2 "badge nodes"  h3 badge (N or ♛)   ul with 4 equal tracks:
           <span class="three-adventure-node-emblem" data-kind="dual"><img …><img …></span>
           <span class="three-adventure-node-badge">◇</span>
         </span>
-        <span class="three-adventure-node-label">Duo: Signal Siren + Rooftop Gargoyle</span>
-        <span class="three-adventure-node-status">Available</span>
-        <span class="three-adventure-node-action">Choose this path</span>
+        <span class="three-adventure-node-text">
+          <span class="three-adventure-node-label">Duo: Signal Siren + Rooftop Gargoyle</span>
+          <span class="three-adventure-node-status">Available</span>
+          <span class="three-adventure-node-action">Choose this path</span>
+        </span>
       </button>
     </li>
     <li class="three-adventure-node-slot" data-lane="right" data-stem="future">…</li>
@@ -308,6 +310,8 @@ A static node replaces the button with a `div`:
   `<circle class="three-adventure-start" cx="50%" cy="6" r="6"></circle>`, and
   its lines start at `y1="6"`.
 - When the helper gives no stem, the slot has no `data-stem` attribute.
+- A button's text sits in `span.three-adventure-node-text`, so the trail can
+  place it beside the token as one block.
 
 ### Geometry
 
@@ -370,7 +374,8 @@ Nodes use `data-status`, with the glyphs and words of
 ### Tokens and captions
 
 - The emblem depends on `opponent.kind`:
-  - `dual`: both creatures' icons at 24 px;
+  - `dual`: both creatures' icons at 24 px, in one row with no gap, so they
+    fit inside the current token's 4 px double ring;
   - `mono` (the boss): one icon at 36 px;
   - `standard`: five dots, one per creature in `BASIC_LANDS` order. Each is
     colored by `cardVisualPaletteFor(land, style).iconPrimary` through an inline
@@ -397,7 +402,8 @@ Nodes use `data-status`, with the glyphs and words of
 ### Map key
 
 After the list, inside the route section, `div.three-adventure-map-key` holds
-an `h3` (**Map key**) and three short lists:
+an `h3` (**Map key**) and three short lists, labeled **Node status**, **Route
+lines** and **Creatures** with `aria-label`:
 
 - the node statuses: each glyph, hidden from assistive technology, with its
   word;
@@ -524,19 +530,21 @@ The stems are `next` on tier 1, `future` on tiers 2–6, and `null` on tier 7.
 
 In `interface-model.ts`:
 
-- `renderThreeAdventureHub` computes `adventureRouteGraph(adventure.tiers)`
-  once and passes each tier the row with the same index. A missing row draws no
-  lines.
-- `renderAdventureTier(view, adventure, tier, row)` renders the badge heading,
-  the band and the slots. The tier state, heading suffix, `aria-current` and
-  focus attributes are computed as today.
-- `renderAdventureNode(view, adventure, node, graphNode)` renders the token,
-  then either the caption and screen-reader text or the button content. The
-  button's attributes and name are unchanged.
-- New helpers: `renderAdventureNodeToken(view, node)`,
-  `renderAdventureEdges(row, first)` and `renderAdventureMapKey(view)`. Every
-  `switch` over a kind, status or line state has a `default:` that returns a
-  safe placeholder.
+- `renderAdventureRoute`, called once per hub render, computes
+  `adventureRouteGraph(adventure.tiers)` and passes each tier the row with
+  the same index. A missing row draws no lines.
+- `renderAdventureTier(view, adventure, tier, row, first)` renders the badge
+  heading, the band and the slots. The tier state, heading suffix,
+  `aria-current` and focus attributes are computed as today.
+- `renderAdventureNodeSlot(view, adventure, node, graphNode)` renders the
+  slot and its stem. `renderAdventureNode(view, adventure, node)` renders the
+  token, then either the caption and screen-reader text or the button
+  content. The button's attributes and name are unchanged.
+- New helpers: `renderAdventureRoute(view, adventure)`,
+  `renderAdventureNodeSlot`, `renderAdventureNodeToken(view, node)`,
+  `renderAdventureNodeEmblem(view, opponent)`, `renderAdventureEdges(row,
+  first)` and `renderAdventureMapKey(view)`. Every `switch` over a kind,
+  status or line state has a `default:` that returns a safe placeholder.
 - Every text and attribute value goes through `escapeHtml`, as today. SVG
   coordinates come only from the helper's typed lane values.
 - The `.three-adventure-node-heading`, `-icon`, `-opponent` and `-boss`

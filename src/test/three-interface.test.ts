@@ -2965,6 +2965,16 @@ function hubResult(result: Omit<AdventureResultSummary, 'chanceLossPrevented' | 
   return { chanceLossPrevented: false, streakResetPrevented: false, relicsUsed: [], ...result }
 }
 
+// The route's line states, then its node slots' stem states, in document order.
+function hubEdgeStates(html: string): string[] {
+  return Array.from(html.matchAll(/<line class="three-adventure-edge" data-edge-state="([a-z]+)"/g), (match) => match[1])
+}
+
+function hubStemStates(html: string): Array<string | null> {
+  return Array.from(html.matchAll(/<li class="three-adventure-node-slot" data-lane="[a-z]+"(?: data-stem="([a-z]+)")?>/g),
+    (match) => match[1] ?? null)
+}
+
 // A tracked store that can refuse chosen keys; stubbed, so each test restores it.
 function installHubStorage(): TrackedStorage {
   const { tracked, storage } = createTrackedStorage()
@@ -2987,8 +2997,11 @@ describe('Three Adventure hub', () => {
     expect(html).not.toContain('data-node-id="tier-1-center"')
     expect(html).not.toContain('data-node-id="tier-3-center"')
     expect(html).toContain('aria-label="Choose this path: Tier 2 of 7, left path, Tier 2 left foe. Status: Available."')
-    // Status is spelled out next to its icon, never carried by color alone.
-    for (const text of ['Left path · Available', 'Center path · Completed', 'Center path · Locked']) expect(html).toContain(text)
+    // Status is spelled out next to its icon, never carried by color alone: in
+    // a static node's caption and screen-reader text, and in a button's text.
+    for (const text of ['Duo · Completed', 'Center path · Completed', '♛ Boss · Locked', 'Center path · Locked']) expect(html).toContain(text)
+    expect(html.match(/<button[^>]*data-node-id="tier-2-left"[\s\S]*?<\/button>/)?.[0])
+      .toContain('<span class="three-adventure-node-status">Available</span>')
     expect(html).toContain('Tier 7 of 7 · Boss')
     expect(html).toContain('Next opponent: Choose Tier 2 left foe or Tier 2 right foe')
     for (const action of ['pause-adventure', 'abandon-adventure', 'lobby-settings', 'lobby-recording']) expect(html).toContain(`data-action="${action}"`)
@@ -3006,12 +3019,19 @@ describe('Three Adventure hub', () => {
   })
 
   it('escapes opponent labels and status text', () => {
-    const view = hubView({ tiers: hubTiers(['available', 'available'], '<img src=x onerror="alert(1)">') })
+    const hostile = '<img src=x onerror="alert(1)">'
+    const tiers = hubTiers(['available', 'available'], hostile)
+    tiers[0] = { tierIndex: 0, nodes: [hubNode(0, 'center', 'completed', hostile)] }
+    const view = hubView({ tiers })
     view.status = '<b>status</b>'
     const html = renderThreeInterface(view, defaultUi)
     expect(html).not.toContain('<img src=x')
     expect(html).not.toContain('<b>status</b>')
-    expect(html).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;')
+    const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'
+    // A button's visible label and name, and a static node's screen-reader text.
+    expect(html).toContain(`<span class="three-adventure-node-label">${escaped}</span>`)
+    expect(html).toContain(`aria-label="Choose this path: Tier 2 of 7, left path, ${escaped}. Status: Available."`)
+    expect(html).toContain(`<span class="three-sr-only">Center path · Completed. ${escaped}.</span>`)
     expect(html).toContain('&lt;b&gt;status&lt;/b&gt;')
   })
 
@@ -3064,6 +3084,11 @@ describe('Three Adventure hub', () => {
     const failed = ended('failed', 'loss', 3)
     expect(failed).toContain('Adventure over: defeated at Tier 4')
     expect(failed).toContain('data-tier-state="failed"')
+    // An ended run has no next step: a completed route is all taken or bypassed.
+    expect(new Set(hubEdgeStates(completed))).toEqual(new Set(['traveled', 'bypassed']))
+    expect(hubStemStates(completed)).toEqual(['traveled', 'traveled', 'bypassed', 'traveled', 'traveled', 'traveled', 'traveled', null])
+    expect(hubEdgeStates(failed)).toHaveLength(9)
+    expect(hubEdgeStates(failed)).not.toContain('next')
     for (const html of [completed, failed]) {
       expect(html).not.toContain('data-action="adventure-node"')
       expect(html).not.toContain('aria-current')
@@ -3289,6 +3314,121 @@ describe('Three Adventure hub', () => {
       unsubscribe()
       h.ui.dispose()
     })
+  })
+})
+
+describe('Three Adventure route map', () => {
+  // A node with another opponent roster; casts let a test reach the default branches.
+  function withRoster(node: AdventureNodeSummary, kind: string, lands: readonly string[]): AdventureNodeSummary {
+    return { ...node, opponent: { ...node.opponent, kind: kind as never, lands: lands as BasicLand[] } }
+  }
+
+  it('draws one line band per tier, from the start dot through the fork', () => {
+    const html = renderThreeInterface(hubView(), defaultUi)
+    const tiers = html.split('<li class="three-adventure-tier"').slice(1)
+    expect(tiers).toHaveLength(7)
+    for (const [index, tier] of tiers.entries()) {
+      expect(tier.match(/<svg class="three-adventure-edges" aria-hidden="true">/g)).toHaveLength(1)
+      expect(tier.includes('<circle class="three-adventure-start" cx="50%" cy="6" r="6"></circle>')).toBe(index === 0)
+    }
+    // Lines join lane centers: the start to tier 1, then tier 1 to each side of the fork.
+    expect(tiers[0]).toContain('<line class="three-adventure-edge" data-edge-state="traveled" x1="50%" y1="6" x2="50%" y2="100%"></line>')
+    expect(tiers[1]).toContain('<line class="three-adventure-edge" data-edge-state="next" x1="50%" y1="0" x2="25%" y2="100%"></line>')
+    expect(tiers[1]).toContain('<line class="three-adventure-edge" data-edge-state="next" x1="50%" y1="0" x2="75%" y2="100%"></line>')
+    expect(hubEdgeStates(html)).toEqual(['traveled', 'next', 'next', 'future', 'future', 'future', 'future', 'future', 'future'])
+    // The last tier's slot has no stem.
+    expect(hubStemStates(html)).toEqual(['next', 'future', 'future', 'future', 'future', 'future', 'future', null])
+    // The badge shows the tier number, or ♛; the heading still reads the full name.
+    expect(tiers[0]).toContain('<span class="three-adventure-tier-mark" aria-hidden="true">1</span><span class="three-adventure-tier-name">Tier 1 of 7 · Cleared</span>')
+    expect(tiers[6]).toContain('<span class="three-adventure-tier-mark" aria-hidden="true">♛</span><span class="three-adventure-tier-name">Tier 7 of 7 · Boss</span>')
+  })
+
+  it('closes every SVG element, so the map nests as written', () => {
+    const view = hubView()
+    const html = renderThreeInterface(view, defaultUi)
+    for (const tag of ['svg', 'line', 'circle']) {
+      expect(html.match(new RegExp(`</${tag}>`, 'g'))).toHaveLength(html.match(new RegExp(`<${tag}[ >]`, 'g'))!.length)
+    }
+    const h = setup(view)
+    const tiers = h.content.querySelectorAll('li.three-adventure-tier')
+    expect(tiers).toHaveLength(7)
+    for (const tier of tiers) {
+      expect(tier.parentElement?.matches('ol.three-adventure-route')).toBe(true)
+      expect(tier.children.map((child) => child.tagName)).toEqual(['H3', 'SVG', 'UL'])
+      for (const mark of tier.children[1].children) expect(mark.children).toHaveLength(0)
+      for (const slot of tier.children[2].children) {
+        expect(slot.matches('li.three-adventure-node-slot')).toBe(true)
+        expect(slot.children.map((child) => child.matches('.three-adventure-node'))).toEqual([true])
+      }
+    }
+    expect(tiers[0].children[1].children.map((child) => child.tagName)).toEqual(['CIRCLE', 'LINE'])
+    expect(h.content.querySelector('div.three-adventure-map-key')?.parentElement).toBe(tiers[0].parentElement?.parentElement)
+    h.ui.dispose()
+  })
+
+  it('shows each opponent roster on its token', () => {
+    const tiers = hubTiers()
+    tiers[0] = { tierIndex: 0, nodes: [withRoster(hubNode(0, 'center', 'completed'), 'standard', BASIC_LANDS)] }
+    tiers[1] = { tierIndex: 1, nodes: [hubNode(1, 'left', 'available'), withRoster(hubNode(1, 'right', 'available'), 'random', [])] }
+    tiers[2] = { tierIndex: 2, nodes: [withRoster(hubNode(2, 'center', 'locked'), 'legendary', ['Forest'])] }
+    tiers[3] = { tierIndex: 3, nodes: [withRoster(hubNode(3, 'center', 'locked'), 'dual', ['Meadow'])] }
+    tiers[6] = { tierIndex: 6, nodes: [withRoster(hubNode(6, 'center', 'locked'), 'mono', ['Mountain'])] }
+    const view = hubView({ tiers })
+    const html = renderThreeInterface(view, defaultUi)
+    // A mystery roster, an unknown kind and a roster without known creatures.
+    expect(html.match(/<span class="three-adventure-node-emblem" data-kind="random">\?<\/span>/g)).toHaveLength(3)
+    const h = setup(view)
+    const emblems = h.content.querySelectorAll('span.three-adventure-node-emblem').map((emblem) => ({
+      kind: emblem.dataset.kind,
+      art: emblem.children.filter((child) => child.matches('img.three-adventure-node-art')).map((img) => img.getAttribute('width')),
+      dots: emblem.children.filter((child) => child.matches('span.three-adventure-node-dot')).map((dot) => dot.getAttribute('style')),
+    }))
+    expect(emblems.map((emblem) => emblem.kind)).toEqual(['standard', 'dual', 'random', 'random', 'random', 'dual', 'dual', 'mono'])
+    expect(emblems[1].art).toEqual(['24', '24'])
+    expect(emblems[7].art).toEqual(['36'])
+    // One dot per creature, each in its own color.
+    expect(emblems[0].art).toEqual([])
+    expect(emblems[0].dots).toHaveLength(BASIC_LANDS.length)
+    expect(emblems[0].dots.every((style) => /^--dot:#[0-9a-f]{6}$/i.test(style ?? ''))).toBe(true)
+    expect(new Set(emblems[0].dots).size).toBe(BASIC_LANDS.length)
+    h.ui.dispose()
+  })
+
+  it.each(CARD_VISUAL_STYLES)('draws only procedural icons in the %s style', (style) => {
+    const tiers = hubTiers()
+    tiers[0] = { tierIndex: 0, nodes: [withRoster(hubNode(0, 'center', 'completed'), 'standard', BASIC_LANDS)] }
+    for (const monochromeCards of [false, true]) {
+      const html = renderThreeInterface({ ...hubView({ tiers }), cardVisualStyle: style, monochromeCards }, defaultUi)
+      expect(html).not.toContain('/cards/')
+      expect(html).not.toContain('onerror')
+      // Seven duos on the route and five creatures in the map key.
+      const art = html.match(/<img class="three-adventure-(?:node|key)-art[^"]*"/g) ?? []
+      expect(art).toHaveLength(19)
+      expect(art.filter((tag) => tag.includes(' card-art--monochrome'))).toHaveLength(monochromeCards ? 19 : 0)
+      expect(html.match(/class="three-adventure-node-dot( card-art--monochrome)?"/g)).toEqual(
+        Array(BASIC_LANDS.length).fill(`class="three-adventure-node-dot${monochromeCards ? ' card-art--monochrome' : ''}"`))
+    }
+  })
+
+  it('explains statuses, lines and creatures in a map key with no tab stops', () => {
+    const view = hubView()
+    const html = renderThreeInterface(view, defaultUi)
+    const start = html.indexOf('<div class="three-adventure-map-key">')
+    const key = html.slice(start, html.indexOf('</div>', start))
+    for (const text of ['Completed', 'Current', 'Available', 'Bypassed', 'Locked', 'Route taken', 'Next step', 'Not taken', 'Ahead']) {
+      expect(key).toContain(text)
+    }
+    for (const land of BASIC_LANDS) expect(key).toContain(escapeHtml(displayCardName(land)))
+    expect(key).not.toMatch(/<(?:button|a|details|input|select)\b| id=|tabindex/)
+    // Line samples are not route lines.
+    expect(hubEdgeStates(html)).toHaveLength(9)
+    const h = setup(view)
+    const items = (label: string) => h.content.querySelector(`ul[aria-label="${label}"]`)?.children ?? []
+    expect(items('Node status')).toHaveLength(5)
+    expect(items('Route lines').map((item) => item.querySelector('line.three-adventure-key-edge')?.dataset.edgeState))
+      .toEqual(['traveled', 'next', 'bypassed', 'future'])
+    expect(items('Creatures').map((item) => item.children.map((child) => child.tagName))).toEqual(Array(5).fill(['IMG']))
+    h.ui.dispose()
   })
 })
 
