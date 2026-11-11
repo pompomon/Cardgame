@@ -320,13 +320,15 @@ claim Android/iOS coverage from desktop emulation.
 ### Adventure hub check
 
 Use the production preview with the base path. Check each Adventure state
-at four viewports, each at 100% and 200% root font size:
+at five viewports, each at 100% and 200% root font size:
 
-- **States:** the paused-run lobby, the map, a pending reward, an encounter
-  result, Retry Saving Result (refuse the write in storage), and a completed
-  run.
+- **States:** the paused-run lobby, the map for a new run, at a fork and
+  after a committed fork, a pending reward, an encounter result, a retry
+  after a loss, Retry Saving Result (refuse the write in storage), a
+  completed run and a failed run.
 - **Viewports:**
   - 390×844 (narrow portrait);
+  - 320×568 (the narrowest; the map shows its trail at both text sizes);
   - 844×390 and 720×360 (short landscape);
   - 1280×800 (wide).
 
@@ -344,7 +346,28 @@ In each state, check that:
   with it, such as the relic list after a relic uses its last charge.
   Opening or closing a dialog moves the announcer and empties it, so it
   stays empty until the next status. A status that arrives with the move
-  appears about 100 ms later.
+  appears about 100 ms later;
+- the hub requests no card art from `/cards/`.
+
+Where the map shows, also check that:
+
+- in the graph layout, every line end is within 1 px of its token's center,
+  and each line band meets its node slots;
+- in the trail layout, the rail runs through the token centers into the last
+  token with no gap or overlap of 1 px or more, and each piece's style
+  matches its `data-trail`, `data-trail-in` or `data-trail-out` state.
+  Geometry alone misses a piece hidden under a button, so also look at a
+  screenshot: the rail must stay visible inside each playable node's button
+  up to its token, with 200% text included;
+- no word breaks mid-word: compare the line boxes of each word with
+  `Range.getClientRects()`;
+- in forced colors, lines, stems and rail pieces use system colors and keep
+  their widths and dash patterns. Emulate it with
+  `page.emulateMedia({ forcedColors: 'active' })`. If the browser tools
+  cannot, switch the stylesheet's `@media (forced-colors: active)` rules to
+  `all`, compare computed styles, and restore the rules. Record that as a
+  simulation: it skips the browser's own color override, so a real contrast
+  theme stays pending maintainer verification.
 
 `document.elementFromPoint` skips elements with `pointer-events: none`, so
 the board's focusable labels look covered by the canvas. Confirm those by

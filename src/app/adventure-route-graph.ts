@@ -14,6 +14,13 @@ import type { AdventureTierSummary } from './types'
  * branch not taken, or the route ahead.
  */
 export type AdventureRouteEdgeState = 'traveled' | 'next' | 'bypassed' | 'future'
+/**
+ * How the narrow trail's rail is drawn. The trail stacks every node in one
+ * column, so its rail shows progress rather than branches: the route taken
+ * down to the last completed node, the next step on to the last playable
+ * node, and the route ahead after that.
+ */
+export type AdventureRouteTrailState = 'traveled' | 'next' | 'future'
 /** A lane's horizontal position, as a percentage of the route column. */
 export type AdventureRouteLaneX = 25 | 50 | 75
 
@@ -22,6 +29,10 @@ export interface AdventureRouteGraphNode {
   readonly x: AdventureRouteLaneX
   /** The style of the line below the token, or null when no line leaves it. */
   readonly stem: AdventureRouteEdgeState | null
+  /** The trail's rail above the token: the stretch from the token before it, or from the top of the route. */
+  readonly trailIn: AdventureRouteTrailState
+  /** The trail's rail below the token, or null for the last node. */
+  readonly trailOut: AdventureRouteTrailState | null
 }
 
 export interface AdventureRouteEdge {
@@ -38,6 +49,8 @@ export interface AdventureRouteGraphRow {
   readonly nodes: readonly AdventureRouteGraphNode[]
   /** The lines that enter this tier from the previous one, or from the start. */
   readonly incoming: readonly AdventureRouteEdge[]
+  /** The trail's rail past this tier's name, or null when no node follows it. */
+  readonly trail: AdventureRouteTrailState | null
 }
 
 interface RouteLineSource {
@@ -108,6 +121,19 @@ function stemState(outgoing: readonly AdventureRouteEdgeState[]): AdventureRoute
 const graphCache = new WeakMap<readonly AdventureTierSummary[], readonly AdventureRouteGraphRow[]>()
 
 /**
+ * The trail's rail state for each node in column order: tier by tier, and
+ * each tier's nodes in order. The stretch ending at a node is `traveled` up
+ * to the last completed node, `next` up to the last current or available
+ * node after it, and `future` beyond.
+ */
+function trailStates(tiers: readonly AdventureTierSummary[]): AdventureRouteTrailState[] {
+  const statuses = tiers.flatMap((tier) => tier.nodes.map((node) => node.status))
+  const lastCompleted = statuses.lastIndexOf('completed')
+  const lastPlayable = Math.max(statuses.lastIndexOf('current'), statuses.lastIndexOf('available'))
+  return statuses.map((_, index) => (index <= lastCompleted ? 'traveled' : index <= lastPlayable ? 'next' : 'future'))
+}
+
+/**
  * One row per tier, in order. Every node joins every node of the next tier,
  * and tier 1's nodes join the start dot. Rows, nodes and lines are frozen.
  */
@@ -116,7 +142,12 @@ export function adventureRouteGraph(tiers: readonly AdventureTierSummary[]): rea
   if (cached) {
     return cached
   }
+  const trail = trailStates(tiers)
+  // The column position of each tier's first node, or of the next node after an empty tier.
+  let first = 0
   const rows = Object.freeze(tiers.map((tier, index): AdventureRouteGraphRow => {
+    const start = first
+    first += tier.nodes.length
     const sources: readonly RouteLineSource[] = index === 0
       ? [{ nodeId: null, x: START_X, status: 'start' }]
       : tiers[index - 1].nodes.map((node) => ({ nodeId: node.id, x: adventureRouteLaneX(node.lane), status: node.status }))
@@ -130,12 +161,15 @@ export function adventureRouteGraph(tiers: readonly AdventureTierSummary[]): rea
     const targets = tiers[index + 1]?.nodes ?? []
     return Object.freeze({
       tierIndex: tier.tierIndex,
-      nodes: Object.freeze(tier.nodes.map((node) => Object.freeze({
+      nodes: Object.freeze(tier.nodes.map((node, slot) => Object.freeze({
         nodeId: node.id,
         x: adventureRouteLaneX(node.lane),
         stem: stemState(targets.map((target) => adventureRouteEdgeState(node.status, target.status))),
+        trailIn: trail[start + slot],
+        trailOut: trail[start + slot + 1] ?? null,
       }))),
       incoming: Object.freeze(incoming),
+      trail: trail[start] ?? null,
     })
   }))
   graphCache.set(tiers, rows)

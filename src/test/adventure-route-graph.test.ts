@@ -55,6 +55,11 @@ function stems(rows: readonly AdventureRouteGraphRow[]): Array<Array<string | nu
   return rows.map((row) => row.nodes.map((node) => node.stem))
 }
 
+/** Each tier's trail: the rail past its name, then each node's rail above>below its token. */
+function trails(rows: readonly AdventureRouteGraphRow[]): string[] {
+  return rows.map((row) => [row.trail ?? 'none', ...row.nodes.map((node) => `${node.trailIn}>${node.trailOut ?? 'end'}`)].join(' '))
+}
+
 const forkPatternSeeds = new Map<string, number>()
 
 /** A clock value whose branching map forks at the given 0-based tiers. */
@@ -152,6 +157,21 @@ describe('adventureRouteGraph', () => {
       ['tier-2-right', 'tier-3-right', 75, 75, 'bypassed'],
     ])
     expect(stems(rows)).toEqual([['traveled'], ['next', 'bypassed'], ['future', 'future'], ['future'], [null]])
+    // The trail is taken down to the last completed node, then the next step
+    // runs past the bypassed node to the last available one.
+    expect(trails(rows)).toEqual([
+      'traveled traveled>traveled',
+      'traveled traveled>next next>next',
+      'next next>next next>future',
+      'future future>future',
+      'future future>end',
+    ])
+  })
+
+  it('ends the trail\'s next step at the current node, even above a bypassed one', () => {
+    const rows = adventureRouteGraph(route(['completed'], ['current', 'bypassed'], ['locked']))
+
+    expect(trails(rows)).toEqual(['traveled traveled>next', 'next next>future future>future', 'future future>end'])
   })
 
   it('starts tier 1 at the start dot and leaves no stem on the last tier or before an empty tier', () => {
@@ -163,6 +183,9 @@ describe('adventureRouteGraph', () => {
     ])
     expect(rows.map((row) => row.incoming.length)).toEqual([2, 2, 0, 0])
     expect(stems(rows)).toEqual([['future', 'future'], [null], [], [null]])
+    // The trail's single column runs on past an empty tier.
+    expect(trails(rows)).toEqual(['next next>next next>future', 'future future>future', 'future', 'future future>end'])
+    expect(trails(adventureRouteGraph(route(['current'], [])))).toEqual(['next next>end', 'none'])
   })
 
   it('draws nothing for an empty route', () => {
@@ -195,6 +218,10 @@ describe('adventureRouteGraph', () => {
     expect(rows[0].incoming.every((line) => line.fromNodeId === null && line.state === 'next')).toBe(true)
     expect(new Set(rows.slice(1).flatMap((row) => row.incoming.map((line) => line.state)))).toEqual(new Set(['future']))
     expect(stems(rows)).toEqual(rows.map((row) => row.nodes.map(() => (row.tierIndex === 6 ? null : 'future'))))
+    // The trail's next step leads to tier 1; the rest is ahead.
+    expect(rows.map((row) => row.trail)).toEqual(rows.map((row) => (row.tierIndex === 0 ? 'next' : 'future')))
+    expect(rows.flatMap((row) => row.nodes.map((node) => node.trailIn)))
+      .toEqual(rows.flatMap((row) => row.nodes.map(() => (row.tierIndex === 0 ? 'next' : 'future'))))
   })
 
   describe('for a seeded run with forks at tiers 2, 4 and 6', () => {
@@ -214,6 +241,15 @@ describe('adventureRouteGraph', () => {
         ['tier-6-left>tier-7-center future', 'tier-6-right>tier-7-center future'],
       ])
       expect(stems(rows)).toEqual([['next'], ['future', 'future'], ['future'], ['future', 'future'], ['future'], ['future', 'future'], [null]])
+      expect(trails(rows)).toEqual([
+        'traveled traveled>next',
+        'next next>next next>future',
+        'future future>future',
+        'future future>future future>future',
+        'future future>future',
+        'future future>future future>future',
+        'future future>end',
+      ])
     })
 
     it('marks the branch not taken once a fork is committed, and keeps it on a retry', () => {
@@ -227,6 +263,8 @@ describe('adventureRouteGraph', () => {
         ['tier-2-left>tier-3-center bypassed', 'tier-2-right>tier-3-center future'],
       ])
       expect(stems(committedRows).slice(0, 3)).toEqual([['next'], ['bypassed', 'future'], ['future']])
+      // The next step runs past the bypassed left node to the committed right one.
+      expect(trails(committedRows).slice(0, 3)).toEqual(['traveled traveled>next', 'next next>next next>future', 'future future>future'])
       expect(retry).toMatchObject({ status: 'active', stage: 'map', attemptOrdinal: 1, selectedNodeId: 'tier-2-right' })
       expect(retryRows).not.toBe(committedRows)
       expect(retryRows).toEqual(committedRows)
@@ -258,6 +296,16 @@ describe('adventureRouteGraph', () => {
         ['traveled', 'bypassed'],
         [null],
       ])
+      // The whole trail is taken, and it ends in the boss token.
+      expect(trails(rows)).toEqual([
+        'traveled traveled>traveled',
+        'traveled traveled>traveled traveled>traveled',
+        'traveled traveled>traveled',
+        'traveled traveled>traveled traveled>traveled',
+        'traveled traveled>traveled',
+        'traveled traveled>traveled traveled>traveled',
+        'traveled traveled>end',
+      ])
     })
 
     it('offers no next step on a failed run', () => {
@@ -271,6 +319,8 @@ describe('adventureRouteGraph', () => {
       expect(lines(rows)[0]).toEqual(['start>tier-1-center traveled'])
       expect(new Set(rows.slice(1).flatMap((row) => row.incoming.map((line) => line.state)))).toEqual(new Set(['future']))
       expect(stems(rows)[0]).toEqual(['future'])
+      expect(trails(rows)[0]).toBe('traveled traveled>future')
+      expect(trails(rows).slice(1).join(' ')).not.toMatch(/traveled|next/)
     })
 
     it('returns a frozen graph, reused for the same tier array', () => {

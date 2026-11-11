@@ -182,14 +182,33 @@ Rules:
     glyphs, line styles and creature icons in three lists labeled **Node
     status**, **Route lines** and **Creatures**.
   - **Trail.** `ol.three-adventure-route` is the `adventure-route` size
-    container. At 18em or less, such as a 320 px viewport, each tier shows
-    its name above full-width nodes, along a rail styled by the tier's
-    state, and the bands, stems and marks are hidden. This is the repo's
-    first container query; a browser without container queries keeps the
-    graph.
-  - **Forced colors.** Lines and stems use `CanvasText` (traveled),
-    `Highlight` (next) and `GrayText` (bypassed and future). Dash patterns
-    and widths still tell them apart.
+    container. At 18em or less (288 px at 100% text, 576 px at 200%), such
+    as a 320 px viewport, each tier shows its name above full-width nodes,
+    and the bands, stems and marks are hidden. This is the repo's first
+    container query; a browser without container queries keeps the graph.
+    - A rail runs 36 px in, through the token centers, from a stub above
+      tier 1's name into the last token. It shows progress, not branches:
+      `traveled` (solid green, 4 px) down to the last completed node, `next`
+      (dashed gold, 3 px) on to the last current or available node, and
+      `future` (solid gray, 2 px) after that. It passes behind every token,
+      bypassed ones included.
+    - The graph helper gives each row a `trail` and each node a `trailIn`
+      and `trailOut`. The tier's `data-trail` styles the rail past its name
+      (the heading's `::before`). A slot's `data-trail-in` and
+      `data-trail-out` style the halves above and below its token
+      (`::before` and `::after`), so the style changes at a node. The last
+      node has no `data-trail-out`.
+    - A playable node's button is opaque and covers its slot, so the button
+      draws the same halves itself (`> button.three-adventure-node::before`
+      and `::after`). They run from its outer edges to the token's center,
+      above the button's background and below its token (`z-index: 1`), and
+      stay inside its border box, clear of the focus outline. Every rule
+      that styles a slot half lists the button's half too.
+  - **Forced colors.** Lines, stems and trail rails use `CanvasText`
+    (traveled), `Highlight` (next) and `GrayText` (bypassed and future). Dash
+    patterns and widths still tell them apart. The trail's rules sit in a
+    container query nested after the stem rules, because a slot's
+    `::before` matches both.
   - SVG elements need explicit closing tags for the test DOM stub; see
     [Conventions](testing.md#conventions).
 - **Reward panel.** While `adventure.pendingReward` is set, a **Choose a
