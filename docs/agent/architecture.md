@@ -33,7 +33,7 @@ src/
 │   ├── view-model.ts           Immutable renderer projection
 │   ├── action-resolution.ts    Shared legal-action presentation
 │   ├── game-recording.ts       Versioned recording import/export
-│   ├── adventure*.ts           Adventure run, persistence, and pure map, reward, and setup rules (adventure-map.ts, adventure-rewards.ts, adventure-setup.ts)
+│   ├── adventure*.ts           Adventure run, persistence, pure map, reward, and setup rules, and the hub's route-map layout (adventure-map.ts, adventure-rewards.ts, adventure-setup.ts, adventure-route-graph.ts)
 │   ├── card-catalog.ts         Stable keys to player copy and asset slugs
 │   ├── game-presentation.ts    Shared card, action, phase, roster, and relic-charge labels
 │   ├── log-presentation.ts     Structured event labels and visual-log cap

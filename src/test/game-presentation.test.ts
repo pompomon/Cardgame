@@ -4,6 +4,7 @@ import { cardCatalogEntry, displayCardName } from '../app/card-catalog'
 import {
   describeAdventureRelicChargeUse,
   describeAdventureRelicChargeUses,
+  displayAdventureOpponentKind,
   displayAdventureOpponentLabel,
   labelGameAction,
   labelGameActions,
@@ -66,6 +67,16 @@ describe('shared game presentation', () => {
       .toBe('Boss: Gravebloom Dryad specialist')
     expect(displayAdventureOpponentLabel('future' as never, ['Forest']))
       .toBe('Mystery roster')
+  })
+
+  it('names each Adventure roster kind by its label prefix, and an unknown kind as Mystery', () => {
+    const kinds = ['standard', 'dual', 'mono', 'random'] as const
+
+    expect(kinds.map(displayAdventureOpponentKind)).toEqual(['Balanced', 'Duo', 'Boss', 'Mystery'])
+    for (const kind of kinds) {
+      expect(displayAdventureOpponentLabel(kind, ['Forest', 'Island']).split(/[: ]/, 1)[0]).toBe(displayAdventureOpponentKind(kind))
+    }
+    expect(displayAdventureOpponentKind('future' as never)).toBe('Mystery')
   })
 
   it('labels every game action variant and safely handles an unknown action', () => {
