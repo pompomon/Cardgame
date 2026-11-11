@@ -110,6 +110,7 @@ The approved decisions are:
     simulation; see [Evidence](#milestone-3-sweep))
   - [x] Trail threshold and spacing tuned from the sweep: 18em kept, and the
     rail redrawn as a progress rail
+  - [x] Review fix: the rail redrawn inside playable buttons, which hid it
   - [x] `testing.md` hub check, README and roadmap updates
   - [ ] Visual and assistive-technology check (pending maintainer)
 
@@ -444,7 +445,11 @@ The key has no buttons, links, `id`s or `<details>`, so it adds no tab stops.
   `::before`), from the tier above to its first node. Each slot's
   `data-trail-in` and `data-trail-out` style the halves above and below its
   token (`::before` and `::after`), so the style changes at a node. The last
-  node has no `data-trail-out`.
+  node has no `data-trail-out`;
+- a playable node's button is opaque and would hide its slot's halves, so the
+  button draws the same halves, from its outer edges to the token's center,
+  above its background and below its token. They stay inside the border box,
+  clear of the focus outline.
 
 Milestone 2 drew one rail per tier (`li::before`), styled by the tier's state
 and stopping level with the last tier's name. Milestone 3 replaced it with the
@@ -977,6 +982,16 @@ them, and what it could not emulate, in
     text is sub-pixel and falls behind opaque tokens, so it was accepted.
   - *Mid-word breaks* compare the line boxes of each word
     (`Range.getClientRects()`).
+  - Geometry alone missed that a playable node's opaque button hid the rail
+    between the button's edges and its token; review caught it in a
+    screenshot. After the fix, a pixel probe down the rail's column found the
+    rail inside every playable button up to its token, and none inside the
+    tokens. It covered an open fork at 390×844 with 200% text, with a node
+    focused, and a retry at 320×568 with both text sizes, with the node
+    hovered. The in-button rail sat on the slot's rail line and the token
+    centers, the focus outline stayed above the rail, and simulated forced
+    colors gave the in-button halves the same colors, widths and dashes as
+    their slots.
   - The lobby with a paused run, the reward choice, and the result screens
     for a loss, a completed run and a failed run also had no overflow,
     mid-word breaks, small controls or covered controls at every size. Result

@@ -3361,6 +3361,35 @@ describe('Three Adventure route map', () => {
     expect(tiers[6]).toContain('<span class="three-adventure-tier-mark" aria-hidden="true">♛</span><span class="three-adventure-tier-name">Tier 7 of 7 · Boss</span>')
   })
 
+  it('redraws the trail rail inside playable buttons, beneath their tokens', () => {
+    const css = readFileSync(join(__dirname, '..', 'renderers', 'three', 'interface.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
+    const rules = Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g),
+      ([, list, body]) => ({ selectors: list.split(',').map((selector) => selector.trim()), body: body.trim() }))
+    const bodyOf = (selector: string) => rules.filter((rule) => rule.selectors.join() === selector).map((rule) => rule.body).join(' ')
+    const inButton = (selector: string) => selector.replace(/::(before|after)$/, ' > button.three-adventure-node::$1')
+    // An opaque button covers its slot's rail halves, so every rule that draws a
+    // half, including each style and its forced-colors color, draws the button's.
+    const slotHalf = /^\.three-interface \.three-adventure-node-slot\[data-trail-(?:in|out)[^\]]*\]::(?:before|after)$/
+    const drawn = rules.filter(({ selectors, body }) => /\bborder-(?:left|color):/.test(body) && selectors.some((selector) => slotHalf.test(selector)))
+    expect(drawn).toHaveLength(6)
+    for (const { selectors } of drawn) {
+      for (const half of selectors.filter((selector) => slotHalf.test(selector))) expect(selectors).toContain(inButton(half))
+    }
+    // Inside the button's border, the halves stay on the slot's rail line, reach
+    // the button's outer edges and meet at the token's center.
+    const border = Number(/\bborder: (\d+)px /.exec(bodyOf('.three-interface button.three-adventure-node'))?.[1])
+    const left = Number(/(?:^|; )left: (\d+)px;/.exec(drawn[0].body)?.[1])
+    expect(border).toBeGreaterThan(0)
+    expect(left).toBeGreaterThan(border)
+    expect(bodyOf(inButton('.three-interface .three-adventure-node-slot[data-trail-in]::before')))
+      .toBe(`top: -${border}px; bottom: 50%; left: ${left - border}px;`)
+    expect(bodyOf(inButton('.three-interface .three-adventure-node-slot[data-trail-out]::after')))
+      .toBe(`top: 50%; bottom: -${border}px; left: ${left - border}px;`)
+    // The token paints over the half below its center.
+    expect(bodyOf('.three-interface button.three-adventure-node .three-adventure-node-token')).toBe('z-index: 1;')
+  })
+
   it('closes every SVG element, so the map nests as written', () => {
     const view = hubView()
     const html = renderThreeInterface(view, defaultUi)

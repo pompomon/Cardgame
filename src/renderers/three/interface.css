@@ -864,10 +864,14 @@
    * plus half its 56px token). The tier name carries it down from the tier
    * above, and each slot draws the half above its token's center and the
    * half below, so the style changes at a node and ends in the last token.
+   * A playable node's opaque button would hide its slot's halves, so the
+   * button draws its own, above its background and below its token.
    */
   .three-interface .three-adventure-tier[data-trail] .three-adventure-tier-badge::before,
   .three-interface .three-adventure-node-slot[data-trail-in]::before,
-  .three-interface .three-adventure-node-slot[data-trail-out]::after {
+  .three-interface .three-adventure-node-slot[data-trail-out]::after,
+  .three-interface .three-adventure-node-slot[data-trail-in] > button.three-adventure-node::before,
+  .three-interface .three-adventure-node-slot[data-trail-out] > button.three-adventure-node::after {
     content: "";
     display: block;
     position: absolute;
@@ -902,15 +906,36 @@
     bottom: 0;
   }
 
+  /* A button's halves start inside its 2px border, so they reach out over it. */
+  .three-interface .three-adventure-node-slot[data-trail-in] > button.three-adventure-node::before {
+    top: -2px;
+    bottom: 50%;
+    left: 34px;
+  }
+
+  .three-interface .three-adventure-node-slot[data-trail-out] > button.three-adventure-node::after {
+    top: 50%;
+    bottom: -2px;
+    left: 34px;
+  }
+
+  .three-interface button.three-adventure-node .three-adventure-node-token {
+    z-index: 1;
+  }
+
   .three-interface .three-adventure-tier[data-trail="traveled"] .three-adventure-tier-badge::before,
   .three-interface .three-adventure-node-slot[data-trail-in="traveled"]::before,
-  .three-interface .three-adventure-node-slot[data-trail-out="traveled"]::after {
+  .three-interface .three-adventure-node-slot[data-trail-out="traveled"]::after,
+  .three-interface .three-adventure-node-slot[data-trail-in="traveled"] > button.three-adventure-node::before,
+  .three-interface .three-adventure-node-slot[data-trail-out="traveled"] > button.three-adventure-node::after {
     border-left: 4px solid #7fd49a;
   }
 
   .three-interface .three-adventure-tier[data-trail="next"] .three-adventure-tier-badge::before,
   .three-interface .three-adventure-node-slot[data-trail-in="next"]::before,
-  .three-interface .three-adventure-node-slot[data-trail-out="next"]::after {
+  .three-interface .three-adventure-node-slot[data-trail-out="next"]::after,
+  .three-interface .three-adventure-node-slot[data-trail-in="next"] > button.three-adventure-node::before,
+  .three-interface .three-adventure-node-slot[data-trail-out="next"] > button.three-adventure-node::after {
     border-left: 3px dashed #ffda7b;
   }
 
@@ -1013,19 +1038,25 @@
   @container adventure-route (max-width: 18em) {
     .three-interface .three-adventure-tier[data-trail] .three-adventure-tier-badge::before,
     .three-interface .three-adventure-node-slot[data-trail-in]::before,
-    .three-interface .three-adventure-node-slot[data-trail-out]::after {
+    .three-interface .three-adventure-node-slot[data-trail-out]::after,
+    .three-interface .three-adventure-node-slot[data-trail-in] > button.three-adventure-node::before,
+    .three-interface .three-adventure-node-slot[data-trail-out] > button.three-adventure-node::after {
       border-color: GrayText;
     }
 
     .three-interface .three-adventure-tier[data-trail="traveled"] .three-adventure-tier-badge::before,
     .three-interface .three-adventure-node-slot[data-trail-in="traveled"]::before,
-    .three-interface .three-adventure-node-slot[data-trail-out="traveled"]::after {
+    .three-interface .three-adventure-node-slot[data-trail-out="traveled"]::after,
+    .three-interface .three-adventure-node-slot[data-trail-in="traveled"] > button.three-adventure-node::before,
+    .three-interface .three-adventure-node-slot[data-trail-out="traveled"] > button.three-adventure-node::after {
       border-color: CanvasText;
     }
 
     .three-interface .three-adventure-tier[data-trail="next"] .three-adventure-tier-badge::before,
     .three-interface .three-adventure-node-slot[data-trail-in="next"]::before,
-    .three-interface .three-adventure-node-slot[data-trail-out="next"]::after {
+    .three-interface .three-adventure-node-slot[data-trail-out="next"]::after,
+    .three-interface .three-adventure-node-slot[data-trail-in="next"] > button.three-adventure-node::before,
+    .three-interface .three-adventure-node-slot[data-trail-out="next"] > button.three-adventure-node::after {
       border-color: Highlight;
     }
   }

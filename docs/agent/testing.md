@@ -355,7 +355,10 @@ Where the map shows, also check that:
   and each line band meets its node slots;
 - in the trail layout, the rail runs through the token centers into the last
   token with no gap or overlap of 1 px or more, and each piece's style
-  matches its `data-trail`, `data-trail-in` or `data-trail-out` state;
+  matches its `data-trail`, `data-trail-in` or `data-trail-out` state.
+  Geometry alone misses a piece hidden under a button, so also look at a
+  screenshot: the rail must stay visible inside each playable node's button
+  up to its token, with 200% text included;
 - no word breaks mid-word: compare the line boxes of each word with
   `Range.getClientRects()`;
 - in forced colors, lines, stems and rail pieces use system colors and keep

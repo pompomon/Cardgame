@@ -198,6 +198,12 @@ Rules:
       `data-trail-out` style the halves above and below its token
       (`::before` and `::after`), so the style changes at a node. The last
       node has no `data-trail-out`.
+    - A playable node's button is opaque and covers its slot, so the button
+      draws the same halves itself (`> button.three-adventure-node::before`
+      and `::after`). They run from its outer edges to the token's center,
+      above the button's background and below its token (`z-index: 1`), and
+      stay inside its border box, clear of the focus outline. Every rule
+      that styles a slot half lists the button's half too.
   - **Forced colors.** Lines, stems and trail rails use `CanvasText`
     (traveled), `Highlight` (next) and `GrayText` (bypassed and future). Dash
     patterns and widths still tell them apart. The trail's rules sit in a
