@@ -434,6 +434,11 @@ generic lobby:
 - Render a single center node or two left/right choices per tier. Use text and
   icons in addition to color for completed, current, available, bypassed,
   locked, and boss states.
+- Draw the route as a branching map in native HTML: `aria-hidden` SVG lines
+  join each node to the next tier's nodes, told apart by dash pattern and
+  width as well as color, and a crown marks the boss. When the route is 18em
+  wide or less, it becomes a single-column trail with a progress rail. See the
+  [Adventure map graph plan](adventure-map-graph-plan.md).
 - Apply `aria-current="step"` to the current tier/node and include tier,
   opponent, route status, and roster summary in each accessible name.
 - Only `current` and `available` nodes are buttons; `current` covers both

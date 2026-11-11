@@ -82,6 +82,7 @@ The approved decisions are:
 8. **A trail for narrow routes.** When the route is 18em wide or less (288 px
    at 100% text, 576 px at 200%), a container query switches to a
    single-column trail. Browsers without container queries keep the graph.
+   Milestone 3 kept 18em (see [open question 8](#open-questions)).
 9. **Calm and top-down.** Tier 1 is at the top and the boss at the bottom,
    matching reading, DOM and Tab order. There is no motion and no new tab stop.
 
@@ -102,11 +103,14 @@ The approved decisions are:
     recorded
   - [x] Agent docs: the Adventure hub section of `three-interface.md`, and the
     test DOM stub rule in `testing.md`
-- [ ] Milestone 3 — Browser sweep, docs and release gate
-  - [ ] Adventure hub check at the documented viewports plus 320×568, with
-    line, word-break, forced-colors and focus checks
-  - [ ] Trail threshold and spacing tuned from the sweep
-  - [ ] `testing.md` hub check, README and roadmap updates
+- [ ] Milestone 3 — Browser sweep, docs and release gate (the maintainer
+  check is pending)
+  - [x] Adventure hub check at the documented viewports plus 320×568, with
+    line, word-break, forced-colors and focus checks (forced colors by
+    simulation; see [Evidence](#milestone-3-sweep))
+  - [x] Trail threshold and spacing tuned from the sweep: 18em kept, and the
+    rail redrawn as a progress rail
+  - [x] `testing.md` hub check, README and roadmap updates
   - [ ] Visual and assistive-technology check (pending maintainer)
 
 ## Current baseline
@@ -260,7 +264,7 @@ row 2 "badge nodes"  h3 badge (N or ♛)   ul with 4 equal tracks:
 ### Markup
 
 ```html
-<li class="three-adventure-tier" data-tier="3" data-tier-state="current" aria-current="step">
+<li class="three-adventure-tier" data-tier="3" data-tier-state="current" aria-current="step" data-trail="next">
   <h3 class="three-adventure-tier-badge" tabindex="-1" data-adventure-current-tier>
     <span class="three-adventure-tier-mark" aria-hidden="true">3</span>
     <span class="three-adventure-tier-name">Tier 3 of 7 · Current</span>
@@ -270,7 +274,7 @@ row 2 "badge nodes"  h3 badge (N or ♛)   ul with 4 equal tracks:
     <line class="three-adventure-edge" data-edge-state="next" x1="50%" y1="0" x2="75%" y2="100%"></line>
   </svg>
   <ul class="three-adventure-nodes" data-count="2">
-    <li class="three-adventure-node-slot" data-lane="left" data-stem="future">
+    <li class="three-adventure-node-slot" data-lane="left" data-stem="future" data-trail-in="next" data-trail-out="next">
       <button type="button" class="three-adventure-node" data-action="adventure-node"
         data-node-id="…" data-status="available" data-lane="left"
         aria-label="Choose this path: Tier 3 of 7, left path, Duo: Signal Siren + Rooftop Gargoyle. Status: Available.">
@@ -285,7 +289,7 @@ row 2 "badge nodes"  h3 badge (N or ♛)   ul with 4 equal tracks:
         </span>
       </button>
     </li>
-    <li class="three-adventure-node-slot" data-lane="right" data-stem="future">…</li>
+    <li class="three-adventure-node-slot" data-lane="right" data-stem="future" data-trail-in="next" data-trail-out="future">…</li>
   </ul>
 </li>
 ```
@@ -300,7 +304,9 @@ A static node replaces the button with a `div`:
 </div>
 ```
 
-- The tier's `li` start tag is unchanged.
+- The tier's `li` start tag is unchanged except for `data-trail`. Milestone 3
+  added it, with the slots' `data-trail-in` and `data-trail-out`, for the
+  [trail](#trail-layout).
 - The `h3` still contains the full tier name, such as `Tier 7 of 7 · Boss`.
   Its visible mark is the tier number, or ♛ for the boss.
 - `.three-adventure-tier-name` is visually hidden in the graph with the same
@@ -427,24 +433,39 @@ The key has no buttons, links, `id`s or `<details>`, so it adds no tab stops.
 - the line bands, stems and tier marks are hidden;
 - nodes stack at full width, 8 px apart, each a row with the token beside its
   text;
-- a 2 px rail (`li::before`) runs down the left side, behind the tokens, and
-  stops level with the last tier's name. Each tier's segment follows the
-  tier's state: solid green when cleared, dashed gold when current, and gray
-  otherwise.
+- a progress rail runs down the left side, 36 px in, through the token
+  centers. It starts in a short stub above tier 1's name and ends inside the
+  last token. The trail stacks a fork's two nodes in one column, so the rail
+  shows progress rather than branches: solid green (4 px) down to the last
+  completed node, dashed gold (3 px) on to the last current or available
+  node, and gray (2 px) after that. It passes behind every token, bypassed
+  ones included;
+- the tier's `data-trail` styles the stretch past its name (the heading's
+  `::before`), from the tier above to its first node. Each slot's
+  `data-trail-in` and `data-trail-out` style the halves above and below its
+  token (`::before` and `::after`), so the style changes at a node. The last
+  node has no `data-trail-out`.
+
+Milestone 2 drew one rail per tier (`li::before`), styled by the tier's state
+and stopping level with the last tier's name. Milestone 3 replaced it with the
+progress rail, which ends in the boss token and changes style at the node
+where the run stands rather than at a tier name.
 
 In the mockup, the trail appeared at 390 px with 200% text and at 320 px with
-both text sizes; every other case kept the graph. The trail also covers
-reflow: at 320 CSS px, such as 400% zoom of a 1280 px window, the route needs
-no horizontal scrolling. Without the trail, 200% text at 390 px broke words
-mid-word ("Balanc|ed"), because `.three-interface` sets
-`overflow-wrap: anywhere`.
+both text sizes; every other case kept the graph. The Milestone 3 sweep of the
+game found the same split. The trail also covers reflow: at 320 CSS px, such
+as 400% zoom of a 1280 px window, the route needs no horizontal scrolling.
+Without the trail, 200% text at 390 px broke words mid-word ("Balanc|ed"),
+because `.three-interface` sets `overflow-wrap: anywhere`.
 
 ### Forced colors
 
 Inside `@media (forced-colors: active)`, line `stroke` and stem
 `border-color` use `CanvasText` for `traveled`, `Highlight` for `next`, and
-`GrayText` for `bypassed` and `future`. Dash patterns and widths still tell the
-states apart. The plan adds no `forced-color-adjust: none`, gradients or
+`GrayText` for `bypassed` and `future`. The trail's rail pieces use the same
+colors for the same states, in a container query nested after the stem rules
+because a slot's `::before` matches both. Dash patterns and widths still tell
+the states apart. The plan adds no `forced-color-adjust: none`, gradients or
 background-image lines, so the browser keeps tokens, text, rings and focus
 outlines legible.
 
@@ -457,6 +478,7 @@ import type { AdventureNodeLane, AdventureNodeStatus } from './adventure-map'
 import type { AdventureTierSummary } from './types'
 
 export type AdventureRouteEdgeState = 'traveled' | 'next' | 'bypassed' | 'future'
+export type AdventureRouteTrailState = 'traveled' | 'next' | 'future'
 export type AdventureRouteLaneX = 25 | 50 | 75
 
 export interface AdventureRouteGraphNode {
@@ -464,6 +486,10 @@ export interface AdventureRouteGraphNode {
   readonly x: AdventureRouteLaneX
   /** The style of the line below the token, or null when no line leaves it. */
   readonly stem: AdventureRouteEdgeState | null
+  /** The trail's rail above the token (Milestone 3). */
+  readonly trailIn: AdventureRouteTrailState
+  /** The trail's rail below the token, or null for the last node (Milestone 3). */
+  readonly trailOut: AdventureRouteTrailState | null
 }
 
 export interface AdventureRouteEdge {
@@ -480,6 +506,8 @@ export interface AdventureRouteGraphRow {
   readonly nodes: readonly AdventureRouteGraphNode[]
   /** The lines that enter this tier from the previous one, or from the start. */
   readonly incoming: readonly AdventureRouteEdge[]
+  /** The trail's rail past this tier's name, or null when no node follows it (Milestone 3). */
+  readonly trail: AdventureRouteTrailState | null
 }
 
 export function adventureRouteLaneX(lane: AdventureNodeLane): AdventureRouteLaneX
@@ -506,6 +534,14 @@ Rules:
   or before an empty tier. Otherwise it is `traveled` if any outgoing line is
   traveled, else `next` if any is next, else `bypassed` if all are bypassed,
   else `future`.
+- **Trail (Milestone 3).** The trail's rail reads every node in one column,
+  tier by tier. The stretch ending at a node is `traveled` up to the last
+  completed node, `next` up to the last current or available node after it,
+  and `future` beyond. A node's `trailIn` is the stretch ending at it, and its
+  `trailOut` the stretch ending at the next node, or `null` for the last node.
+  A row's `trail` is its first node's `trailIn`; an empty tier takes the next
+  node's, and is `null` when no node follows. A failed or completed run has no
+  `next` stretch.
 - **Purity.** The output is frozen and memoized in a `WeakMap` keyed by the
   tier array, which `projectAdventureTiers` keeps identity-stable. Inputs are
   never mutated.
@@ -525,6 +561,9 @@ For the hub test fixture (`hubTiers`: tier 1 completed, both sides of the tier
 | Tier 3 → … → tier 7 | 4 | `future` |
 
 The stems are `next` on tier 1, `future` on tiers 2–6, and `null` on tier 7.
+The trail is `traveled` past tier 1's name and down to its token, `next` from
+there through both fork nodes, and `future` from below the fork's right node
+into the boss token.
 
 ### Renderer changes
 
@@ -537,9 +576,10 @@ In `interface-model.ts`:
   heading, the band and the slots. The tier state, heading suffix,
   `aria-current` and focus attributes are computed as today.
 - `renderAdventureNodeSlot(view, adventure, node, graphNode)` renders the
-  slot and its stem. `renderAdventureNode(view, adventure, node)` renders the
-  token, then either the caption and screen-reader text or the button
-  content. The button's attributes and name are unchanged.
+  slot, its stem and, from Milestone 3, its trail halves.
+  `renderAdventureNode(view, adventure, node)` renders the token, then either
+  the caption and screen-reader text or the button content. The button's
+  attributes and name are unchanged.
 - New helpers: `renderAdventureRoute(view, adventure)`,
   `renderAdventureNodeSlot`, `renderAdventureNodeToken(view, node)`,
   `renderAdventureNodeEmblem(view, opponent)`, `renderAdventureEdges(row,
@@ -700,8 +740,12 @@ rules use no transitions or animations.
 
 **Primary modules**
 
-- `src/renderers/three/interface.css` (tuning only)
-- `docs/agent/testing.md`, `README.md`,
+- `src/renderers/three/interface.css` (tuning only, as planned; the sweep
+  also redrew the trail's rail, which added the trail fields to
+  `src/app/adventure-route-graph.ts`, their attributes in
+  `src/renderers/three/interface-model.ts`, and tests in
+  `adventure-route-graph.test.ts` and `three-interface.test.ts`)
+- `docs/agent/testing.md`, `docs/agent/three-interface.md`, `README.md`,
   `docs/implementation/adventure-map-and-relics-roadmap.md` and this plan
 
 **Required validation**
@@ -764,10 +808,10 @@ rules use no transitions or animations.
 | --- | --- |
 | Lines drift from tokens (rounding, fonts, zoom). | The band and the slots share one grid column and percentage coordinates. Milestone 3 checks line ends to 1 px. |
 | Large text squeezes forks. | The trail at 18em, tuned in Milestone 3. |
-| A browser lacks container queries (before Chrome 105, Safari 16 or Firefox 110). | It ignores the block and keeps the graph, which still fits without overflow; only line breaks get worse. This is the repo's first container query, so Milestone 3 records the browsers checked. |
+| A browser lacks container queries (before Chrome 105, Safari 16 or Firefox 110). | It ignores the block and keeps the graph, which still fits without overflow; only line breaks get worse. This is the repo's first container query, so Milestone 3 records the browsers checked: only Chrome (see [Milestone 3 sweep](#milestone-3-sweep)). |
 | The test DOM stub mis-nests SVG. | Close every element explicitly, test the nesting, and document the rule in `testing.md`. |
 | The markup grows. | Procedural icons, cached URLs and skipped unchanged renders. Milestone 2 measures against a 300 KB budget. |
-| Forced colors hide lines. | System colors in a forced-colors block, checked with emulation in Milestone 3. |
+| Forced colors hide lines. | System colors in a forced-colors block. Milestone 3 checked them by simulation, because its tools could not emulate forced colors; a real contrast theme is on the [maintainer checklist](#maintainer-checklist). |
 | Players expect a map tap to preview a node, not start it. | Buttons keep their action text (**Choose this path**, **Start encounter**). See open question 1. |
 | Short captions hide information on static nodes. | The full label stays in screen-reader text and on buttons, and the map key names the creatures. See open question 3. |
 | Glyphs render as empty boxes. | The map adds no new glyph: ♛, 🔒 and the other status glyphs already ship in the hub. |
@@ -800,6 +844,13 @@ and maintainer testing can revisit any of them.
    *Working default:* none.
 8. Is 18em the right width for the trail?
    *Working default:* 18em, tuned in Milestone 3.
+   *Milestone 3:* kept. At 100% text, a forced graph stayed whole down to a
+   288 px route, exactly 18em, and first broke a word ("Doppelgänger") at
+   280 px, so a smaller threshold would break words. At 200% text the switch
+   is at 576 px: the graph was whole at 580 px, and a forced graph broke
+   words at 420 px. The trail itself stayed whole at 200% text until the
+   route narrowed to 260 px, in a viewport of about 298 px, below the 320 px
+   target.
 9. Should a failed run mark the node it was lost to?
    *Working default:* no, because that needs a new view-model field; the result
    panel already names the opponent.
@@ -828,7 +879,9 @@ on the production preview at the configured base path:
 - a new run, a committed fork, a retry, a pending reward, a completed run and
   a failed run.
 
-Record the results as emulation, not device coverage.
+Record the results as emulation, not device coverage. Milestone 3 recorded
+them, and what it could not emulate, in
+[Milestone 3 sweep](#milestone-3-sweep).
 
 ### Maintainer checklist
 
@@ -840,6 +893,10 @@ Record the results as emulation, not device coverage.
 - [ ] Speech input: **Choose this path** and the opponent names reach the right
   buttons.
 - [ ] A visual review of each card style against Figures 1 and 2.
+- [ ] Safari and Firefox: the graph, and the trail at 320 px wide, which
+  relies on a container query.
+- [ ] The hub's render time under 4× CPU throttling, which Milestone 2 could
+  only estimate.
 
 ## Evidence and limitations
 
@@ -873,11 +930,100 @@ Record the results as emulation, not device coverage.
   `forceProcedural` and monochrome, and at 32 px as the log calls it.
 - **Contrast.** Ratios use the WCAG 2 formula against the panel background
   `#0e2029`.
-- **Not covered.** 720×360, forced colors, the real renderer's markup, real
-  devices and assistive technology.
+- **Not covered by the mockup.** 720×360, forced colors, the real renderer's
+  markup, real devices and assistive technology. The
+  [Milestone 3 sweep](#milestone-3-sweep) covered the first three, forced
+  colors by simulation.
 - **Figure files.** The figures are lossy WebP (quality 82, about 63 KB in
   total) in `adventure-map-graph/` next to this plan.
   - They are design documentation, not application assets: they are outside
     `public/`, so they are neither deployed nor precached.
   - Maintainers who prefer pull request attachments under
     [`pr-workflow.md`](../agent/pr-workflow.md#screenshots) can move them.
+
+### Milestone 3 sweep
+
+- **Setup.** Headless Chrome 157 through Playwright, at a device scale factor
+  of 1, on a production preview of the Milestone 3 code at `/Cardgame/`. Runs
+  were seeded into `localStorage` from engine-generated saves and entered with
+  **Resume Adventure**. Most use seed `1794380000123`, whose route forks at
+  tiers 2, 4 and 6; one new run uses `1794380000124`, whose route forks at
+  tier 1. For 200% text the root font size was doubled, as the hub check does.
+- **Map states.** A new run, a new run with a fork at tier 1, an open fork, a
+  committed fork, a retry after a loss and the boss tier, each at every size
+  below. Each state gave the same results:
+
+  | Viewport | Text | Layout | Overflow | Smallest control | Line or rail error | Mid-word breaks |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | 1280×800 | 100% | Graph | 0 px | 46 px | 0 px | 0 |
+  | 1280×800 | 200% | Graph | 0 px | 70 px | 0 px | 0 |
+  | 844×390 | 100% | Graph | 0 px | 46 px | 0 px | 0 |
+  | 844×390 | 200% | Graph | 0 px | 70 px | 0 px | 0 |
+  | 720×360 | 100% | Graph | 0 px | 46 px | 0 px | 0 |
+  | 720×360 | 200% | Graph | 0 px | 70 px | 0 px | 0 |
+  | 390×844 | 100% | Graph | 0 px | 46 px | 0 px | 0 |
+  | 390×844 | 200% | Trail | 0 px | 70 px | 0 px | 0 |
+  | 320×568 | 100% | Trail | 0 px | 46 px | 0 px | 0 |
+  | 320×568 | 200% | Trail | 0 px | 70 px | 0.4 px | 0 |
+
+  - *Smallest control* is the smallest width or height of any control. No
+    control was under 44 px, and each was the topmost element at its center
+    (`elementFromPoint`).
+  - *Line or rail error* in the graph is the distance from each line end to
+    its token's center, and the gap between each line band and its slots. In
+    the trail, it covers the rail's offset from token centers, gaps and
+    overlaps between pieces, joins at token centers, and the end inside the
+    last token; no piece had the wrong style. The 0.4 px at 320×568 with 200%
+    text is sub-pixel and falls behind opaque tokens, so it was accepted.
+  - *Mid-word breaks* compare the line boxes of each word
+    (`Range.getClientRects()`).
+  - The lobby with a paused run, the reward choice, and the result screens
+    for a loss, a completed run and a failed run also had no overflow,
+    mid-word breaks, small controls or covered controls at every size. Result
+    screens that keep the map had the same layouts and errors as the table.
+- **Flows.** Each flow ran once; *Sizes* lists where its resulting screen was
+  measured. Every announcement came from the status announcer.
+
+  | Flow | Sizes | Focus | Announcement |
+  | --- | --- | --- | --- |
+  | Resume a run | All | The current tier's heading; in view at 720×360, the boss tier included | "Adventure resumed at Tier N." |
+  | Win at a fork | All | "Victory at Tier 2"; the reward panel replaces the route | "Encounter won. Choose a reward or skip it to continue to Tier 3." |
+  | Choose Scout's Cache | 720×360 | The Tier 3 heading, in view | "Scout's Cache claimed. Choose your Tier 3 encounter." |
+  | Resume with a reward pending | All | "Choose a reward", in view | "Adventure resumed. Choose a reward or skip it to continue to Tier 3." |
+  | Lose an encounter | All | "Defeat at Tier 3"; the map offers only the committed node | "Encounter lost. 2 chances left. Retry Tier 3." |
+  | Save a result while storage refuses it | 1280×800 | The game stays, with **Retry** (named "Retry Saving Result") and **Reset**; a refused retry keeps focus on **Retry** | A successful retry shows "Victory at Tier 2" and announces "Result saved. Encounter won. …" |
+  | Win the boss | All | "Adventure complete: Tier 7 boss defeated" | "Adventure completed! Score: 535. High score: 535." |
+  | Lose the last chance | All | "Adventure over: defeated at Tier 3"; the trail is traveled to tier 2, with no next stretch | "Adventure failed. Score: 24. High score: 24." |
+  | **Pause Adventure** or **Reset Adventure Run** from a scrolled hub, or **Back to Lobby** from a scrolled result | 720×360 | The lobby heading, in view | "Adventure paused at Tier 3." or "Adventure run reset." |
+  | Start a node from a scrolled hub | 720×360 | The game menu, in view | "Tier 3 encounter started…" |
+
+  After a completed or failed run, Tab reached **Start New Adventure**,
+  **Back to Lobby**, **Settings** and **Recording**, in that order. Storage
+  refusal was simulated by making `localStorage.setItem` throw
+  `QuotaExceededError` for the run's key.
+- **Card styles.** Classic, Cats and Anime, each with and without monochrome,
+  at 1280×800 and both text sizes, gave the same graph.
+- **Images.** No hub state requested card art from `/cards/`. Requests seen
+  after an encounter came from the encounter board.
+- **Console.** No errors. The session log held four Chrome GL driver
+  performance warnings ("GPU stall due to ReadPixels") from one WebGL
+  context; a hub page swept at all five sizes logged nothing.
+- **Forced colors.** The tools could not emulate forced colors, so a script
+  switched the stylesheet's one `@media (forced-colors: active)` rule to
+  `all`, read computed styles in the graph and in a trail forced by a 280 px
+  route, and then restored the rule. Lines, stems and rail pieces took
+  `CanvasText` (traveled), `Highlight` (next) and `GrayText` (bypassed and
+  future), and kept their widths and dash patterns. The script cannot
+  reproduce the browser's own color override, so a real contrast theme stays
+  on the [maintainer checklist](#maintainer-checklist).
+- **Reduced motion.** Not emulated. The hub adds no motion: the unit test
+  "adds no motion to the announcer or the Adventure hub, reward and result"
+  finds no `transition` or `animation` in the Adventure rules and no
+  `@keyframes` in `interface.css`.
+- **Trail threshold.** See open question 8 under
+  [Open questions](#open-questions).
+- **Not covered.** Real forced colors, reduced-motion emulation, CPU
+  throttling, browsers other than Chrome (including Safari's and Firefox's
+  container queries), real devices, safe areas, coarse pointers, screen
+  readers and speech input. These are on the
+  [maintainer checklist](#maintainer-checklist).

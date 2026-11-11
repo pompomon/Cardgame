@@ -127,11 +127,14 @@ query parameters and the hash, then discards the old stored renderer preference.
 - Real-device performance varies. Lower Render Quality if interaction is slow;
   mobile Safari/Android hardware testing is recommended before wider rollout.
 - Adventure opens a map of seven tiers with three two-way forks and a shared
-  final boss. Choose a highlighted encounter to play it. After each non-boss
-  win, choose one of three rewards or skip it before picking the next
-  encounter. Boons and relics last for the current run only: extra chances,
-  loss protection, larger opening hands, or a guaranteed creature in the
-  opening hand. A loss costs a chance unless a relic protects it; after a
+  final boss. Lines join each encounter to the next tier's and show the path
+  taken, the branch passed by, the next step and the road ahead; a crown
+  marks the boss. On narrow screens or with large text, the map becomes a
+  single-column trail. Choose a highlighted encounter to play it. After each
+  non-boss win, choose one of three rewards or skip it before picking the
+  next encounter. Boons and relics last for the current run only: extra
+  chances, loss protection, larger opening hands, or a guaranteed creature in
+  the opening hand. A loss costs a chance unless a relic protects it; after a
   draw, or a loss with chances left, you retry the same encounter.
   **Pause Adventure** saves the run, any pending reward and any live game,
   and **Resume Adventure** reopens them. Leaving an encounter without pausing

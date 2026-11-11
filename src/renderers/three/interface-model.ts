@@ -529,11 +529,15 @@ function renderAdventureNode(view: AppViewModel, adventure: AdventureUiState, no
 }
 
 // The stem continues the route below the token; it is drawn only when the
-// graph row describes this node.
+// graph row describes this node. The trail's rail is drawn in two halves, above
+// and below the token, so its style can change at a node.
 function renderAdventureNodeSlot(view: AppViewModel, adventure: AdventureUiState, node: AdventureNodeSummary,
   graphNode: AdventureRouteGraphNode | undefined): string {
-  const stem = graphNode?.nodeId === node.id ? graphNode.stem : null
-  return `<li class="three-adventure-node-slot" data-lane="${node.lane}"${stem === null ? '' : ` data-stem="${stem}"`}>${
+  const described = graphNode?.nodeId === node.id ? graphNode : null
+  const stem = described?.stem ?? null
+  const trail = described === null ? ''
+    : ` data-trail-in="${described.trailIn}"${described.trailOut === null ? '' : ` data-trail-out="${described.trailOut}"`}`
+  return `<li class="three-adventure-node-slot" data-lane="${node.lane}"${stem === null ? '' : ` data-stem="${stem}"`}${trail}>${
     renderAdventureNode(view, adventure, node)}</li>`
 }
 
@@ -556,8 +560,9 @@ function renderAdventureTier(view: AppViewModel, adventure: AdventureUiState, ti
     : current ? 'current'
       : adventure.status === 'failed' && tierNumber === adventure.currentTier ? 'failed' : 'upcoming'
   const suffix = state === 'cleared' ? ' · Cleared' : state === 'current' ? ' · Current' : state === 'failed' ? ' · Run ended' : ''
+  const trail = row?.trail ? ` data-trail="${row.trail}"` : ''
   // The badge shows the tier number (or ♛); the heading still reads the full tier name.
-  return `<li class="three-adventure-tier" data-tier="${tierNumber}" data-tier-state="${state}"${current ? ' aria-current="step"' : ''}>
+  return `<li class="three-adventure-tier" data-tier="${tierNumber}" data-tier-state="${state}"${current ? ' aria-current="step"' : ''}${trail}>
     <h3 class="three-adventure-tier-badge"${current ? ' tabindex="-1" data-adventure-current-tier' : ''}><span class="three-adventure-tier-mark" aria-hidden="true">${
       boss ? '♛' : tierNumber}</span><span class="three-adventure-tier-name">Tier ${tierNumber} of ${ADVENTURE_TIER_COUNT}${boss ? ' · Boss' : ''}${suffix}</span></h3>
     ${renderAdventureEdges(row, first)}
