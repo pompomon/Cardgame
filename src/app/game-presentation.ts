@@ -54,6 +54,22 @@ export function displayAdventureOpponentLabel(
   }
 }
 
+/** The short roster kind for route captions; it matches the label prefixes above. */
+export function displayAdventureOpponentKind(kind: AdventureOpponentKind): string {
+  switch (kind) {
+    case 'standard':
+      return 'Balanced'
+    case 'dual':
+      return 'Duo'
+    case 'mono':
+      return 'Boss'
+    case 'random':
+      return 'Mystery'
+    default:
+      return 'Mystery'
+  }
+}
+
 // What a used relic charge did, from the relic's catalog effect.
 function adventureRelicChargePurpose(effect: AdventureRewardEffect): string {
   switch (effect.kind) {
