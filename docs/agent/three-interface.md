@@ -140,7 +140,8 @@ and no replay. In that state `renderThreeAdventureHub` replaces the lobby:
 
 - An encounter result section with a heading.
 - A progress list, followed by the owned relics with charges and rules text.
-- A seven-tier route, or the reward panel while an offer is pending.
+- A seven-tier route map with its map key, or the reward panel while an offer
+  is pending.
 - The run actions:
   - While the run is open: **Pause Adventure** and **Reset Adventure Run**.
   - After it ends: **Start New Adventure** and **Back to Lobby**.
@@ -152,8 +153,44 @@ Rules:
   `button[data-action="adventure-node"][data-node-id]`, labeled **Choose this
   path**, **Start encounter** or **Retry encounter**. The click handler checks
   the node ID against `actionableAdventureNodes()` in the latest view before
-  calling `startAdventureNode()`, which checks again. Other nodes are plain
-  text.
+  calling `startAdventureNode()`, which checks again. A button holds the
+  node's token, then `.three-adventure-node-text` with the full opponent
+  label, the status word and the action; its `aria-label` contains all three.
+  Other nodes are a `div` with the token, an `aria-hidden` caption
+  (`{Kind} · {Status}`, or `♛ Boss · {Status}`) and `three-sr-only` text
+  (`{Lane} · {Status}. {Full label}.`).
+- **Route map.** `renderAdventureRoute` draws the route from
+  `adventureRouteGraph(adventure.tiers)`, computed once per render:
+  - Each tier `li` is a grid. Its `h3.three-adventure-tier-badge` shows the
+    tier number, or ♛ for the boss, in an `aria-hidden` mark. The full tier
+    name stays in the heading, visually hidden in the graph.
+  - Above the tier's node slots, an `aria-hidden` `svg.three-adventure-edges`
+    band draws the lines entering the tier, between lane centers (25%, 50%
+    or 75%); tier 1's lines leave a start dot. A slot's `data-stem` continues
+    its node's outgoing lines below the token, and the last tier has none.
+  - Lines and stems carry the helper's state in `data-edge-state` and
+    `data-stem`: `traveled` (solid green, 4 px), `next` (dashed gold, 3 px),
+    `bypassed` (dotted, 3 px) and `future` (solid gray, 2 px).
+  - Each token shows the opponent's roster: two 24 px creature icons for a
+    duo, one 36 px icon for the boss, five colored dots for a balanced
+    roster, and **?** for a mystery or unknown roster. Icons come from
+    `renderLandIcon(…, { forceProcedural: true, monochrome })`, so the hub
+    requests no `/cards/` image and has no `onerror` handler in any card
+    style. A badge on the token shows the status glyph.
+  - After the list, `div.three-adventure-map-key` explains the status
+    glyphs, line styles and creature icons in three lists labeled **Node
+    status**, **Route lines** and **Creatures**.
+  - **Trail.** `ol.three-adventure-route` is the `adventure-route` size
+    container. At 18em or less, such as a 320 px viewport, each tier shows
+    its name above full-width nodes, along a rail styled by the tier's
+    state, and the bands, stems and marks are hidden. This is the repo's
+    first container query; a browser without container queries keeps the
+    graph.
+  - **Forced colors.** Lines and stems use `CanvasText` (traveled),
+    `Highlight` (next) and `GrayText` (bypassed and future). Dash patterns
+    and widths still tell them apart.
+  - SVG elements need explicit closing tags for the test DOM stub; see
+    [Conventions](testing.md#conventions).
 - **Reward panel.** While `adventure.pendingReward` is set, a **Choose a
   reward** panel replaces the route:
   - Each choice shows its catalog name, exact rules text, and cap or charge
@@ -169,9 +206,14 @@ Rules:
     catalog. Escape every value, including the IDs in attributes.
   - The panel uses no element `id`s.
   - `actionableAdventureNodes()` returns no nodes while an offer is pending.
-- **Not color alone.** Each node status has an `aria-hidden` icon and visible
-  text (Completed, Current, Available, Bypassed, Locked). Boss nodes also show
-  a text **Boss** label. The current tier has `aria-current="step"`.
+- **Not color alone.** Each node status has an `aria-hidden` glyph on the
+  node's token and a word (Completed, Current, Available, Bypassed, Locked):
+  in a button's visible text, or in a static node's caption and
+  screen-reader text. Each line state also differs by dash pattern or width,
+  and the map key names every glyph and line style. The boss tier's badge
+  shows ♛, its heading reads **Tier 7 of 7 · Boss**, and a static boss
+  node's caption starts with **♛ Boss**. The current tier has
+  `aria-current="step"` and a double ring on its badge.
 - **Focus.** Entering the hub, or a change of `adventure.decisionKey` (a
   committed result, a resolved reward or a new run), moves focus to the first
   of these that exists:
@@ -210,11 +252,11 @@ Rules:
   reward's Choose buttons and Skip), then Pause and Reset, then Settings
   and Recording. A finished run offers Start New Adventure and Back to
   Lobby instead of Pause and Reset. Headings take focus only from script
-  (`tabindex="-1"`), and the relic list has no tab stops.
-- **No motion.** The hub, reward panel, result and announcer use no CSS
-  transitions or animations, so reduced motion needs no override. A test
-  reads `interface.css` and fails if an Adventure or `three-sr-only` rule
-  adds a transition or animation, or if the file adds `@keyframes`.
+  (`tabindex="-1"`), and the relic list and map key have no tab stops.
+- **No motion.** The hub, route map, reward panel, result and announcer use
+  no CSS transitions or animations, so reduced motion needs no override. A
+  test reads `interface.css` and fails if an Adventure or `three-sr-only`
+  rule adds a transition or animation, or if the file adds `@keyframes`.
 - **Pending result.** While storage refuses a result, the finished board stays
   open. The Game Menu, the wide game-controls panel and the touch dock offer
   **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The

@@ -6,12 +6,19 @@ import {
   type TargetSelectionContext,
 } from '../../app/action-resolution'
 import { ADVENTURE_TIER_COUNT, type AdventureNodeLane, type AdventureNodeStatus } from '../../app/adventure'
+import {
+  adventureRouteGraph,
+  type AdventureRouteEdgeState,
+  type AdventureRouteGraphNode,
+  type AdventureRouteGraphRow,
+} from '../../app/adventure-route-graph'
 import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../../app/card-catalog'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
-import { describeAdventureRelicChargeUses, displayGamePhase } from '../../app/game-presentation'
+import { cardVisualPaletteFor } from '../../app/card-visuals'
+import { describeAdventureRelicChargeUses, displayAdventureOpponentKind, displayGamePhase } from '../../app/game-presentation'
 import {
   describeNextAdventureOpponent,
   hasSavedAdventureRun,
@@ -23,6 +30,7 @@ import { buildCounterHandOptions, type CounterHandOptions } from '../../app/resp
 import {
   HIDDEN_HAND_CARD_NAME,
   type AdventureNodeSummary,
+  type AdventureOpponentSummary,
   type AdventureRelicSummary,
   type AdventureResultSummary,
   type AdventureRewardChoiceSummary,
@@ -33,12 +41,12 @@ import {
   type GameUiState,
   type Mode,
 } from '../../app/types'
-import { isBasicLand, type BasicLand } from '../../game/types'
+import { BASIC_LANDS, isBasicLand, type BasicLand } from '../../game/types'
 import { canPreviewCard } from '../card-preview'
 import type { BoardHit, RendererCardIdentity, ThreeDragFeedback, ThreePeek } from './contracts'
 import { renderThreeLog } from './interface-log'
 import { isTouchLayoutMode, type ThreeShellProfile } from './layout'
-import { escapeHtml, renderCardRules, renderCardTile, renderInstallControls, renderP2P } from './native-html'
+import { escapeHtml, renderCardRules, renderCardTile, renderInstallControls, renderLandIcon, renderP2P } from './native-html'
 
 export type ThreeLobbyPage = 'root' | 'settings' | 'recording'
 
@@ -445,28 +453,101 @@ function renderAdventureReward(offer: AdventureRewardOfferSummary): string {
   </section>`
 }
 
-function renderAdventureNode(adventure: AdventureUiState, node: AdventureNodeSummary): string {
+// Line styles in the order the map key lists them.
+const ADVENTURE_ROUTE_EDGE_STATES: readonly AdventureRouteEdgeState[] = ['traveled', 'next', 'bypassed', 'future']
+const ADVENTURE_KEY_STATUSES: readonly AdventureNodeStatus[] = ['completed', 'current', 'available', 'bypassed', 'locked']
+
+function adventureRouteEdgeLabel(state: AdventureRouteEdgeState): string {
+  switch (state) {
+    case 'traveled': return 'Route taken'
+    case 'next': return 'Next step'
+    case 'bypassed': return 'Not taken'
+    case 'future': return 'Ahead'
+    default: return 'Route'
+  }
+}
+
+// Procedural icons only: no /cards/ request and no onerror handler, in every card style.
+function renderAdventureIcon(view: AppViewModel, land: BasicLand, size: number, className: string): string {
+  return renderLandIcon(land, view.cardVisualStyle, size, className, { forceProcedural: true, monochrome: view.monochromeCards })
+}
+
+// The opponent's roster on its token: both creatures of a duo, the boss's
+// creature, one dot per creature for a balanced roster, or a question mark.
+function renderAdventureNodeEmblem(view: AppViewModel, opponent: AdventureOpponentSummary): string {
+  const lands = opponent.lands.filter((land) => isBasicLand(land))
+  switch (opponent.kind) {
+    case 'dual':
+      if (lands.length > 0) {
+        return `<span class="three-adventure-node-emblem" data-kind="dual">${lands.slice(0, 2)
+          .map((land) => renderAdventureIcon(view, land, 24, 'three-adventure-node-art')).join('')}</span>`
+      }
+      break
+    case 'mono':
+      if (lands.length > 0) {
+        return `<span class="three-adventure-node-emblem" data-kind="mono">${renderAdventureIcon(view, lands[0], 36, 'three-adventure-node-art')}</span>`
+      }
+      break
+    case 'standard': {
+      const monochrome = view.monochromeCards ? ' card-art--monochrome' : ''
+      return `<span class="three-adventure-node-emblem" data-kind="standard">${BASIC_LANDS.map((land) =>
+        `<span class="three-adventure-node-dot${monochrome}" style="--dot:${cardVisualPaletteFor(land, view.cardVisualStyle).iconPrimary}"></span>`).join('')}</span>`
+    }
+    default:
+      break
+  }
+  // A mystery roster, an unknown kind, or a roster without known creatures.
+  return '<span class="three-adventure-node-emblem" data-kind="random">?</span>'
+}
+
+function renderAdventureNodeToken(view: AppViewModel, node: AdventureNodeSummary): string {
+  return `<span class="three-adventure-node-token" aria-hidden="true">${renderAdventureNodeEmblem(view, node.opponent)}`
+    + `<span class="three-adventure-node-badge">${adventureNodeStatusLabel(node.status).icon}</span></span>`
+}
+
+function renderAdventureNode(view: AppViewModel, adventure: AdventureUiState, node: AdventureNodeSummary): string {
   const status = adventureNodeStatusLabel(node.status)
   const lane = adventureLaneLabel(node.lane)
   const opponent = node.opponent.label
-  const contents = `<span class="three-adventure-node-heading"><span class="three-adventure-node-icon" aria-hidden="true">${status.icon}</span>
-    <span>${lane} · ${status.text}</span></span>
-    <span class="three-adventure-node-opponent">${escapeHtml(opponent)}</span>
-    ${node.boss ? '<span class="three-adventure-node-boss"><span aria-hidden="true">♛</span> Boss</span>' : ''}`
+  const token = renderAdventureNodeToken(view, node)
   const attrs = ` data-status="${node.status}" data-lane="${node.lane}"`
   // Only nodes the route rules can start are buttons: a fork's two choices,
   // a single-node tier, or a committed node waiting for its retry.
   if (node.status !== 'current' && node.status !== 'available') {
-    return `<div class="three-adventure-node"${attrs}>${contents}</div>`
+    // The short caption is for sight; screen readers get the lane, status and full label.
+    const kind = node.boss ? '♛ Boss' : displayAdventureOpponentKind(node.opponent.kind)
+    return `<div class="three-adventure-node"${attrs}>${token}
+      <span class="three-adventure-node-caption" aria-hidden="true">${escapeHtml(`${kind} · ${status.text}`)}</span>
+      <span class="three-sr-only">${lane} · ${status.text}. ${escapeHtml(opponent)}.</span></div>`
   }
   const action = node.status === 'available' ? 'Choose this path'
     : adventure.attemptOrdinal > 0 ? 'Retry encounter' : 'Start encounter'
   const name = `${action}: Tier ${node.tierIndex + 1} of ${ADVENTURE_TIER_COUNT}${node.boss ? ', boss' : ''}, ${lane.toLowerCase()}, ${opponent}. Status: ${status.text}.`
   return `<button type="button" class="three-adventure-node" data-action="adventure-node" data-node-id="${escapeHtml(node.id)}"${attrs}
-    aria-label="${escapeHtml(name)}">${contents}<span class="three-adventure-node-action">${action}</span></button>`
+    aria-label="${escapeHtml(name)}">${token}<span class="three-adventure-node-text"><span class="three-adventure-node-label">${escapeHtml(opponent)}</span>
+    <span class="three-adventure-node-status">${status.text}</span><span class="three-adventure-node-action">${action}</span></span></button>`
 }
 
-function renderAdventureTier(adventure: AdventureUiState, tier: AdventureTierSummary): string {
+// The stem continues the route below the token; it is drawn only when the
+// graph row describes this node.
+function renderAdventureNodeSlot(view: AppViewModel, adventure: AdventureUiState, node: AdventureNodeSummary,
+  graphNode: AdventureRouteGraphNode | undefined): string {
+  const stem = graphNode?.nodeId === node.id ? graphNode.stem : null
+  return `<li class="three-adventure-node-slot" data-lane="${node.lane}"${stem === null ? '' : ` data-stem="${stem}"`}>${
+    renderAdventureNode(view, adventure, node)}</li>`
+}
+
+// The lines entering a tier, in a band above its nodes; tier 1's leave the
+// start dot. Coordinates are the graph's typed lane positions.
+function renderAdventureEdges(row: AdventureRouteGraphRow | undefined, first: boolean): string {
+  const y1 = first ? 6 : 0
+  return `<svg class="three-adventure-edges" aria-hidden="true">${first ? '<circle class="three-adventure-start" cx="50%" cy="6" r="6"></circle>' : ''}${
+    (row?.incoming ?? []).map((edge) => `<line class="three-adventure-edge" data-edge-state="${edge.state}"`
+      + ` x1="${edge.fromX}%" y1="${y1}" x2="${edge.toX}%" y2="100%"></line>`).join('')}</svg>`
+}
+
+function renderAdventureTier(view: AppViewModel, adventure: AdventureUiState, tier: AdventureTierSummary,
+  row: AdventureRouteGraphRow | undefined, first: boolean): string {
   const tierNumber = tier.tierIndex + 1
   const resumable = adventure.status === 'active' || adventure.status === 'paused'
   const boss = tier.nodes.some((node) => node.boss)
@@ -475,10 +556,38 @@ function renderAdventureTier(adventure: AdventureUiState, tier: AdventureTierSum
     : current ? 'current'
       : adventure.status === 'failed' && tierNumber === adventure.currentTier ? 'failed' : 'upcoming'
   const suffix = state === 'cleared' ? ' · Cleared' : state === 'current' ? ' · Current' : state === 'failed' ? ' · Run ended' : ''
+  // The badge shows the tier number (or ♛); the heading still reads the full tier name.
   return `<li class="three-adventure-tier" data-tier="${tierNumber}" data-tier-state="${state}"${current ? ' aria-current="step"' : ''}>
-    <h3${current ? ' tabindex="-1" data-adventure-current-tier' : ''}>Tier ${tierNumber} of ${ADVENTURE_TIER_COUNT}${boss ? ' · Boss' : ''}${suffix}</h3>
-    <ul class="three-adventure-nodes" data-count="${tier.nodes.length}">${tier.nodes.map((node) =>
-      `<li>${renderAdventureNode(adventure, node)}</li>`).join('')}</ul></li>`
+    <h3 class="three-adventure-tier-badge"${current ? ' tabindex="-1" data-adventure-current-tier' : ''}><span class="three-adventure-tier-mark" aria-hidden="true">${
+      boss ? '♛' : tierNumber}</span><span class="three-adventure-tier-name">Tier ${tierNumber} of ${ADVENTURE_TIER_COUNT}${boss ? ' · Boss' : ''}${suffix}</span></h3>
+    ${renderAdventureEdges(row, first)}
+    <ul class="three-adventure-nodes" data-count="${tier.nodes.length}">${tier.nodes.map((node, index) =>
+      renderAdventureNodeSlot(view, adventure, node, row?.nodes[index])).join('')}</ul></li>`
+}
+
+// Explains the glyphs, line styles and creature icons; it adds no tab stops.
+function renderAdventureMapKey(view: AppViewModel): string {
+  const statuses = ADVENTURE_KEY_STATUSES.map((status) => {
+    const label = adventureNodeStatusLabel(status)
+    return `<li><span class="three-adventure-key-glyph" aria-hidden="true">${label.icon}</span>${label.text}</li>`
+  }).join('')
+  const lines = ADVENTURE_ROUTE_EDGE_STATES.map((state) => `<li><svg class="three-adventure-key-sample" aria-hidden="true">`
+    + `<line class="three-adventure-key-edge" data-edge-state="${state}" x1="0" y1="50%" x2="100%" y2="50%"></line></svg>${adventureRouteEdgeLabel(state)}</li>`).join('')
+  const creatures = BASIC_LANDS.map((land) =>
+    `<li>${renderAdventureIcon(view, land, 24, 'three-adventure-key-art')}${escapeHtml(displayCardName(land))}</li>`).join('')
+  return `<div class="three-adventure-map-key"><h3>Map key</h3>
+    <ul aria-label="Node status">${statuses}</ul>
+    <ul aria-label="Route lines">${lines}</ul>
+    <ul aria-label="Creatures">${creatures}</ul></div>`
+}
+
+function renderAdventureRoute(view: AppViewModel, adventure: AdventureUiState): string {
+  const graph = adventureRouteGraph(adventure.tiers)
+  return `<section class="three-adventure-map" aria-label="Adventure route"><h2>Route</h2>
+      <ol class="three-adventure-route">${adventure.tiers.map((tier, index) =>
+        renderAdventureTier(view, adventure, tier, graph[index], index === 0)).join('')}</ol>
+      ${renderAdventureMapKey(view)}
+    </section>`
 }
 
 // The relics that used a charge on this result, each with the charges left.
@@ -557,10 +666,7 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
       ${nextOpponent ? `<p>Next opponent: ${escapeHtml(nextOpponent)}</p>` : ''}
       ${renderAdventureRelics(adventure, resumable)}
     </section>
-    ${adventure.pendingReward ? renderAdventureReward(adventure.pendingReward)
-    : `<section class="three-adventure-map" aria-label="Adventure route"><h2>Route</h2>
-      <ol class="three-adventure-route">${adventure.tiers.map((tier) => renderAdventureTier(adventure, tier)).join('')}</ol>
-    </section>`}
+    ${adventure.pendingReward ? renderAdventureReward(adventure.pendingReward) : renderAdventureRoute(view, adventure)}
     <nav class="three-actions" aria-label="Adventure actions">${resumable
       ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
       : button('start-new-adventure', 'Start New Adventure') + button('back-to-lobby', 'Back to Lobby')}</nav>

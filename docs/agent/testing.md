@@ -25,6 +25,12 @@ npm run test    # vitest run
   `child_process.spawnSync`, additional `fs`/`path` members,
   `os.tmpdir`), extend the ambient shims rather than installing
   `@types/node`.
+- **Close every element the DOM stub parses.** `three-interface.test.ts`
+  builds its element tree with a regex: only `INPUT`, `IMG`, `BR`, `HR`,
+  `META` and `LINK` are void, and a trailing `/>` is ignored. Renderer markup
+  must close everything else explicitly, including SVG (`<line …></line>`,
+  `<circle …></circle>`), or later siblings nest inside the open element. The
+  Adventure route map test checks this nesting.
 
 ## Fake-timer hygiene
 
