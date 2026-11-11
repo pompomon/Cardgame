@@ -744,6 +744,12 @@
   gap: 3px;
 }
 
+/* Two 24px icons fill the 48px inside the current token's 4px double ring. */
+.three-interface .three-adventure-node-emblem[data-kind="dual"] {
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
 .three-interface .three-adventure-node-dot {
   width: 9px;
   height: 9px;

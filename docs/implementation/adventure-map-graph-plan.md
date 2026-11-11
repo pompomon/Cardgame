@@ -94,13 +94,13 @@ The approved decisions are:
     tests; no callers
   - [x] `displayAdventureOpponentKind` in `game-presentation.ts`, with tests
   - [x] `architecture.md` module map entry
-- [ ] Milestone 2 — Map rendering
-  - [ ] Tier badges, line bands, node slots, tokens and captions
-  - [ ] Map key
-  - [ ] Graph, trail and forced-colors CSS replacing the route rules
-  - [ ] Hub test updates and new map tests; markup size and render time
+- [x] Milestone 2 — Map rendering
+  - [x] Tier badges, line bands, node slots, tokens and captions
+  - [x] Map key
+  - [x] Graph, trail and forced-colors CSS replacing the route rules
+  - [x] Hub test updates and new map tests; markup size and render time
     recorded
-  - [ ] Agent docs: the Adventure hub section of `three-interface.md`, and the
+  - [x] Agent docs: the Adventure hub section of `three-interface.md`, and the
     test DOM stub rule in `testing.md`
 - [ ] Milestone 3 — Browser sweep, docs and release gate
   - [ ] Adventure hub check at the documented viewports plus 320×568, with
@@ -374,7 +374,8 @@ Nodes use `data-status`, with the glyphs and words of
 ### Tokens and captions
 
 - The emblem depends on `opponent.kind`:
-  - `dual`: both creatures' icons at 24 px;
+  - `dual`: both creatures' icons at 24 px, in one row with no gap, so they
+    fit inside the current token's 4 px double ring;
   - `mono` (the boss): one icon at 36 px;
   - `standard`: five dots, one per creature in `BASIC_LANDS` order. Each is
     colored by `cardVisualPaletteFor(land, style).iconPrimary` through an inline

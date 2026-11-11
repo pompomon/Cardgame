@@ -171,12 +171,13 @@ Rules:
   - Lines and stems carry the helper's state in `data-edge-state` and
     `data-stem`: `traveled` (solid green, 4 px), `next` (dashed gold, 3 px),
     `bypassed` (dotted, 3 px) and `future` (solid gray, 2 px).
-  - Each token shows the opponent's roster: two 24 px creature icons for a
-    duo, one 36 px icon for the boss, five colored dots for a balanced
-    roster, and **?** for a mystery or unknown roster. Icons come from
-    `renderLandIcon(…, { forceProcedural: true, monochrome })`, so the hub
-    requests no `/cards/` image and has no `onerror` handler in any card
-    style. A badge on the token shows the status glyph.
+  - Each token shows the opponent's roster: two 24 px creature icons in one
+    row for a duo (with no gap, they fill the 48 px inside the current
+    token's 4 px double ring), one 36 px icon for the boss, five colored
+    dots for a balanced roster, and **?** for a mystery or unknown roster.
+    Icons come from `renderLandIcon(…, { forceProcedural: true, monochrome })`,
+    so the hub requests no `/cards/` image and has no `onerror` handler in
+    any card style. A badge on the token shows the status glyph.
   - After the list, `div.three-adventure-map-key` explains the status
     glyphs, line styles and creature icons in three lists labeled **Node
     status**, **Route lines** and **Creatures**.
