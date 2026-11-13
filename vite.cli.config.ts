@@ -15,7 +15,7 @@ export default defineConfig({
     minify: false,
     sourcemap: false,
     ssr: resolve(repositoryRoot, 'scripts/cardgame-cli.mjs'),
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: 'cardgame-cli.mjs',
         codeSplitting: false,

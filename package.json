@@ -19,12 +19,12 @@
     "ai:tune": "vitest run --config vitest.tools.config.ts ai-tune"
   },
   "devDependencies": {
-    "@types/three": "^0.185.4",
+    "@types/three": "^0.187.0",
     "typescript": "~6.0.2",
-    "vite": "^8.0.10",
+    "vite": "^8.3.8",
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "three": "^0.185.1"
+    "three": "^0.187.0"
   }
 }
