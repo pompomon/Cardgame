@@ -416,6 +416,15 @@ Spike results:
   text. One regression test covers these, with expected slugs from GitHub's
   Markdown API. The old and new parsers check the same 83 links (129 with
   PR-5's docs), and the anchors still equal GitHub's for every checked file.
+- A sixth review read fence markers inside HTML blocks as HTML, as GitHub
+  does, so a `<pre>` holding a line of three backticks no longer hides the
+  rest of the file; links in HTML blocks are still checked. Only the list
+  items that can interrupt a paragraph now end one (a nonempty bullet, or an
+  ordered item that starts at 1), so `Intro` over `2. Details` over `---`
+  gives `intro2-details`. Two regression tests cover these, with expected
+  slugs from GitHub's Markdown API. The old and new parsers check the same
+  83 links (129 with PR-5's docs), and the anchors still equal GitHub's for
+  every checked file.
 
 Later commits archive the plans:
 
@@ -690,7 +699,7 @@ import { REPO_ROOT } from './helpers/ai-source-files'
 // covers what these docs use, not all of CommonMark: entities, `_emphasis_`,
 // backslash escapes and `<…>` text that isn't HTML in headings, list-item
 // indentation, and the insides of block quotes are out of scope. HTML blocks
-// hide headings, but links inside them are still checked.
+// hide headings and fences, but links inside them are still checked.
 
 const MARKDOWN_ROOTS = ['AGENTS.md', 'README.md', '.github', 'docs', 'public']
 const SOURCE_ROOTS = ['index.html', 'scripts', 'src', '.github/workflows']
@@ -724,9 +733,14 @@ const LEADING_DEFINITIONS = new RegExp(String.raw`^(?:${DEFINITION}(?:\n|$))+`)
 const FENCE = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})(.*))$/
 const ATX_HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$/
 const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*$/
-// A block quote, table row, list item or thematic break, none of which
-// continues a paragraph that a Setext underline could turn into a heading.
+// A block quote, table row, list item or thematic break, none of which a
+// Setext underline turns into a heading. Any line that starts with `|`
+// counts as a table row, which approximates GitHub's tables.
 const BLOCK_START = /^ {0,3}(?:[>|]|[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|([-*_])(?:[ \t]*\1){2,}[ \t]*$)/
+// The block starts that can interrupt a paragraph. As in CommonMark, an
+// empty list item can't, nor can an ordered one that doesn't start at 1:
+// those lines continue the paragraph.
+const INTERRUPTION = /^ {0,3}(?:[>|]|[-+*][ \t]+\S|0{0,8}1[.)][ \t]+\S|([-*_])(?:[ \t]*\1){2,}[ \t]*$)/
 // The HTML blocks GitHub knows (cmark-gfm, which follows CommonMark 0.29),
 // in order: how each starts, what ends it (a marker for the first five, even
 // on the opening line, or a blank line) and whether it can interrupt a
@@ -768,28 +782,6 @@ function filesUnder(roots: readonly string[], keep: (path: string) => boolean): 
   return roots.flatMap((root) => walk(join(REPO_ROOT, root))).filter(keep)
 }
 
-// Lines, ended by \n, \r\n or \r, with fenced code and YAML front matter
-// blanked, so line numbers stay accurate. As in CommonMark, only a bare run
-// of the opening character that is at least as long closes a fence, so a
-// ```` block can show ``` examples.
-function proseLines(text: string): string[] {
-  const lines = text.split(/\r\n?|\n/)
-  const frontMatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1
-  let fence = ''
-  return lines.map((line, index) => {
-    if (index <= frontMatterEnd) return ''
-    const marker = FENCE.exec(line)
-    const run = marker?.[1] ?? marker?.[3] ?? ''
-    if (!fence) {
-      if (!run) return line
-      fence = run
-    } else if (run.startsWith(fence) && !(marker?.[2] ?? marker?.[4] ?? '').trim()) {
-      fence = ''
-    }
-    return ''
-  })
-}
-
 const anchorCache = new Map<string, Set<string>>()
 
 /** Drops inline HTML tags, repeating until none is left (as GitHub's slugs use the text only). */
@@ -812,10 +804,15 @@ function slugBase(heading: string): string {
     .replace(/ /g, '-')
 }
 
-// Repeated heading slugs take the next unused -N suffix, as on GitHub
-// (github-slugger): Foo, Foo-1, Foo gives foo, foo-1, foo-2. Explicit
-// <a id|name> anchors don't affect the numbering.
-function anchorsIn(text: string): Set<string> {
+// Reads Markdown as GitHub does, for the blocks these docs use. Returns the
+// lines, ended by \n, \r\n or \r, with fenced code and YAML front matter
+// blanked, so line numbers stay accurate, and the anchors that headings and
+// <a id|name> tags make. As in CommonMark, only a bare run of the opening
+// character that is at least as long closes a fence, so a ```` block can
+// show ``` examples. Repeated heading slugs take the next unused -N suffix,
+// as on GitHub (github-slugger): Foo, Foo-1, Foo gives foo, foo-1, foo-2.
+// Explicit <a id|name> anchors don't affect the numbering.
+function parseMarkdown(text: string): { lines: string[]; anchors: Set<string> } {
   const anchors = new Set<string>()
   const suffixes = new Map<string, number>()
   const addHeading = (heading: string) => {
@@ -827,16 +824,32 @@ function anchorsIn(text: string): Set<string> {
     suffixes.set(slug, 0)
     anchors.add(slug)
   }
-  // The lines a Setext underline would turn into a heading, and what ends
-  // the HTML block being skipped.
+  // The open fence, the lines a Setext underline would turn into a heading,
+  // and what ends the HTML block being skipped.
+  let fence = ''
   let paragraph: string[] = []
   let htmlEnd: RegExp | string | undefined
   const ends = (end: RegExp | string, line: string) => (typeof end === 'string' ? line.includes(end) : end.test(line))
-  for (const line of proseLines(text)) {
+  const lines = text.split(/\r\n?|\n/)
+  const frontMatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1
+  const prose = lines.map((line, index) => {
+    if (index <= frontMatterEnd) return ''
+    const marker = FENCE.exec(line)
+    const run = marker?.[1] ?? marker?.[3] ?? ''
+    if (fence) {
+      if (run.startsWith(fence) && !(marker?.[2] ?? marker?.[4] ?? '').trim()) fence = ''
+      return ''
+    }
+    // In an HTML block, a fence marker is just HTML.
+    if (run && !htmlEnd) {
+      fence = run
+      paragraph = []
+      return ''
+    }
     for (const match of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) anchors.add(match[1])
     if (htmlEnd) {
       if (ends(htmlEnd, line)) htmlEnd = undefined
-      continue
+      return line
     }
     const atx = ATX_HEADING.exec(line)
     const html = HTML_BLOCKS.find(([start, , interrupts]) => start.test(line) && (interrupts || !paragraph.length))
@@ -851,20 +864,21 @@ function anchorsIn(text: string): Set<string> {
     } else if (html) {
       htmlEnd = ends(html[1], line) ? undefined : html[1]
       paragraph = []
-    } else if (!line.trim() || BLOCK_START.test(line)) {
+    } else if (!line.trim() || (paragraph.length ? INTERRUPTION : BLOCK_START).test(line)) {
       paragraph = []
     } else if (paragraph.length || /^ {0,3}\S/.test(line)) {
       // A deeper indent continues a paragraph but can't start one: it's code.
       paragraph.push(line.trim())
     }
-  }
-  return anchors
+    return line
+  })
+  return { lines: prose, anchors }
 }
 
 function anchorsOf(file: string): Set<string> {
   let anchors = anchorCache.get(file)
   if (!anchors) {
-    anchors = anchorsIn(readFileSync(file, 'utf8'))
+    anchors = parseMarkdown(readFileSync(file, 'utf8')).anchors
     anchorCache.set(file, anchors)
   }
   return anchors
@@ -894,7 +908,8 @@ function decoded(part: string): string {
 
 function linkProblems(file: string, text: string): { checked: number; problems: string[] } {
   const result = { checked: 0, problems: [] as string[] }
-  const lines = proseLines(text).map((line) => line.replace(/`[^`]*`/g, ''))
+  const markdown = parseMarkdown(text)
+  const lines = markdown.lines.map((line) => line.replace(/`[^`]*`/g, ''))
   const prose = lines.join('\n')
   // [line index, link]. Inline links may wrap, so they're matched across lines.
   const links: [number, string][] = [...prose.matchAll(MARKDOWN_LINK)].map((match) => [
@@ -906,12 +921,11 @@ function linkProblems(file: string, text: string): { checked: number; problems: 
     if (definition) links.push([index, definition[1] ?? definition[2]])
   })
   links.sort(([a], [b]) => a - b)
-  const ownAnchors = anchorsIn(text)
   for (const [index, link] of links) {
     if (/^[a-z][a-z\d+.-]*:/i.test(link)) continue
     const [path, anchor] = link.split('#').map(decoded)
     result.checked += 1
-    const problem = path ? problemFor(resolve(file, '..', path), anchor) : anchorProblem(ownAnchors, anchor)
+    const problem = path ? problemFor(resolve(file, '..', path), anchor) : anchorProblem(markdown.anchors, anchor)
     if (problem) result.problems.push(`${where(file, index)} ${link}: ${problem}`)
   }
   return result
@@ -947,13 +961,13 @@ describe('documentation links', () => {
 
   it('keeps nested fence examples out of prose', () => {
     const fenced = ['````md', '```', '[x](missing-example.md)', '```', '````', '~~~', '```', '~~~']
-    expect(proseLines([...fenced, 'after'].join('\n')).filter(Boolean)).toEqual(['after'])
+    expect(parseMarkdown([...fenced, 'after'].join('\n')).lines.filter(Boolean)).toEqual(['after'])
   })
 
   it('blanks front matter and treats only fences indented up to three spaces as code', () => {
     // Four spaces make indented code, which neither opens nor closes a fence.
     const text = ['---', 'applyTo: "src/**"', '---', '    ```', '', '[a](missing.md)', '   ~~~', '[b](missing.md)', '    ~~~', '~~~', 'after']
-    expect(proseLines(text.join('\n'))).toEqual(['', '', '', '    ```', '', '[a](missing.md)', '', '', '', '', 'after'])
+    expect(parseMarkdown(text.join('\n')).lines).toEqual(['', '', '', '    ```', '', '[a](missing.md)', '', '', '', '', 'after'])
   })
 
   it('checks reference-style link definitions', () => {
@@ -1042,7 +1056,7 @@ describe('documentation links', () => {
       '## Caf\u00e9\u200ds \u217b',
       '## a_b x\u0303 \u2460',
     ].join('\n')
-    expect([...anchorsIn(text)]).toEqual([
+    expect([...parseMarkdown(text).anchors]).toEqual([
       'guide',
       'indented',
       'lazycontinuation',
@@ -1055,15 +1069,15 @@ describe('documentation links', () => {
 
   it('numbers repeated heading slugs like GitHub', () => {
     // Expected slugs come from GitHub's Markdown API.
-    expect([...anchorsIn('# Foo\n# Foo-1\n# Foo')]).toEqual(['foo', 'foo-1', 'foo-2'])
-    expect([...anchorsIn('# Foo\n# Foo\n# Foo-1')]).toEqual(['foo', 'foo-1', 'foo-1-1'])
+    expect([...parseMarkdown('# Foo\n# Foo-1\n# Foo').anchors]).toEqual(['foo', 'foo-1', 'foo-2'])
+    expect([...parseMarkdown('# Foo\n# Foo\n# Foo-1').anchors]).toEqual(['foo', 'foo-1', 'foo-1-1'])
   })
 
   it('reads CRLF and CR line endings', () => {
     const lines = ['---', 'title: Notes', '---', 'Guide', '=====', '~~~', '[a](missing.md)', '~~~', 'See [b](#guide) and [c](#nope).']
     for (const ending of ['\r\n', '\r']) {
       const text = lines.join(ending)
-      expect(proseLines(text).filter(Boolean)).toEqual(['Guide', '=====', 'See [b](#guide) and [c](#nope).'])
+      expect(parseMarkdown(text).lines.filter(Boolean)).toEqual(['Guide', '=====', 'See [b](#guide) and [c](#nope).'])
       expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
         checked: 2,
         problems: ['notes/example.md:9 #nope: missing anchor #nope'],
@@ -1107,7 +1121,7 @@ describe('documentation links', () => {
       'Shown',
       '---',
     ].join('\n')
-    expect([...anchorsIn(text)]).toEqual(['guide', 'lone', 'kept', 'shown'])
+    expect([...parseMarkdown(text).anchors]).toEqual(['guide', 'lone', 'kept', 'shown'])
   })
 
   it('slugs linked headings by their link text', () => {
@@ -1157,7 +1171,86 @@ describe('documentation links', () => {
       'Next',
       '===',
     ].join('\n')
-    expect([...anchorsIn(text)]).toEqual(['guide', 'two', 'introref-readmemd', '---next'])
+    expect([...parseMarkdown(text).anchors]).toEqual(['guide', 'two', 'introref-readmemd', '---next'])
+  })
+
+  it('reads fence markers inside HTML blocks as HTML', () => {
+    // Expected slugs come from GitHub's Markdown API.
+    const text = [
+      '<pre>',
+      '```',
+      '[a](missing.md)',
+      '</pre>',
+      'Guide',
+      '---',
+      '',
+      '<div>',
+      '~~~',
+      '',
+      '# Shown',
+      '',
+      'Text',
+      '<em>',
+      '```',
+      '[b](missing.md)',
+      '```',
+      '---',
+    ].join('\n')
+    expect([...parseMarkdown(text).anchors]).toEqual(['guide', 'shown'])
+    expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+      checked: 1,
+      problems: ['notes/example.md:3 missing.md: missing file'],
+    })
+  })
+
+  it("continues paragraphs through list items that can't interrupt them", () => {
+    // Expected slugs come from GitHub's Markdown API.
+    const text = [
+      'Intro',
+      '2. Details',
+      '---',
+      '',
+      'Steps',
+      '1.',
+      '===',
+      '',
+      'Note',
+      '*',
+      '---',
+      '',
+      'List',
+      '1. First',
+      '---',
+      '',
+      'Zero',
+      '01) First',
+      '---',
+      '',
+      'Ten',
+      '0000000001. x',
+      '---',
+      '',
+      'Items',
+      '- Item',
+      '---',
+      '',
+      'Quote',
+      '> Note',
+      '---',
+      '',
+      'Table',
+      '| a | b |',
+      '| - | - |',
+      '---',
+      '',
+      'Rule',
+      '***',
+      '===',
+      '',
+      '2. Details',
+      '---',
+    ].join('\n')
+    expect([...parseMarkdown(text).anchors]).toEqual(['intro2-details', 'steps1', 'note', 'ten0000000001-x'])
   })
 })
 ````
