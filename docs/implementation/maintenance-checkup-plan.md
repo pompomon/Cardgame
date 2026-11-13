@@ -381,6 +381,17 @@ Spike results:
   links: `docs/agent/testing.md:385` and `:400`, and
   `docs/history/README.md:15`. The edits below fix all three. Archiving
   shrinks the count, so the test asserts only that it is nonzero.
+- After review, the test also checks `[label]: target` reference
+  definitions (not `[^note]:` footnotes) and numbers repeated heading slugs
+  as GitHub's Markdown API does (`Foo`, `Foo-1`, `Foo` gives `foo`, `foo-1`,
+  `foo-2`), with a regression test for each. The docs have neither yet, so
+  the counts are unchanged.
+- A second review added `'…'` and `(…)` link titles, inline links that wrap
+  (at most one line break per gap, as in CommonMark, reported on the
+  destination's line) and percent-encoded fragments (`#doppelg%C3%A4nger`
+  matches `# Doppelgänger`). One regression test covers all three, and a
+  malformed escape now reports a missing file or anchor instead of throwing.
+  The docs have none of these yet: both matchers check 83 links.
 
 Later commits archive the plans:
 
@@ -657,7 +668,16 @@ const MARKDOWN_ROOTS = ['AGENTS.md', 'README.md', '.github', 'docs', 'public']
 const SOURCE_ROOTS = ['index.html', 'scripts', 'src', '.github/workflows']
 const SOURCE_FILE = /\.(?:html|m?js|ts|ya?ml)$/
 const DOC_CITATION = /\b((?:docs|public)\/[\w./-]+\.md)(?:#([\w-]+))?/g
-const MARKDOWN_LINK = /\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
+// Link titles use "…", '…' or (…). As in CommonMark, the parts of an inline
+// link may be separated by spaces or tabs and at most one line break.
+const TITLE = String.raw`(?:"[^"]*"|'[^']*'|\([^)]*\))`
+const GAP = String.raw`[ \t]*(?:\n[ \t]*)?`
+// Captures the text before the destination, to find its line, then the
+// destination itself.
+const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP}<?)([^)\s>]+)>?(?:(?=[ \t\n])${GAP}${TITLE})?${GAP}\)`, 'g')
+// `[label]: target "title"` definitions, which every `[text][label]` or
+// `[label]` use resolves through. `[^note]:` footnotes are not links.
+const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*<?([^\s>]+)>?(?:\s+${TITLE})?\s*$`)
 
 function walk(path: string, files: string[] = []): string[] {
   if (!existsSync(path)) return files
@@ -694,37 +714,94 @@ function proseLines(text: string): string[] {
 
 const anchorCache = new Map<string, Set<string>>()
 
-function anchorsOf(file: string): Set<string> {
-  const cached = anchorCache.get(file)
-  if (cached) return cached
+/** Drops inline HTML tags, repeating until none is left (as GitHub's slugs use the text only). */
+function withoutTags(text: string): string {
+  let previous: string
+  do {
+    previous = text
+    text = text.replace(/<[^<>]*>/g, '')
+  } while (text !== previous)
+  return text
+}
+
+// Repeated heading slugs take the next unused -N suffix, as on GitHub
+// (github-slugger): Foo, Foo-1, Foo gives foo, foo-1, foo-2. Explicit
+// <a id|name> anchors don't affect the numbering.
+function anchorsIn(text: string): Set<string> {
   const anchors = new Set<string>()
-  const seen = new Map<string, number>()
-  for (const line of proseLines(readFileSync(file, 'utf8'))) {
+  const suffixes = new Map<string, number>()
+  for (const line of proseLines(text)) {
     for (const match of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) anchors.add(match[1])
     const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line)
     if (!heading) continue
-    const slug = heading[1]
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<[^>]+>/g, '')
+    const base = withoutTags(heading[1].replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'))
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s_-]/gu, '')
       .replace(/\s/g, '-')
-    const count = seen.get(slug) ?? 0
-    seen.set(slug, count + 1)
-    anchors.add(count === 0 ? slug : `${slug}-${count}`)
+    let suffix = suffixes.get(base) ?? 0
+    let slug = base
+    while (suffixes.has(slug)) slug = `${base}-${++suffix}`
+    suffixes.set(base, suffix)
+    suffixes.set(slug, 0)
+    anchors.add(slug)
   }
-  anchorCache.set(file, anchors)
   return anchors
+}
+
+function anchorsOf(file: string): Set<string> {
+  let anchors = anchorCache.get(file)
+  if (!anchors) {
+    anchors = anchorsIn(readFileSync(file, 'utf8'))
+    anchorCache.set(file, anchors)
+  }
+  return anchors
+}
+
+function anchorProblem(anchors: Set<string>, anchor: string | undefined): string | null {
+  return anchor && !anchors.has(anchor) ? `missing anchor #${anchor}` : null
 }
 
 function problemFor(target: string, anchor: string | undefined): string | null {
   if (!existsSync(target)) return 'missing file'
-  if (anchor && target.endsWith('.md') && !anchorsOf(target).has(anchor)) return `missing anchor #${anchor}`
-  return null
+  return target.endsWith('.md') ? anchorProblem(anchorsOf(target), anchor) : null
 }
 
 function where(file: string, index: number): string {
   return `${file.slice(REPO_ROOT.length + 1)}:${index + 1}`
+}
+
+/** Percent-decodes a link part, keeping a malformed escape as written. */
+function decoded(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
+function linkProblems(file: string, text: string): { checked: number; problems: string[] } {
+  const result = { checked: 0, problems: [] as string[] }
+  const lines = proseLines(text).map((line) => line.replace(/`[^`]*`/g, ''))
+  const prose = lines.join('\n')
+  // [line index, link]. Inline links may wrap, so they're matched across lines.
+  const links: [number, string][] = [...prose.matchAll(MARKDOWN_LINK)].map((match) => [
+    prose.slice(0, match.index + match[1].length).split('\n').length - 1,
+    match[2],
+  ])
+  lines.forEach((line, index) => {
+    const definition = REFERENCE_DEFINITION.exec(line)
+    if (definition) links.push([index, definition[1]])
+  })
+  links.sort(([a], [b]) => a - b)
+  const ownAnchors = anchorsIn(text)
+  for (const [index, link] of links) {
+    if (/^[a-z][a-z\d+.-]*:/i.test(link)) continue
+    const [path, anchor] = link.split('#').map(decoded)
+    result.checked += 1
+    const problem = path ? problemFor(resolve(file, '..', path), anchor) : anchorProblem(ownAnchors, anchor)
+    if (problem) result.problems.push(`${where(file, index)} ${link}: ${problem}`)
+  }
+  return result
 }
 
 describe('documentation links', () => {
@@ -732,17 +809,9 @@ describe('documentation links', () => {
     const problems: string[] = []
     let checked = 0
     for (const file of filesUnder(MARKDOWN_ROOTS, (path) => path.endsWith('.md'))) {
-      proseLines(readFileSync(file, 'utf8')).forEach((line, index) => {
-        for (const match of line.replace(/`[^`]*`/g, '').matchAll(MARKDOWN_LINK)) {
-          const link = match[1]
-          if (/^[a-z][a-z\d+.-]*:/i.test(link)) continue
-          const [path, anchor] = link.split('#')
-          const target = path ? resolve(file, '..', decodeURIComponent(path)) : file
-          checked += 1
-          const problem = problemFor(target, anchor)
-          if (problem) problems.push(`${where(file, index)} ${link}: ${problem}`)
-        }
-      })
+      const result = linkProblems(file, readFileSync(file, 'utf8'))
+      checked += result.checked
+      problems.push(...result.problems)
     }
     // Archiving shrinks the count, so only guard against a walk or pattern
     // that silently matches nothing.
@@ -766,6 +835,50 @@ describe('documentation links', () => {
   it('keeps nested fence examples out of prose', () => {
     const fenced = ['````md', '```', '[x](missing-example.md)', '```', '````', '~~~', '```', '~~~']
     expect(proseLines([...fenced, 'after'].join('\n')).filter(Boolean)).toEqual(['after'])
+  })
+
+  it('checks reference-style link definitions', () => {
+    const text = [
+      'See [the guide][guide], [the rules] and a note.[^note]',
+      '',
+      '[guide]: missing.md',
+      '[the rules]: ../AGENTS.md#no-such-rule "Rules"',
+      '[^note]: Footnote.',
+    ].join('\n')
+    expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+      checked: 2,
+      problems: [
+        'notes/example.md:3 missing.md: missing file',
+        'notes/example.md:4 ../AGENTS.md#no-such-rule: missing anchor #no-such-rule',
+      ],
+    })
+  })
+
+  it('checks link titles, wrapped destinations and encoded fragments', () => {
+    const text = [
+      '# Doppelgänger',
+      '',
+      "See [a](missing.md 'Title'), [b](missing.md (Title)), [c](",
+      '  missing.md',
+      ') and [d](',
+      '#no-such-heading "Title"',
+      '). [e](#doppelg%C3%A4nger) resolves.',
+    ].join('\n')
+    expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+      checked: 5,
+      problems: [
+        'notes/example.md:3 missing.md: missing file',
+        'notes/example.md:3 missing.md: missing file',
+        'notes/example.md:4 missing.md: missing file',
+        'notes/example.md:6 #no-such-heading: missing anchor #no-such-heading',
+      ],
+    })
+  })
+
+  it('numbers repeated heading slugs like GitHub', () => {
+    // Expected slugs come from GitHub's Markdown API.
+    expect([...anchorsIn('# Foo\n# Foo-1\n# Foo')]).toEqual(['foo', 'foo-1', 'foo-2'])
+    expect([...anchorsIn('# Foo\n# Foo\n# Foo-1')]).toEqual(['foo', 'foo-1', 'foo-1-1'])
   })
 })
 ````

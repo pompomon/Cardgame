@@ -122,3 +122,18 @@ Actions PRs monthly, after a cooldown; security updates open immediately.
 - Handle majors like the toolchain upgrade in #160: one tool per commit, the
   full validation sequence, and a browser smoke test for three or Vite.
 - Never hand-edit `package-lock.json`; let npm regenerate it.
+
+## Archiving completed plans
+
+`docs/implementation/` holds only plans that are still in progress. Once a
+plan is fully delivered:
+
+- Move any rule future work still needs into its `docs/agent/` home.
+- Replace the plan, and its figures, with a `docs/history/` summary of at
+  most 40 lines: Delivered, Durable decisions (each naming its `docs/agent/`
+  heading), Open follow-ups and Lessons. Delete superseded plans without a
+  summary.
+- Give the recovery command, `git show <sha>:<path>`, with the last commit
+  that contains the file.
+- Move pending manual checks (devices, assistive technology, human visual
+  review) to the [maintainer-gates issue](https://github.com/pompomon/Cardgame/issues/163).

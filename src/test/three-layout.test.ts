@@ -556,7 +556,7 @@ describe('Three.js unfolded dock and rail layouts', () => {
         expect(rect.width).toBeGreaterThanOrEqual(108)
         expect(rect.height).toBeGreaterThanOrEqual(148)
       }
-      // Portrait reaches the plan's 115x158 target.
+      // Portrait reaches the 115x158 hand-card target.
       if (shell === 'dock') expect(hand[0].height).toBe(158)
     },
   )

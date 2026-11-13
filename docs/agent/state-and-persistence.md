@@ -70,7 +70,9 @@ contracts:
   `BasicLand`, the `Forest`/`Island`/`Mountain`/`Plains`/`Swamp` values,
   `Card.type: 'land'`, and existing discriminants and field names. Preserve the
   canonical `BASIC_LANDS` order because it affects deterministic decks,
-  recordings, and peer state.
+  recordings, and peer state. Renaming these keys to neutral identifiers is
+  optional future work. It needs its own explicitly versioned migration
+  design and must never ride along with a presentation or copy change.
 - `src/app/card-catalog.ts` maps those keys to player-facing names, abilities,
   rules text, visual roles, and ASCII asset slugs. Display names and slugs must
   never replace a key in trusted state, mechanical parser input, storage,
@@ -202,6 +204,30 @@ for changes to target pickers, response controls, and shared submission paths.
 `cardgame.adventure-run` holds a schema version 2 run and
 `cardgame.adventure-game` holds an identity-bound mid-game save. Both keys
 keep their names; only their formats changed.
+
+**Adventure product decisions.** The maintainer approved these for the
+branching map and boons/relics work:
+
+1. Adventure uses a branching encounter map rather than a fixed visible line.
+2. A fork offers exactly two encounter choices. More than two choices are not
+   supported.
+3. A map contains no more than three fork tiers. New runs initially use three;
+   the persisted model accepts zero through three so legacy linear runs remain
+   valid.
+4. Every route has seven encounter tiers: six non-boss encounters followed by
+   one shared boss. A chosen route therefore keeps the current seven-win run
+   length and all branches converge on the boss.
+5. Rewards use a boons/relics system. A player chooses one of three deterministic
+   offers, or skips, after each non-boss victory.
+6. Losses and draws do not grant rewards. A loss locks the player to retry the
+   same selected encounter, preventing route scouting and reward farming.
+7. Rewards affect only the current run. There is no permanent account
+   progression, currency, shop, or unlock system.
+8. Existing unversioned Adventure saves remain loadable and continue as linear
+   maps with their exact stored opponents and decks.
+9. The existing extra chance on every third consecutive win remains in place.
+10. The feature is browser-only, like the current Adventure mode. It does not
+    add Adventure commands to the CLI or Adventure state to P2P packets.
 
 - **Dispatch on the version key.** A payload with a `schemaVersion` key must
   be exactly `2` and pass `isAdventureRunState`. A payload without the key is
@@ -356,7 +382,11 @@ keep their names; only their formats changed.
     the base seed, the source node, and the number of resolved offers, so
     regenerating it gives the same choices. Persist the offer anyway: it
     records its `rulesVersion`, and a later rules version would generate
-    different choices. There is no reroll.
+    different choices. There is no reroll. "Reachable Adventure reward
+    states" in `adventure-rewards.test.ts` proves that every reachable
+    six-pick inventory still has at least three eligible choices. If a
+    catalog change breaks that, grow the catalog instead of adding an
+    unchecked fallback.
   - **Choose and skip.** `chooseAdventureReward` treats the choice as
     untrusted. It returns null unless the offer is the run's next one and the
     choice is exactly one of its IDs and still eligible. Skip records
