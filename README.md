@@ -273,7 +273,14 @@ browser-only; this follow-up adds no CLI commands or inspection access.
 
 ## Build and deploy pipeline
 
-The workflow runs:
+Pull requests run `.github/workflows/ci.yml`: steps 1–5 below, plus a
+dependency review that fails on new high- or critical-severity
+vulnerabilities in runtime or development dependencies.
+`.github/workflows/copilot-setup-steps.yml` preinstalls
+dependencies for the Copilot cloud agent. Every workflow uses the Node version
+in `.nvmrc`.
+
+The deployment workflow runs:
 
 1. `npm ci`
 2. `npm run lint`
@@ -286,9 +293,9 @@ The workflow runs:
 
 ## Actions storage policy
 
-- The workflow deliberately does not persist an npm dependency cache. Each run
-  installs from `package-lock.json` so old dependency caches do not occupy
-  Actions storage between deployments.
+- No workflow persists an npm dependency cache: every `actions/setup-node`
+  step sets `package-manager-cache: false`. Each run installs from
+  `package-lock.json` so old dependency caches do not occupy Actions storage.
 - The Pages artifact is retained for at most one day and its unique ID is passed
   to the deploy job. A successful deployment deletes that artifact immediately;
   failed or cancelled deployments leave it available for diagnosis until it

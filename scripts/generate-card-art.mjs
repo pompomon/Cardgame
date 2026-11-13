@@ -1,7 +1,7 @@
 // Deterministic creature-art generator for the Classic and HD fallback assets.
-// Node 24 loads the shared erasable TypeScript recipe module
-// directly, so generated Classic PNGs and runtime procedural SVGs use the same
-// silhouettes without duplicating catalog slugs.
+// Node's built-in type stripping loads the shared erasable TypeScript recipe
+// module directly, so generated Classic PNGs and runtime procedural SVGs use
+// the same silhouettes without duplicating catalog slugs.
 
 import { Buffer } from 'node:buffer'
 import { mkdirSync, writeFileSync } from 'node:fs'

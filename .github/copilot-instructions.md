@@ -14,8 +14,8 @@ non-root base path.
 
 ## Validation sequence (always)
 
-Use Node 24 and `npm ci` for a clean, lockfile-based baseline. Keep intentional
-dependency updates separate from environment recovery.
+Use the Node version in `.nvmrc` and `npm ci` for a clean, lockfile-based
+baseline. Keep intentional dependency updates separate from environment recovery.
 
 1. `npm run lint` (= `tsc --noEmit`)
 2. `npm run test` (= `vitest run`)

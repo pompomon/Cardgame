@@ -5,9 +5,9 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
 
 ## Sequence
 
-1. **Install** — use Node 24, matching the deployment workflow, and record the
-   Node/npm versions and baseline commit. For a fresh checkout or CI reproduction,
-   install from the committed lockfile:
+1. **Install** — use the Node version in `.nvmrc`, which every workflow reads,
+   and record the Node/npm versions and baseline commit. For a fresh checkout
+   or CI reproduction, install from the committed lockfile:
 
    ```bash
    npm ci
@@ -17,17 +17,9 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
    changes; review and commit the manifest and lockfile together. Do not regenerate
    the lockfile or upgrade dependencies just to recover from an agent-tool error.
 
-   **Node 26.** If only Node 26 is available, the project still works with no
-   code changes. On Node v26.8.2 and npm 11.19.1, `npm ci`, lint, tests and
-   build all exit 0. Two warnings are expected and can be ignored:
-   - npm lists esbuild's `postinstall` under `install-scripts`. The platform
-     binary installs as an optional dependency.
-   - Node prints `ExperimentalWarning: localStorage is not available because
-     --localstorage-file was not provided` during tests. Tests that need
-     storage install in-memory doubles.
-
-   Report the Node version you actually used. Node 24 remains the deployment
-   version.
+   On Node 25 and later, tests print a harmless `ExperimentalWarning:
+   localStorage is not available…`; tests that need storage install
+   in-memory doubles.
 
 2. **Lint** — typecheck only, no emit:
 
@@ -48,9 +40,10 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
    `npm run test:bench`. This existing AI performance gate is required when
    reproducing [deploy-pages.yml](../../.github/workflows/deploy-pages.yml)
    and for AI hot-loop changes. Record its result separately; do not loosen
-   thresholds to conceal a regression. The deployment workflow runs on
-   main/master pushes or manual dispatch, not pull requests, and does not
-   replace the agent's CodeQL check.
+   thresholds to conceal a regression. Pull requests run the same sequence in
+   [ci.yml](../../.github/workflows/ci.yml); deployment still runs only on
+   main/master pushes or manual dispatch. Neither replaces the agent's CodeQL
+   check.
 
    The gate times Advanced's one-ply choice and Hard's search on a fixed
    critical scenario, each against its own baseline with a 1.5× allowance in
