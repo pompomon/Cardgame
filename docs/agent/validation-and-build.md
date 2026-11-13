@@ -1,233 +1,139 @@
 # Validation and build
 
-The canonical local validation sequence. Run checks in order and report actual
-results; only the documented [skipping rules](#skipping-rules) allow omissions.
+The single home for the validation sequence, evidence and failure triage.
+
+## Rules
+
+- Use the Node version in `.nvmrc` and `npm ci`; keep intentional dependency
+  updates separate from environment recovery.
+- Run the [sequence](#sequence) in order; omit a check only under the
+  [skipping rules](#skipping-rules).
+- Record actual exit codes, observed test counts and the tested revision;
+  keep baseline and post-change results separate.
+- Classify a failure's first meaningful error before editing. Allow at most
+  one safe, supported retry; otherwise record the blocker and ask a maintainer.
+- Never weaken tests, change game logic, improvise browser automation or
+  widen network permissions to get past an unexplained tool failure.
+- Checkpoint code and textual results before handling images.
+- Report a skipped analysis as skipped, never as "0 alerts".
+- Add or update tests with every non-trivial behavior change.
 
 ## Sequence
 
-1. **Install** — use the Node version in `.nvmrc`, which every workflow reads,
-   and record the Node/npm versions and baseline commit. For a fresh checkout
-   or CI reproduction, install from the committed lockfile:
+1. **Install:** `npm ci`; record Node/npm versions and the baseline commit.
+   Commit manifest and lockfile together; never regenerate the lockfile or
+   upgrade packages to recover from a tool error. On Node 25+, the test
+   `ExperimentalWarning: localStorage is not available…` is harmless.
+2. **Lint:** `npm run lint` (`tsc --noEmit`) typechecks `src/` only and
+   can't catch the base-path trap, so it never replaces the build.
+3. **Tests:** `npm run test` (`vitest run`). Record the passing count observed
+   for this revision, never an earlier or inferred count.
+4. **Bench**, after tests and before build, when reproducing
+   [deploy-pages.yml](../../.github/workflows/deploy-pages.yml) or changing
+   an AI hot loop: `npm run test:bench`; record it separately. `GATES` in
+   `src/test/ai-perf.bench.ts` allows 1.5× each level's baseline (logged as
+   `AI benchmark:` lines). Never loosen a gate; re-baseline only after
+   intentional AI-performance work, from the ms/op of three idle runs,
+   updating `GATES` and its comment together.
+5. **Build:** `npm run build` (`tsc && vite build && npm run build:cli`)
+   makes the browser bundle and the Node 22 ESM CLI bundle
+   `dist-cli/cardgame-cli.mjs`; both must pass, and neither may fetch from
+   the network.
+   Keep `src/test/card-art-base-path.test.ts`, which runs `vite build` with
+   a custom `VITE_BASE_PATH`: source-only assertions can't catch a broken
+   [Vite base URL](../../AGENTS.md#vite-base-url).
+6. **CodeQL:** after scanning changed files for secrets and committing, run
+   `codeql_checker` with an explicit trivial or non-trivial assessment. Fix
+   true positives, document false positives, then scan, commit and re-run.
+   Without `codeql_checker`, cite the PR's CodeQL code-scanning check
+   (repository default setup); with no such check, report **not run
+   (skipped: reason)**. A local CodeQL CLI run is optional; if used, record
+   the CLI version, query suite and result count.
 
-   ```bash
-   npm ci
-   ```
-
-   Use package-manager install/update commands only for intentional dependency
-   changes; review and commit the manifest and lockfile together. Do not regenerate
-   the lockfile or upgrade dependencies just to recover from an agent-tool error.
-
-   On Node 25 and later, tests print a harmless `ExperimentalWarning:
-   localStorage is not available…`; tests that need storage install
-   in-memory doubles.
-
-2. **Lint** — typecheck only, no emit:
-
-   ```bash
-   npm run lint    # tsc --noEmit
-   ```
-
-3. **Tests** — full vitest run:
-
-   ```bash
-   npm run test    # vitest run
-   ```
-
-   Record the observed passing test count in the PR description; do not reuse
-   a count from an earlier revision or infer it from a successful tool call.
-
-   **Deployment parity:** after tests and before build, also run
-   `npm run test:bench`. This existing AI performance gate is required when
-   reproducing [deploy-pages.yml](../../.github/workflows/deploy-pages.yml)
-   and for AI hot-loop changes. Record its result separately; do not loosen
-   thresholds to conceal a regression. Pull requests run the same sequence in
-   [ci.yml](../../.github/workflows/ci.yml); deployment still runs only on
-   main/master pushes or manual dispatch. Neither replaces the agent's CodeQL
-   check.
-
-   The gate times Advanced's one-ply choice and Hard's search on a fixed
-   critical scenario, each against its own baseline with a 1.5× allowance in
-   `GATES` in `src/test/ai-perf.bench.ts`, and prints one `AI benchmark:`
-   line per level. Re-baseline only after intentional AI-performance work,
-   from the logged ms/op of three idle runs, and update `GATES` and the file's
-   comment in the same PR.
-
-4. **Build** — typecheck + browser and terminal bundles:
-
-   ```bash
-   npm run build   # tsc && vite build && npm run build:cli
-   ```
-
-   The browser build also exercises `import.meta.env.BASE_URL` static
-   replacement, and the CLI build emits the standalone Node 22-targeted ESM bundle at
-   `dist-cli/cardgame-cli.mjs`, so both must pass before merge. There is a regression test
-   (`src/test/card-art-base-path.test.ts`) that invokes `vite build` with a
-   custom `VITE_BASE_PATH` to verify the base is baked into the bundle. Preserve
-   this production-build test; source-only assertions are not equivalent.
-
-5. **CodeQL** — after scanning changed files for secrets and committing the
-   changes, run `codeql_checker` with an explicit trivial/non-trivial assessment.
-   Investigate every alert. Fix true positives; document false positives.
-   Scan and commit fixes, then re-run the checker.
+PR CI ([ci.yml](../../.github/workflows/ci.yml)) runs steps 1-5 with a
+non-root base (`validate`) plus `dependency-review` (fails on new
+high-severity vulnerabilities); `deploy-pages.yml` runs them and deploys on
+main/master pushes or dispatch. Neither runs CodeQL.
 
 ## Validation evidence and production preview
 
-- Keep baseline checks separate from post-change checks. Record the tested
-  commit, any uncommitted changes included, command, exit code, and relevant
-  output for each check. A tool's `success=true` only proves the invocation
-  completed, not that the command passed. An unfinished command is pending.
-- Collect delegated validation results before marking their checks complete.
-  Results apply only to the revision tested; later relevant edits need new
-  validation. Do not present baseline results as post-change evidence.
-- Finish a successful production build before starting `npm run preview`.
-  Freeze its output while smoke-testing: do not rebuild into the same directory
-  concurrently. Record the build revision and configured `VITE_BASE_PATH`.
-- Open the configured non-root path (normally `/Cardgame/`), not just `/`.
-  Development uses a different base; a dev-server check alone does not verify
-  Pages asset loading. Record renderer, browser, viewport, exercised behavior,
-  and relevant console/network errors. See [browser verification](testing.md#browser-verification-and-evidence).
-- Checkpoint code and textual validation results before image inspection or
-  upload. Collect final validation results separately from image inspection so
-  a transport failure does not obscure them. This isolates operations; it is
-  not a proven workaround for upstream runtime failures.
-
-## Optional / situational scripts
-
-- `npm run dev` — local Vite dev server.
-- `npm run preview` — preview the production bundle locally.
-- `npm run build:cli` — build only the standalone Node terminal bundle.
-- `npm run cli -- --mode ai-vs-ai` — build and run the terminal game.
-- `npm run generate:card-art` — regenerates `public/cards/classic/*.png`
-  and `public/cards/hd-fallback/*.png` from
-  `scripts/generate-card-art.mjs`. Deterministic and CI-safe (no API
-  keys). **Re-run after any change to that script or its creature recipes.**
-  Commit the regenerated PNGs.
-- `npm run test -- src/test/card-art-generator.test.ts` — checks 256×256
-  repeatability and byte-for-byte parity with all committed deterministic assets
-  at the shipping 1024×1024 size, without changing tracked PNGs.
-- `npm run generate:anime-card-art` — one-off operator script that
-  calls a hosted image-generation API (default `gpt-image-1`) to (re)write
-  the Anime PNGs at `public/cards/anime/*.png`. Requires an
-  `IMAGE_GEN_API_KEY` (or `OPENAI_API_KEY`). **Not** invoked by CI, lint,
-  test, or build. Existing PNGs are skipped, so any intentional replacement
-  requires the operator's explicit
-  `npm run generate:anime-card-art -- --force`. See
-  [`public/cards/README.md`](../../public/cards/README.md#anime-artwork) for
-  credentials, flags, and the visual review gate. Credentials are relevant only
-  if an operator chooses to generate new images. Hashes, dimensions, and
-  primary/fallback inequality do not establish visual quality;
-  record actual browser visual acceptance separately after the text-first
-  checkpoint and evidence procedure.
-
-## What "good" looks like
-
-A well-validated application change has all of:
-
-- All four validation checks (lint, tests, build, CodeQL) passing locally
-  on top of a clean `npm ci`, plus the benchmark when required above.
-- A PR description that ends with an evidence-backed validation block (see
-  [PR workflow](pr-workflow.md#validation-status)). Only when all four passed:
-  ```
-  Validation: lint ✔ / tests ✔ (N) / build ✔ / CodeQL ✔
-  ```
-- For user-visible changes: completed visual verification and a reviewer-accessible
-  screenshot reference. Blocked evidence remains pending maintainer verification,
-  not silently waived.
-- Tests added or updated alongside any non-trivial behavior change.
+- For each check, record the commit, any uncommitted changes included, the
+  command, exit code and relevant output. A tool's `success=true` proves only
+  that the invocation completed; an unfinished command is pending.
+- Collect delegated results before marking checks complete. Results cover
+  only the revision tested; later relevant edits need new validation.
+- Start `npm run preview` only after a successful production build, and
+  don't rebuild into the same directory while smoke-testing. Record the build
+  revision and `VITE_BASE_PATH`.
+- Open the configured non-root path (normally `/Cardgame/`), not `/`; the
+  dev server uses another base, so it can't verify Pages asset loading.
+  Record the renderer, browser, viewport, exercised behavior and console or
+  network errors; see
+  [browser verification](testing.md#browser-verification-and-evidence).
+- Collect final results apart from image inspection or upload so a
+  transport failure can't hide them.
 
 ## Skipping rules
 
-- **Docs-only changes** still run `npm run lint` as a policy check (it's
-  cheap and catches accidental edits to `src/` that slipped into a
-  "docs-only" change). Tests, benchmark, build, and browser checks may be marked
-  **not run (docs-only)** unless the documentation has dedicated tests. Still
-  scan changed files for secrets before committing and invoke `codeql_checker`
-  with a trivial declaration; report a skipped analysis as skipped, not as
-  "0 alerts". Check links and command descriptions manually: `tsc --noEmit`
-  only typechecks files under `src/` per `tsconfig.json`, not Markdown references.
-- **Test-only changes** still go through all four steps; tests can affect
-  the build (e.g. new ambient declarations in `src/test/node-shims.d.ts`).
+- **Docs-only changes** still run `npm run lint` (it catches stray `src/`
+  edits), scan for secrets and invoke `codeql_checker` with a trivial
+  declaration. Tests, bench, build and browser checks may be **not run
+  (docs-only)**, except dedicated doc tests: `src/test/docs-links.test.ts`
+  (part of `npm run test`) checks relative Markdown links and anchors.
+  Check command descriptions by hand.
+- **Test-only changes** run the full sequence; tests can affect the build
+  (e.g. ambient declarations in `src/test/node-shims.d.ts`).
 
-## Common gotchas
+## Other scripts
 
-- `tsc --noEmit` does not run the base-path regression test or protect against
-  the Vite static-replacement trap; run the full sequence.
-- The `vite build` step downloads no network assets at build time; if it
-  hits the network, something is misconfigured.
-- The card-art generator is deterministic; non-deterministic output points
-  to an accidental `Math.random()` somewhere in the recipe.
+- `npm run cli -- --mode ai-vs-ai` builds and runs the terminal game.
+- `npm run generate:card-art` deterministically rewrites the Classic and
+  HD-fallback PNGs; re-run and commit them after any generator or recipe
+  change. `src/test/card-art-generator.test.ts` checks byte parity; drift
+  between runs means a stray `Math.random()`.
+- `npm run generate:anime-card-art` is operator-only (hosted image API,
+  `IMAGE_GEN_API_KEY`), never part of validation, and overwrites PNGs only
+  with `-- --force`; see
+  [Artwork acceptance](../../AGENTS.md#artwork-acceptance) and
+  [card art](../../public/cards/README.md#anime-artwork).
 
 ## Failure triage and recovery
 
-1. **Gather evidence first.** For an Actions failure, use the GitHub Actions
-   tools to list recent workflow runs, then retrieve the affected job's logs.
-   Record workflow name, run/job links, failing step, run attempt, relevant
-   commit, first meaningful error, UTC timestamp, and preceding operation.
-   Separate observations from hypotheses; the final exit-code annotation alone
-   is not a root cause.
-2. **Classify the failing layer before changing anything:**
-
-   | Layer | Evidence to inspect | Response |
-   | --- | --- | --- |
-   | Application validation | Compiler diagnostics, failing assertions, benchmark/build output | Reproduce against the recorded revision and fix the demonstrated regression. |
-   | Dependency/environment | Install error, Node/npm versions, lockfile mismatch | Restore the documented environment; do not opportunistically upgrade packages. |
-   | Browser tooling | Navigation/launch error, local server readiness, URL/base path | Follow the supported [browser recovery procedure](testing.md#browser-verification-and-evidence). |
-   | Artifact transport | Capture/upload/download error and returned artifact reference | Verify the local image and reference; do not equate capture with successful attachment. |
-   | Agent service | Runtime/model-request error outside application checks | Preserve available results and escalate if supported recovery fails. |
-
-3. **Bound recovery.** Make at most one supported retry of the failed operation
-   when safe, after addressing an evidenced recoverable condition. Do not replay
-   submissions, commits, or whole jobs blindly. If it still fails, or no supported
-   recovery exists, stop that operation, mark the affected check **blocked**,
-   and request maintainer help. Continue independent checks when possible.
-   Never weaken tests, alter game logic or deployment cleanup, or expand network
-   permissions or speculatively edit Actions YAML merely to address an
-   unexplained runtime error. Improve investigation/checkpoint instructions
-   instead when the evidence concerns the managed agent, not a repository
-   workflow. Firewall warnings need a demonstrated connection to the failing
-   operation, not an assumption.
-4. **Preserve and resume deliberately.** Scan changes for secrets before a
-   checkpoint commit and retain textual results in the PR/progress record.
-   On resume, inspect branch commits, the working tree, completed changes, and
-   outstanding checks before editing or rerunning anything. Do not assume an
-   automatic recovery push succeeded. Temporary files and attachment references
-   may no longer exist: recreate ephemeral evidence and validate new references.
-5. **Escalate with a minimal diagnostic record.** Include run/job links,
-   commit, timestamp, request ID if present, redacted error, retry outcome,
-   confirmed completed checks, and unresolved checks. Keep code validation,
-   visual verification, and agent-run status separate. Do not publish credentials,
-   signed download URLs, browser profiles, or unrelated log contents.
-
-### Reference incident and recovery walkthroughs
-
-[Run 35496207389](https://github.com/pompomon/Cardgame/actions/runs/35496207389)
-failed in the managed Copilot **Processing Request (Linux)** step at
-**2026-09-20 07:14:27Z**, after image-view operations, with `CAPIError: 400
-Error while downloading file. Upstream status code: 404.` The missing URL and
-underlying cause were not disclosed. This is an upstream agent-service failure,
-not evidence of a Pages deployment defect. Preserve a text-first checkpoint of
-code and observed validation, then handle image inspection/attachment separately.
-Allow at most one safe, supported retry; otherwise leave image-dependent
-acceptance blocked for maintainer follow-up. Do not infer a causal link from
-image views alone or make speculative workflow-configuration edits.
-
-[Run 34038894955](https://github.com/pompomon/Cardgame/actions/runs/34038894955/job/101501919606)
-attempt 1 at head commit `ca69e6a14ba790b5cb3d1290a051dfefeef4e02b`
-failed in the dynamic Copilot job's **Processing Request (Linux)** step, not the
-Pages workflow. At 14:29:36 UTC on 2026-09-06, the runtime reported `CAPIError:
-400 Error while downloading file. Upstream status code: 404.`
-CodeQL had explicitly reported 0 alerts at 14:29:33. An image-view operation
-preceded the error, but the missing URL and underlying cause were not disclosed.
-Attachment transport is a hypothesis, not proof of a bad screenshot; neither
-the CodeQL result nor Chromium firewall warnings establish a repository defect.
-
-- **Browser failure:** preserve the navigation/launch error, check readiness
-  and the configured URL, use supported recovery if applicable, then retry once.
-  If blocked, retain automated results and textual observations and request
-  maintainer visual verification; do not switch to ad hoc browser automation.
-- **Attachment-download failure:** preserve completed code-check results and
-  the runtime error. If the session survives, verify available image/reference
-  evidence before a safe supported retry. If it terminates, the resumed session
-  first checks saved commits and recreates ephemeral evidence. Unresolved visual
-  inspection/attachment stays blocked even if code checks passed. Guidelines
-  reduce lost work and ambiguous reporting; they cannot prevent service outages.
+1. **Gather evidence.** For an Actions failure, read the failing job's logs,
+   not just the red status. Record workflow, run and job links, failing step,
+   attempt, commit, first meaningful error, UTC time and the preceding
+   operation. A final exit-code annotation is not a root cause; separate
+   observations from hypotheses.
+2. **Classify the layer** before changing anything:
+   - **Application** (compiler, test, bench or build output): reproduce at
+     the recorded revision and fix the demonstrated regression.
+   - **Dependency/environment** (install, Node/npm or lockfile errors):
+     restore the documented environment; don't upgrade packages.
+   - **Browser** (launch, navigation, server readiness, URL or base path):
+     use the supported
+     [browser recovery](testing.md#browser-verification-and-evidence).
+   - **Artifact transport** (capture, upload or download): verify the local
+     image and returned reference; a capture is not an attachment.
+   - **Agent service** (runtime or model-request errors outside the checks):
+     preserve results and escalate. An agent image-download error
+     (`CAPIError: 400 Error while downloading file. Upstream status code:
+     404.`) is never evidence of a Pages defect.
+3. **Bound recovery.** Retry only after addressing an evidenced, recoverable
+   condition; never blindly replay submissions, commits or whole jobs. If the
+   retry fails or no supported recovery exists, mark the check **blocked**
+   and continue independent checks. Unresolved visual checks stay pending
+   maintainer review under the [evidence procedure](pr-workflow.md#screenshots),
+   even when code checks pass.
+4. **No speculative fixes.** Don't alter deployment cleanup or edit Actions
+   workflows without evidence; a firewall warning needs a demonstrated link
+   to the failing operation. For managed-agent failures, improve
+   investigation or checkpoint steps instead.
+5. **Preserve and resume.** Scan for secrets before a checkpoint commit;
+   keep textual results in the PR or progress record. On resume, inspect
+   commits, the working tree and outstanding checks before editing or
+   rerunning, and don't assume an automatic recovery push succeeded.
+   Recreate missing temporary evidence and validate new references.
+6. **Escalate** with the step 1 record, any request ID, the redacted error,
+   the retry outcome and each check's status, keeping code validation, visual
+   verification and agent-run status separate. Never publish credentials,
+   signed download URLs, browser profiles or unrelated logs.
