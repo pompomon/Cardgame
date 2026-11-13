@@ -479,7 +479,7 @@ it.
 | File | `applyTo` | Content |
 | --- | --- | --- |
 | `renderer.instructions.md` | `src/renderers/**,src/style.css` | The "Native HTML / CSS" section, plus: change `decisionKey` for every new hub decision so stale input goes inert; how hand paging follows the selection; narrow-layout geometry. |
-| `sw-pwa.instructions.md` | `public/sw.js,public/404.html,public/manifest.webmanifest,public/cards/**,public/boards/**,scripts/generate-*.mjs,tools/board-backgrounds/**,index.html,vite.config.ts,src/app/service-worker-registration.ts,src/app/url-path.ts` | The "Service worker and base path" section. The asset and generator paths make artwork-only replacements load the cache-version rule. |
+| `sw-pwa.instructions.md` | `public/sw.js,public/404.html,public/manifest.webmanifest,public/cards/**,public/boards/**,src/app/card-visual-recipes.ts,scripts/generate-*.mjs,tools/board-backgrounds/**,index.html,vite.config.ts,src/app/service-worker-registration.ts,src/app/url-path.ts` | The "Service worker and base path" section. The asset, recipe and generator paths make artwork-only replacements load the cache-version rule. |
 | `tests.instructions.md` | `src/test/**` | The "Tests" section, plus: `narrowStage()` sizes for layout tests; the `innerHTML` stub needs closed SVG elements. |
 | `app-state.instructions.md` | `src/app/**` | Save before every Adventure transition; per-attempt idempotency and setup reuse; schema dispatch; leaf-module import boundaries. |
 | `game-ai.instructions.md` | `src/game/**` | Engine purity; the counter-growth budget for new draws, land plays or instances; folding seed high bits; a pointer to ADR 0003. |
