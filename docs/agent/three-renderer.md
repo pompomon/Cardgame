@@ -38,9 +38,8 @@ Cancel work before disposing what it references.
 - `ThreeBoard`: renderer, scene, observers, frame, registry, background and
   asset cache.
 - `ThreeCardRegistry`: shared geometry and every active or retired card,
-  cleared at a presentation boundary (new game, seed, mode or replay jump;
-  `three-board-retention.test.ts`). Dispose `createPresentation()` cards
-  first.
+  cleared at each `presentationBoundary()` (`three-effects.test.ts`).
+  Dispose `createPresentation()` cards first.
 - `ThreeBackground`, `EffectVisual`: their meshes and materials;
   `ThreeInteraction`: its listeners and pointer capture.
 
@@ -73,10 +72,10 @@ A touch or pen press held within `TOUCH_DRAG_THRESHOLD_PX` shows a ring at
 ### Second-finger guard
 
 While a card follows a pointer, `dragActive` makes `ThreeInterface`'s
-`handleClick` inert and the board ignores its primary and page buttons
-(`three-interface.test.ts`). Never reuse `isBlocked()` or
-`nativeActionBlocked()`: `playCard` checks the latter, so the drop would
-fail.
+`handleClick` inert (`three-interface.test.ts`) and the board ignores its
+primary and page buttons (`three-battlefield-controls.test.ts`). Never reuse
+`isBlocked()` or `nativeActionBlocked()`: `playCard` checks the latter, so
+the drop would fail.
 
 ### Context menu
 
@@ -89,8 +88,9 @@ and text selection.
 
 Touch and pen drags scroll the stage within `AUTO_SCROLL_EDGE_PX` of its
 visible edge, faster with depth up to `AUTO_SCROLL_MAX_SPEED`; the
-mouse never does. It stops outside the band, at either end, and on release,
-cancel, relayout and disposal (`three-battlefield-controls.test.ts`).
+mouse never does. It stops outside the band and at either end
+(`three-battlefield-controls.test.ts`), and on release, cancel, relayout and
+disposal.
 
 ### Drag geometry
 
@@ -162,7 +162,7 @@ on a profile or short-flag change (`three-renderer.test.ts`).
 - **Chrome.** `narrow` and `dock` keep a fixed-size dock; the target panel
   and tutorial banner stay clear of the rail.
 
-Drag presentation (`three-drag-layer.test.ts`):
+Drag presentation:
 
 - A pill pinned to the visible stage top shows the instruction, changing
   only with acceptance; the end restores the current idle text.
@@ -173,7 +173,7 @@ Drag presentation (`three-drag-layer.test.ts`):
   never drops; touch and pen get `TOUCH_DROP_SLOP_PX`, never toward the hand.
 - `ThreeDragLayer` is `aria-hidden`, pointer-transparent and holds at most
   one face lease, released by `endDrag` on every path; if it cannot paint,
-  the in-scene proxy stays.
+  the in-scene proxy stays (`three-drag-layer.test.ts`).
 - Call `onDragFeedback` last: its listener may end or dispose the board.
 - Reduced motion and Animations Off skip only the return animation.
 

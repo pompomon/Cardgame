@@ -14,7 +14,7 @@ flow.
 - Renderers use `ControllerApi` and public app/game types, guards and helpers,
   never controller internals.
 - `src/cli/` uses pure app/game helpers, never persistence, P2P, renderers or
-  DOM APIs (`src/test/cli-bundle.test.ts`).
+  DOM APIs (`src/test/cli-bundle.test.ts`: no storage or P2P).
 - `src/app/` decides presentation semantics once; renderers and the CLI only
   translate them; DOM mechanics stay in `src/renderers/`.
 - Put policy in the innermost layer that can express it, with exactly one
@@ -30,7 +30,7 @@ flow.
 
 | Directory | Owns | Key modules |
 | --- | --- | --- |
-| `game/` | Rules, legality, deterministic transitions, decks; AI policies (per level and tutorial), search, evaluation, seeded randomness | `engine.ts`, `cards.ts`, `types.ts`, `ai.ts`, `ai-*.ts`, `ai-policies/` |
+| `game/` | Rules, legality, deterministic transitions, decks; AI policies (levels, tutorial), search, evaluation, seeded randomness | `engine.ts`, `cards.ts`, `types.ts`, `ai.ts`, `ai-*.ts`, `ai-policies/` |
 | `app/` | UI-independent orchestration, persistence, Adventure, recordings, settings, guards; catalog, labels, lobby options, event formatting, base-safe asset URLs | `controller.ts`, `view-model.ts`, `validators.ts`, `safe-storage.ts`, `adventure*.ts`, `card-catalog.ts`, `*-presentation.ts` |
 | `net/` | WebRTC P2P transport | `p2p.ts` |
 | `renderers/` | Renderer contract, lazy Three.js loading and recovery, card previews | `types.ts`, `host.ts`, `card-preview.ts` |
@@ -38,7 +38,7 @@ flow.
 | `renderers/three/` | WebGL renderer, scene, GPU resources, picking, effects, layout; native HTML and CSS | `index.ts`, `board.ts`, `card-registry.ts`, `interaction.ts`, `effects.ts`, `interface.ts` |
 | `cli/` | Terminal prompts and output; Node adapter `scripts/cardgame-cli.mjs`, bundle `dist-cli/cardgame-cli.mjs` | `main.ts`, `session.ts`, `options.ts` |
 | `test/` | Vitest specs, `helpers/`, `fixtures/`, opt-in `tools/` | `*.test.ts`, `ai-perf.bench.ts` |
-| `assets/` | Unused Vite starter images | — |
+| `assets/` | Unused Vite starter art | — |
 
 ## Browser renderer contract
 
@@ -64,8 +64,8 @@ engine legal actions → AppViewModel options → interface/board input
 
 Board primary actions route through `ThreeInterface.activatePrimaryAction`;
 renderers revalidate decision/session keys and projected legality before
-submitting, per
-[reentrant UI submissions](state-and-persistence.md#reentrant-ui-submissions).
+submitting
+([reentrant UI submissions](state-and-persistence.md#reentrant-ui-submissions)).
 
 ## AI decisions
 

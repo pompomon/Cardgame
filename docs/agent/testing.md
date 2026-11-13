@@ -64,7 +64,7 @@ stateful UI test contracts, and browser verification.
   `ai-randomness-sources.test.ts` bans `Math.random`, clocks and `crypto` in
   `src/game/ai*.ts` and `src/game/ai-policies/`. Tests may assert that a
   decision repeats for the same inputs, after a JSON round trip, and with a
-  reordered deck or zone.
+  reordered deck; with reordered zones, assert its action class.
 - **Critical vs calm.** In critical positions (`decisionCriticality` of 1)
   Hard chooses identically for every seed, so tests may assert the exact
   action across many seeds (`criticalFixtures()` in `ai-hard.test.ts`). In

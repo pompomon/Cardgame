@@ -77,7 +77,7 @@ See also [Status-message ordering](../../AGENTS.md#status-message-ordering).
 - Set `hasSavedRun: true` only after the write succeeds.
 - A paused run never blocks `startReplay()`; an open Adventure does.
 - A refused result leads with its outcome (the board's winner text is not a
-  live region); `adventure-controller.test.ts` pins all Adventure status copy.
+  live region); `adventure-controller.test.ts` pins Adventure status copy.
   See [Status announcements](three-interface.md#status-announcements).
 
 ## Reentrant UI submissions

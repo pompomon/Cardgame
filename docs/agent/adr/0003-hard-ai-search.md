@@ -27,13 +27,13 @@ rollout depths, an opponent model always seeing Hard's hand.
 
 ### Search
 
-- `searchActionValues` groups legal actions into canonical classes that share
+- `searchActionValues` groups legal actions into canonical classes sharing
   one random stream per world (common random numbers).
 - Rollouts are ε-greedy on the fitted evaluator. Above four classes,
   sequential halving keeps three finalists.
 - An engine-step counter (`maxEngineSteps`), never a clock, bounds the
   search: the first world always completes and later ones start only if they
-  fit (exact bound in the `src/game/ai-search.ts` header).
+  fit (bound: `src/game/ai-search.ts` header).
 - Before sampling, find a class that wins before the opponent can answer,
   after Hard's own target choice; a counter window is an answer.
 - `applyActionForSearch` must match `applyAction`
@@ -57,9 +57,10 @@ rollout depths, an opponent model always seeing Hard's hand.
 
 - [Seeded AI randomness](../../../AGENTS.md#seeded-ai-randomness):
   `src/game/ai-random.ts` has separate search, selection and persona streams.
-- `chooseAiAction` repeats for the same state, seat, seed and budget, after a
-  JSON round trip and with reordered zones (`src/test/ai-hard.test.ts`);
-  `decisionFingerprint` sorts zones and ignores deck order and logs.
+- `chooseAiAction` repeats for the same state, seat, seed and budget, even
+  after a JSON round trip or deck reorder; reordered zones keep its class
+  (`src/test/ai-hard.test.ts`). `decisionFingerprint` sorts zones and ignores
+  deck order and logs.
 - Callers pass the game seed: in Adventure the attempt seed, which survives
   pause and resume; a retry derives a new one. Replays never run the AI.
 
@@ -74,8 +75,8 @@ rollout depths, an opponent model always seeing Hard's hand.
 
 ## Consequences
 
-- Hard is much stronger, varies in calm positions, costs far more CPU than
-  Advanced and makes Adventure much harder.
+- Hard is much stronger, varies in calm positions, costs far more CPU and
+  makes Adventure much harder.
 - Weight, budget, selection or persona changes alter Hard's choices; see
   [Seeded AI and the Hard search](../testing.md#seeded-ai-and-the-hard-search).
 - Follow-ups: [roadmap](../../implementation/hard-ai-search-roadmap.md).
