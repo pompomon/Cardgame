@@ -33,8 +33,14 @@ const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP})${LINK_REST}`, 'g')
 // A link in a heading, capturing the text that GitHub slugs.
 const HEADING_LINK = new RegExp(String.raw`\[([^\]]*)\]\(${GAP}${LINK_REST}`, 'g')
 // `[label]: target "title"` definitions, which every `[text][label]` or
-// `[label]` use resolves through. `[^note]:` footnotes are not links.
-const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*(?:${DESTINATION})(?:\s+${TITLE})?\s*$`)
+// `[label]` use resolves through. `[^note]:` footnotes are not links. As in
+// CommonMark, the target and the title may each start on the next line, but
+// link checks read definitions one line at a time.
+const DEFINITION = String.raw`\[(?!\^)[^\]]+\]:${GAP}(?:${DESTINATION})(?:(?=[ \t\n])${GAP}${TITLE})?[ \t]*`
+const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}${DEFINITION}$`)
+// The definitions that open a paragraph, whose lines are kept unindented.
+// GitHub leaves them out of a Setext heading.
+const LEADING_DEFINITIONS = new RegExp(String.raw`^(?:${DEFINITION}(?:\n|$))+`)
 // Fences and headings are indented at most three spaces; a deeper line is
 // indented code. A backtick fence's info string holds no backticks.
 const FENCE = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})(.*))$/
@@ -157,8 +163,10 @@ function anchorsIn(text: string): Set<string> {
     const atx = ATX_HEADING.exec(line)
     const html = HTML_BLOCKS.find(([start, , interrupts]) => start.test(line) && (interrupts || !paragraph.length))
     if (paragraph.length && SETEXT_UNDERLINE.test(line)) {
-      addHeading(paragraph.join('\n'))
-      paragraph = []
+      const heading = paragraph.join('\n').replace(LEADING_DEFINITIONS, '')
+      if (heading) addHeading(heading)
+      // Below definitions alone, the underline is paragraph text.
+      paragraph = heading ? [] : [line.trim()]
     } else if (atx) {
       addHeading(atx[1])
       paragraph = []
@@ -443,5 +451,34 @@ describe('documentation links', () => {
         'notes/example.md:4 guide(copy).md: missing file',
       ],
     })
+  })
+
+  it('leaves opening reference definitions out of Setext headings', () => {
+    // Expected slugs come from GitHub's Markdown API.
+    const text = [
+      '[ref]: README.md',
+      'Guide',
+      '===',
+      '',
+      '[a]: x.md',
+      '"Title"',
+      '[b]:',
+      'y.md',
+      'Two',
+      '---',
+      '',
+      'Intro',
+      '[ref]: README.md',
+      '===',
+      '',
+      '[ref]: README.md',
+      '---',
+      '',
+      '[ref]: README.md',
+      '---',
+      'Next',
+      '===',
+    ].join('\n')
+    expect([...anchorsIn(text)]).toEqual(['guide', 'two', 'introref-readmemd', '---next'])
   })
 })
