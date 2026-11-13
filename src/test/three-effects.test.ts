@@ -156,11 +156,11 @@ describe('Three.js event presentation', () => {
     const announceCallbacks: Array<() => void> = []
     const playback = vi.fn((_effect, _duration, done) => {
       playbackCallbacks.push(done)
-      return vi.fn(done)
+      return vi.fn<() => void>(done)
     })
     const announce = vi.fn((_effect, done) => {
       announceCallbacks.push(done)
-      return vi.fn(done)
+      return vi.fn<() => void>(done)
     })
     const effects = new ThreeEffects(playback, vi.fn(), () => {}, announce)
     const events = [play, mountain]
