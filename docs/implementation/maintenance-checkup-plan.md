@@ -694,6 +694,16 @@ function proseLines(text: string): string[] {
 
 const anchorCache = new Map<string, Set<string>>()
 
+/** Drops inline HTML tags, repeating until none is left (as GitHub's slugs use the text only). */
+function withoutTags(text: string): string {
+  let previous: string
+  do {
+    previous = text
+    text = text.replace(/<[^<>]*>/g, '')
+  } while (text !== previous)
+  return text
+}
+
 function anchorsOf(file: string): Set<string> {
   const cached = anchorCache.get(file)
   if (cached) return cached
@@ -703,9 +713,7 @@ function anchorsOf(file: string): Set<string> {
     for (const match of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) anchors.add(match[1])
     const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line)
     if (!heading) continue
-    const slug = heading[1]
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<[^>]+>/g, '')
+    const slug = withoutTags(heading[1].replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'))
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s_-]/gu, '')
       .replace(/\s/g, '-')
