@@ -9,9 +9,10 @@ import { REPO_ROOT } from './helpers/ai-source-files'
 // GitHub heading slug, and source comments citing `docs/<file>.md#<anchor>`
 // must still reach a heading. Walks fixed roots only, because other tests
 // create scratch directories at the repository root. The Markdown parsing
-// covers what these docs use, not all of CommonMark: entities, `_emphasis_`
-// and backslash escapes in headings, list-item indentation, and the insides
-// of block quotes and HTML blocks are out of scope.
+// covers what these docs use, not all of CommonMark: entities, `_emphasis_`,
+// backslash escapes and `<…>` text that isn't HTML in headings, list-item
+// indentation, and the insides of block quotes are out of scope. HTML blocks
+// hide headings, but links inside them are still checked.
 
 const MARKDOWN_ROOTS = ['AGENTS.md', 'README.md', '.github', 'docs', 'public']
 const SOURCE_ROOTS = ['index.html', 'scripts', 'src', '.github/workflows']
@@ -24,9 +25,13 @@ const GAP = String.raw`[ \t]*(?:\n[ \t]*)?`
 // A destination is <…>, captured without the brackets, or a bare run that
 // may hold balanced parentheses one level deep: guide(copy).md.
 const DESTINATION = String.raw`<([^<>\n]*)>|(?!<)((?:[^\s()]|\([^\s()]*\))+)`
+// The rest of an inline link after `](`: destination, optional title, `)`.
+const LINK_REST = String.raw`(?:${DESTINATION})(?:(?=[ \t\n])${GAP}${TITLE})?${GAP}\)`
 // Captures the text before the destination, to find its line, then the
 // destination itself.
-const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP})(?:${DESTINATION})(?:(?=[ \t\n])${GAP}${TITLE})?${GAP}\)`, 'g')
+const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP})${LINK_REST}`, 'g')
+// A link in a heading, capturing the text that GitHub slugs.
+const HEADING_LINK = new RegExp(String.raw`\[([^\]]*)\]\(${GAP}${LINK_REST}`, 'g')
 // `[label]: target "title"` definitions, which every `[text][label]` or
 // `[label]` use resolves through. `[^note]:` footnotes are not links.
 const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*(?:${DESTINATION})(?:\s+${TITLE})?\s*$`)
@@ -35,10 +40,33 @@ const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*(?
 const FENCE = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})(.*))$/
 const ATX_HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$/
 const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*$/
-// A block quote, table row, HTML block, list item or thematic break, none of
-// which continues a paragraph that a Setext underline could turn into a
-// heading.
-const BLOCK_START = /^ {0,3}(?:[>|<]|[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|([-*_])(?:[ \t]*\1){2,}[ \t]*$)/
+// A block quote, table row, list item or thematic break, none of which
+// continues a paragraph that a Setext underline could turn into a heading.
+const BLOCK_START = /^ {0,3}(?:[>|]|[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|([-*_])(?:[ \t]*\1){2,}[ \t]*$)/
+// The HTML blocks GitHub knows (cmark-gfm, which follows CommonMark 0.29),
+// in order: how each starts, what ends it (a marker for the first five, even
+// on the opening line, or a blank line) and whether it can interrupt a
+// paragraph. A line that starts with an inline tag and holds more, such as
+// `<em>Guide</em>`, starts none of them, so it can still be a heading.
+// Fixed markers are strings because CodeQL (js/bad-tag-filter) flags
+// `/-->/`; as on GitHub, only `-->` ends a comment block, not `--!>`.
+const BLOCK_TAG = [
+  'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt',
+  'fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu',
+  'menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul',
+].join('|')
+const ATTRIBUTE = String.raw`[ \t]+[a-z_:][\w.:-]*(?:[ \t]*=[ \t]*(?:[^\s"'=<>\x60]+|'[^']*'|"[^"]*"))?`
+const BLANK = /^[ \t]*$/
+const HTML_BLOCKS: readonly (readonly [start: RegExp, end: RegExp | string, interrupts: boolean])[] = [
+  [/^ {0,3}<(?:pre|script|style|textarea)(?:[ \t>]|$)/i, /<\/(?:pre|script|style|textarea)>/i, true],
+  [/^ {0,3}<!--/, '-->', true],
+  [/^ {0,3}<\?/, '?>', true],
+  [/^ {0,3}<![A-Z]/, '>', true],
+  [/^ {0,3}<!\[CDATA\[/, ']]>', true],
+  [new RegExp(String.raw`^ {0,3}<\/?(?:${BLOCK_TAG})(?:[ \t>]|\/>|$)`, 'i'), BLANK, true],
+  // A complete tag alone on its line.
+  [new RegExp(String.raw`^ {0,3}(?:<[a-z][a-z\d-]*(?:${ATTRIBUTE})*[ \t]*\/?>|<\/[a-z][a-z\d-]*[ \t]*>)[ \t]*$`, 'i'), BLANK, false],
+]
 
 function walk(path: string, files: string[] = []): string[] {
   if (!existsSync(path)) return files
@@ -56,11 +84,12 @@ function filesUnder(roots: readonly string[], keep: (path: string) => boolean): 
   return roots.flatMap((root) => walk(join(REPO_ROOT, root))).filter(keep)
 }
 
-// Lines with fenced code and YAML front matter blanked, so line numbers stay
-// accurate. As in CommonMark, only a bare run of the opening character that
-// is at least as long closes a fence, so a ```` block can show ``` examples.
+// Lines, ended by \n, \r\n or \r, with fenced code and YAML front matter
+// blanked, so line numbers stay accurate. As in CommonMark, only a bare run
+// of the opening character that is at least as long closes a fence, so a
+// ```` block can show ``` examples.
 function proseLines(text: string): string[] {
-  const lines = text.split('\n')
+  const lines = text.split(/\r\n?|\n/)
   const frontMatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1
   let fence = ''
   return lines.map((line, index) => {
@@ -89,11 +118,11 @@ function withoutTags(text: string): string {
   return text
 }
 
-// GitHub keeps alphabetic characters, marks, decimal digits, connector
-// punctuation, joiners, spaces and hyphens, then turns each space into a
-// hyphen.
+// Links count by their text. GitHub keeps alphabetic characters, marks,
+// decimal digits, connector punctuation, joiners, spaces and hyphens, then
+// turns each space into a hyphen.
 function slugBase(heading: string): string {
-  return withoutTags(heading.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'))
+  return withoutTags(heading.replace(HEADING_LINK, '$1'))
     .toLowerCase()
     .replace(/[^\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control} -]/gu, '')
     .replace(/ /g, '-')
@@ -114,16 +143,27 @@ function anchorsIn(text: string): Set<string> {
     suffixes.set(slug, 0)
     anchors.add(slug)
   }
-  // The lines a Setext underline would turn into a heading.
+  // The lines a Setext underline would turn into a heading, and what ends
+  // the HTML block being skipped.
   let paragraph: string[] = []
+  let htmlEnd: RegExp | string | undefined
+  const ends = (end: RegExp | string, line: string) => (typeof end === 'string' ? line.includes(end) : end.test(line))
   for (const line of proseLines(text)) {
     for (const match of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) anchors.add(match[1])
+    if (htmlEnd) {
+      if (ends(htmlEnd, line)) htmlEnd = undefined
+      continue
+    }
     const atx = ATX_HEADING.exec(line)
+    const html = HTML_BLOCKS.find(([start, , interrupts]) => start.test(line) && (interrupts || !paragraph.length))
     if (paragraph.length && SETEXT_UNDERLINE.test(line)) {
       addHeading(paragraph.join('\n'))
       paragraph = []
     } else if (atx) {
       addHeading(atx[1])
+      paragraph = []
+    } else if (html) {
+      htmlEnd = ends(html[1], line) ? undefined : html[1]
       paragraph = []
     } else if (!line.trim() || BLOCK_START.test(line)) {
       paragraph = []
@@ -331,5 +371,77 @@ describe('documentation links', () => {
     // Expected slugs come from GitHub's Markdown API.
     expect([...anchorsIn('# Foo\n# Foo-1\n# Foo')]).toEqual(['foo', 'foo-1', 'foo-2'])
     expect([...anchorsIn('# Foo\n# Foo\n# Foo-1')]).toEqual(['foo', 'foo-1', 'foo-1-1'])
+  })
+
+  it('reads CRLF and CR line endings', () => {
+    const lines = ['---', 'title: Notes', '---', 'Guide', '=====', '~~~', '[a](missing.md)', '~~~', 'See [b](#guide) and [c](#nope).']
+    for (const ending of ['\r\n', '\r']) {
+      const text = lines.join(ending)
+      expect(proseLines(text).filter(Boolean)).toEqual(['Guide', '=====', 'See [b](#guide) and [c](#nope).'])
+      expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+        checked: 2,
+        problems: ['notes/example.md:9 #nope: missing anchor #nope'],
+      })
+    }
+  })
+
+  it('tells HTML blocks from inline HTML', () => {
+    // Expected slugs come from GitHub's Markdown API.
+    const text = [
+      '<em>Guide</em>',
+      '===',
+      '',
+      'Text',
+      '<details open>',
+      'Hidden',
+      '---',
+      '',
+      '<pre>',
+      '',
+      '# Hidden',
+      '</pre>',
+      '<!-- Comment --!>',
+      '# Hidden',
+      '-->',
+      'Lone',
+      '<em>',
+      '---',
+      '',
+      '<em>',
+      'Hidden',
+      '---',
+      '',
+      'Text',
+      '<!-- note -->',
+      'Kept',
+      '---',
+      '',
+      '<!doctype',
+      '',
+      'Shown',
+      '---',
+    ].join('\n')
+    expect([...anchorsIn(text)]).toEqual(['guide', 'lone', 'kept', 'shown'])
+  })
+
+  it('slugs linked headings by their link text', () => {
+    // Expected slugs come from GitHub's Markdown API.
+    const text = [
+      '## [Guide](guide(copy).md)',
+      '## [Copy](<guide(copy).md> "Title") notes',
+      '[Wrapped](',
+      'guide(copy).md)',
+      '---',
+      '',
+      'See [a](#guide), [b](#copy-notes) and [c](#wrapped).',
+    ].join('\n')
+    expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+      checked: 6,
+      problems: [
+        'notes/example.md:1 guide(copy).md: missing file',
+        'notes/example.md:2 guide(copy).md: missing file',
+        'notes/example.md:4 guide(copy).md: missing file',
+      ],
+    })
   })
 })
