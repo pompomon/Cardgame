@@ -43,3 +43,5 @@ jobs:
       - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
+          # The default is runtime only; Vite, Vitest and TypeScript are devDependencies.
+          fail-on-scopes: runtime, development, unknown

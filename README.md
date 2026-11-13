@@ -275,7 +275,8 @@ browser-only; this follow-up adds no CLI commands or inspection access.
 
 Pull requests run `.github/workflows/ci.yml`: steps 1–5 below, plus a
 dependency review that fails on new high- or critical-severity
-vulnerabilities. `.github/workflows/copilot-setup-steps.yml` preinstalls
+vulnerabilities in runtime or development dependencies.
+`.github/workflows/copilot-setup-steps.yml` preinstalls
 dependencies for the Copilot cloud agent. Every workflow uses the Node version
 in `.nvmrc`.
 
