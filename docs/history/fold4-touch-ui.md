@@ -1,8 +1,8 @@
 # Fold4 touch UI (archived plan)
 
 Archived from `docs/implementation/fold4-touch-ui-uplift-plan.md` and the
-`fold4-touch-ui-uplift/` figures. Recover them with
-`git show da7c3c9:<path>`.
+`fold4-touch-ui-uplift/` figures. Recover them, and the measurement prose of
+`docs/agent/three-renderer.md`, with `git show da7c3c9:<path>`.
 
 ## Delivered
 - Plan: postures, figures and milestones M0–M5, approved 2026-11-10 (#143).
@@ -18,11 +18,11 @@ Archived from `docs/implementation/fold4-touch-ui-uplift-plan.md` and the
   announcer: now in `docs/agent/three-interface.md` › Status announcements,
   › Touch shells and fold continuity.
 - Classifier rules, settled defaults, one drop predicate, the 2D drag layer,
-  peek, second-finger guard and one-measurement drags: now in
-  `docs/agent/three-renderer.md` › Touch shells, › Long-press peek,
-  › Second-finger guard, › Drag geometry.
+  peek, second-finger guard and one-measurement drags (sizes and timings as
+  named constants): now in `docs/agent/three-renderer.md` › Touch shells,
+  › Long-press peek, › Second-finger guard, › Drag geometry.
 - Posture sweep in touch emulation, never as device proof: now in
-  `docs/agent/testing.md` › Fold4 posture check.
+  `docs/agent/browser-checks.md` › Fold4 posture check.
 
 ## Open follow-ups
 - Galaxy Z Fold4 device gates: M0 measurements (then replace the estimates

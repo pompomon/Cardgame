@@ -20,11 +20,11 @@ Recover it with `git show da7c3c9:<path>`.
   copy.
 - Board, Banish destination, compact labels and the Mimic rule: now in
   `docs/agent/three-interface.md` › Creature copy and accessible labels.
-- Slug URLs, raster fallbacks, Monochrome filter, network-first art: now in
-  `docs/agent/service-worker-and-pwa.md` › Catalog-slugged card art.
-- Artwork needs human visual acceptance: now in `AGENTS.md` › Hard rules 11.
-- Release audit and long-label checks: now in
-  `docs/agent/testing.md` › Creature catalog and terminology release matrix.
+- Slug URLs and network-first art: now in `docs/agent/service-worker-and-pwa.md`
+  › Catalog-slugged card art; fallbacks, Monochrome: `public/cards/README.md`.
+- Art needs human visual acceptance: now in `AGENTS.md` › Artwork acceptance.
+- Release audit and long-label checks: now in `docs/agent/browser-checks.md`
+  › Creature catalog and terminology release matrix.
 
 ## Open follow-ups
 - Human art review, restored-art browser evidence, historical recording

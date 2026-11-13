@@ -23,7 +23,7 @@ Recover them with `git show da7c3c9:<path>`.
   markup budget): now in `docs/agent/three-interface.md` › Adventure hub.
 - Announcer: now in `docs/agent/three-interface.md` › Status announcements.
 - Save fuzzing: now in `docs/agent/testing.md` › Malformed Adventure saves.
-- Browser sweep: now in `docs/agent/testing.md` › Adventure hub check.
+- Browser sweep: now in `docs/agent/browser-checks.md` › Adventure hub check.
 
 ## Open follow-ups
 - Milestone 7 compatibility matrix (legacy saves, recordings, modes,
