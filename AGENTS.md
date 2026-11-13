@@ -53,7 +53,8 @@ Cap arrays, keeping the most recent tail.
 ### Default branch in union switches
 
 Every switch over a discriminated union has a `default:` that returns the
-contract's safe placeholder or documented sentinel, never `undefined`.
+contract's safe placeholder or documented sentinel, never accidental
+`undefined`.
 
 ### Immutable view-model snapshots
 

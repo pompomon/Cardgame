@@ -1,5 +1,5 @@
 ---
-applyTo: "public/sw.js,public/404.html,public/manifest.webmanifest,index.html,vite.config.ts,src/app/service-worker-registration.ts,src/app/url-path.ts"
+applyTo: "public/sw.js,public/404.html,public/manifest.webmanifest,public/cards/**,public/boards/**,scripts/generate-*.mjs,tools/board-backgrounds/**,index.html,vite.config.ts,src/app/service-worker-registration.ts,src/app/url-path.ts"
 ---
 
 # Service worker, PWA and base path
@@ -9,7 +9,7 @@ GitHub Pages serves the app from a non-root base path.
 
 - Network-first for unhashed `/cards/*` and `/boards/*`; cache-first for
   hashed `/assets/*`. Bump `RUNTIME_ASSET_VERSION` in `public/sw.js` when a
-  same-path PNG is replaced.
+  same-path PNG is replaced, including by a `generate:*` script.
 - Never precache `404.html` into the SPA shell slot.
 - In `index.html`, use `%BASE_URL%…` or `./…`, never absolute `/…` paths.
 - `joinBasePath` and `404.html` normalize to exactly one leading `/` and

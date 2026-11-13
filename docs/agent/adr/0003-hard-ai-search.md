@@ -34,6 +34,9 @@ rollout depths, an opponent model always seeing Hard's hand.
 - An engine-step counter (`maxEngineSteps`), never a clock, bounds the
   search: the first world always completes and later ones start only if they
   fit (bound: `src/game/ai-search.ts` header).
+- A rollout cut off by its step limit first finishes any counter window and
+  the target choice after it, because the engine checks for a win only once
+  they resolve (`playRollout`, `src/test/ai-rollout.test.ts`).
 - Before sampling, find a class that wins before the opponent can answer,
   after Hard's own target choice; a counter window is an answer.
 - `applyActionForSearch` must match `applyAction`
