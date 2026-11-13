@@ -26,8 +26,7 @@ The single home for the validation sequence, evidence and failure triage.
    `ExperimentalWarning: localStorage is not available…` is harmless.
 2. **Lint:** `npm run lint` (`tsc --noEmit`) typechecks `src/` only and
    can't catch the base-path trap, so it never replaces the build.
-3. **Tests:** `npm run test` (`vitest run`). Record the passing count observed
-   for this revision, never an earlier or inferred count.
+3. **Tests:** `npm run test` (`vitest run`).
 4. **Bench**, after tests and before build, when reproducing
    [deploy-pages.yml](../../.github/workflows/deploy-pages.yml) or changing
    an AI hot loop: `npm run test:bench`; record it separately. `GATES` in
@@ -86,6 +85,7 @@ main/master pushes or dispatch. Neither runs CodeQL.
 
 ## Other scripts
 
+- `npm run dev` starts the Vite dev server.
 - `npm run cli -- --mode ai-vs-ai` builds and runs the terminal game.
 - `npm run generate:card-art` deterministically rewrites the Classic and
   HD-fallback PNGs; re-run and commit them after any generator or recipe
