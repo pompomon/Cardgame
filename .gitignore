@@ -12,7 +12,6 @@ dist
 dist-ssr
 dist-cli
 *.local
-.ai-bench-report.json
 
 # Editor directories and files
 .vscode/*

@@ -47,10 +47,10 @@ results; only the documented [skipping rules](#skipping-rules) allow omissions.
 
    The gate times Advanced's one-ply choice and Hard's search on a fixed
    critical scenario, each against its own baseline with a 1.5× allowance in
-   `scripts/check-ai-bench.mjs`. Re-baseline only after intentional
-   AI-performance work: measure with `KEEP_AI_BENCH_REPORT=1 npm run test:bench`
-   and update the baselines and the comment in `src/test/ai-perf.bench.ts` in
-   the same PR.
+   `GATES` in `src/test/ai-perf.bench.ts`, and prints one `AI benchmark:`
+   line per level. Re-baseline only after intentional AI-performance work,
+   from the logged ms/op of three idle runs, and update `GATES` and the file's
+   comment in the same PR.
 
 4. **Build** — typecheck + browser and terminal bundles:
 
