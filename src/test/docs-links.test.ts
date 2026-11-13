@@ -14,10 +14,16 @@ const MARKDOWN_ROOTS = ['AGENTS.md', 'README.md', '.github', 'docs', 'public']
 const SOURCE_ROOTS = ['index.html', 'scripts', 'src', '.github/workflows']
 const SOURCE_FILE = /\.(?:html|m?js|ts|ya?ml)$/
 const DOC_CITATION = /\b((?:docs|public)\/[\w./-]+\.md)(?:#([\w-]+))?/g
-const MARKDOWN_LINK = /\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
+// Link titles use "…", '…' or (…). As in CommonMark, the parts of an inline
+// link may be separated by spaces or tabs and at most one line break.
+const TITLE = String.raw`(?:"[^"]*"|'[^']*'|\([^)]*\))`
+const GAP = String.raw`[ \t]*(?:\n[ \t]*)?`
+// Captures the text before the destination, to find its line, then the
+// destination itself.
+const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP}<?)([^)\s>]+)>?(?:(?=[ \t\n])${GAP}${TITLE})?${GAP}\)`, 'g')
 // `[label]: target "title"` definitions, which every `[text][label]` or
 // `[label]` use resolves through. `[^note]:` footnotes are not links.
-const REFERENCE_DEFINITION = /^ {0,3}\[(?!\^)[^\]]+\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/
+const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*<?([^\s>]+)>?(?:\s+${TITLE})?\s*$`)
 
 function walk(path: string, files: string[] = []): string[] {
   if (!existsSync(path)) return files
@@ -97,32 +103,50 @@ function anchorsOf(file: string): Set<string> {
   return anchors
 }
 
+function anchorProblem(anchors: Set<string>, anchor: string | undefined): string | null {
+  return anchor && !anchors.has(anchor) ? `missing anchor #${anchor}` : null
+}
+
 function problemFor(target: string, anchor: string | undefined): string | null {
   if (!existsSync(target)) return 'missing file'
-  if (anchor && target.endsWith('.md') && !anchorsOf(target).has(anchor)) return `missing anchor #${anchor}`
-  return null
+  return target.endsWith('.md') ? anchorProblem(anchorsOf(target), anchor) : null
 }
 
 function where(file: string, index: number): string {
   return `${file.slice(REPO_ROOT.length + 1)}:${index + 1}`
 }
 
+/** Percent-decodes a link part, keeping a malformed escape as written. */
+function decoded(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
 function linkProblems(file: string, text: string): { checked: number; problems: string[] } {
   const result = { checked: 0, problems: [] as string[] }
-  proseLines(text).forEach((line, index) => {
-    const prose = line.replace(/`[^`]*`/g, '')
-    const links = [...prose.matchAll(MARKDOWN_LINK)].map((match) => match[1])
-    const definition = REFERENCE_DEFINITION.exec(prose)
-    if (definition) links.push(definition[1])
-    for (const link of links) {
-      if (/^[a-z][a-z\d+.-]*:/i.test(link)) continue
-      const [path, anchor] = link.split('#')
-      const target = path ? resolve(file, '..', decodeURIComponent(path)) : file
-      result.checked += 1
-      const problem = problemFor(target, anchor)
-      if (problem) result.problems.push(`${where(file, index)} ${link}: ${problem}`)
-    }
+  const lines = proseLines(text).map((line) => line.replace(/`[^`]*`/g, ''))
+  const prose = lines.join('\n')
+  // [line index, link]. Inline links may wrap, so they're matched across lines.
+  const links: [number, string][] = [...prose.matchAll(MARKDOWN_LINK)].map((match) => [
+    prose.slice(0, match.index + match[1].length).split('\n').length - 1,
+    match[2],
+  ])
+  lines.forEach((line, index) => {
+    const definition = REFERENCE_DEFINITION.exec(line)
+    if (definition) links.push([index, definition[1]])
   })
+  links.sort(([a], [b]) => a - b)
+  const ownAnchors = anchorsIn(text)
+  for (const [index, link] of links) {
+    if (/^[a-z][a-z\d+.-]*:/i.test(link)) continue
+    const [path, anchor] = link.split('#').map(decoded)
+    result.checked += 1
+    const problem = path ? problemFor(resolve(file, '..', path), anchor) : anchorProblem(ownAnchors, anchor)
+    if (problem) result.problems.push(`${where(file, index)} ${link}: ${problem}`)
+  }
   return result
 }
 
@@ -172,6 +196,27 @@ describe('documentation links', () => {
       problems: [
         'notes/example.md:3 missing.md: missing file',
         'notes/example.md:4 ../AGENTS.md#no-such-rule: missing anchor #no-such-rule',
+      ],
+    })
+  })
+
+  it('checks link titles, wrapped destinations and encoded fragments', () => {
+    const text = [
+      '# Doppelgänger',
+      '',
+      "See [a](missing.md 'Title'), [b](missing.md (Title)), [c](",
+      '  missing.md',
+      ') and [d](',
+      '#no-such-heading "Title"',
+      '). [e](#doppelg%C3%A4nger) resolves.',
+    ].join('\n')
+    expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+      checked: 5,
+      problems: [
+        'notes/example.md:3 missing.md: missing file',
+        'notes/example.md:3 missing.md: missing file',
+        'notes/example.md:4 missing.md: missing file',
+        'notes/example.md:6 #no-such-heading: missing anchor #no-such-heading',
       ],
     })
   })
