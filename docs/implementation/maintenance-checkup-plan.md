@@ -372,7 +372,9 @@ Spike results:
 
 - At `94eda5b` it checks 152 links and finds 0 problems. With this plan
   added, it checks 163.
-- Both toolchains pass the 2 tests.
+- Both toolchains pass the 3 tests. The third checks that a fence closes
+  only on a matching fence, so a four-backtick block can show
+  three-backtick examples.
 - Deleting a linked plan and renaming a linked heading produced 4 precise
   failures.
 - Simulating this PR's deletions drops the count to 82 and leaves 3 dangling
@@ -673,15 +675,20 @@ function filesUnder(roots: readonly string[], keep: (path: string) => boolean): 
   return roots.flatMap((root) => walk(join(REPO_ROOT, root))).filter(keep)
 }
 
-// Lines with fenced code blanked, so line numbers stay accurate.
+// Lines with fenced code blanked, so line numbers stay accurate. As in
+// CommonMark, only a bare run of the opening character that is at least as
+// long closes a fence, so a ```` block can show ``` examples.
 function proseLines(text: string): string[] {
-  let fenced = false
+  let fence = ''
   return text.split('\n').map((line) => {
-    if (/^\s*(?:```|~~~)/.test(line)) {
-      fenced = !fenced
-      return ''
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+    if (!fence) {
+      if (!marker) return line
+      fence = marker[1]
+    } else if (marker && marker[1].startsWith(fence) && !marker[2].trim()) {
+      fence = ''
     }
-    return fenced ? '' : line
+    return ''
   })
 }
 
@@ -754,6 +761,11 @@ describe('documentation links', () => {
       })
     }
     expect(problems).toEqual([])
+  })
+
+  it('keeps nested fence examples out of prose', () => {
+    const fenced = ['````md', '```', '[x](missing-example.md)', '```', '````', '~~~', '```', '~~~']
+    expect(proseLines([...fenced, 'after'].join('\n')).filter(Boolean)).toEqual(['after'])
   })
 })
 ````
