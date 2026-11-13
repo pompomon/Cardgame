@@ -370,10 +370,15 @@ Commit 1 adds `src/test/docs-links.test.ts`
 ([Appendix A](#appendix-a-docs-link-test)) and widens the `statSync` shim.
 Spike results:
 
-- On the baseline it checks 152 links and finds 0 problems.
+- At `94eda5b` it checks 152 links and finds 0 problems. With this plan
+  added, it checks 163.
 - Both toolchains pass the 2 tests.
 - Deleting a linked plan and renaming a linked heading produced 4 precise
   failures.
+- Simulating this PR's deletions drops the count to 82 and leaves 3 dangling
+  links: `docs/agent/testing.md:385` and `:400`, and
+  `docs/history/README.md:15`. The edits below fix all three. Archiving
+  shrinks the count, so the test asserts only that it is nonzero.
 
 Later commits archive the plans:
 
@@ -417,7 +422,8 @@ Other edits:
   use `docs/history/maintainer-gates.md` instead.
 - Point `docs/agent/testing.md:385` and `:400` (Fold4 device checklist and
   device measurements) at that issue.
-- List the new summaries in [`docs/history/README.md`](../history/README.md).
+- In [`docs/history/README.md`](../history/README.md), replace the
+  `initial-implementation-plan.md` entry with the new summaries.
 - Add the archive rule (D6) to `docs/agent/pr-workflow.md`.
 
 Acceptance:
@@ -731,7 +737,9 @@ describe('documentation links', () => {
         }
       })
     }
-    expect(checked).toBeGreaterThan(100)
+    // Archiving shrinks the count, so only guard against a walk or pattern
+    // that silently matches nothing.
+    expect(checked).toBeGreaterThan(0)
     expect(problems).toEqual([])
   })
 
