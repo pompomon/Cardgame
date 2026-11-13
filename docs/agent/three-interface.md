@@ -1,395 +1,166 @@
 # Three.js native interface and CSS
 
-The Three.js renderer uses native HTML for the lobby, HUD, settings, recording,
-P2P flows, dialogs, card lists, installation UI, and accessibility controls.
-Behavior lives in `src/renderers/three/interface.ts`; projection and escaped
-markup live in `interface-model.ts` and `native-html.ts`. Component styles live
-in `interface.css`, while `src/style.css` contains only the page shell and
-host-level renderer failure screen.
+Native HTML and CSS of the Three.js renderer in `src/renderers/three/`.
 
-## Markup safety
+## Rules
 
-`ThreeInterface` rebuilds substantial interface markup during updates. Any
-string interpolated into `innerHTML` must pass through `escapeHtml()` from
-`native-html.ts`. This includes player names, status, room codes, imported
-recording metadata, card names, and error text.
-
-Prefer element creation and `textContent` for host-level or incremental UI. Do
-not introduce a second generic markup renderer.
+- Escape every `innerHTML` value, attributes and IDs included, with
+  `escapeHtml()` (`native-html.ts`); add no second markup renderer.
+- `ThreeInterface.latestForAction` drops input once `threeDecisionKey`
+  changes, so each new hub decision (node, reward offer) must change
+  `adventure.decisionKey` (built in `src/app/view-model.ts`).
+- Element `id`s are unique; a button in both the lobby and the in-game menu
+  uses `class`/`data-action` (the `abandon-adventure` pattern).
+- Create live regions once, never in markup `render()` rebuilds; status text
+  goes through `view.status`.
+- A raster `onerror` records the URL in module state, so the next render skips
+  it, and strips the raster classes as it swaps in non-raster art.
+- `image-rendering: pixelated` follows `crisp-edges` when preferred; overrides
+  follow the equally specific base rule (`css-image-rendering.test.ts`).
+- Plain fallbacks precede `env(safe-area-inset-*)` (`three-layout.test.ts`);
+  `@supports (padding: max(0px))` is invalid: `max()` needs two arguments.
+- Never put a hidden card's name, slug, image URL or ability copy in markup,
+  accessible text, data attributes or preview state.
+- Every control has an accessible name, a keyboard path and a 44×44 CSS px
+  target; modals and subviews return focus to their opener.
 
 ## Creature copy and accessible labels
 
-- Source card names, ability/rules copy, and asset slugs from
-  `src/app/card-catalog.ts`, and consume shared action/phase labels from the app
-  presentation layer. Do not add renderer-local identity maps or derive a slug
-  from display text.
-- The visible zone name is **Board**. Internal state fields, DOM data values,
-  and renderer geometry may retain `battlefield` for compatibility.
-- Use **Creature**, **Summon**, **Discard pile**, **Banish**, **Intercept**,
-  **Interception window**, **Let It Through**, and **Action phase** consistently.
-  Every Banish explanation must say that the creature goes to its owner's
-  discard pile.
-- Compact visual labels such as `Action`, `Intercept`, and `Discard` are allowed
-  only when the accessible name keeps the full approved term.
-- Never put a hidden card's catalog name, slug, image URL, or ability copy in
-  markup, accessible text, data attributes, or preview state.
-- The native Cards dialog exposes visible **Hand**, **Board**, and **Discard
-  pile** creatures with inline ability/rules text. Full previews include primary
-  and response rules, especially Signal Siren's entire Intercept cost. Keep this
-  discoverability browser-only: no new CLI command or hidden-card access.
-- Mimic's exact rule is “Repeat the ability of one of your creatures other than
-  Echo Doppelgänger.” Nested target prompts must retain the chosen source and
-  use its catalog-backed ability, not a hardcoded Reclaim/Banish/Drain Memory hint.
-- Adventure uses **Summons attempted (both players)** instead of “Cards Played.”
-  It displays the existing counter, including intercepted submissions, rather
-  than counting only creatures that reach the Board.
+Copy follows the
+[Catalog presentation boundary](../../AGENTS.md#catalog-presentation-boundary).
+
+- Say Board (`battlefield` stays internal), Creature, Summon, Discard pile,
+  Banish (to the owner's discard pile), Intercept, Interception window, Let It
+  Through and Action phase.
+- Compact labels (`Action`, `Intercept`, `Discard`) keep the full term in
+  their accessible names.
+- Cards lists visible Hand, Board and Discard pile creatures with inline
+  rules; previews show every rule, all of Signal Siren's Intercept cost
+  included. Browser only: no CLI command or hidden-card access.
+- Mimic's nested prompts keep the chosen source and its catalog ability.
 
 ## Stable interaction state
 
-An interface update can happen synchronously inside a controller submission.
-State used after submission must be guarded by the same decision/session key
-that produced it. Preserve:
-
-- Legal retry selections after a rejected action.
-- Draft P2P room text across unrelated lobby notifications.
-- Dialog focus origin and scroll when previewing a card.
-- The newest decision when an older submission triggers reentrant rendering.
-
-Opening Cards from Game Menu returns to the menu on Back/Escape. Opening a card
-preview from Cards returns to Cards with its focus and scroll restored.
+Beyond
+[reentrant submissions](state-and-persistence.md#reentrant-ui-submissions),
+keep P2P room drafts across unrelated lobby notifications. Back or Escape
+from Cards or a preview returns to its opener (Game Menu or Cards), restoring
+focus and scroll. Add no duplicate handlers on re-render or remount. The
+renderer failure panel focuses Retry, else Reload (`renderer-host.test.ts`).
 
 ## Status announcements
 
-One persistent, visually hidden region speaks the status line in every mode:
-`p#three-status-announcer.three-sr-only` with `role="status"`,
-`aria-live="polite"` and `aria-atomic="true"`. It is appended to the host
-after the rebuilt content, and only `dispose()` removes it. The lobby, hub
-and HUD status paragraphs are plain `<p>` elements with no live role. A live
-region created by an `innerHTML` rebuild is not reliably announced, and
-several regions would speak the same text twice.
-
-- `showModal()` makes everything outside the dialog inert, which silences a
-  live region there. While a dialog is open, `render()` moves the region
-  into it (`placeAnnouncer`). Before replacing that dialog's markup,
-  `render()` moves the region back to the host. Each move clears its text, so a
-  screen reader neither repeats an old status nor reads one as part of the
-  dialog. A status set while the Game Menu is open, such as a refused Pause
-  or Retry Saving Result, is therefore spoken.
-- A moved region is newly inserted. Safari can miss a change made soon after
-  a live region is inserted, and React Aria's announcer waits 100 ms for this
-  reason. After each move, `announce()` therefore holds the status until the
-  region has stayed in place for `THREE_ANNOUNCER_SETTLE_MS` (100 ms). A
-  further move restarts the wait, a newer status replaces a waiting one, and
-  `dispose()` drops it with the timer. This covers a status that arrives in
-  the same update as a move: Start Replay closing the menu, a replay control,
-  or the final step rebuilding the open menu, or Pause leaving the game. A
-  region that has not moved speaks at once.
-- `update()` sets the region's text after rendering and focus, and only
-  when `view.status` changes.
-- A status that stays the same is spoken again only after a command routed
-  through `dispatchAdventure`, such as a retried write. The controller says
-  "still" for a second identical refusal. For any repeat after that, the
-  interface toggles a trailing no-break space, which screen readers do not
-  read, so the region's text still changes.
-- During playback, only the step status of each tick stays quiet. The
-  interface compares the status against `replayStepStatus(step,
-  totalSteps)` from `game-presentation.ts`, which the controller also uses.
-  Any other status is announced, such as a refused recording save, and so
-  are starting, pausing, stepping and reaching the final state.
-- The dock prompt (`#three-dock-prompt`, `role="status"`) of every touch
-  shell is a second persistent region. It speaks decisions that the status line does
-  not, such as the winner of a finished game. During replay it shows the
-  transport's step count, which changes on every playback tick and repeats
-  what the status line announces. `ThreeDockModel.quiet` marks that prompt,
-  and `render()` then sets `aria-live="off"`. Each politeness change comes
-  before the new text, so a replay's first prompt stays silent and the
-  first prompt after it, such as the winner, is spoken. The prompt keeps
-  its role, id and text, and still describes the docked primary button.
-- The dock prompt is also the drag announcer. `ThreeBoard` reports
-  `ThreeDragFeedback` (`cardId`, `accepted`) or `null`, and
-  `setDragFeedback()` re-renders the interface without calling `onChange`, so
-  the board never re-presents mid-gesture. `renderThreeDock` replaces only the
-  prompt, with copy built from catalog names, and keeps the actions and
-  selection. Stale or unsummonable feedback, an open menu, Cards, or a
-  preview leave the prompt alone. In every touch shell the board
-  instruction sets `aria-live="off"` before any drag text changes, so each
-  drag message is spoken once. On `desktop`, the board instruction stays the
-  live region.
-- The dock prompt also announces a long-press peek. `setPeek()` re-renders
-  the interface without `onChange`, and `renderThreeDock` replaces only the
-  prompt with the card's name and primary ability. The actions and selection
-  stay as they were. A peek prompt is never `quiet`, so it is spoken even
-  during a replay. When the peek closes, the prompt goes quiet again before
-  the replay text returns.
-- The peek itself (`renderThreePeek`) is decorative: an `aria-hidden` panel
-  in the hover overlay with the same rules as Details and no buttons. Its
-  inline style holds the whole-pixel placement from the board. The panel
-  clips instead of scrolling, so `peekFits()` measures a probe of the same
-  markup in the overlay and refuses a placement that would hide any rules.
-  On the cover screen its tile is only about 114 px wide, so the peek name
-  uses less padding, 13 px type and `hyphens: auto`. This keeps a long word
-  such as "Doppelgänger" on one line instead of breaking it mid-word.
-- Keep live regions persistent. Create them once, like this region, the
-  board captions and the dock prompt, and never put a live role in markup
-  that `render()` rebuilds. Send status-line text through `view.status`.
+- Only `#three-status-announcer` (`role="status"`, polite, atomic) speaks the
+  status line; status paragraphs get no live role. Appended after the
+  content, it leaves only on `dispose()`.
+- `showModal()` inerts the rest, so `render()` moves the region into an open
+  dialog (`placeAnnouncer`) and back before replacing it; each move clears it.
+- After a move, a status waits `THREE_ANNOUNCER_SETTLE_MS`; a move restarts
+  the wait, a newer status replaces it, `dispose()` drops it.
+- `update()` writes after render and focus, only on a new `view.status`.
+  Repeats speak only after `dispatchAdventure`: "still", then a toggled
+  trailing no-break space. Playback silences only `replayStepStatus()`.
+- `#three-dock-prompt` (`role="status"`), the touch shells' second region,
+  speaks what the status line does not (the winner) and describes the docked
+  primary button. `ThreeDockModel.quiet` (replay counts) sets
+  `aria-live="off"` before the text changes.
+- `setDragFeedback()` and `setPeek()` re-render without `onChange`, replacing
+  only the dock prompt, never for stale feedback or under a menu, Cards or
+  preview. Peek prompts are never `quiet`.
+- Touch shells set the board instruction `aria-live="off"` before drag text
+  changes; `desktop` keeps it live.
+- The peek panel is `aria-hidden`, with no buttons; its name never breaks
+  mid-word (`three-card-preview-layout.test.ts`).
 
 ## Adventure hub
 
-`isThreeAdventureHub(view)` is true in Adventure mode when there is no game
-and no replay. In that state `renderThreeAdventureHub` replaces the lobby:
-
-- An encounter result section with a heading.
-- A progress list, followed by the owned relics with charges and rules text.
-- A seven-tier route map with its map key, or the reward panel while an offer
-  is pending.
-- The run actions:
-  - While the run is open: **Pause Adventure** and **Reset Adventure Run**.
-  - After it ends: **Start New Adventure** and **Back to Lobby**.
-- Settings and Recording pages.
-
-Rules:
-
-- **Node buttons.** Only `current` and `available` nodes render as
-  `button[data-action="adventure-node"][data-node-id]`, labeled **Choose this
-  path**, **Start encounter** or **Retry encounter**. The click handler checks
-  the node ID against `actionableAdventureNodes()` in the latest view before
-  calling `startAdventureNode()`, which checks again. A button holds the
-  node's token, then `.three-adventure-node-text` with the full opponent
-  label, the status word and the action; its `aria-label` contains all three.
-  Other nodes are a `div` with the token, an `aria-hidden` caption
-  (`{Kind} · {Status}`, or `♛ Boss · {Status}`) and `three-sr-only` text
-  (`{Lane} · {Status}. {Full label}.`).
-- **Route map.** `renderAdventureRoute` draws the route from
-  `adventureRouteGraph(adventure.tiers)`, computed once per render:
-  - Each tier `li` is a grid. Its `h3.three-adventure-tier-badge` shows the
-    tier number, or ♛ for the boss, in an `aria-hidden` mark. The full tier
-    name stays in the heading, visually hidden in the graph.
-  - Above the tier's node slots, an `aria-hidden` `svg.three-adventure-edges`
-    band draws the lines entering the tier, between lane centers (25%, 50%
-    or 75%); tier 1's lines leave a start dot. A slot's `data-stem` continues
-    its node's outgoing lines below the token, and the last tier has none.
-  - Lines and stems carry the helper's state in `data-edge-state` and
-    `data-stem`: `traveled` (solid green, 4 px), `next` (dashed gold, 3 px),
-    `bypassed` (dotted, 3 px) and `future` (solid gray, 2 px).
-  - Each token shows the opponent's roster: two 24 px creature icons in one
-    row for a duo (with no gap, they fill the 48 px inside the current
-    token's 4 px double ring), one 36 px icon for the boss, five colored
-    dots for a balanced roster, and **?** for a mystery or unknown roster.
-    Icons come from `renderLandIcon(…, { forceProcedural: true, monochrome })`,
-    so the hub requests no `/cards/` image and has no `onerror` handler in
-    any card style. A badge on the token shows the status glyph.
-  - After the list, `div.three-adventure-map-key` explains the status
-    glyphs, line styles and creature icons in three lists labeled **Node
-    status**, **Route lines** and **Creatures**.
-  - **Trail.** `ol.three-adventure-route` is the `adventure-route` size
-    container. At 18em or less (288 px at 100% text, 576 px at 200%), such
-    as a 320 px viewport, each tier shows its name above full-width nodes,
-    and the bands, stems and marks are hidden. This is the repo's first
-    container query; a browser without container queries keeps the graph.
-    - A rail runs 36 px in, through the token centers, from a stub above
-      tier 1's name into the last token. It shows progress, not branches:
-      `traveled` (solid green, 4 px) down to the last completed node, `next`
-      (dashed gold, 3 px) on to the last current or available node, and
-      `future` (solid gray, 2 px) after that. It passes behind every token,
-      bypassed ones included.
-    - The graph helper gives each row a `trail` and each node a `trailIn`
-      and `trailOut`. The tier's `data-trail` styles the rail past its name
-      (the heading's `::before`). A slot's `data-trail-in` and
-      `data-trail-out` style the halves above and below its token
-      (`::before` and `::after`), so the style changes at a node. The last
-      node has no `data-trail-out`.
-    - A playable node's button is opaque and covers its slot, so the button
-      draws the same halves itself (`> button.three-adventure-node::before`
-      and `::after`). They run from its outer edges to the token's center,
-      above the button's background and below its token (`z-index: 1`), and
-      stay inside its border box, clear of the focus outline. Every rule
-      that styles a slot half lists the button's half too.
-  - **Forced colors.** Lines, stems and trail rails use `CanvasText`
-    (traveled), `Highlight` (next) and `GrayText` (bypassed and future). Dash
-    patterns and widths still tell them apart. The trail's rules sit in a
-    container query nested after the stem rules, because a slot's
-    `::before` matches both.
-  - SVG elements need explicit closing tags for the test DOM stub; see
-    [Conventions](testing.md#conventions).
-- **Route constraints.** The route is presentation only: native HTML plus
-  one `aria-hidden` inline `<svg>` per tier, laid out with CSS percentages.
-  Do not add WebGL, `<canvas>`, map textures, raster icons, a dependency,
-  script measurement or image requests. Keep the hub markup for the largest
-  route at or under 300 KB: a procedural icon is a 6.6–10.2 K-character data
-  URL, so a route's 24 icons come to about 245 KB. One activation starts a
-  node; there is no preview step. Tab, not the arrow keys, moves between
-  nodes, and a failed run does not mark the node it was lost to.
-- **Reward panel.** While `adventure.pendingReward` is set, a **Choose a
-  reward** panel replaces the route:
-  - Each choice shows its catalog name, exact rules text, and cap or charge
-    context, with a
-    `button[data-action="adventure-reward-choose"][data-offer-id][data-reward-id]`
-    labeled **Choose <name>**.
-  - A distinct `adventure-reward-skip` button (**Skip reward**) carries only
-    `data-offer-id`.
-  - The click handler requires the root hub page and checks the offer ID and
-    the choice against the latest view. The controller checks again, so a
-    stale or tampered button does nothing.
-  - Reward copy comes from the view model, which takes it from the reward
-    catalog. Escape every value, including the IDs in attributes.
-  - The panel uses no element `id`s.
-  - `actionableAdventureNodes()` returns no nodes while an offer is pending.
-- **Not color alone.** Each node status has an `aria-hidden` glyph on the
-  node's token and a word (Completed, Current, Available, Bypassed, Locked):
-  in a button's visible text, or in a static node's caption and
-  screen-reader text. Each line state also differs by dash pattern or width,
-  and the map key names every glyph and line style. The boss tier's badge
-  shows ♛, its heading reads **Tier 7 of 7 · Boss**, and a static boss
-  node's caption starts with **♛ Boss**. The current tier has
-  `aria-current="step"` and a double ring on its badge.
-- **Focus.** Entering the hub, or a change of `adventure.decisionKey` (a
-  committed result, a resolved reward or a new run), moves focus to the first
-  of these that exists:
-  1. the result heading, if there is a result;
-  2. the reward heading, if an offer is pending (for example after a reload);
-  3. the current tier heading;
-  4. the page heading.
-
-  Choose and Skip clear the result, so focus moves to the current tier. A
-  refused write keeps the decision key, so focus stays on the activated
-  control. `focusKey` includes `data-reward-id`, so a re-render restores
-  focus to the same choice.
-- **Transition focus.** Every Adventure command runs through
-  `dispatchAdventure`. Focus moves only when the command changes the session
-  or removes the activated control:
-  - Pause, Reset, and Back to Lobby in Adventure mode go to the lobby heading
-    (`[data-lobby-heading]`).
-  - A node start, or a Resume that restores a saved game, goes to the Game
-    Menu button (`[data-action="menu"]`).
-  - Anything that lands on the hub goes to the hub's decision, in the order
-    above.
-
-  Each destination takes focus without `preventScroll`, so the browser
-  scrolls it into view. The lobby keeps the page scroll of a long map, which
-  would otherwise leave its heading above the fold.
-
-  Focus stays put when a write is refused, when nothing was focused before
-  the command (Safari does not focus clicked buttons), while a modal or an
-  inline target panel is open, and after disposal. The move runs after the
-  controller call returns, so it wins over `render()` restoring focus as a
-  menu closes.
-- **Result description.** The result heading has
-  `aria-describedby="three-adventure-result-detail"`, so focusing it also
-  reads the detail: chances left, relic charges used, and what to do next.
-- **Tab order.** On the hub, Tab reaches the route's node buttons (or the
-  reward's Choose buttons and Skip), then Pause and Reset, then Settings
-  and Recording. A finished run offers Start New Adventure and Back to
-  Lobby instead of Pause and Reset. Headings take focus only from script
-  (`tabindex="-1"`), and the relic list and map key have no tab stops.
-- **No motion.** The hub, route map, reward panel, result and announcer use
-  no CSS transitions or animations, so reduced motion needs no override. A
-  test reads `interface.css` and fails if an Adventure or `three-sr-only`
-  rule adds a transition or animation, or if the file adds `@keyframes`.
-- **Pending result.** While storage refuses a result, the finished board stays
-  open. The Game Menu, the wide game-controls panel and the touch dock offer
-  **Retry Saving Result** and **Reset Adventure Run** instead of Pause. The
-  wide panel is a fixed-height row that scrolls, so both buttons share its
-  header row with Menu instead of falling below the fold. There, as in the
-  dock, they show the short labels Retry and Reset and keep the full labels
-  as accessible names. The
-  hub never opens over an unsaved result. Retry does not reset the
-  interface, so a refused write keeps the Game Menu open with focus on Retry;
-  a saved result leaves the encounter and the session change closes the menu.
-- **Replay** is refused while Adventure is open, so its controls are hidden in
-  Adventure mode. The recording from the last encounter can still be exported.
-
-## IDs, actions, and focus
-
-- Keep every document `id` unique. The interface reserves
-  `three-status-announcer` and `three-adventure-result-detail`.
-- Use `data-action` for delegated repeated actions and `class` for repeated
-  styling.
-- Avoid duplicate handlers after rerender or remount.
-- Modal and subview transitions restore focus to their originating control.
-- The renderer failure panel focuses Retry after announcing its
-  `role="alert"` content.
-- Every interactive control needs an accessible name and keyboard path.
-- Maintain at least 44-by-44 CSS pixel targets.
-
-## Native card tiles
-
-Native card markup uses the `three-card*` class family and is scoped under
-`.three-interface`. Preserve the card tile's grid/flex layout and square art
-frame sizing. The WebGL mesh and native card tile use the same card-art URL
-policy, visual-style setting, and redacted view-model data.
-
-Raster image error handling must:
-
-1. Remove the raster class and image immediately so the fallback is visible.
-2. Record the failed URL in module state.
-3. Skip that URL during subsequent renders.
-
-Do not expose an opponent's hidden card through native markup, labels, data
-attributes, or image URLs.
+- **Nodes.** Only `current` and `available` nodes are
+  `button[data-action="adventure-node"]`, whose `aria-label` names opponent,
+  status and action. Node and reward handlers recheck the latest view
+  (`actionableAdventureNodes()`, offer, choice), as does the controller.
+- **Route map.** Every rule drawing a slot's trail half also draws the
+  playable button's (`three-interface.test.ts`); forced colors use system
+  colors.
+- **Route constraints.** Presentation only: native HTML and one `aria-hidden`
+  inline `<svg>` per tier, in CSS percentages; no WebGL, `<canvas>`, map
+  textures, raster icons, dependency, script measurement or image requests
+  (icons are procedural, with no `onerror`). The largest route's hub markup
+  stays at or under 300 KB (its icons take about 245 KB). One activation
+  starts a node, with no preview; Tab, not arrow keys, moves between nodes;
+  a failed run leaves its node unmarked.
+- **Reward panel.** `adventure.pendingReward` swaps the route for **Choose a
+  reward**: per choice, catalog name, exact rules text and cap or charge
+  context, and
+  `button[data-action="adventure-reward-choose"][data-offer-id][data-reward-id]`
+  (**Choose <name>**); **Skip reward** (`adventure-reward-skip`) carries only
+  `data-offer-id`. Its handler also requires the root hub page. Escape all
+  copy (reward catalog via view model) and IDs; use no element `id`s.
+  `actionableAdventureNodes()` returns none while an offer is pending.
+- **Not color alone.** Status glyphs (`aria-hidden`) pair with words, line
+  states differ by dash or width, and the map key names both; the current
+  tier has `aria-current="step"`.
+- **Focus.** Entering the hub or a new `adventure.decisionKey` focuses the
+  first of the result, reward, current tier and page headings. A refused
+  write keeps the key and focus; `focusKey` includes `data-reward-id`.
+- **Transition focus.** After a `dispatchAdventure` command changes the
+  session or removes the focused control, focus goes to the hub decision,
+  `[data-action="menu"]` (node start, Resume) or `[data-lobby-heading]`
+  (Pause, Reset, Back to Lobby), without `preventScroll` so it scrolls into
+  view; never under a modal or inline target panel, or after disposal.
+- **Result.** `three-adventure-result-detail` describes its heading: chances
+  left, relic charges used, next step.
+- **Tab order.** Nodes (or Choose and Skip), Pause and Reset (Start New
+  Adventure and Back to Lobby after the run), then Settings and Recording.
+  Headings are `tabindex="-1"`; relics and the map key have no tab stops
+  (`three-interface.test.ts`).
+- **No motion** in hub, reward, result or announcer CSS: no transitions,
+  animations or `@keyframes` (`three-interface.test.ts`).
+- **Pending result.** The hub stays closed over an unsaved result. Retry
+  Saving Result and Reset Adventure Run replace Pause in the Game Menu, the
+  dock and the wide game-controls header, beside Menu so they never scroll
+  out of view; short labels Retry and Reset keep the full names accessible.
+  A refused Retry keeps the menu open, focused on Retry.
+- **Replay** controls are hidden in Adventure mode; the last encounter's
+  recording still exports.
 
 ## CSS ordering
 
-- Put plain safe-area padding fallbacks before `env(safe-area-inset-*)`.
-- `max()` requires at least two arguments; do not use
-  `@supports (padding: max(0px))`.
-- Put an override after an equally specific base selector.
-- Keep `image-rendering: pixelated` after `crisp-edges` when pixelated is the
-  preferred value.
-- Scope renderer components under `.three-interface` or `.three-root`; keep
-  only truly global shell/failure styles in `src/style.css`.
-- Use `box-sizing: border-box` for measured controls.
-- Do not let transient prompts resize measured battlefield rows during a drag.
+- Scope components under `.three-interface` or `.three-root`; `src/style.css`
+  holds only the page shell and host failure screen.
+- Measured controls use `box-sizing: border-box`.
+- `three-card*` tiles keep their square art frame
+  (`three-card-preview-layout.test.ts`) and share the WebGL mesh's
+  [art URLs](service-worker-and-pwa.md#catalog-slugged-card-art), visual
+  style and redacted data.
 
 ## Mobile layout
 
-Test narrow portrait, short landscape, and coarse-pointer layouts. Native chrome
-must not hide the canvas, cover required game actions, or create inaccessible
-off-screen dialogs. Keep long labels and imported text wrappable, and give
-scrolling panels an explicit size boundary.
-
-Exercise Gravebloom Dryad, Echo Doppelgänger, the full Signal Siren Intercept
-cost, and the Rooftop Gargoyle Banish destination at normal and 200% text.
-Names, instructions, and controls must wrap instead of truncating; touch targets
-remain at least 44 CSS pixels. Keep action prompts in stage-level overlays so a
-wrapped copy change cannot resize measured card rows and cancel a drag.
-Include inline Hand/Board/Discard pile rules and full preview text in this
-check; automated HTML assertions alone do not prove readable browser layout.
-
-Safe-area values need plain fallbacks for engines that reject `env()`. Bottom
-actions must remain reachable above browser chrome and display cutouts.
+- In narrow portrait, short landscape and coarse-pointer layouts, native chrome
+  never hides the canvas, covers required actions or strands a dialog
+  off-screen; bottom actions clear browser chrome and display cutouts.
+- Long labels and imported text wrap, never truncate; scrolling panels get an
+  explicit size boundary. Prompts stay in stage overlays
+  ([renderer rules](three-renderer.md#rules)).
+- HTML assertions do not prove readable layout: run the
+  [browser checks](browser-checks.md).
 
 ### Touch shells and fold continuity
 
-The `narrow` cover screen and the unfolded `dock` (portrait) and `rail`
-(landscape) shells share one touch grammar through `touchShellActive()`.
-The HUD's `data-layout` names the shell; only the CSS differs between them.
+Classification and geometry: [Touch shells](three-renderer.md#touch-shells).
 
-- A tap or click on a hand card selects it, and the dock offers Summon,
-  Details and Clear. A touch or pen tap on a target or an Intercept discard
-  waits for a dock confirmation; a mouse click submits at once.
-- The dock is the prompt followed by its actions, in the same order and with
-  the same unique ids in every shell. `dock` keeps it under the board, and
-  `rail` stacks it in a right-hand column with 48 px actions. On a landscape
-  screen at most 480 px tall, the short rail also heads that column with the
-  top bar, so the board takes the full height. Its actions wrap in rows.
-  When large text outgrows the rail, the dock below the top bar scrolls as a
-  whole, End Turn included.
-- Folding, unfolding or rotating between touch shells keeps the selection,
-  the dock prompt and actions, and an open target list. A fold does not
-  change `threeDecisionKey`, so the dock's buttons stay live.
-- Entering `desktop` or a new decision clears them. On `desktop`, a pending
-  summon continues in the desktop target picker with no target chosen.
-- The board ends a drag on every shell change, and its hand page follows the
-  selected card (see
-  [`three-renderer.md`](three-renderer.md#touch-shells)).
+- One touch grammar (`touchShellActive()`): a tapped hand card offers Summon,
+  Details and Clear in the dock; a touch or pen tap on a target or Intercept
+  discard waits for dock confirmation, a mouse click submits.
+- The dock (prompt, then actions) keeps one order and the same unique ids in
+  every shell; a rail outgrown by large text scrolls the whole dock, End Turn
+  included.
+- Switching touch shells keeps the selection, dock and open target list
+  (`threeDecisionKey` is unchanged, so buttons stay live); `desktop` or a new
+  decision clears them, and a pending summon moves to the desktop picker with
+  no target chosen.
 
 ## Visual verification
 
-Use the production build and its configured non-root base path. Capture separate
-evidence for lobby, game board, menu/dialog flow, narrow portrait, short
-landscape, and the WebGL2 failure screen. Follow
-[`pr-workflow.md`](pr-workflow.md#screenshots): interaction, capture,
-inspection, and reviewer-accessible attachment are separate completion steps.
-If these stages are unavailable, preserve textual results and leave visual
-acceptance blocked for maintainer verification; do not infer a pass from mocks
-or asset hashes.
+Follow
+[Browser verification and evidence](testing.md#browser-verification-and-evidence)
+and [Screenshots](pr-workflow.md#screenshots).
