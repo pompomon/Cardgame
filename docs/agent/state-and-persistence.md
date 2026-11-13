@@ -70,7 +70,9 @@ contracts:
   `BasicLand`, the `Forest`/`Island`/`Mountain`/`Plains`/`Swamp` values,
   `Card.type: 'land'`, and existing discriminants and field names. Preserve the
   canonical `BASIC_LANDS` order because it affects deterministic decks,
-  recordings, and peer state.
+  recordings, and peer state. Renaming these keys to neutral identifiers is
+  optional future work. It needs its own explicitly versioned migration
+  design and must never ride along with a presentation or copy change.
 - `src/app/card-catalog.ts` maps those keys to player-facing names, abilities,
   rules text, visual roles, and ASCII asset slugs. Display names and slugs must
   never replace a key in trusted state, mechanical parser input, storage,
