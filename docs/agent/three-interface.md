@@ -211,6 +211,14 @@ Rules:
     `::before` matches both.
   - SVG elements need explicit closing tags for the test DOM stub; see
     [Conventions](testing.md#conventions).
+- **Route constraints.** The route is presentation only: native HTML plus
+  one `aria-hidden` inline `<svg>` per tier, laid out with CSS percentages.
+  Do not add WebGL, `<canvas>`, map textures, raster icons, a dependency,
+  script measurement or image requests. Keep the hub markup for the largest
+  route at or under 300 KB: a procedural icon is a 6.6–10.2 K-character data
+  URL, so a route's 24 icons come to about 245 KB. One activation starts a
+  node; there is no preview step. Tab, not the arrow keys, moves between
+  nodes, and a failed run does not mark the node it was lost to.
 - **Reward panel.** While `adventure.pendingReward` is set, a **Choose a
   reward** panel replaces the route:
   - Each choice shows its catalog name, exact rules text, and cap or charge
