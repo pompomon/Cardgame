@@ -245,6 +245,28 @@ profile or its short flag changes. A change to the `visualViewport` alone,
 such as the on-screen keyboard or a pinch zoom, never reclassifies. Unmount
 removes both listeners.
 
+- **Classifier.** The first matching rule wins:
+  1. An invalid size gives `desktop`.
+  2. A width of at most 480 px (`isNarrowWidth`) gives `narrow`, whatever
+     the pointer.
+  3. A fine primary pointer gives `desktop`.
+  4. A coarse pointer wider than `TOUCH_SHELL_MAX_WIDTH` (1024 px) and
+     taller than 480 px gives `desktop`.
+  5. Landscape gives `rail`, marked short when the height is at most 480 px.
+  6. Portrait gives `dock`.
+
+  Key on the primary pointer (`(pointer: coarse)`), not `any-pointer`.
+  Orientation, not an aspect-ratio threshold, separates `dock` from `rail`.
+  No input depends on the shell, so there is no hysteresis. Add it only if
+  device measurements show the shell flapping.
+- **Settled defaults.** These were approved with the touch shells; device
+  testing may revisit them:
+  - The drop follows the finger, and the lifted card is only a visual offset.
+  - The drag layer is a 2D overlay, never a second WebGL context.
+  - There are no haptics, and the rail stays on the right with no mirror
+    setting.
+  - The mouse keeps hover and gets no press-and-hold peek.
+  - Flex mode (the Viewport Segments API) needs a separate plan.
 - **Root.** During a game, every touch shell sets `data-shell` (`narrow`,
   `dock`, or `rail`) on `.three-root` and shows the dock. A short rail also
   sets `data-shell-short="true"`. Only `narrow` adds `three-root--narrow`.

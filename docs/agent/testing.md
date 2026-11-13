@@ -381,8 +381,8 @@ them.
 ### Fold4 posture check
 
 Run this sweep for changes to the touch shells, the dock, or drag and peek
-behaviour, before the
-[Fold4 device checklist](../implementation/fold4-touch-ui-uplift-plan.md#fold4-device-checklist).
+behaviour, before the Fold4 device checklist in the
+[maintainer verification gates](https://github.com/pompomon/Cardgame/issues/163).
 Use the production preview at the base path in Chromium. Unlike plain desktop
 emulation, touch emulation (Playwright's `hasTouch`) makes `(pointer: coarse)`
 match, and Chromium can emulate `prefers-reduced-motion`. Check each posture
@@ -396,9 +396,9 @@ at 100% and 200% root font size, and each shell once with reduced motion.
 | Cover screen, landscape | 882×232 | `rail`, short |
 | Phone held sideways | 844×390 | `rail`, short |
 
-The viewports are the plan's estimates until its
-[device measurements](../implementation/fold4-touch-ui-uplift-plan.md#device-measurements)
-replace them. In each posture, check that:
+The viewports are estimates. When the device measurements in the gates issue
+arrive, update this table and `FOLD4_POSTURES` in
+`src/test/helpers/fold4-postures.ts` together. In each posture, check that:
 
 - the root's `data-shell` and `data-shell-short` match the table;
 - the page has no horizontal overflow, and the headers, End Turn, and the hand

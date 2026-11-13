@@ -12,8 +12,9 @@ export const DESKTOP_SHELL = shell('desktop')
 export type Fold4Posture = readonly [name: string, width: number, height: number, touch: ThreeShell, mouse: ThreeShell]
 
 /**
- * Estimated layout viewports from the plan's Fold4 postures table. Milestone 0
- * device measurements, keyboard-open variants included, replace these rows.
+ * Estimated Fold4 layout viewports (see docs/history/fold4-touch-ui.md). The
+ * device measurements tracked in issue #163, keyboard-open variants
+ * included, replace these rows.
  */
 export const FOLD4_POSTURES: readonly Fold4Posture[] = Object.freeze([
   ['cover portrait in a Chrome tab', 344, 770, NARROW_SHELL, NARROW_SHELL],

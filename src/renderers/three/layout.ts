@@ -79,9 +79,9 @@ interface TouchCardMaxima {
 }
 
 /**
- * Card height maxima per touch shell. Both unfolded shells stop at the plan's
- * 85×117 slots and 115×158 hand cards, so rotating the main screen between
- * `dock` and `rail` keeps card sizes steady.
+ * Card height maxima per touch shell. Both unfolded shells stop at the Fold4
+ * targets of 85×117 slots and 115×158 hand cards, so rotating the main screen
+ * between `dock` and `rail` keeps card sizes steady.
  */
 const TOUCH_CARD_MAXIMA: Readonly<Record<TouchLayoutMode, TouchCardMaxima>> = Object.freeze({
   narrow: Object.freeze({ slot: 148, hand: 204 }),
