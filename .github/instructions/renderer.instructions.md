@@ -19,9 +19,10 @@ Details: [three-renderer](../../docs/agent/three-renderer.md) and
 - Every new kind of Adventure hub decision must change
   `adventure.decisionKey` (`src/app/view-model.ts`), so
   `ThreeInterface.latestForAction` drops clicks on stale buttons.
-- Narrow hand paging follows the selected card on profile or page-size
-  changes, else keeps the old page's first card; a new actor or presentation
-  resets to page 0 (`board.ts`).
+- Touch-shell hand paging follows the selected card across profile and
+  page-size changes. Without one it keeps the old page's first card, but
+  leaving `desktop` restarts at page 0; a new actor or presentation always
+  does (`board.ts`).
 - Layout is a pure projection: every touch shell lays out with
   `narrowBoardLayout()`, and board CSS keys on `[data-shell]`, not
   `max-width: 480px` queries. During a drag change only colour, outline and

@@ -118,9 +118,9 @@ dropping the near header first.
 
 A touch-shell hand page follows the selection across profile and page-size
 changes, even while input is blocked. Without a selection, touch shells keep
-the browsed page, or its first card on a page-size change. Entering or
-leaving `desktop`, a new actor or a presentation boundary resets to page 0
-(`three-battlefield-controls.test.ts`).
+the browsed page, or its first card on a page-size change, but leaving
+`desktop` restarts at page 0. A new actor or presentation boundary always
+does (`three-battlefield-controls.test.ts`).
 
 ## Layout
 

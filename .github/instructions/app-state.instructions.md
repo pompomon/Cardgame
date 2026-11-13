@@ -6,9 +6,11 @@ applyTo: "src/app/**"
 
 Details: [state-and-persistence](../../docs/agent/state-and-persistence.md).
 
-- Change Adventure runs only through the `src/app/adventure.ts` helpers and
-  save with `persistAdventureRun()` before replacing controller state or
-  launching a game. A refused write leaves state and controls unchanged.
+- Change Adventure runs only through the `src/app/adventure.ts` helpers. A
+  transition saves with `persistAdventureRun()` before replacing controller
+  state or launching a game; a refused write leaves state and controls
+  unchanged. Navigation never writes the run: Resume without a restorable
+  game shows `openAdventureMap(stored)` unsaved.
 - Reading never writes. Dispatch on `schemaVersion`: exactly `2`, or absent
   for version 1, which converts in memory and is written only by the next
   committed transition. Any other value makes the run unavailable; never
