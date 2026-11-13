@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { CanvasTexture, Mesh, type MeshBasicMaterial, type PlaneGeometry } from 'three'
 import type { BoardBackgroundVariant } from '../app/board-assets'
 import type { BoardTheme } from '../app/board-theme'
@@ -17,7 +17,7 @@ describe('Three.js retained board background and ambience', () => {
   let backgrounds: Array<{ theme: BoardTheme; variant: BoardBackgroundVariant; lease: ReturnType<typeof lease> }>
   let atlases: Array<{ theme: BoardTheme; lease: ReturnType<typeof lease> }>
   let background: ThreeBackground
-  let invalidate: ReturnType<typeof vi.fn>
+  let invalidate: Mock<() => void>
 
   beforeEach(() => {
     backgrounds = []

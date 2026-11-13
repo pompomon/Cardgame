@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { isLegalActionForState } from '../app/action-validation'
 import { chooseAiAction } from '../game/ai'
 import { createInitialGame } from '../game/engine'
@@ -7,9 +7,9 @@ import type { BattlefieldCard, Card, GameAction, GameState } from '../game/types
 // Performance gates on the fixed scenario below, run with:
 //   npm run test:bench
 //
-// `scripts/check-ai-bench.mjs` holds one baseline per benchmark and allows a
-// 50% slowdown over it to absorb routine CI variance while still catching
-// hot-loop allocation regressions. Two levels are gated:
+// `GATES` below holds one baseline per benchmark and allows a 50% slowdown
+// over it to absorb routine CI variance while still catching hot-loop
+// allocation regressions. Two levels are gated:
 //
 // - Advanced: the one-ply strategic choice.
 // - Hard: the determinized search at its default budget. The scenario is
@@ -21,9 +21,9 @@ import type { BattlefieldCard, Card, GameAction, GameState } from '../game/types
 // 0.28-0.40 ms/op on GitHub's ubuntu-24.04 runners: each baseline is its
 // dev-container mean times 2.1. Measured means over three idle runs were
 // Advanced 0.255 ms/op (baseline 0.55) and Hard 6.76 ms/op (baseline 14).
-// Refresh them only after intentional AI-performance work, measured with
-// `KEEP_AI_BENCH_REPORT=1 npm run test:bench`, and update the script and this
-// comment in the same PR.
+// Re-baseline only after intentional AI-performance work, from the logged
+// ms/op of three idle runs, and update `GATES` and this comment in the same
+// PR.
 //
 // This complements `ai-no-state-clone.test.ts`: that test statically bans
 // `structuredClone` call sites in AI hot-loop modules, while this benchmark
@@ -105,14 +105,24 @@ for (const level of ['advanced', 'hard'] as const) {
   }
 }
 
-describe('AI performance gate', () => {
-  bench('advanced ai chooses from targeted scenario', () => {
-    actionSink = chooseAiAction(scenario, 0, { level: 'advanced', seed: SCENARIO_SEED })
-  }, BENCH_OPTIONS)
+// Baselines in ms/op; each gate allows a 1.5x slowdown.
+const GATES = [
+  { name: 'advanced ai chooses from targeted scenario', level: 'advanced', baselineMs: 0.55 },
+  { name: 'hard ai search chooses from targeted scenario', level: 'hard', baselineMs: 14 },
+] as const
+const MAX_SLOWDOWN = 1.5
 
-  bench('hard ai search chooses from targeted scenario', () => {
-    actionSink = chooseAiAction(scenario, 0, { level: 'hard', seed: SCENARIO_SEED })
-  }, BENCH_OPTIONS)
+describe('AI performance gate', () => {
+  for (const { name, level, baselineMs } of GATES) {
+    test(name, async ({ bench }) => {
+      const result = await bench(name, () => {
+        actionSink = chooseAiAction(scenario, 0, { level, seed: SCENARIO_SEED })
+      }).run(BENCH_OPTIONS)
+      const msPerOp = result.latency.mean
+      console.log(`AI benchmark: '${name}' ${msPerOp.toFixed(4)} ms/op (gate ${(baselineMs * MAX_SLOWDOWN).toFixed(4)})`)
+      expect(msPerOp).toBeLessThanOrEqual(baselineMs * MAX_SLOWDOWN)
+    })
+  }
 })
 
 void actionSink

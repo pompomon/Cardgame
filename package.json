@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:bench": "vitest bench src/test/ai-perf.bench.ts --outputJson .ai-bench-report.json && node scripts/check-ai-bench.mjs .ai-bench-report.json",
+    "test:bench": "vitest bench --run --reporter=default src/test/ai-perf.bench.ts",
     "generate:card-art": "node scripts/generate-card-art.mjs",
     "generate:anime-card-art": "node scripts/generate-anime-card-art.mjs",
     "generate:board-backgrounds": "node scripts/generate-board-backgrounds.mjs",
@@ -19,12 +19,12 @@
     "ai:tune": "vitest run --config vitest.tools.config.ts ai-tune"
   },
   "devDependencies": {
-    "@types/three": "^0.185.4",
-    "typescript": "~6.0.2",
-    "vite": "^8.0.10",
-    "vitest": "^3.2.4"
+    "@types/three": "^0.187.0",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "three": "^0.185.1"
+    "three": "^0.187.0"
   }
 }

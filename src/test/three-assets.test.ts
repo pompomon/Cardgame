@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { LinearFilter, NearestFilter } from 'three'
 import { HIDDEN_HAND_CARD_NAME } from '../app/types'
 import { ThreeAssets, boardAssetCandidates, boardTextureDimensions, cardAssetCandidates, cardTextureIdentity, parseAmbienceFrame } from '../renderers/three/assets'
@@ -41,7 +41,7 @@ describe('Three.js shared texture leases', () => {
     filter: string
   }>
   let appliedFilters: string[]
-  let invalidate: ReturnType<typeof vi.fn>
+  let invalidate: Mock<() => void>
   beforeEach(() => {
     online = new EventTarget()
     contexts = []
