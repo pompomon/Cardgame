@@ -19,9 +19,8 @@ export type Mode = 'local-hvh' | 'local-hvai' | 'local-aivai' | 'adventure-hvai'
 export type ControllerKind = 'human' | 'ai' | 'remote'
 // Canonical `AiLevel` definition lives in `src/game/ai-levels.ts` so the
 // engine and AI policies do not have to reach across into `src/app/`
-// (closes the legacy `game/ → app/` seam documented in
-// docs/agent/architecture.md). Re-exported here for backwards-compatible
-// imports.
+// (no `game/ → app/` imports; see docs/agent/adr/0001-layering.md).
+// Re-exported here for backwards-compatible imports.
 export type { AiLevel }
 export type { CardVisualStyle }
 export type { BoardTheme }

@@ -1,106 +1,112 @@
 # AGENTS.md
 
-Canonical guide for AI agents and human contributors working on this repository.
-Keep this file short; the depth lives in `docs/agent/`.
+Canonical guide for AI agents and contributors. The hard rules are
+non-negotiable; [`docs/agent/`](docs/agent/) holds the detail. Cite rules by
+name, never by number.
 
-## Project at a glance
+## Project
 
-A simplified Magic-style 2-player card game shipped as an offline-capable SPA.
+An offline-capable, two-player card game SPA: Vite + TypeScript, a
+Three.js/WebGL2 renderer with a native HTML interface, vitest, `localStorage`
+saves, and GitHub Pages at a non-root base path. `src/game/` is the pure engine.
 
-- **Build / bundler:** Vite + TypeScript
-- **Browser renderer:** Three.js / WebGL2 with a native HTML interface
-- **Tests:** vitest (`npm run test`)
-- **Lint:** `tsc --noEmit` (`npm run lint`)
-- **Engine:** pure TypeScript in `src/game/` (no browser or renderer imports)
-- **Persistence:** browser `localStorage` for adventure runs, recordings, settings
-- **Deploy:** GitHub Pages via `.github/workflows/deploy-pages.yml`
-  (project site at a non-root base path)
+## Validation
 
-## Before you change code
+Use Node from `.nvmrc` and `npm ci`, then `npm run lint`, `npm run test`,
+`npm run build` and CodeQL (`codeql_checker`); address every alert. Run
+`npm run test:bench` before the build for deployment reproduction or AI
+hot-loop changes. Record real exit codes, test counts and revisions, baseline
+and post-change separately. Classify a failure's first meaningful error before
+fixing it, allow at most one safe retry, and never weaken tests or widen
+permissions. Details:
+[validation-and-build](docs/agent/validation-and-build.md).
 
-Use the Node version in `.nvmrc` and the committed lockfile for a clean baseline:
+## Hard rules
 
-```bash
-npm ci
-npm run lint     # tsc --noEmit
-npm run test     # vitest run
-npm run build    # tsc && vite build && npm run build:cli
-```
+### Vite base URL
 
-Then run `codeql_checker` and address every alert. Record baseline and
-post-change results separately, with the tested revision and actual exit codes.
-Deployment reproduction also requires `npm run test:bench` before build.
-Dependency updates, docs-only exceptions, and the exact sequence are covered in
-[`docs/agent/validation-and-build.md`](docs/agent/validation-and-build.md).
+Access `import.meta.env.BASE_URL` only as that literal member expression. An
+alias defeats Vite's static replacement and breaks `/cards/*` and `/boards/*`
+on GitHub Pages.
 
-**Triage failures before editing:** identify the failing workflow/job/step and
-first meaningful error; distinguish code failures from browser, artifact, and
-agent-service failures. Use the [bounded recovery procedure](docs/agent/validation-and-build.md#failure-triage-and-recovery),
-not speculative code fixes or permission changes. Checkpoint verified work
-and textual results before separate image handling; never infer a Pages defect
-from an upstream agent image-download error or edit workflow configuration
-without evidence. Allow at most one safe, supported retry; blocked visual
-verification stays pending maintainer review under the
-[evidence procedure](docs/agent/pr-workflow.md#screenshots).
+### Catalog presentation boundary
 
-## Hard rules (non-negotiables)
+Player-facing creature names, abilities, rules text and asset slugs come from
+`src/app/card-catalog.ts` and shared presentation helpers, including tutorial,
+logs and nested Mimic prompts. Never parse or serialize names or slugs
+as identity (grouping and cache keys are fine). Keep `BasicLand`, the
+`BASIC_LANDS` order, engine/action/event fields, saves, recordings and P2P
+payloads unchanged. Generic draws have no ability source: never credit
+Listen In.
 
-1. **Vite base URL.** Always access `import.meta.env.BASE_URL` as a literal
-   member expression. Aliasing defeats Vite's static replacement and breaks
-   `/cards/*` and `/boards/*` on non-root deployments.
-2. **Catalog presentation boundary.** Source player-facing creature names,
-   abilities, rules text, and asset slugs from `src/app/card-catalog.ts`; use
-   shared app presentation helpers for labels. Preserve `BasicLand`,
-   `BASIC_LANDS` order, engine/action/event fields, saves, recordings, and P2P
-   payloads. Never parse or serialize display names or slugs as mechanical
-   identity; presentation grouping and resource-cache keys are allowed.
-   Tutorial, logs, and nested Mimic prompts also consume catalog copy.
-   Generic draw events have no ability source: do not claim Listen In caused them.
-3. **No string-to-enum casts on untrusted input.** Validate with the
-   `isXxx` guards (`isAiLevel`, `isCardVisualStyle`, …) before assigning.
-4. **Sanitize and cap every array from `localStorage` or imported JSON.**
-   Reject `Infinity`, `NaN`, negatives, fractions, and unknown discriminants.
-   Keep the most recent tail when capping logs/events.
-5. **Every exhaustive `switch` over a discriminated union needs a `default:`.**
-   Unknown values must return the contract's safe placeholder or documented
-   sentinel, never accidental `undefined`.
-6. **View-model projects immutable snapshots.** Never leak internal controller
-   state (`state.adventure`, `state.game`, …) by reference.
-7. **WebGL2 failure is explicit.** Route load, initialization, render, and
-   context-loss failures through `RendererHost`'s accessible recovery screen.
-   Runtime failures preserve controller state for in-page retry; failed dynamic
-   imports require reload. Do not add a hidden renderer fallback.
-8. **No `structuredClone(GameState)` in hot loops.** AI evaluation and render
-   paths must not deep-clone the full game state per candidate action.
-9. **Reuse shared helpers and constants.** Use `DEFAULT_CARD_VISUAL_STYLE`,
-   `src/renderers/shared/math.ts`, `src/renderers/shared/image-fit.ts`,
-   `isBasicLand`, and the canonical app option lists.
-10. **Status-message ordering.** A later unconditional status assignment can
-   hide a storage-unavailable warning. Set warnings last or guard success
-   messages when persistence may have failed.
-11. **Artwork acceptance.** Classic is intentionally procedural. Anime requires
-   reviewed illustrated art, not deterministic seed/fallback copies. Monochrome
-   is an artwork filter, not a separate asset style. Historical
-   provenance, dimensions, hashes, and primary/fallback inequality are automated
-   checks, not visual acceptance. Hosted-generation credentials are required only
-   when deliberately generating new replacements; record visual verification
-   separately. See
-   [`public/cards/README.md`](public/cards/README.md#anime-artwork).
-12. **Seeded AI randomness.** AI modules take randomness only from
-   `src/game/ai-random.ts`, seeded from the game seed; never `Math.random`,
-   clocks, or `crypto`. See
-   [ADR 0003](docs/agent/adr/0003-hard-ai-search.md).
+### No string-to-enum casts
 
-## Topic index (`docs/agent/`)
+Check untrusted strings with the `isXxx` guards (`isAiLevel`,
+`isCardVisualStyle`, …) before assigning them.
 
-- [`architecture.md`](docs/agent/architecture.md) — module map and layering.
-- [`validation-and-build.md`](docs/agent/validation-and-build.md) — validation.
-- [`state-and-persistence.md`](docs/agent/state-and-persistence.md) — state,
-  localStorage, and recording invariants.
-- [`three-renderer.md`](docs/agent/three-renderer.md) — GPU lifecycle,
-  interaction, effects, and failure recovery.
-- [`three-interface.md`](docs/agent/three-interface.md) — native HTML and CSS.
-- [`service-worker-and-pwa.md`](docs/agent/service-worker-and-pwa.md) — caching,
-  base path, and PWA installation.
-- [`testing.md`](docs/agent/testing.md) — vitest and browser verification.
-- [`pr-workflow.md`](docs/agent/pr-workflow.md) — review-loop conventions.
+### Validate and cap untrusted JSON
+
+Deep-validate `localStorage`, imports, recordings and P2P payloads. Reject
+`Infinity`, `NaN`, negative or fractional counters and unknown discriminants.
+Cap arrays, keeping the most recent tail.
+
+### Default branch in union switches
+
+Every switch over a discriminated union has a `default:` that returns the
+contract's safe placeholder or documented sentinel, never `undefined`.
+
+### Immutable view-model snapshots
+
+The view-model projects snapshots. Never pass `state.game`, `state.adventure`
+or their arrays to renderers by reference.
+
+### Explicit WebGL2 failure
+
+Route load, initialization, render and context-loss failures to
+`RendererHost`'s accessible recovery screen, preserving controller state.
+Runtime failures retry in-page; failed dynamic imports need a reload. Never add
+a hidden renderer fallback.
+
+### No GameState clones in hot loops
+
+No `structuredClone(GameState)`, or an equivalent deep copy, per candidate in AI
+evaluation or per frame in render paths.
+
+### Reuse shared helpers
+
+Use `DEFAULT_CARD_VISUAL_STYLE` (never a hard-coded `'classic'`),
+`src/renderers/shared/math.ts`, `src/renderers/shared/image-fit.ts`,
+`isBasicLand` and the canonical option lists.
+
+### Status-message ordering
+
+A later unconditional status assignment hides a storage-unavailable warning.
+Set warnings last, or guard the success message.
+
+### Artwork acceptance
+
+Classic art is procedural. Anime needs reviewed illustrated art, never seed or
+fallback copies; Monochrome is a filter, not an asset style. Automated
+provenance, dimension and hash checks are not visual acceptance; record that
+separately. Only generating new art needs credentials. See
+[card art](public/cards/README.md#anime-artwork).
+
+### Seeded AI randomness
+
+AI modules draw randomness only from `src/game/ai-random.ts`, seeded from the
+game seed; never `Math.random`, clocks or `crypto`. See
+[ADR 0003](docs/agent/adr/0003-hard-ai-search.md).
+
+## Topic index
+
+Area rules also load from `.github/instructions/` for matching files.
+
+- [architecture](docs/agent/architecture.md): modules, layering, AI
+- [validation-and-build](docs/agent/validation-and-build.md): sequence, triage
+- [pr-workflow](docs/agent/pr-workflow.md): PRs, reviews, evidence, archiving
+- [state-and-persistence](docs/agent/state-and-persistence.md): saves
+- [three-renderer](docs/agent/three-renderer.md): GPU, interaction, touch
+- [three-interface](docs/agent/three-interface.md): HTML, CSS, announcements
+- [service-worker-and-pwa](docs/agent/service-worker-and-pwa.md): caching
+- [testing](docs/agent/testing.md): conventions, browser checks
+- [ADRs](docs/agent/adr/) and [history](docs/history/): past decisions
