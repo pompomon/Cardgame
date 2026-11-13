@@ -392,6 +392,13 @@ Spike results:
   matches `# Doppelgänger`). One regression test covers all three, and a
   malformed escape now reports a missing file or anchor instead of throwing.
   The docs have none of these yet: both matchers check 83 links.
+- A third review added angle-bracket and parenthesized destinations
+  (`<a b.md>`, `guide(copy).md`), Setext headings, and CommonMark's limit
+  of three spaces of indentation for fences and headings. The test now also
+  blanks YAML front matter and keeps the characters GitHub keeps in slugs.
+  Three regression tests cover these. The old and new parsers check the same
+  83 links (128 with PR-5's docs), and the computed anchors equal the ids
+  GitHub renders for every checked file (24 here, 30 with PR-5's docs).
 
 Later commits archive the plans:
 
@@ -662,7 +669,10 @@ import { REPO_ROOT } from './helpers/ai-source-files'
 // every relative Markdown link must resolve, every #anchor must match a
 // GitHub heading slug, and source comments citing `docs/<file>.md#<anchor>`
 // must still reach a heading. Walks fixed roots only, because other tests
-// create scratch directories at the repository root.
+// create scratch directories at the repository root. The Markdown parsing
+// covers what these docs use, not all of CommonMark: entities, `_emphasis_`
+// and backslash escapes in headings, list-item indentation, and the insides
+// of block quotes and HTML blocks are out of scope.
 
 const MARKDOWN_ROOTS = ['AGENTS.md', 'README.md', '.github', 'docs', 'public']
 const SOURCE_ROOTS = ['index.html', 'scripts', 'src', '.github/workflows']
@@ -672,12 +682,24 @@ const DOC_CITATION = /\b((?:docs|public)\/[\w./-]+\.md)(?:#([\w-]+))?/g
 // link may be separated by spaces or tabs and at most one line break.
 const TITLE = String.raw`(?:"[^"]*"|'[^']*'|\([^)]*\))`
 const GAP = String.raw`[ \t]*(?:\n[ \t]*)?`
+// A destination is <…>, captured without the brackets, or a bare run that
+// may hold balanced parentheses one level deep: guide(copy).md.
+const DESTINATION = String.raw`<([^<>\n]*)>|(?!<)((?:[^\s()]|\([^\s()]*\))+)`
 // Captures the text before the destination, to find its line, then the
 // destination itself.
-const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP}<?)([^)\s>]+)>?(?:(?=[ \t\n])${GAP}${TITLE})?${GAP}\)`, 'g')
+const MARKDOWN_LINK = new RegExp(String.raw`(\]\(${GAP})(?:${DESTINATION})(?:(?=[ \t\n])${GAP}${TITLE})?${GAP}\)`, 'g')
 // `[label]: target "title"` definitions, which every `[text][label]` or
 // `[label]` use resolves through. `[^note]:` footnotes are not links.
-const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*<?([^\s>]+)>?(?:\s+${TITLE})?\s*$`)
+const REFERENCE_DEFINITION = new RegExp(String.raw`^ {0,3}\[(?!\^)[^\]]+\]:\s*(?:${DESTINATION})(?:\s+${TITLE})?\s*$`)
+// Fences and headings are indented at most three spaces; a deeper line is
+// indented code. A backtick fence's info string holds no backticks.
+const FENCE = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})(.*))$/
+const ATX_HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$/
+const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*$/
+// A block quote, table row, HTML block, list item or thematic break, none of
+// which continues a paragraph that a Setext underline could turn into a
+// heading.
+const BLOCK_START = /^ {0,3}(?:[>|<]|[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|([-*_])(?:[ \t]*\1){2,}[ \t]*$)/
 
 function walk(path: string, files: string[] = []): string[] {
   if (!existsSync(path)) return files
@@ -695,17 +717,21 @@ function filesUnder(roots: readonly string[], keep: (path: string) => boolean): 
   return roots.flatMap((root) => walk(join(REPO_ROOT, root))).filter(keep)
 }
 
-// Lines with fenced code blanked, so line numbers stay accurate. As in
-// CommonMark, only a bare run of the opening character that is at least as
-// long closes a fence, so a ```` block can show ``` examples.
+// Lines with fenced code and YAML front matter blanked, so line numbers stay
+// accurate. As in CommonMark, only a bare run of the opening character that
+// is at least as long closes a fence, so a ```` block can show ``` examples.
 function proseLines(text: string): string[] {
+  const lines = text.split('\n')
+  const frontMatterEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1
   let fence = ''
-  return text.split('\n').map((line) => {
-    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+  return lines.map((line, index) => {
+    if (index <= frontMatterEnd) return ''
+    const marker = FENCE.exec(line)
+    const run = marker?.[1] ?? marker?.[3] ?? ''
     if (!fence) {
-      if (!marker) return line
-      fence = marker[1]
-    } else if (marker && marker[1].startsWith(fence) && !marker[2].trim()) {
+      if (!run) return line
+      fence = run
+    } else if (run.startsWith(fence) && !(marker?.[2] ?? marker?.[4] ?? '').trim()) {
       fence = ''
     }
     return ''
@@ -724,26 +750,48 @@ function withoutTags(text: string): string {
   return text
 }
 
+// GitHub keeps alphabetic characters, marks, decimal digits, connector
+// punctuation, joiners, spaces and hyphens, then turns each space into a
+// hyphen.
+function slugBase(heading: string): string {
+  return withoutTags(heading.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'))
+    .toLowerCase()
+    .replace(/[^\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control} -]/gu, '')
+    .replace(/ /g, '-')
+}
+
 // Repeated heading slugs take the next unused -N suffix, as on GitHub
 // (github-slugger): Foo, Foo-1, Foo gives foo, foo-1, foo-2. Explicit
 // <a id|name> anchors don't affect the numbering.
 function anchorsIn(text: string): Set<string> {
   const anchors = new Set<string>()
   const suffixes = new Map<string, number>()
-  for (const line of proseLines(text)) {
-    for (const match of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) anchors.add(match[1])
-    const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line)
-    if (!heading) continue
-    const base = withoutTags(heading[1].replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'))
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s_-]/gu, '')
-      .replace(/\s/g, '-')
+  const addHeading = (heading: string) => {
+    const base = slugBase(heading)
     let suffix = suffixes.get(base) ?? 0
     let slug = base
     while (suffixes.has(slug)) slug = `${base}-${++suffix}`
     suffixes.set(base, suffix)
     suffixes.set(slug, 0)
     anchors.add(slug)
+  }
+  // The lines a Setext underline would turn into a heading.
+  let paragraph: string[] = []
+  for (const line of proseLines(text)) {
+    for (const match of line.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) anchors.add(match[1])
+    const atx = ATX_HEADING.exec(line)
+    if (paragraph.length && SETEXT_UNDERLINE.test(line)) {
+      addHeading(paragraph.join('\n'))
+      paragraph = []
+    } else if (atx) {
+      addHeading(atx[1])
+      paragraph = []
+    } else if (!line.trim() || BLOCK_START.test(line)) {
+      paragraph = []
+    } else if (paragraph.length || /^ {0,3}\S/.test(line)) {
+      // A deeper indent continues a paragraph but can't start one: it's code.
+      paragraph.push(line.trim())
+    }
   }
   return anchors
 }
@@ -786,11 +834,11 @@ function linkProblems(file: string, text: string): { checked: number; problems: 
   // [line index, link]. Inline links may wrap, so they're matched across lines.
   const links: [number, string][] = [...prose.matchAll(MARKDOWN_LINK)].map((match) => [
     prose.slice(0, match.index + match[1].length).split('\n').length - 1,
-    match[2],
+    match[2] ?? match[3],
   ])
   lines.forEach((line, index) => {
     const definition = REFERENCE_DEFINITION.exec(line)
-    if (definition) links.push([index, definition[1]])
+    if (definition) links.push([index, definition[1] ?? definition[2]])
   })
   links.sort(([a], [b]) => a - b)
   const ownAnchors = anchorsIn(text)
@@ -837,6 +885,12 @@ describe('documentation links', () => {
     expect(proseLines([...fenced, 'after'].join('\n')).filter(Boolean)).toEqual(['after'])
   })
 
+  it('blanks front matter and treats only fences indented up to three spaces as code', () => {
+    // Four spaces make indented code, which neither opens nor closes a fence.
+    const text = ['---', 'applyTo: "src/**"', '---', '    ```', '', '[a](missing.md)', '   ~~~', '[b](missing.md)', '    ~~~', '~~~', 'after']
+    expect(proseLines(text.join('\n'))).toEqual(['', '', '', '    ```', '', '[a](missing.md)', '', '', '', '', 'after'])
+  })
+
   it('checks reference-style link definitions', () => {
     const text = [
       'See [the guide][guide], [the rules] and a note.[^note]',
@@ -873,6 +927,65 @@ describe('documentation links', () => {
         'notes/example.md:6 #no-such-heading: missing anchor #no-such-heading',
       ],
     })
+  })
+
+  it('reads angle-bracket and parenthesized destinations', () => {
+    const text = [
+      'See [a](<missing copy.md>), [b](guide(copy).md), [c](<guide(copy).md> "Title")',
+      'and [d](missing.md (Title)).',
+      '',
+      '[e]: <missing copy.md> "Title"',
+      '[f]: guide(copy).md',
+    ].join('\n')
+    expect(linkProblems(join(REPO_ROOT, 'notes', 'example.md'), text)).toEqual({
+      checked: 6,
+      problems: [
+        'notes/example.md:1 missing copy.md: missing file',
+        'notes/example.md:1 guide(copy).md: missing file',
+        'notes/example.md:1 guide(copy).md: missing file',
+        'notes/example.md:2 missing.md: missing file',
+        'notes/example.md:4 missing copy.md: missing file',
+        'notes/example.md:5 guide(copy).md: missing file',
+      ],
+    })
+  })
+
+  it('finds Setext and indented headings and slugs them like GitHub', () => {
+    // Expected slugs come from GitHub's Markdown API in README mode.
+    const text = [
+      'Guide',
+      '=====',
+      '',
+      '   ## Indented',
+      '    # Indented code',
+      '---',
+      '',
+      '    code',
+      'Lazy',
+      '    continuation',
+      '===',
+      '',
+      'Two words',
+      'heading',
+      '---',
+      '',
+      '- item',
+      '---',
+      'Step 2: `npm ci` (Node 24) — notes ² **x**',
+      '---',
+      '',
+      '## Caf\u00e9\u200ds \u217b',
+      '## a_b x\u0303 \u2460',
+    ].join('\n')
+    expect([...anchorsIn(text)]).toEqual([
+      'guide',
+      'indented',
+      'lazycontinuation',
+      'two-wordsheading',
+      'step-2-npm-ci-node-24--notes--x',
+      'caf\u00e9\u200ds-\u217b',
+      'a_b-x\u0303-',
+    ])
   })
 
   it('numbers repeated heading slugs like GitHub', () => {
