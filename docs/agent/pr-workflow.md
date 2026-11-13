@@ -111,3 +111,14 @@ track interaction, capture, inspection, and attachment as separate outcomes.
 - Refactoring touched code is fine; refactoring unrelated code is not.
   Use the "Out of scope" / follow-up sections in the description to
   defer.
+
+## Dependency updates
+
+Dependabot (`.github/dependabot.yml`) opens grouped npm PRs weekly and GitHub
+Actions PRs monthly, after a cooldown; security updates open immediately.
+
+- Merge patch and minor groups when CI is green, after skimming the release
+  notes.
+- Handle majors like the toolchain upgrade in #160: one tool per commit, the
+  full validation sequence, and a browser smoke test for three or Vite.
+- Never hand-edit `package-lock.json`; let npm regenerate it.
