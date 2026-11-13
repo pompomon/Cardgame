@@ -4,8 +4,9 @@
 > This document lists follow-ups to the Hard AI search. It is not evidence that
 > any follow-up has been implemented, measured, or verified in a browser.
 
-The delivered design, its measurements and the alternatives rejected are in
-[ADR 0003](../agent/adr/0003-hard-ai-search.md).
+The delivered design and the alternatives rejected are in
+[ADR 0003](../agent/adr/0003-hard-ai-search.md); its measurements are in
+`git show da7c3c9:docs/agent/adr/0003-hard-ai-search.md`.
 
 ## Delivered
 

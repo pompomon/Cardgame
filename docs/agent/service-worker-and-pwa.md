@@ -1,123 +1,85 @@
 # Service worker and PWA
 
-The application installs a custom service worker from `public/sw.js`. Keep its
-URL handling consistent with Vite's configured non-root base path.
+How `public/sw.js` caches the app under its non-root GitHub Pages base.
+
+## Rules
+
+- Hashed `/assets/*` are cache-first; unhashed `/cards/*` and `/boards/*`
+  stay network-first with cache fallback, never cache-first.
+- Bump `RUNTIME_ASSET_VERSION` when replacing same-path card or board PNGs;
+  `src/test/cache-version-check.test.ts` warns when the bump is missing.
+- Never precache `404.html` into the SPA shell slot; it holds the Pages
+  redirect script, not the app.
+- Never assume `/` is the app root; follow
+  [Vite base URL](../../AGENTS.md#vite-base-url). `index.html` uses
+  `%BASE_URL%…` or `./…`, never absolute `/…` paths.
+- `joinBasePath` and `404.html` emit exactly one leading `/` and never
+  redirect to a scheme-relative `//host/path` URL.
+- Verify offline behavior with the built worker, never the dev server.
 
 ## Cache strategy
 
-The worker derives its base path from the registration URL's `base` query
-parameter.
+The registration URL passes the base path (`base`) and hashed entry name
+(`build`), so each changed build installs a new worker.
+`src/test/service-worker.test.ts` covers this section.
 
-- **Vite assets (`/assets/*`)** are hashed and cache-first.
-- **Card art and board imagery (`/cards/*`, `/boards/*`)** keep stable public
-  paths and are network-first with cache fallback.
-- **Navigations** are network-first and fall back to the cached app shell.
-- Cross-origin requests and unrelated paths pass through unchanged.
-
-Do not precache `404.html` into the app-shell slot. It contains GitHub Pages
-redirect logic, not the SPA.
-
-Three.js remains a dynamic Vite entry outside the initial bundle. After one
-successful online load its hashed chunk is cached by the `/assets/*` policy.
-There is no gameplay fallback if that chunk is unavailable; `RendererHost`
-shows an accessible recovery screen. A failed chunk import requires reload;
-graphics failures after the chunk loads can retry in-page with preserved
-controller state.
-
-The production build emits `asset-manifest.json`. The worker registration URL
-includes the hashed entry filename, so every changed entry build runs a distinct
-installation. The new worker reads a no-store manifest, fetches a fresh HTML
-shell, verifies that its hashed references match, and fills its build cache with
-the entry JavaScript/CSS and lazy Three.js JavaScript/CSS before calling
-`skipWaiting()`. The shell cache is populated with HTML and static resources in
-the same transaction. If any current asset cannot be cached,
-installation fails and the previous worker and cache set remain active.
-The active worker may return newer network HTML for a navigation, but it never
-stores that unverified response over its manifest-validated offline shell.
-Before activation, only explicitly compatible response prefixes are moved from
-legacy caches into the runtime-asset cache. Runtime cache v5 preserves
-`/boards/*` responses from v1-v4 but deliberately does not migrate `/cards/*`,
-because the primary artwork was replaced at the same paths. Removed card art,
-renderer chunks, sprite responses, and other obsolete entries are not migrated.
-Activation then deletes only older managed Cardgame caches; never delete
-unrelated origin-wide Cache Storage entries.
-
-## Catalog-slugged card art
-
-Public card filenames come exclusively from the ASCII `assetSlug` stored in
-`src/app/card-catalog.ts`. Never derive a URL from a Unicode display name or the
-legacy serialized `BasicLand` key. Keep literal `import.meta.env.BASE_URL`
-access in the shared card-art URL helper so every candidate remains below the
-configured project path.
-
-Runtime source selection is shared by the WebGL Board and native HTML cards:
-
-- Classic uses the cached procedural creature source.
-- Anime and Cats try their respective `<style>/<slug>.png` illustrations, then
-  `hd-fallback/<slug>.png`, then the procedural source.
-- Monochrome is a persisted checkbox that applies grayscale to the chosen
-  style's card artwork; it does not select a separate asset directory.
-
-Raster consumers must abandon a failed URL immediately, remember failed URLs for
-the session, and skip them on subsequent renders while continuing through the
-fallback chain. Online recovery may reset that suppression and try the shared
-candidate chain again. The service worker keeps every `/cards/*` request
-network-first with runtime-cache fallback; it must not turn these stable public
-paths into cache-first resources.
-
-See [`../../public/cards/README.md`](../../public/cards/README.md) for the exact
-five-file inventory, deterministic generation, and artwork review workflow.
+- **Navigations:** network-first, falling back to the cached shell; network
+  HTML is never cached, so only installation replaces the shell.
+- **`/cards/*`, `/boards/*`:** a network failure falls back to the runtime
+  cache. Known bug [#161](https://github.com/pompomon/Cardgame/issues/161):
+  the response is cloned after `respondWith()` starts streaming it, so a
+  swallowed `clone()` error leaves that cache empty.
+- **`/assets/*` and static files:** cache-first. Other requests pass through.
+- **Install** reads a no-store `asset-manifest.json`, fetches a fresh shell,
+  checks its hashed references and caches the whole Vite asset graph,
+  including the lazy Three.js entry, before `skipWaiting()`. Any failure
+  keeps the previous worker and caches.
+- **Migration** copies only compatible prefixes: v1-v4 runtime caches keep
+  `/boards/*` but not `/cards/*`, whose art was replaced at the same paths.
+  Activation then deletes only older managed `cardgame-*` caches.
 
 ## Versioning
 
-- Bump `RUNTIME_ASSET_VERSION` when replacing same-path card/board images,
-  removing card/board asset paths, or intentionally invalidating their offline
-  copies. A documentation-only change or a new hashed application build does
-  not require this bump.
-- Bump `CACHE_VERSION` when changing the worker's cache schema or migration
-  behavior.
-- Normal deployments rotate shell/build caches automatically using the hashed
-  entry filename; no manual bump is needed for hashed assets.
-- Activation deletes older Cardgame caches only after the new version has
-  successfully cached its complete Vite asset graph.
+- Also bump `RUNTIME_ASSET_VERSION` when removing card or board paths or
+  deliberately invalidating their offline copies, not for docs or hashed
+  builds.
+- Bump `CACHE_VERSION` when the cache schema or migration changes. Shell and
+  build caches rotate automatically with each hashed build.
+- When changing public assets, update their README.
 
-When changing public assets, update their README and verify old installations
-as well as clean installation.
+## Catalog-slugged card art
+
+- File names come only from the ASCII `assetSlug` in
+  `src/app/card-catalog.ts`, never a display name or the `BasicLand` key.
+- `src/app/card-art.ts`, the shared URL helper, keeps every candidate under
+  the base.
+- The source chain, Monochrome filter and failed-URL suppression are in
+  [card art runtime behavior](../../public/cards/README.md#runtime-behavior).
 
 ## GitHub Pages base path
 
-Never assume `/` is the deployed application root.
-
-- Use literal `import.meta.env.BASE_URL` in TypeScript so Vite can statically
-  replace it.
-- Use `%BASE_URL%…` or relative paths in `index.html`.
-- Normalize `joinBasePath` results to exactly one leading slash.
-- Never emit a `//host/path` scheme-relative redirect.
-- Keep search parameters and hashes when restoring a deep link.
-
-The 404 redirect script encodes the original route in the query string and
-`src/main.ts` restores it before legacy renderer parameters are removed.
+- `public/404.html` encodes the route as `__gh_path` and `__gh_hash`;
+  `src/main.ts` restores it, keeping search and hash, before stripping
+  legacy renderer parameters.
+- Tests: `url-path.test.ts` (`joinBasePath`), `browser-metadata.test.ts`
+  (`index.html` and manifest paths), `service-worker-registration.test.ts`
+  and `card-art-base-path.test.ts` in `src/test/`.
 
 ## Installation UI
 
 `src/app/install-support.ts` owns the install prompt and display-mode
-observation. `ThreeInterface` renders the native installation controls. Keep the
-adapter exception-safe because not every browser exposes install events.
+observation; keep it exception-safe, as not every browser has install events.
+`ThreeInterface` renders the controls.
 
 ## Validation
 
-After changing `public/sw.js`, base-path logic, or assets:
+After changing `public/sw.js`, base-path logic or public assets:
 
-1. Run the service-worker, 404, asset, and build-invocation tests.
-2. Build with the configured non-root base path.
-3. Serve that production output under the same path.
-4. Verify an online first load, offline reload, and an upgrade from the previous
-   worker/cache version.
-5. Inspect requests: hashed Three.js chunks should use `/assets/*`; cards and
-   boards should retain the network-first paths.
-6. Confirm `asset-manifest.json` includes the lazy Three.js entry, matches the
-   fetched HTML shell, and an interrupted install leaves the prior worker active.
-7. Confirm no obsolete renderer chunk or removed asset-family request appears.
-
-Do not claim offline verification from a dev-server session; it must exercise
-the built service worker.
+1. Run the tests above, then build with the non-root base and serve that
+   output under the same path.
+2. Verify a clean online install, an offline reload and an upgrade from
+   the previous worker and caches.
+3. Check requests: Three.js chunks come from `/assets/*`, art stays
+   network-first, and no obsolete chunk or removed asset family appears.
+4. Confirm `asset-manifest.json` lists the lazy Three.js entry and matches
+   the fetched shell, and an interrupted install keeps the prior worker.

@@ -1,61 +1,35 @@
 # ADR 0002: Three.js-only browser renderer
 
-- Status: Accepted
-- Date: 2026-09-16
-- Supersedes: Browser renderer portions of ADR 0001
-- Superseded by: —
+Status: Accepted, 2026-09-16; supersedes the browser-renderer parts of
+[ADR 0001](0001-layering.md).
 
 ## Context
 
-The browser application maintained separate DOM, Phaser, and Three.js renderers.
-Every shared feature required parity work, while Three.js had already become a
-hybrid renderer with its own native HTML lobby, menus, settings, P2P controls,
-recording controls, keyboard actions, and accessibility surface.
+Separate DOM, Phaser and Three.js renderers needed parity work for every
+shared feature, while Three.js already had its own native HTML lobby, menus,
+settings, P2P and recording controls and accessibility surface.
 
 ## Decision
 
-Three.js is the sole browser renderer. WebGL2 is a runtime requirement for
-gameplay. The native HTML interface under `src/renderers/three/` remains part of
-that renderer and is not a second rendering backend.
-
-The application no longer stores or projects a renderer choice. At startup it:
-
-1. Removes every obsolete `renderer` query parameter while preserving other
-   parameters and the URL hash.
-2. Removes the obsolete `cardgame-renderer` localStorage key best-effort.
-3. Loads Three.js.
-
-`RendererHost` retains the controller and latest view across Three.js load,
-initialization, render, and context-loss failures. It shows an accessible
-recovery screen rather than switching to a reduced renderer. Initialization,
-render, and context-loss failures can remount Three.js in-page against the
-preserved controller state. A failed module fetch requires page reload because
-browsers remember failed dynamic imports by URL.
-
-Phaser code, the standalone DOM renderer, renderer selectors, Phaser-only
-sprites, related active guidance, and the Phaser production dependency are
-removed. Generic helpers required by Three.js live in `app/`,
-`renderers/shared/`, or `renderers/three/` according to their ownership.
+- Three.js is the sole browser renderer and WebGL2 a runtime requirement. Its
+  native HTML interface in `src/renderers/three/` is part of it, not a second
+  backend. Phaser, the DOM renderer and renderer selectors are removed
+  (`src/test/browser-renderer-architecture.test.ts`).
+- No renderer choice is stored or projected. At startup `main.ts` calls
+  `src/app/renderer-migration.ts` to drop every `renderer` query parameter,
+  keeping other parameters and the hash, and the obsolete `cardgame-renderer`
+  storage key (best-effort), then loads Three.js.
+- Graphics failures never switch renderers
+  ([Explicit WebGL2 failure](../../../AGENTS.md#explicit-webgl2-failure)); a
+  failed module fetch needs a reload because browsers remember failed dynamic
+  imports by URL.
 
 ## Consequences
 
-### Positive
-
-- One browser implementation owns behavior, accessibility, and visuals.
-- Shared features no longer require cross-renderer parity maintenance.
-- Browser bundles and public assets no longer include Phaser.
-- Graphics failure behavior is explicit and cannot silently change UI semantics.
-
-### Negative
-
-- Browsers without WebGL2 cannot play the browser version.
-- A first-time offline load may fail if the lazy Three.js chunk was never cached.
-- Context loss requires retrying Three.js; there is no non-WebGL gameplay mode.
-
-## Compatibility
-
-Legacy renderer URLs continue to load the application after one-way URL
-normalization. Other search parameters and hashes remain intact. The obsolete
-stored preference is discarded because it no longer has a meaningful value.
-Existing game, Adventure, recording, visual-style, board-theme, animation, and
-quality persistence formats are unchanged.
+- One implementation owns behavior, accessibility and visuals; bundles ship
+  no Phaser.
+- Browsers without WebGL2 cannot play, and context loss needs a Three.js
+  retry: there is no non-WebGL gameplay mode.
+- A first offline load can fail if the lazy Three.js chunk was never cached.
+- Legacy renderer URLs still load. Game, Adventure, recording and settings
+  formats are unchanged.
