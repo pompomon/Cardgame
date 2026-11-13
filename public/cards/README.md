@@ -72,7 +72,8 @@ This rewrites the five approved slugs in both deterministic directories. Re-runn
 the same recipe is byte-identical. Commit recipe, generator, and generated
 image changes together.
 
-For isolated verification without touching tracked assets, use Node 24:
+For isolated verification without touching tracked assets, use the Node
+version in the repository's `.nvmrc`:
 
 ```bash
 npm run test -- src/test/card-art-generator.test.ts
