@@ -11,6 +11,10 @@ Details: [state-and-persistence](../../docs/agent/state-and-persistence.md).
   state or launching a game; a refused write leaves state and controls
   unchanged. Navigation never writes the run: Resume without a restorable
   game shows `openAdventureMap(stored)` unsaved.
+- Each new kind of hub decision must change `adventure.decisionKey`, which
+  `view-model.ts` builds from the run, route, attempt, pending outcome and
+  reward offer. Otherwise `ThreeInterface.latestForAction` accepts stale
+  clicks ([three-interface](../../docs/agent/three-interface.md#stable-interaction-state)).
 - Reading never writes. Dispatch on `schemaVersion`: exactly `2`, or absent
   for version 1, which converts in memory and is written only by the next
   committed transition. Any other value makes the run unavailable; never
