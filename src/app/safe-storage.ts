@@ -8,7 +8,7 @@
 //   - storage-unavailable handling is consistent,
 //   - callers can chain `?? defaultValue` without nested try/catch,
 //   - future telemetry / "storage unavailable" warnings can hook in here
-//     in one place (see AGENTS.md rule #9 — status message ordering).
+//     in one place (see the AGENTS.md hard rule "Status-message ordering").
 //
 // The helper deliberately does NOT validate JSON shapes — callers must
 // still pass the parsed value through a guard from `app/validators.ts`

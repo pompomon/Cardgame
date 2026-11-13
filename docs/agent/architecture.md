@@ -1,192 +1,78 @@
 # Architecture
 
-A module map and ownership guide for the Three.js-only browser application.
-The renderer consolidation decision is recorded in
-[`adr/0002-three-only-renderer.md`](adr/0002-three-only-renderer.md); the Hard
-AI's search in [`adr/0003-hard-ai-search.md`](adr/0003-hard-ai-search.md).
+Module ownership, layering ([ADR 0001](adr/0001-layering.md)) and AI data
+flow.
+
+## Rules
+
+- Dependencies flow inward: `renderers/three/` → `app/` → `game/`, and
+  `cli/` → `app/` → `game/`.
+- `src/game/` is pure: it imports only game modules (`src/test/engine.test.ts`)
+  and uses no browser API, Three.js, storage, catalog or app orchestration.
+- `src/app/` keeps browser APIs behind thin adapters such as `safe-storage.ts`
+  and `install-support.ts`; P2P uses `src/net/`.
+- Renderers use `ControllerApi` and public app/game types, guards and helpers,
+  never controller internals.
+- `src/cli/` uses pure app/game helpers, never persistence, P2P, renderers or
+  DOM APIs (`src/test/cli-bundle.test.ts`: no storage or P2P).
+- `src/app/` decides presentation semantics once; renderers and the CLI only
+  translate them; DOM mechanics stay in `src/renderers/`.
+- Put policy in the innermost layer that can express it, with exactly one
+  canonical option list, default and guard per concept.
+- Three.js is the only browser renderer (Board plus native HTML), with no
+  setting or fallback (`src/test/browser-renderer-architecture.test.ts`).
+- Player copy comes only from `src/app/card-catalog.ts` via app helpers:
+  [Catalog presentation boundary](../../AGENTS.md#catalog-presentation-boundary).
+- Identity-sensitive loops follow `BASIC_LANDS`, not names or catalog keys:
+  [serialized identity](state-and-persistence.md#serialized-identity-versus-display-copy).
 
 ## Module map
 
-```text
-src/
-├── game/                       Pure game engine and AI
-│   ├── engine.ts               Rules, legality, action application (plus a cheaper search path), and initial setup
-│   ├── cards.ts                Deck generation and seeded shuffle
-│   ├── ai.ts                   Policy registry and chooseAiAction
-│   ├── ai-levels.ts            Canonical AI level type and guard
-│   ├── ai-policies/            One policy per level; Hard delegates to ai-hard.ts
-│   ├── ai-evaluation.ts        One-ply strategic scorer (Advanced)
-│   ├── ai-hard.ts              Hard decision: persona, search, and selection
-│   ├── ai-search.ts            Determinized Monte-Carlo search and its default budget
-│   ├── ai-rollout.ts           Rollout policy and one-step action values
-│   ├── ai-features.ts          Position features and the win-probability evaluator
-│   ├── ai-weights.ts           Fitted evaluator weights and their version
-│   ├── ai-knowledge.ts         What a seat may know; samples deck orders
-│   ├── ai-action-classes.ts    Interchangeable legal actions grouped into classes
-│   ├── ai-selection.ts         Criticality and the seeded choice among searched classes
-│   ├── ai-personas.ts          Per-game playing styles
-│   ├── ai-random.ts            Seeded random streams, the only AI randomness source
-│   └── ai-policy-types.ts      Policy, visibility, and search budget types
-│
-├── app/                        UI-independent orchestration
-│   ├── controller.ts           State transitions, persistence, subscriptions
-│   ├── view-model.ts           Immutable renderer projection
-│   ├── action-resolution.ts    Shared legal-action presentation
-│   ├── game-recording.ts       Versioned recording import/export
-│   ├── adventure*.ts           Adventure run, persistence, pure map, reward, and setup rules, and the hub's route-map layout (adventure-map.ts, adventure-rewards.ts, adventure-setup.ts, adventure-route-graph.ts)
-│   ├── card-catalog.ts         Stable keys to player copy and asset slugs
-│   ├── game-presentation.ts    Shared card, action, phase, roster, and relic-charge labels
-│   ├── log-presentation.ts     Structured event labels and visual-log cap
-│   ├── lobby-presentation.ts   Lobby mode options and predicates
-│   ├── renderer-migration.ts   One-way cleanup of obsolete renderer choices
-│   ├── board-assets.ts         Base-safe board and ambience locations
-│   ├── card-art.ts             Base-safe card-art locations
-│   ├── install-support.ts      PWA installation state
-│   ├── safe-storage.ts         Exception-safe localStorage adapter
-│   └── types.ts                App and view-model types
-│
-├── renderers/
-│   ├── host.ts                 Lazy Three.js loading and accessible recovery
-│   ├── types.ts                Renderer lifecycle contract
-│   ├── card-preview.ts         Framework-independent preview policy
-│   ├── shared/
-│   │   ├── drag-state.ts       Pointer-type-aware drag state
-│   │   ├── image-fit.ts        Cover-crop calculations
-│   │   ├── interaction-feedback.ts
-│   │   └── math.ts             Shared bounded math
-│   └── three/
-│       ├── index.ts            Renderer composition and lifecycle
-│       ├── board.ts            Scene, camera, picking, and GPU ownership
-│       ├── assets.ts           Texture loading and fallback ownership
-│       ├── background.ts       Board and ambience presentation
-│       ├── card-registry.ts    Retained card identities and meshes
-│       ├── interaction.ts      Pointer capture and drag/drop
-│       ├── effects.ts          Cancellable event queue
-│       ├── effect-visual.ts    Cosmetic drawing primitives
-│       ├── interface.ts        Native HTML behavior and focus management
-│       ├── interface-model.ts  Native HTML projection
-│       └── native-html.ts      Escaped markup and raster fallback tracking
-│
-├── cli/                        Browser-independent terminal interface
-├── net/                        WebRTC P2P transport
-├── test/                       Vitest specifications
-└── main.ts                     Browser bootstrap
-```
-
-The Node adapter is `scripts/cardgame-cli.mjs`. Vite emits the standalone ESM
-bundle at `dist-cli/cardgame-cli.mjs`.
-
-## Layering
-
-Dependencies flow inward:
-
-```text
-renderers/three/ ──→ app/ ──→ game/
-cli/             ──→ app/ ──→ game/
-```
-
-- `src/game/` imports only game modules and has no browser APIs.
-- `src/app/` imports app/game modules. Browser APIs belong behind thin adapters
-  such as `safe-storage.ts` and `install-support.ts`.
-- `src/renderers/` may consume public app/game types, guards, and helpers but
-  never controller internals.
-- `src/cli/` may consume pure app/game helpers but not persistence, P2P, browser
-  renderers, or DOM APIs.
-- Shared presentation semantics belong in `src/app/`; framework and DOM
-  mechanics belong in `src/renderers/`.
-
-## Card identity and presentation boundary
-
-`src/game/` and all compatibility formats retain the legacy mechanical
-`BasicLand` keys, canonical `BASIC_LANDS` order, `Card.type: 'land'`, action and
-event discriminants, and persisted field names. Saves, Adventure snapshots,
-recordings, and P2P packets must continue to use those stable values.
-
-`src/app/card-catalog.ts` is the canonical mapping from a stable key to the
-player-facing creature name, ability copy, ASCII asset slug, and visual role.
-`src/app/game-presentation.ts` and the other app presentation helpers project
-catalog-backed names and shared labels for renderers and the CLI. The engine
-must not import the catalog.
-
-Tutorial sentences, log framing, and direct or nested Mimic target prompts
-must use those shared catalog-backed names and abilities too, not maintain
-hardcoded exceptions. A generic `draw` event does not identify its source
-ability, so its formatter must not imply that Listen In caused it.
-
-Display names and asset slugs are presentation data, never game or serialization
-identifiers. Do not parse them as mechanical keys or place them in engine,
-storage, recording, or wire payloads. They may be used as presentation-grouping or
-resource-cache keys. Iterate identity-sensitive code through the canonical
-`BASIC_LANDS` tuple rather than display-name sorting or catalog object-key order.
-
-Contributor documentation and implementation names may say `battlefield` when
-referring to the stable state field, renderer row geometry, or DOM data value.
-The corresponding player-facing zone label is always **Board**.
-
-The browser's native Cards dialog makes visible Hand, Board, and Discard pile
-creature rules discoverable, with full rules in card previews. This is a
-browser-only presentation surface; it does not add CLI commands or change
-visibility, legal actions, or serialized fields. The Adventure label
-**Summons attempted (both players)** projects the existing `totalCardsPlayed`
-counter, including intercepted summons; do not rename the persisted field.
+| Directory | Owns | Key modules |
+| --- | --- | --- |
+| `game/` | Rules, legality, deterministic transitions, decks; AI policies (levels, tutorial), search, evaluation, seeded randomness | `engine.ts`, `cards.ts`, `types.ts`, `ai.ts`, `ai-*.ts`, `ai-policies/` |
+| `app/` | UI-independent orchestration, persistence, Adventure, recordings, settings, guards; catalog, labels, lobby options, event formatting, base-safe asset URLs | `controller.ts`, `view-model.ts`, `validators.ts`, `safe-storage.ts`, `adventure*.ts`, `card-catalog.ts`, `*-presentation.ts` |
+| `net/` | WebRTC P2P transport | `p2p.ts` |
+| `renderers/` | Renderer contract, lazy Three.js loading and recovery, card previews | `types.ts`, `host.ts`, `card-preview.ts` |
+| `renderers/shared/` | Pointer state and generic render math | `drag-state.ts`, `math.ts`, `image-fit.ts` |
+| `renderers/three/` | WebGL renderer, scene, GPU resources, picking, effects, layout; native HTML and CSS | `index.ts`, `board.ts`, `card-registry.ts`, `interaction.ts`, `effects.ts`, `interface.ts` |
+| `cli/` | Terminal prompts and output; Node adapter `scripts/cardgame-cli.mjs`, bundle `dist-cli/cardgame-cli.mjs` | `main.ts`, `session.ts`, `options.ts` |
+| `test/` | Vitest specs, `helpers/`, `fixtures/`, opt-in `tools/` | `*.test.ts`, `ai-perf.bench.ts` |
+| `assets/` | Unused Vite starter art | — |
 
 ## Browser renderer contract
 
-Three.js is the only browser renderer. Its WebGL Board and native HTML
-lobby, dialogs, settings, P2P controls, recording controls, and accessibility
-surface are one renderer. “Native HTML” does not mean a fallback renderer.
-
-`RendererHost` dynamically imports Three.js so the initial shell remains small.
-It buffers the newest `AppViewModel`, rejects stale loads, and keeps the
-`AppController` alive across graphics failures. WebGL2 is a runtime requirement.
-Load, mount, render, and context-loss failures unmount partial GPU state and show
-an accessible recovery panel. Mount, render, and context-loss retries remount
-Three.js against the same controller and current view. A module-load failure
-offers reload instead: browsers cache a failed dynamic import URL, so repeating
-the same in-page import would not issue a new request.
-
-There is no renderer setting in `AppState` or `AppViewModel`. On startup,
-`main.ts` removes obsolete `renderer` query parameters while preserving every
-other query parameter and the hash. It also removes the old
-`cardgame-renderer` localStorage entry through `safe-storage.ts`.
+- `main.ts` imports `style.css`, clears legacy renderer choices
+  ([ADR 0002](adr/0002-three-only-renderer.md)), wires `AppController` to
+  `RendererHost` and registers the service worker.
+- `RendererHost` lazy-loads Three.js, renders the newest `AppViewModel` and
+  keeps `AppController` across failures
+  ([Explicit WebGL2 failure](../../AGENTS.md#explicit-webgl2-failure)).
 
 ## Three.js ownership
 
-- `ThreeRenderer` owns and disposes board, interface, interaction, and effects
-  objects in reverse dependency order.
-- `ThreeBoard` owns the WebGL renderer, canvas, scene resources, observers, and
-  animation frame.
-- `ThreeCardRegistry` owns retained card meshes and shared geometry.
-  Presentations created outside its pick/history registry must be disposed by
-  their caller before registry disposal.
-- Resizing or changing the presented page reconciles card positions, invalidates
-  historical effect anchors, then reanchors active effects.
-- Rendering occurs on invalidation or during bounded cosmetic animation, not an
-  unconditional permanent loop.
-- Pointer adapters use canvas CSS bounds for picking; drawing-buffer quality is
-  a separate concern.
+`ThreeRenderer` disposes its interaction, effects, interface and board in
+reverse dependency order; `ThreeBoard` owns the WebGL renderer, scene, frame
+and card registry ([resource rules](three-renderer.md#resource-ownership)).
 
 ## Interaction boundary
-
-Trace stateful UI work end-to-end:
 
 ```text
 engine legal actions → AppViewModel options → interface/board input
 → ControllerApi.submitAction() → synchronous controller notification
 ```
 
-Board primary actions route through `ThreeInterface.activatePrimaryAction`.
-Renderers must revalidate decision/session keys and projected legality before
-submitting. Notifications may be synchronous and submissions may be rejected;
-follow the
-[reentrant submission contract](state-and-persistence.md#reentrant-ui-submissions).
+Board primary actions route through `ThreeInterface.activatePrimaryAction`;
+renderers revalidate decision/session keys and projected legality before
+submitting
+([reentrant UI submissions](state-and-persistence.md#reentrant-ui-submissions)).
 
 ## AI decisions
 
 The controller's AI timer (never during replays) and the CLI call
-`chooseAiAction(state, actor, { level, seed })` synchronously and pass the
-game seed. Basic and Advanced are deterministic one-ply policies. Hard
-searches:
+`chooseAiAction(state, actor, { level, seed })` synchronously with the game
+seed; the tutorial calls `tutorialPolicy`. Basic (first legal action) and
+Advanced (one-ply score) are deterministic; Hard searches:
 
 ```text
 explainHardDecision                                  ai-hard.ts
@@ -200,27 +86,4 @@ explainHardDecision                                  ai-hard.ts
  └─ choice      = selectSearchedClass(...)           ai-selection.ts
 ```
 
-A fixed budget of engine steps, not a clock, bounds each search. Critical
-positions are searched with a fixed seed and played by best estimate; calm
-ones are sampled among near-equal classes with the seeded selection stream.
-Decisions ignore deck order and the order of cards within zones. The
-information model, determinism contract, and measurements are recorded in
-[`adr/0003-hard-ai-search.md`](adr/0003-hard-ai-search.md).
-
-## Where code belongs
-
-| Concern | Owner |
-| --- | --- |
-| Rules, legality, deterministic transitions | `src/game/` |
-| AI policy | `src/game/ai-policies/` |
-| AI search, evaluation, and seeded randomness | `src/game/ai-*.ts` |
-| Card catalog, shared labels, lobby options, event formatting | `src/app/` |
-| Persisted settings and their guards | `src/app/` |
-| Pointer state or generic render math | `src/renderers/shared/` |
-| GPU resources, picking, effects, layout | `src/renderers/three/` |
-| Native HTML behavior and CSS | `src/renderers/three/` |
-| Terminal prompting and output | `src/cli/` plus `scripts/` adapter |
-
-When unsure, place policy at the innermost layer that can express it without
-depending on an outer interface. Keep exactly one canonical option list,
-default, and guard for each domain concept.
+Budgets, selection, determinism: [ADR 0003](adr/0003-hard-ai-search.md).

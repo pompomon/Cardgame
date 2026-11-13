@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { discoverAiSourceFiles, readSourceWithoutComments } from './helpers/ai-source-files'
 
-// AGENTS.md rule 8 forbids `structuredClone(GameState)` in AI hot loops
-// (evaluation, search and candidate-action scoring), where a per-action deep
-// clone of the whole game state would tank performance. This test enforces
-// the rule statically: no `structuredClone` call may survive in any AI module.
+// The AGENTS.md hard rule "No GameState clones in hot loops" forbids
+// `structuredClone(GameState)` in AI hot loops (evaluation, search and
+// candidate-action scoring), where a per-action deep clone of the whole game
+// state would tank performance. This test enforces the rule statically: no
+// `structuredClone` call may survive in any AI module.
 //
 // AI modules (`src/game/ai.ts`, `src/game/ai-*.ts` and
 // `src/game/ai-policies/*`) are discovered at runtime, so new modules are
