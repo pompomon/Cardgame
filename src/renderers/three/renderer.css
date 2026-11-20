@@ -19,7 +19,21 @@
   overflow: hidden;
 }
 
+/*
+ * The HUD row: the rebuilt HUD (`.three-hud-content`) scrolls beside the
+ * persistent bar (`.three-hud-bar`), which is hidden unless it has content.
+ */
 .three-root--game .three-hud-mount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.three-root--game .three-hud-content {
   height: 100%;
   min-height: 0;
   overflow: auto;
@@ -144,6 +158,13 @@
 .three-root--game[data-shell="rail"] .three-hud-mount,
 .three-root--narrow .three-hud-mount {
   padding: 0;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.three-root--game[data-shell="dock"] .three-hud-content,
+.three-root--game[data-shell="rail"] .three-hud-content,
+.three-root--narrow .three-hud-content {
   overflow: hidden;
   scrollbar-gutter: auto;
 }

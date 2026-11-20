@@ -301,7 +301,10 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   })
   ui.update(view, view.game?.actor ?? 0)
   const content = host.children[0]
-  // The interface owns the dock's prompt (first child) and action row (second).
+  // The interface owns the HUD mount's rebuilt content (first child) and
+  // persistent bar (second), and the dock's prompt and action row likewise.
+  const hudContent = hud?.children[0] ?? null
+  const hudBar = hud?.children[1] ?? null
   const dockPrompt = dock?.children[0] ?? null
   const dockActions = dock?.children[1] ?? null
   const click = (selector: string): ElementStub => {
@@ -317,7 +320,7 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   }
   const update = (next: AppViewModel, actor = next.game?.actor ?? 0): void => { current = next; ui.update(next, actor) }
   return {
-    ui, host, content, hud, dock, dockPrompt, dockActions, board, document, controller, onChange, onBlock, click, openCards, update,
+    ui, host, content, hud, hudContent, hudBar, dock, dockPrompt, dockActions, board, document, controller, onChange, onBlock, click, openCards, update,
     latest: (next: AppViewModel) => { current = next },
   }
 }
@@ -839,8 +842,12 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     expect(h.content.builds).toBe(builds)
     expect(h.content.querySelector('[data-detail-key="cards"]')).toBe(native)
     expect(h.document.activeElement).toBe(h.board)
-    expect(h.hud!.innerHTML).toContain('Saved successfully')
+    expect(h.hudContent!.innerHTML).toContain('Saved successfully')
     expect(h.content.innerHTML).not.toContain('Saved successfully')
+    // The mount keeps its children: only the content's markup is rebuilt.
+    expect(h.hud!.children).toEqual([h.hudContent, h.hudBar])
+    expect(h.hudContent!.matches('.three-hud-content')).toBe(true)
+    expect(h.hudBar!.hidden).toBe(true)
     h.click('[data-action="menu"]')
     expect(h.content.querySelector('dialog')?.open).toBe(true)
     h.update({ ...view, status: 'Menu status changed' })
@@ -848,7 +855,7 @@ describe('Three HUD, lobby navigation and replay log state', () => {
     h.click('[data-action="close"]')
     expect(h.document.activeElement).toBe(h.hud!.querySelector('[data-action="menu"]'))
     h.ui.dispose()
-    expect(h.hud!.innerHTML).toBe('')
+    expect(h.hud!.children).toHaveLength(0)
     expect(h.hud!.listeners.size).toBe(0)
     expect(h.board.isConnected).toBe(true)
   })
@@ -1048,7 +1055,7 @@ describe('Three non-modal hover previews', () => {
     const h = setup(makeView(), true)
     h.board.focus()
     const builds = h.content.builds
-    const hudBuilds = h.hud!.builds
+    const hudBuilds = h.hudContent!.builds
     h.ui.setHover(hit())
     const overlay = h.host.children[2]
     expect(overlay.innerHTML).toContain('class="three-hover-preview" aria-hidden="true"')
@@ -1058,7 +1065,7 @@ describe('Three non-modal hover previews', () => {
     expect(h.ui.isBlocked()).toBe(false)
     expect(h.ui.primaryAction?.disabled).toBe(false)
     expect(h.content.builds).toBe(builds)
-    expect(h.hud!.builds).toBe(hudBuilds)
+    expect(h.hudContent!.builds).toBe(hudBuilds)
     expect(h.onChange).not.toHaveBeenCalled()
     h.ui.activate(hit())
     expect(overlay.innerHTML).toBe('')
@@ -1117,7 +1124,7 @@ describe('Three long-press peek', () => {
   it('opens a decorative peek with the Details rules at the board placement, without focus, blocking or notifications', () => {
     const h = setup(responseView(), true)
     h.board.focus()
-    const builds = [h.content.builds, h.hud!.builds]
+    const builds = [h.content.builds, h.hudContent!.builds]
     const changes = h.onChange.mock.calls.length
     // An Interception card peeks although a response suppresses hover.
     const island = responseHit('required-island')
@@ -1139,7 +1146,7 @@ describe('Three long-press peek', () => {
     expect(overlay(h).querySelector('dialog')).toBeNull()
     expect(h.document.activeElement).toBe(h.board)
     expect(h.ui.isBlocked()).toBe(false)
-    expect([h.content.builds, h.hud!.builds]).toEqual(builds)
+    expect([h.content.builds, h.hudContent!.builds]).toEqual(builds)
     expect(h.onChange).toHaveBeenCalledTimes(changes)
     expect(h.onBlock).not.toHaveBeenCalled()
     h.ui.setPeek(null)
@@ -2174,7 +2181,7 @@ describe('Three narrow profile', () => {
 
   it('replaces the stacked HUD with a fixed top bar and an idle dock prompt', () => {
     const h = setup(makeView(), true, { enabled: true })
-    const hud = h.hud!.innerHTML
+    const hud = h.hudContent!.innerHTML
     expect(hud).toContain('data-layout="narrow"')
     expect(hud).toContain('Turn 1 · Action phase')
     expect(hud).not.toContain('three-required-prompt')
@@ -2277,7 +2284,7 @@ describe('Three narrow profile', () => {
     const h = setup(responseView(), true, { enabled: false })
     expect(promptText(h)).toBe('')
     expect(dockActionNames(h)).toEqual([])
-    expect(h.hud!.innerHTML).not.toContain('data-layout="narrow"')
+    expect(h.hudContent!.innerHTML).not.toContain('data-layout="narrow"')
     h.ui.activate(responseHit(), 'touch')
     expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'counter_land', actor: 0, discardCardId: 'discard-forest-1' })
     expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
@@ -2418,11 +2425,11 @@ describe('Three narrow profile', () => {
     expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
     expect(dockActionNames(h)).toEqual([])
     expect(promptText(h)).toBe('')
-    expect(h.hud!.innerHTML).not.toContain('data-layout="narrow"')
+    expect(h.hudContent!.innerHTML).not.toContain('data-layout="narrow"')
     narrow.enabled = true
     h.update({ ...next, status: 'Folded' })
     expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
-    expect(h.hud!.innerHTML).toContain('data-layout="narrow"')
+    expect(h.hudContent!.innerHTML).toContain('data-layout="narrow"')
     h.ui.dispose()
   })
 
@@ -2498,7 +2505,7 @@ describe('Three narrow profile', () => {
     expect(promptText(h)).toBe('Player 1 wins!')
     expect(dockActionNames(h)).toEqual(['replay-start', 'rematch', 'back-to-lobby'])
     expect(h.dockActions!.querySelector('[data-action="back-to-lobby"]')?.getAttribute('aria-label')).toBe('Back to Lobby')
-    expect(h.hud!.innerHTML).not.toContain('Player 1 wins!')
+    expect(h.hudContent!.innerHTML).not.toContain('Player 1 wins!')
     h.click('[data-action="rematch"]')
     expect(h.controller.rematch).toHaveBeenCalledOnce()
     h.ui.dispose()
@@ -2510,7 +2517,7 @@ describe('Three narrow profile', () => {
     expect(dockActionNames(r)).toEqual(['replay-playpause', 'replay-prev', 'replay-next', 'replay-end', 'replay-exit'])
     expect(r.dockActions!.querySelector('[data-action="replay-playpause"]')?.getAttribute('aria-label')).toBe('Play Replay')
     expect(r.dockActions!.querySelector('[data-action="replay-prev"]')?.hasAttribute('disabled')).toBe(true)
-    expect(r.hud!.innerHTML).not.toContain('replay-')
+    expect(r.hudContent!.innerHTML).not.toContain('replay-')
     r.click('[data-action="replay-next"]')
     expect(r.controller.stepReplay).toHaveBeenCalledExactlyOnceWith(1)
     r.ui.dispose()
@@ -2519,7 +2526,7 @@ describe('Three narrow profile', () => {
     waiting.game!.canInput = false
     const w = setup(waiting, true, { enabled: true })
     expect(promptText(w)).toBe('Waiting for the other player.')
-    expect(w.hud!.innerHTML).not.toContain('Waiting for the other player.')
+    expect(w.hudContent!.innerHTML).not.toContain('Waiting for the other player.')
     w.ui.activate(mountainHand, 'touch')
     expect(w.ui.selection).toBe(NO_BOARD_SELECTION)
     w.ui.dispose()
@@ -2584,7 +2591,7 @@ describe('Three narrow profile', () => {
     const h = setup(view, true, { enabled: true })
     expect(h.content.querySelector('.three-tutorial-banner')?.getAttribute('aria-label')).toBe('Tutorial hint')
     expect(h.content.innerHTML).toContain('&lt;Summon a creature&gt;')
-    expect(h.hud!.innerHTML).not.toContain('Summon a creature')
+    expect(h.hudContent!.innerHTML).not.toContain('Summon a creature')
     h.click('[data-action="tutorial-dismiss"]')
     expect(h.content.querySelector('.three-tutorial-banner')).toBeNull()
     expect(h.document.activeElement).toBe(h.hud!.querySelector('[data-action="tutorial-show"]'))
@@ -2684,10 +2691,10 @@ describe('Three narrow profile', () => {
   it('leaves the desktop interface to the board instruction during a drag', () => {
     const h = setup(makeView(), true)
     const content = h.content.innerHTML
-    const hud = h.hud!.innerHTML
+    const hud = h.hudContent!.innerHTML
     h.ui.setDragFeedback({ cardId: 'source', accepted: true })
     expect(h.content.innerHTML).toBe(content)
-    expect(h.hud!.innerHTML).toBe(hud)
+    expect(h.hudContent!.innerHTML).toBe(hud)
     expect(renderThreeDock(makeView(), { ...defaultUi, shell: 'narrow', dragFeedback: { cardId: 'source', accepted: true } }).prompt)
       .toBe(`Release to summon ${displayCardName('Mountain')}. Drag back to your hand to cancel.`)
     expect(renderThreeDock(makeView(), {
@@ -2703,7 +2710,7 @@ describe('Three narrow profile', () => {
     const summary = 'Adventure Tier 3/7 · Chances 2 · Win streak 1 · High score 4'
     expect(renderThreeHud(view, defaultUi)).toContain(summary)
     const h = setup(view, true, { enabled: true })
-    expect(h.hud!.innerHTML).not.toContain(summary)
+    expect(h.hudContent!.innerHTML).not.toContain(summary)
     h.click('[data-action="menu"]')
     expect(h.content.innerHTML).toContain(summary)
     const ids = [h.hud!, h.host, h.dock!].flatMap((root) => root.querySelectorAll('[id]').map((element) => element.id))
@@ -2736,8 +2743,8 @@ describe('Three narrow profile', () => {
 
     it.each(['dock', 'rail'] as const)('gives the %s shell the touch top bar, dock prompt and tap-to-select', (shell) => {
       const h = setup(makeView(), true, touchShell(shell))
-      expect(h.hud!.innerHTML).toContain(`data-layout="${shell}"`)
-      expect(h.hud!.innerHTML).not.toContain('three-required-prompt')
+      expect(h.hudContent!.innerHTML).toContain(`data-layout="${shell}"`)
+      expect(h.hudContent!.innerHTML).not.toContain('three-required-prompt')
       expect(h.dockPrompt!.id).toBe(THREE_DOCK_PROMPT_ID)
       expect(promptText(h)).toBe('Drag a highlighted creature onto your board, or select a card for options.')
       h.ui.activate(mountainHand, 'touch')
@@ -2765,7 +2772,7 @@ describe('Three narrow profile', () => {
       expect(actions).toContain('confirm-target')
       for (const next of ['dock', 'rail', 'narrow', 'rail', 'dock'] as const) {
         fold(h, shell, next, view)
-        expect(h.hud!.innerHTML).toContain(`data-layout="${next}"`)
+        expect(h.hudContent!.innerHTML).toContain(`data-layout="${next}"`)
         expect(h.ui.selection).toEqual(selection)
         expect(promptText(h)).toBe(prompt)
         expect(dockActionNames(h)).toEqual(actions)
@@ -2797,7 +2804,7 @@ describe('Three narrow profile', () => {
       expect(h.ui.selection).toBe(NO_BOARD_SELECTION)
       expect(dockActionNames(h)).toEqual([])
       expect(promptText(h)).toBe('')
-      expect(h.hud!.innerHTML).not.toContain(`data-layout="${start}"`)
+      expect(h.hudContent!.innerHTML).not.toContain(`data-layout="${start}"`)
       // As before this shell, the pending summon continues in the desktop
       // target picker; only the touch list and the chosen target are dropped.
       expect(h.content.querySelector('[data-action="target-list-hide"]')).toBeNull()
@@ -3882,7 +3889,7 @@ describe('Three status announcer', () => {
     expect([region.getAttribute('role'), region.getAttribute('aria-live'), region.getAttribute('aria-atomic')]).toEqual(['status', 'polite', 'true'])
     expect(announcement(h.host)).toBe('Ready')
     // The visible status is plain text, so it is not read twice.
-    expect(h.hud!.innerHTML).toContain('<p>Ready</p>')
+    expect(h.hudContent!.innerHTML).toContain('<p>Ready</p>')
     h.update({ ...view, status: 'Recording saved.' })
     expect(h.host.querySelector(`#${THREE_STATUS_ANNOUNCER_ID}`)).toBe(region)
     expect(announcement(h.host)).toBe('Recording saved.')

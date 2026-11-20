@@ -141,6 +141,10 @@ renderer failure panel focuses Retry, else Reload (`renderer-host.test.ts`).
 - Long labels and imported text wrap, never truncate; scrolling panels get an
   explicit size boundary. Prompts stay in stage overlays
   ([renderer rules](three-renderer.md#rules)).
+- The HUD mount (`.three-hud-mount`) is a grid of two persistent children:
+  `.three-hud-content`, whose markup `render()` replaces and which scrolls
+  in the desktop shell, and `.three-hud-bar` beside it, hidden while empty.
+  Write into the children, never the mount.
 - HTML assertions do not prove readable layout: run the
   [browser checks](browser-checks.md).
 

@@ -141,6 +141,10 @@ export class ThreeInterface {
   private readonly hoverContent: HTMLElement
   private readonly announcer: HTMLElement
   private readonly hudHost: HTMLElement | null
+  // Persistent children of `hudHost`: the HUD markup is rebuilt into
+  // `hudContent`, while `hudBar` beside it keeps its own nodes.
+  private readonly hudContent: HTMLElement | null
+  private readonly hudBar: HTMLElement | null
   private readonly dockHost: HTMLElement | null
   private readonly dockPrompt: HTMLElement | null
   private readonly dockActions: HTMLElement | null
@@ -189,6 +193,17 @@ export class ThreeInterface {
     } else {
       this.dockPrompt = null
       this.dockActions = null
+    }
+    if (hudHost) {
+      this.hudContent = this.document.createElement('div')
+      this.hudContent.classList.add('three-hud-content')
+      this.hudBar = this.document.createElement('div')
+      this.hudBar.classList.add('three-hud-bar')
+      this.hudBar.hidden = true
+      hudHost.append(this.hudContent, this.hudBar)
+    } else {
+      this.hudContent = null
+      this.hudBar = null
     }
     host.classList.add('three-interface')
     this.content = this.document.createElement('div')
@@ -747,8 +762,8 @@ export class ThreeInterface {
       if (oldDialog?.open && typeof oldDialog.close === 'function') oldDialog.close()
       this.content.innerHTML = markup
     }
-    if (this.hudHost && hudMarkup !== this.hudMarkup) {
-      this.hudHost.innerHTML = hudMarkup
+    if (this.hudHost && this.hudContent && hudMarkup !== this.hudMarkup) {
+      this.hudContent.innerHTML = hudMarkup
       this.hudHost.hidden = !hudMarkup
     }
     if (this.dockActions && dockChanged) this.dockActions.innerHTML = dock.actions
