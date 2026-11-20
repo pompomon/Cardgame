@@ -48,6 +48,15 @@ describe('Three.js native card and preview layout', () => {
     expect(cardsDialog).toContain('env(safe-area-inset-right)')
   })
 
+  it('fits the desktop Auto battle bar beside the HUD, with a full-size Take control', () => {
+    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-bar \{[^}]*align-self: stretch;[^}]*min-height: 0;[^}]*overflow: auto;/)
+    const bar = ruleBody('.three-interface .three-auto-battle-bar')
+    expect(bar).toContain('flex-wrap: wrap;')
+    expect(bar).toContain('max-width: min(22rem, 40vw);')
+    // Take control keeps the 44px minimum of every interface button.
+    expect(ruleBody('.three-interface .three-auto-battle-bar button')).not.toMatch(/min-(?:height|width)/)
+  })
+
   it('keeps hover previews decorative, input-transparent and height-bounded', () => {
     const hover = '.three-interface .three-hover-preview'
     expect(ruleBody(hover)).toContain('pointer-events: none;')

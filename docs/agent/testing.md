@@ -145,6 +145,30 @@ writes use `src/test/helpers/tracked-storage.ts`: `calls` records each
 `set:<key>` and `remove:<key>`, and `failingSets`, `failingRemoves` and
 `failingGets` refuse operations per key.
 
+### Auto battle controls
+
+The [Auto battle](three-interface.md#auto-battle) switch and Take control name
+the state they set, so `three-interface.test.ts` runs them through the matrix
+with their own stale-input rule. A real `AppController` drives a `local-hvai`
+game and, through `setupRealAdventure()`, the map and an encounter; the other
+cases present each setting synchronously from a mocked controller.
+
+- **Synchronous notification:** the setting applies once and is announced;
+  the switch keeps focus as it flips, in the Game Menu and on the map.
+- **Stale input:** a control whose view moved on behind the interface still
+  applies its state, once. One with nothing to set dispatches nothing and
+  refreshes the interface.
+- **Duplicate activation:** a repeat before or after the re-render, a held
+  Enter or Space, or End Turn within `THREE_TAKE_CONTROL_GUARD_MS` of Take
+  control adds nothing.
+- **Disposal during notification:** before or after the update, nothing
+  throws, renders, moves focus or leaves a timer.
+- **Every shell:** AI moves never rebuild Take control (`builds` unchanged,
+  same node), and Take control hands focus to Menu, never End Turn.
+
+A result waiting to be saved hides both controls until Retry saves it. Target
+cardinality does not apply.
+
 ## Malformed Adventure saves
 
 - `src/test/fixtures/adventure-malformed-v2.ts` builds 14 deep-frozen schema

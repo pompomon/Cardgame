@@ -41,6 +41,14 @@
   scrollbar-gutter: stable;
 }
 
+/* Spans the row like the HUD and scrolls once its text grows taller. */
+.three-root--game .three-hud-bar {
+  align-self: stretch;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .three-stage {
   position: relative;
   width: 100%;

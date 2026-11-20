@@ -23,13 +23,19 @@ import {
 import { createInitialGame } from '../game/engine'
 import { BASIC_LANDS, type BasicLand, type GameState } from '../game/types'
 import { escapeHtml, noteRasterCardArtLoadFailure, resetRasterCardArtLoadFailuresForTests } from '../renderers/three/native-html'
-import { THREE_ANNOUNCER_SETTLE_MS, THREE_STATUS_ANNOUNCER_ID, ThreeInterface } from '../renderers/three/interface'
+import {
+  THREE_ANNOUNCER_SETTLE_MS,
+  THREE_STATUS_ANNOUNCER_ID,
+  THREE_TAKE_CONTROL_GUARD_MS,
+  ThreeInterface,
+} from '../renderers/three/interface'
 import {
   canThreeInput,
   isThreeMode,
   renderThreeDock,
   renderThreeInterface,
   renderThreeHud,
+  renderThreeHudBar,
   threeDecisionKey,
   threePrimaryAction,
   threeResponse,
@@ -4321,6 +4327,9 @@ describe('Three Adventure transition focus', () => {
     }
     const options = ['lobby-settings', 'lobby-recording']
     expect(stops(hubView())).toEqual(['tier-2-left', 'tier-2-right', 'pause-adventure', 'abandon-adventure', ...options])
+    // Auto battle's switch follows Recording while the run goes on.
+    expect(stops({ ...hubView(), autoBattle: { available: true, enabled: false, active: false } }))
+      .toEqual(['tier-2-left', 'tier-2-right', 'pause-adventure', 'abandon-adventure', ...options, 'auto-battle'])
     // Relics are listed before the reward but are text, not stops.
     expect(stops(rewardView({ relics: [...HUB_RELICS] }))).toEqual([
       'second-wind', 'guardian-sigil', 'prepared-pack', 'adventure-reward-skip', 'pause-adventure', 'abandon-adventure', ...options,
@@ -4495,6 +4504,375 @@ describe('Three Adventure reward across Pause and Reset', () => {
       expect(r.controller.chooseAdventureReward).not.toHaveBeenCalled()
       expect(r.controller.skipAdventureReward).not.toHaveBeenCalled()
       r.dispose()
+    })
+  })
+})
+
+// Auto battle: Hard plays the human's seat in Human vs AI games. The switch
+// and Take control set, never toggle, so they run the stateful UI regression
+// matrix (docs/agent/testing.md) with their own stale-input rule.
+const AUTO_BATTLE_SWITCH = '[role="switch"][data-action="auto-battle"]'
+const TAKE_CONTROL = 'button:not([role])[data-action="auto-battle"]'
+const AUTO_BATTLE_PROMPT = 'Auto battle: the Hard AI is playing for you.'
+const AUTO_BATTLE_SHELLS = [
+  ['desktop', { enabled: false }],
+  ['narrow', { enabled: true, shell: 'narrow' }],
+  ['dock', { enabled: true, shell: 'dock' }],
+  ['rail', { enabled: true, shell: 'rail' }],
+] as const
+
+/** The view after setting Auto battle, as the view model presents it. */
+function withAutoBattle(view: AppViewModel, enabled: boolean): AppViewModel {
+  const game = view.game
+  const playing = !!game && game.phase !== 'gameOver'
+  const active = enabled && view.autoBattle.available && playing
+  return {
+    ...view, autoBattle: { available: view.autoBattle.available, enabled, active },
+    game: game && playing && game.actor === 0 ? { ...game, actorControl: active ? 'ai' : 'human', canInput: !active } : game,
+  }
+}
+
+/** A Human vs AI game on the human's turn. */
+function autoBattleView(enabled = true, mode: 'local-hvai' | 'adventure-hvai' = 'local-hvai'): AppViewModel {
+  const view = makeView()
+  return withAutoBattle({
+    ...view, mode, controllers: ['human', 'ai'], autoBattle: { available: true, enabled: false, active: false },
+    adventure: mode === 'adventure-hvai'
+      ? { ...view.adventure, runId: 'run-1', status: 'active', stage: 'encounter', currentTier: 2, decisionKey: 'run-1|left|0|' }
+      : view.adventure,
+  }, enabled)
+}
+
+/** One AI move: the turn, the player, the status and the log move on. */
+function autoMove(view: AppViewModel, step: number): AppViewModel {
+  const game = view.game!
+  return { ...view, status: `Move ${step}.`, game: { ...game, turn: game.turn + step, actor: step % 2, log: [...game.log, `Move ${step}.`] } }
+}
+
+describe('Three Auto battle controls', () => {
+  type Harness = ReturnType<typeof setup>
+  const promptText = (h: Harness): string => (h.dockPrompt as unknown as { textContent?: string }).textContent ?? ''
+  const actions = (root: ElementStub | null): string[] => root?.querySelectorAll('button').map((element) => element.dataset.action ?? '') ?? []
+  /** The controller presents each setting synchronously, as the renderer does. */
+  const presentSettings = (h: Harness): void => {
+    h.controller.setAutoBattle.mockImplementation((enabled) => h.update(withAutoBattle(h.controller.getViewModel(), enabled)))
+  }
+  const keydown = (h: Harness, key: string, repeat: boolean, target: ElementStub | null) => {
+    const event = { key, repeat, target, preventDefault: vi.fn() }
+    h.document.emit('keydown', event)
+    return event.preventDefault
+  }
+
+  it.each(['local-hvai', 'adventure-hvai'] as const)('offers the %s Game Menu a switch, after Cards, that names the state it sets', (mode) => {
+    const menu = (enabled: boolean): string => renderThreeInterface(autoBattleView(enabled, mode), { ...defaultUi, menuOpen: true })
+    expect(menu(false)).toContain('<button type="button" class="three-auto-battle-switch" data-action="auto-battle" data-auto-battle="on" role="switch" aria-checked="false">Auto battle <span aria-hidden="true">Off</span></button>')
+    expect(menu(true)).toContain('<button type="button" class="three-auto-battle-switch" data-action="auto-battle" data-auto-battle="off" role="switch" aria-checked="true">Auto battle <span aria-hidden="true">On</span></button>')
+    const h = setup(autoBattleView(false, mode))
+    h.click('[data-action="menu"]')
+    const order = actions(h.content.querySelector('[data-modal="menu"]'))
+    expect(order.slice(order.indexOf('cards'), order.indexOf('cards') + 2)).toEqual(['cards', 'auto-battle'])
+    h.ui.dispose()
+  })
+
+  it('leaves the switch out of other modes and of a replay', () => {
+    withFakeTimers(() => {
+      const menu = (view: AppViewModel): string => renderThreeInterface(view, { ...defaultUi, menuOpen: true })
+      const real = new AppController()
+      for (const mode of ['tutorial', 'local-hvh', 'local-aivai'] as const) {
+        real.startGame(mode)
+        expect(menu(real.getViewModel())).toContain('data-action="cards"')
+        expect(menu(real.getViewModel())).not.toContain('auto-battle')
+      }
+      real.startGame('local-hvai')
+      real.setAutoBattle(true)
+      expect(menu(real.getViewModel())).toContain('aria-checked="true"')
+      real.startReplay()
+      const replay = real.getViewModel()
+      expect(replay.autoBattle).toEqual({ available: false, enabled: true, active: false })
+      expect(menu(replay)).not.toContain('auto-battle')
+      for (const ui of [defaultUi, { ...defaultUi, shell: 'rail' as const }]) {
+        expect(renderThreeHudBar(replay, ui)).toBe('')
+        expect(renderThreeDock(replay, ui).actions).not.toContain('auto-battle')
+      }
+      real.backToLobby()
+    })
+  })
+
+  it('carries Auto battle from the map into an encounter, past a refused result, and off again on the map', () => {
+    withFakeTimers(() => {
+      const r = setupRealAdventure()
+      r.controller.setAutoBattle.mockImplementation((enabled) => r.real.setAutoBattle(enabled))
+      r.click('[data-mode="adventure-hvai"]')
+      const on = r.click(AUTO_BATTLE_SWITCH)
+      expect(r.controller.setAutoBattle).toHaveBeenCalledExactlyOnceWith(true)
+      expect(announcement(r.host)).toBe('Auto battle on: the Hard AI will play your next game.')
+      // The rebuilt switch keeps focus; the map's own focus stays put.
+      const flipped = r.content.querySelector(AUTO_BATTLE_SWITCH)
+      expect(flipped).not.toBe(on)
+      expect(flipped?.getAttribute('aria-checked')).toBe('true')
+      expect(r.document.activeElement).toBe(flipped)
+      r.startFirstNode()
+      expect(r.real.getViewModel().autoBattle).toEqual({ available: true, enabled: true, active: true })
+      expect(r.real.getViewModel().status).toMatch(/ Auto battle is on\.$/)
+      expect(r.content.querySelector(TAKE_CONTROL)).not.toBeNull()
+      // While storage refuses the result, nothing plays and neither control is offered.
+      r.storage.failingSets.add(ADVENTURE_RUN_STORAGE_KEY)
+      r.finish(0)
+      expect(r.real.getViewModel().autoBattle).toEqual({ available: false, enabled: true, active: false })
+      r.click('[data-action="menu"]')
+      expect(r.content.querySelector('[data-modal="menu"]')).not.toBeNull()
+      expect(r.content.querySelector('[data-action="auto-battle"]')).toBeNull()
+      r.click('[data-action="close"]')
+      r.storage.failingSets.delete(ADVENTURE_RUN_STORAGE_KEY)
+      r.click('[data-action="adventure-retry-completion"]')
+      expect(r.real.getViewModel().game).toBeNull()
+      // Back on the map, the switch is still on; turning it off keeps focus on it.
+      const off = r.click(AUTO_BATTLE_SWITCH)
+      expect(off.getAttribute('aria-checked')).toBe('true')
+      expect(r.controller.setAutoBattle).toHaveBeenLastCalledWith(false)
+      expect(r.real.getViewModel().autoBattle).toEqual({ available: true, enabled: false, active: false })
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(r.host)).toBe('Auto battle off: you play your own turns.')
+      const reset = r.content.querySelector(AUTO_BATTLE_SWITCH)
+      expect(reset?.getAttribute('aria-checked')).toBe('false')
+      expect(r.document.activeElement).toBe(reset)
+      r.dispose()
+    })
+  })
+
+  it('hands a real Human vs AI game to Hard and back, refusing moves in between', () => {
+    withFakeTimers(() => {
+      const real = new AppController()
+      real.startGame('local-hvai')
+      const h = setup(real.getViewModel(), true, { enabled: true, shell: 'rail' })
+      h.controller.getViewModel.mockImplementation(() => real.getViewModel())
+      h.controller.setAutoBattle.mockImplementation((enabled) => real.setAutoBattle(enabled))
+      h.controller.submitAction.mockImplementation((action) => real.submitAction(action))
+      const unsubscribe = real.subscribe((view) => h.update(view))
+      h.click('[data-action="menu"]')
+      h.click(AUTO_BATTLE_SWITCH)
+      // The flipped switch rebuilds the Game Menu, so its status waits for the announcer to settle.
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(h.host)).toBe('Auto battle on: the Hard AI is playing for you. Choose Take control to play yourself.')
+      h.click('[data-action="close"]')
+      expect(promptText(h)).toBe(AUTO_BATTLE_PROMPT)
+      const card = real.getViewModel().game!.players[0].handCards[0]
+      h.ui.playCard(card.id)
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      expect(h.ui.primaryAction).toBeNull()
+      h.click(TAKE_CONTROL)
+      expect(real.getViewModel().autoBattle).toEqual({ available: true, enabled: false, active: false })
+      expect(h.document.activeElement?.dataset.action).toBe('menu')
+      vi.advanceTimersByTime(THREE_ANNOUNCER_SETTLE_MS)
+      expect(announcement(h.host)).toBe('Auto battle off: you play your own turns.')
+      expect(h.ui.primaryAction).toMatchObject({ type: 'end_turn', disabled: false })
+      unsubscribe()
+      h.ui.dispose()
+    })
+  })
+
+  it.each(AUTO_BATTLE_SHELLS)('keeps one Take control node in the %s shell across moves by the AI', (shell, profile) => {
+    const view = autoBattleView()
+    const h = setup(view, true, profile)
+    const touch = shell !== 'desktop'
+    const root = touch ? h.dockActions! : h.hudBar!
+    const take = root.querySelector(TAKE_CONTROL)
+    expect(actions(root)).toEqual(['auto-battle'])
+    expect(take?.dataset.autoBattle).toBe('off')
+    expect(actions(touch ? h.hudBar : h.dockActions)).toEqual([])
+    expect(h.hudBar!.hidden).toBe(touch)
+    if (touch) {
+      expect(promptText(h)).toBe(AUTO_BATTLE_PROMPT)
+      // The status announcer speaks the setting, so the prompt stays quiet.
+      expect(h.dockPrompt!.getAttribute('aria-live')).toBe('off')
+    } else {
+      expect(h.hudBar!.innerHTML).toContain('<div class="three-auto-battle-bar" role="group" aria-label="Auto battle"><p>The Hard AI is playing for you.</p>')
+      expect(h.hudBar!.innerHTML).toContain('>Take control</button>')
+    }
+    const builds = [root.builds, h.hudContent!.builds]
+    for (let step = 1; step <= 4; step += 1) {
+      h.update(autoMove(view, step))
+      expect(h.hudContent!.innerHTML).not.toContain('Waiting for the other player.')
+    }
+    // The moves rebuilt the HUD, never Take control.
+    expect([root.builds, h.hudContent!.builds]).toEqual([builds[0], builds[1] + 4])
+    expect(root.querySelector(TAKE_CONTROL)).toBe(take)
+    expect(take?.isConnected).toBe(true)
+    if (touch) expect(promptText(h)).toBe(AUTO_BATTLE_PROMPT)
+    else {
+      h.update(withAutoBattle(autoMove(view, 5), false))
+      expect(h.hudContent!.innerHTML).toContain('Waiting for the other player.')
+      expect([h.hudBar!.hidden, h.hudBar!.innerHTML]).toEqual([true, ''])
+    }
+    h.ui.dispose()
+  })
+
+  it('falls back to an inline bar without a HUD host', () => {
+    const h = setup(autoBattleView())
+    presentSettings(h)
+    expect(h.content.querySelector('.three-auto-battle-bar')).not.toBeNull()
+    h.click(TAKE_CONTROL)
+    expect(h.controller.setAutoBattle).toHaveBeenCalledExactlyOnceWith(false)
+    expect(h.content.querySelector('.three-auto-battle-bar')).toBeNull()
+    expect(h.document.activeElement?.dataset.action).toBe('menu')
+    h.ui.dispose()
+  })
+
+  it.each(AUTO_BATTLE_SHELLS)('hands the %s shell back on Take control with focus on Menu, never End Turn', (_shell, profile) => {
+    const h = setup(autoBattleView(), true, profile)
+    presentSettings(h)
+    // The renderer's board primary, End Turn, follows the dock's actions.
+    const endTurn = h.document.createElement('button')
+    endTurn.setAttribute('class', 'three-board-primary')
+    h.dock!.append(endTurn)
+    h.click(TAKE_CONTROL)
+    expect(h.controller.setAutoBattle).toHaveBeenCalledExactlyOnceWith(false)
+    const menu = h.hudContent!.querySelector('[data-action="menu"]')
+    expect(h.document.activeElement).toBe(menu)
+    expect(menu?.focusOptions).toEqual({ preventScroll: true })
+    expect([...actions(h.hudBar), ...actions(h.dockActions)]).not.toContain('auto-battle')
+    expect(h.ui.primaryAction).toMatchObject({ type: 'end_turn', disabled: false })
+    h.ui.dispose()
+  })
+
+  it('ignores End Turn for a moment after Take control, where a double click or second tap lands', () => {
+    withFakeTimers(() => {
+      const h = setup(autoBattleView(), true, { enabled: true, shell: 'rail' })
+      presentSettings(h)
+      h.click(TAKE_CONTROL)
+      const endTurn = h.ui.primaryAction!
+      h.ui.activatePrimaryAction(endTurn)
+      vi.advanceTimersByTime(THREE_TAKE_CONTROL_GUARD_MS - 1)
+      h.ui.activatePrimaryAction(endTurn)
+      expect(h.controller.submitAction).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      h.ui.activatePrimaryAction(endTurn)
+      expect(h.controller.submitAction).toHaveBeenCalledExactlyOnceWith({ type: 'end_turn', actor: 0 })
+      // Disposal clears a running guard.
+      h.update(withAutoBattle(h.controller.getViewModel(), true))
+      h.click(TAKE_CONTROL)
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+      h.ui.dispose()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+  })
+
+  it('sets Auto battle once for a repeat before or after the redraw', () => {
+    const h = setup(autoBattleView(), true, { enabled: false })
+    // The controller moves on; the frame is presented later.
+    h.controller.setAutoBattle.mockImplementation((enabled) => h.latest(withAutoBattle(h.controller.getViewModel(), enabled)))
+    const take = h.click(TAKE_CONTROL)
+    expect(h.controller.setAutoBattle).toHaveBeenCalledExactlyOnceWith(false)
+    expect(take.isConnected).toBe(true)
+    const changes = h.onChange.mock.calls.length
+    // The repeat finds nothing to set and only catches the interface up.
+    h.hud!.emit('click', { target: take })
+    expect(h.controller.setAutoBattle).toHaveBeenCalledOnce()
+    expect(h.onChange).toHaveBeenCalledTimes(changes + 1)
+    expect([take.isConnected, h.hudBar!.hidden]).toEqual([false, true])
+    expect(h.document.activeElement?.dataset.action).toBe('menu')
+    // After the redraw, the removed node does nothing.
+    h.hud!.emit('click', { target: take })
+    expect(h.controller.setAutoBattle).toHaveBeenCalledOnce()
+    h.ui.dispose()
+  })
+
+  it('applies a stale Take control, which names its state, where stale decisions are dropped', () => {
+    const view = autoBattleView()
+    const h = setup(view, true, { enabled: true, shell: 'rail' })
+    presentSettings(h)
+    // The AI moved behind the interface.
+    h.latest(autoMove(view, 2))
+    h.click(TAKE_CONTROL)
+    expect(h.controller.setAutoBattle).toHaveBeenCalledExactlyOnceWith(false)
+    expect(h.controller.getViewModel()).toMatchObject({ status: 'Move 2.', autoBattle: { enabled: false } })
+    expect(h.ui.primaryAction).toMatchObject({ type: 'end_turn', disabled: false })
+    h.ui.dispose()
+  })
+
+  it('only catches up a control whose state is set already or cannot be set', () => {
+    const view = autoBattleView()
+    const h = setup(view, true, { enabled: false })
+    // Turned off elsewhere: Take control has nothing left to set.
+    h.latest(withAutoBattle(view, false))
+    h.click(TAKE_CONTROL)
+    expect(h.hudBar!.hidden).toBe(true)
+    // A replay began behind the open Game Menu: the switch cannot turn on.
+    h.click('[data-action="menu"]')
+    const off = h.controller.getViewModel()
+    h.latest({
+      ...off, replay: { ...off.replay, active: true }, autoBattle: { available: false, enabled: false, active: false },
+      game: { ...off.game!, isReplay: true, canInput: false },
+    })
+    h.click(AUTO_BATTLE_SWITCH)
+    expect(h.content.querySelector('[data-action="auto-battle"]')).toBeNull()
+    // An unknown or missing state sets nothing.
+    const other = setup(autoBattleView(), true, { enabled: false })
+    const take = other.hudBar!.querySelector(TAKE_CONTROL)!
+    take.setAttribute('data-auto-battle', 'toggle')
+    other.click(TAKE_CONTROL)
+    delete take.dataset.autoBattle
+    other.click(TAKE_CONTROL)
+    expect(h.controller.setAutoBattle).not.toHaveBeenCalled()
+    expect(other.controller.setAutoBattle).not.toHaveBeenCalled()
+    expect(other.onChange).not.toHaveBeenCalled()
+    h.ui.dispose()
+    other.ui.dispose()
+  })
+
+  it('keeps the Game Menu open, with focus on its switch, as it flips', () => {
+    const h = setup(autoBattleView(false), true, { enabled: false })
+    presentSettings(h)
+    h.click('[data-action="menu"]')
+    for (const enabled of [true, false]) {
+      h.click(AUTO_BATTLE_SWITCH)
+      expect(h.controller.setAutoBattle).toHaveBeenLastCalledWith(enabled)
+      const toggle = h.content.querySelector(AUTO_BATTLE_SWITCH)
+      expect(toggle?.getAttribute('aria-checked')).toBe(String(enabled))
+      expect(h.document.activeElement).toBe(toggle)
+      expect(h.content.querySelector('[data-modal="menu"]')?.contains(toggle)).toBe(true)
+      // Behind the modal Game Menu, the bar follows the setting.
+      expect(h.hudBar!.hidden).toBe(!enabled)
+    }
+    expect(h.controller.setAutoBattle).toHaveBeenCalledTimes(2)
+    h.ui.dispose()
+  })
+
+  it('lets a held Enter or Space set Auto battle once, and not open the Menu it focuses', () => {
+    withFakeTimers(() => {
+      const h = setup(autoBattleView(), true, { enabled: false })
+      presentSettings(h)
+      const take = h.hudBar!.querySelector(TAKE_CONTROL)
+      // The first press is the browser's click; its repeats do nothing.
+      expect(keydown(h, 'Enter', false, take)).not.toHaveBeenCalled()
+      for (const key of ['Enter', ' ']) expect(keydown(h, key, true, take)).toHaveBeenCalledOnce()
+      h.click(TAKE_CONTROL)
+      const menu = h.document.activeElement
+      expect(menu?.dataset.action).toBe('menu')
+      for (const key of ['Enter', ' ']) expect(keydown(h, key, true, menu)).toHaveBeenCalledOnce()
+      vi.advanceTimersByTime(THREE_TAKE_CONTROL_GUARD_MS)
+      expect(keydown(h, 'Enter', true, menu)).not.toHaveBeenCalled()
+      h.ui.dispose()
+    })
+  })
+
+  it.each(['before', 'after'] as const)('survives disposal %s Take control is presented', (order) => {
+    withFakeTimers(() => {
+      const h = setup(autoBattleView(), true, { enabled: true, shell: 'rail' })
+      const builds = (): unknown[] => [h.content.builds, h.hudContent!.builds, h.hudBar!.builds, h.dockActions!.builds, announcement(h.host)]
+      let disposed: { builds: unknown[]; focus: ElementStub | null } | null = null
+      h.controller.setAutoBattle.mockImplementation((enabled) => {
+        const next = withAutoBattle(h.controller.getViewModel(), enabled)
+        if (order === 'after') h.update(next)
+        h.ui.dispose()
+        disposed = { builds: builds(), focus: h.document.activeElement }
+        if (order === 'before') h.update(next)
+      })
+      expect(() => h.click(TAKE_CONTROL)).not.toThrow()
+      expect(h.controller.setAutoBattle).toHaveBeenCalledExactlyOnceWith(false)
+      expect(disposed).toEqual({ builds: builds(), focus: expect.anything() })
+      expect(h.document.activeElement).toBe(disposed!.focus)
+      expect(vi.getTimerCount()).toBe(0)
     })
   })
 })

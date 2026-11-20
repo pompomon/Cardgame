@@ -8,7 +8,8 @@ Native HTML and CSS of the Three.js renderer in `src/renderers/three/`.
   `escapeHtml()` (`native-html.ts`); add no second markup renderer.
 - `ThreeInterface.latestForAction` drops input once `threeDecisionKey`
   changes, so each new hub decision (node, reward offer) must change
-  `adventure.decisionKey` (built in `src/app/view-model.ts`).
+  `adventure.decisionKey` (built in `src/app/view-model.ts`). Only the
+  [Auto battle](#auto-battle) controls, which name the state they set, skip it.
 - Element `id`s are unique; a button in both the lobby and the in-game menu
   uses `class`/`data-action` (the `abandon-adventure` pattern).
 - Create live regions once, never in markup `render()` rebuilds; status text
@@ -62,7 +63,7 @@ renderer failure panel focuses Retry, else Reload (`renderer-host.test.ts`).
   trailing no-break space. Playback silences only `replayStepStatus()`.
 - `#three-dock-prompt` (`role="status"`), the touch shells' second region,
   speaks what the status line does not (the winner) and describes the docked
-  primary button. `ThreeDockModel.quiet` (replay counts) sets
+  primary button. `ThreeDockModel.quiet` (replay counts, Auto battle) sets
   `aria-live="off"` before the text changes.
 - `setDragFeedback()` and `setPeek()` re-render without `onChange`, replacing
   only the dock prompt, never for stale feedback or under a menu, Cards or
@@ -110,7 +111,8 @@ renderer failure panel focuses Retry, else Reload (`renderer-host.test.ts`).
 - **Result.** `three-adventure-result-detail` describes its heading: chances
   left, relic charges used, next step.
 - **Tab order.** Nodes (or Choose and Skip), Pause and Reset (Start New
-  Adventure and Back to Lobby after the run), then Settings and Recording.
+  Adventure and Back to Lobby after the run), then Settings, Recording and,
+  during a run, the [Auto battle](#auto-battle) switch.
   Headings are `tabindex="-1"`; relics and the map key have no tab stops
   (`three-interface.test.ts`).
 - **No motion** in hub, reward, result or announcer CSS: no transitions,
@@ -122,6 +124,47 @@ renderer failure panel focuses Retry, else Reload (`renderer-host.test.ts`).
   A refused Retry keeps the menu open, focused on Retry.
 - **Replay** controls are hidden in Adventure mode; the last encounter's
   recording still exports.
+
+## Auto battle
+
+In `local-hvai` and `adventure-hvai`, Hard can play the human's seat
+([architecture](architecture.md#ai-decisions)). Two controls set it, both
+`data-action="auto-battle"` with `data-auto-battle` naming the state a click
+sets (`on` or `off`; anything else is ignored):
+
+- **Switch** (`.three-auto-battle-switch`, `role="switch"`): `aria-checked`
+  and a visible On or Off show the state. While `view.autoBattle.available`,
+  it follows Cards in the Game Menu, and Recording in the map's options. It
+  has no `id`: `focusKey` matches it by `data-action`, so focus stays on it
+  as it flips, and a Game Menu stays open.
+- **Take control**, only while `view.autoBattle.active`: the touch shells'
+  dock holds just it (the frozen, `quiet` `AUTO_BATTLE_DOCK`); the desktop
+  shell puts it in `.three-hud-bar` (`renderThreeHudBar`, a `role="group"`
+  named Auto battle) and drops the HUD's "Waiting for the other player."
+  line. Both markups stay constant, so AI moves never replace the node.
+- **Set, never toggle.** `handleClick` sends them to `applyAutoBattle`
+  before `latestForAction()`, so a stale control still applies its state,
+  once. With nothing to set (already set, or on while unavailable), it only
+  catches the interface up with the latest view.
+- **Focus.** Take control hands focus to Menu, never the dock's next control
+  (End Turn). For `THREE_TAKE_CONTROL_GUARD_MS` the primary action (End Turn
+  by click, tap or Enter) and repeated Enter or Space are ignored, so a
+  double click or a held key cannot end the turn. A held key on either
+  control sets it once.
+- **Copy.** The status announcer speaks "Auto battle on: the Hard AI is
+  playing for you. Choose Take control to play yourself." (with no game in
+  progress, "…will play your next game."), "Auto battle off: you play your
+  own turns." and, refusing a move, "Auto battle is playing for you. Choose
+  Take control first." A rematch, node start or replay exit adds " Auto
+  battle is on." The dock prompt reads "Auto battle: the Hard AI is playing
+  for you."; the bar, "The Hard AI is playing for you."
+- **Hidden** in other modes, in replay and over a result waiting to be
+  saved. At game over Take control hides; the menu switch stays to arm the
+  rematch.
+- **Known limits.** An open Game Menu embeds the log, so each AI move
+  rebuilds it and can drop a click on its switch; Take control is the
+  reliable way off. The Cards dialog closes on each AI move, as in any AI
+  turn.
 
 ## CSS ordering
 

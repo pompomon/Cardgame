@@ -183,6 +183,13 @@ query parameters and the hash, then discards the old stored renderer preference.
   `--seed`, repeats its choices, including after Pause and resume in Adventure.
   A new game or Adventure retry plays differently.
 - In **AI vs AI**, both bots use the same selected level from the single lobby selector.
+- **Auto battle**: in Human vs AI and Adventure games, turn on **Auto battle**
+  in the Game Menu, or on the Adventure map, and the Hard AI plays your turns,
+  whatever your opponent's level. Like any Hard player it sees its
+  opponent's hand; you still never do. Choose **Take control** to play
+  again. It stays on through rematches and Adventure encounters, which count
+  as usual, and pauses during a replay; route and reward choices stay yours.
+  Back to Lobby, Pause, Reset, a new game or run, and reloading turn it off.
 - Recording metadata stores AI level and replay parsing keeps compatibility with older recordings that do not contain an AI level (defaults to `basic`).
 
 ### Extending with more AI levels
