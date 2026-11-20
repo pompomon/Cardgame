@@ -16,6 +16,8 @@ For the **current** contributor / agent guidance, read:
 
 - [`adventure-map-and-relics.md`](adventure-map-and-relics.md) — the
   branching Adventure map, boons and relics, and the route graph.
+- [`auto-battle.md`](auto-battle.md) — the Hard AI playing the human's seat
+  in Human vs AI and Adventure games, with Take control.
 - [`fold4-touch-ui.md`](fold4-touch-ui.md) — touch shells, drag and peek for
   the Galaxy Z Fold4 and other phones.
 - [`creature-terminology.md`](creature-terminology.md) — urban-fantasy

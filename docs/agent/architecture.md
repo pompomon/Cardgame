@@ -87,3 +87,11 @@ explainHardDecision                                  ai-hard.ts
 ```
 
 Budgets, selection, determinism: [ADR 0003](adr/0003-hard-ai-search.md).
+
+**Auto battle.** In `local-hvai` and `adventure-hvai`, `AppState.autoBattle`
+lets Hard (`AUTO_BATTLE_AI_LEVEL`) play the human's seat with the same game
+seed; the opponent keeps `aiLevel`. `src/app/auto-battle.ts`, a leaf module
+with type-only imports, owns the rules: `aiLevelForSeat` picks the level for
+both timer checks, and `effectiveControllers` gives the acting seats. The
+flag never changes `controllers`; auto moves record `source: 'ai'` under the
+real controllers, so recordings replay unchanged.

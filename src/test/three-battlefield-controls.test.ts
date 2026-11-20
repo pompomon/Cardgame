@@ -140,7 +140,7 @@ function state(): AppState {
     controllers: ['human', 'human'], offer: '', answer: '', status: '', recording: null,
     replay: null, hasSavedRecording: false, aiLevel: 'basic', cardVisualStyle: 'classic',
     monochromeCards: false, animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
-    p2pStarted: false, pendingP2PStartSeed: null, pendingRematchSeed: null,
+    p2pStarted: false, pendingP2PStartSeed: null, pendingRematchSeed: null, autoBattle: false,
     adventure: createInactiveAdventureState(),
   }
 }

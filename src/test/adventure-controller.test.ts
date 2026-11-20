@@ -2072,3 +2072,103 @@ describe('Adventure controller counters at the safe-integer limit', () => {
     expect(new AppController().getViewModel().adventure.highScore).toBe(LIMIT)
   })
 })
+
+describe('Adventure controller Auto battle', () => {
+  installFakeTimerHooks()
+
+  const ON_NEXT_GAME = 'Auto battle on: the Hard AI will play your next game.'
+
+  it('keeps Auto battle from the map through an encounter Hard plays to the end, without storing it', () => {
+    vi.setSystemTime(1_770_000_000_000)
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    const calls = storage.calls.length
+
+    controller.setAutoBattle(true)
+    expect(controller.getViewModel().status).toBe(ON_NEXT_GAME)
+    expect(storage.calls).toHaveLength(calls)
+    const node = startFirstNode(controller)
+    expect(controller.getViewModel().status).toBe(`Tier 1 encounter started against ${node.opponent.label}. Auto battle is on.`)
+    expect(controller.getViewModel().autoBattle).toEqual({ available: true, enabled: true, active: true })
+    for (let tick = 0; tick < 500 && internals(controller).state.game !== null; tick += 1) {
+      vi.advanceTimersToNextTimer()
+    }
+
+    let view = controller.getViewModel()
+    expect(view.game).toBeNull()
+    expect(view.adventure.lastResult).toMatchObject({ outcome: 'win', tierIndex: 0 })
+    expect(view.autoBattle).toEqual({ available: true, enabled: true, active: false })
+    const record = JSON.parse(controller.exportRecordingJson() ?? 'null') as { timeline: { source: string }[] }
+    expect(record.timeline.length).toBeGreaterThan(0)
+    expect(record.timeline.every((step) => step.source === 'ai')).toBe(true)
+    skipPendingReward(controller)
+    const next = startFirstNode(controller)
+    view = controller.getViewModel()
+    expect(view.status).toBe(`Tier 2 encounter started against ${next.opponent.label}. Auto battle is on.`)
+    expect(view.autoBattle.active).toBe(true)
+    expect(storage.calls.every((call) => call.endsWith(`:${RUN_KEY}`) || call.endsWith(`:${GAME_KEY}`))).toBe(true)
+    expect(storage.data.get(RUN_KEY)).not.toMatch(/autoBattle/)
+  })
+
+  it('turns off on Pause and stays off when the game resumes', () => {
+    installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    controller.setAutoBattle(true)
+    startFirstNode(controller)
+
+    controller.pauseAdventure()
+    expect(controller.getViewModel().mode).toBeNull()
+    expect(controller.getViewModel().autoBattle.enabled).toBe(false)
+    controller.resumeAdventure()
+
+    const view = controller.getViewModel()
+    expect(view.game).toMatchObject({ actor: 0, actorControl: 'human', canInput: true })
+    expect(view.autoBattle).toEqual({ available: true, enabled: false, active: false })
+  })
+
+  it('turns off on Reset, and when a new run follows a finished one', () => {
+    installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    controller.setAutoBattle(true)
+    controller.abandonAdventure()
+    expect(controller.getViewModel().autoBattle.enabled).toBe(false)
+
+    controller.startAdventure()
+    controller.setAutoBattle(true)
+    reachLastChance(controller)
+    finishEncounter(controller, 1)
+    expect(controller.getViewModel().adventure.status).toBe('failed')
+    expect(controller.getViewModel().autoBattle).toEqual({ available: false, enabled: true, active: false })
+    controller.startAdventure()
+
+    expect(controller.getViewModel().autoBattle).toEqual({ available: true, enabled: false, active: false })
+  })
+
+  it('leaves a result waiting to be saved and its warning alone', () => {
+    const storage = installTrackedStorage()
+    const controller = new AppController()
+    controller.startAdventure()
+    controller.setAutoBattle(true)
+    startFirstNode(controller)
+    storage.failingSets.add(RUN_KEY)
+    finishEncounter(controller, 0)
+    expect(controller.getViewModel().status).toBe(resultWarning('win'))
+    expect(controller.getViewModel().autoBattle).toEqual({ available: false, enabled: true, active: false })
+    const listener = vi.fn()
+    controller.subscribe(listener)
+    listener.mockClear()
+
+    controller.setAutoBattle(false)
+    controller.setAutoBattle(true)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(controller.getViewModel().status).toBe(resultWarning('win'))
+    expect(controller.getViewModel().autoBattle.enabled).toBe(false)
+    storage.failingSets.delete(RUN_KEY)
+    controller.retryAdventureCompletion()
+    expect(controller.getViewModel().autoBattle).toEqual({ available: true, enabled: false, active: false })
+  })
+})

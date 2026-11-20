@@ -121,3 +121,32 @@ Pass, in each posture:
 Then resize 344×770 to 690×717 and 690×717 to 829×578, with a card selected
 and again mid-drag: the selection, dock prompt and hand page survive, and the
 drag cancels without a summon.
+
+## Auto battle check
+
+Run for changes to [Auto battle](three-interface.md#auto-battle), the HUD
+bar, or the dock while Auto battle plays, in a `local-hvai` game and an
+Adventure run.
+
+- Turn it on from the Game Menu and from the map; play through a rematch
+  and the next node, whose start status ends " Auto battle is on."
+- Choose Take control mid-game 20 times each by mouse and keyboard at
+  1280×800, and by touch in the 829×578 rail: each time the seat returns,
+  focus lands on Menu (or in a target choice the seat now owns), and a
+  double click, double tap or held Enter never ends the turn. Hold Enter
+  once with a 2-second delay before its first repeat: Menu stays closed.
+  In headless Chrome on SwiftShader the guard's timer fired only once a
+  held key's repeats stopped, so only a delayed first repeat outlasts
+  `THREE_TAKE_CONTROL_GUARD_MS` there.
+- The opponent's hand stays hidden, Swamp turns included.
+- At 1280×800 and in each [Fold4 posture](#fold4-posture-check), at 100% and
+  200% root font size: no horizontal overflow; the desktop bar stays in the
+  HUD row, covering nothing; the switch and Take control are at least 44 CSS
+  pixels each way. In the short rail at 200% text the dock scrolls to Take
+  control, as it does to End Turn.
+- With 4× and 6× CPU throttling, time each AI tick's synchronous task for
+  the human's seat and record the p95. A tick includes the move and its
+  render, so it bounds the decision latency that triggers
+  [Off-main-thread decisions](../implementation/hard-ai-search-roadmap.md#off-main-thread-decisions).
+
+Pass: no missed Take control and no ended turn.

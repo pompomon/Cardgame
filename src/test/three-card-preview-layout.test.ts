@@ -30,7 +30,8 @@ describe('Three.js native card and preview layout', () => {
     expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*height: 100dvh;/)
     expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*overflow: hidden;/)
     expect(rendererCss).toMatch(/\.three-root\.three-root--game \{[^}]*grid-template-rows: clamp\(96px, 16dvh, 144px\) minmax\(0, 1fr\);/)
-    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-mount \{[^}]*height: 100%;[^}]*overflow: auto;[^}]*scrollbar-gutter: stable;/)
+    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-mount \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\) auto;[^}]*grid-template-rows: minmax\(0, 1fr\);[^}]*height: 100%;[^}]*overflow: hidden;/)
+    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-content \{[^}]*height: 100%;[^}]*overflow: auto;[^}]*scrollbar-gutter: stable;/)
     expect(rendererCss).toMatch(/\.three-root--game \.three-controls \{[^}]*position: fixed;/)
     expect(rendererCss).not.toContain('--three-board-min-height')
     const hud = ruleBodyContaining('.three-interface .three-hud', 'min-height: 100%;')
@@ -45,6 +46,15 @@ describe('Three.js native card and preview layout', () => {
     expect(cardsDialog).toContain('width: min(1100px, calc(100% - 24px));')
     expect(cardsDialog).toContain('env(safe-area-inset-left)')
     expect(cardsDialog).toContain('env(safe-area-inset-right)')
+  })
+
+  it('fits the desktop Auto battle bar beside the HUD, with a full-size Take control', () => {
+    expect(rendererCss).toMatch(/\.three-root--game \.three-hud-bar \{[^}]*align-self: stretch;[^}]*min-height: 0;[^}]*overflow: auto;/)
+    const bar = ruleBody('.three-interface .three-auto-battle-bar')
+    expect(bar).toContain('flex-wrap: wrap;')
+    expect(bar).toContain('max-width: min(22rem, 40vw);')
+    // Take control keeps the 44px minimum of every interface button.
+    expect(ruleBody('.three-interface .three-auto-battle-bar button')).not.toMatch(/min-(?:height|width)/)
   })
 
   it('keeps hover previews decorative, input-transparent and height-bounded', () => {

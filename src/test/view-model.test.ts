@@ -22,6 +22,7 @@ import {
   type AdventureRewardId,
 } from '../app/adventure-rewards'
 import { displayAdventureOpponentLabel } from '../app/game-presentation'
+import { createGameRecord } from '../app/game-recording'
 import { buildViewModel } from '../app/view-model'
 import { applyAction, createInitialGame, getLegalActions } from '../game/engine'
 import { HIDDEN_HAND_CARD_NAME, type AppState } from '../app/types'
@@ -85,6 +86,7 @@ function createState(seed: number): AppState {
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
+    autoBattle: false,
     adventure: createInactiveAdventureState(),
   }
 }
@@ -770,5 +772,65 @@ describe('buildViewModel hand-redaction', () => {
     // Outside the play-land label path, the projected enemy hand is still
     // redacted in players[].handCards.
     expectAllCardsHidden(vm.game!.players[1].handCards)
+  })
+})
+
+describe('buildViewModel Auto battle', () => {
+  function autoBattleState(seed: number): AppState {
+    const state = createState(seed)
+    state.mode = 'local-hvai'
+    state.controllers = ['human', 'ai']
+    state.autoBattle = true
+    state.game!.players[1].hand = [
+      { id: 'ai-1', name: 'Mountain', type: 'land' },
+      { id: 'ai-2', name: 'Forest', type: 'land' },
+    ]
+    return state
+  }
+
+  it('gives the human seat to the AI for input only, keeping the real seats and redaction', () => {
+    const state = autoBattleState(109)
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.autoBattle).toEqual({ available: true, enabled: true, active: true })
+    expect(Object.isFrozen(vm.autoBattle)).toBe(true)
+    expect(vm.controllers).toEqual(['human', 'ai'])
+    expect(vm.game).toMatchObject({ actor: 0, actorControl: 'ai', canInput: false })
+    expectAllCardsHidden(vm.game!.players[1].handCards)
+    expect(state.controllers).toEqual(['human', 'ai'])
+  })
+
+  it('reveals no enemy hand while Hard resolves the Swamp discard', () => {
+    const state = autoBattleState(110)
+    state.game!.phase = 'swamp_target'
+    state.game!.pendingSwampDiscard = { actor: 0 }
+
+    const vm = buildViewModel(state, false)
+
+    expect(vm.game?.revealedEnemyHandForSwamp).toBeNull()
+    expect(vm.game!.legal.swampDiscardOptions.map((option) => option.label).join('|')).not.toMatch(/Rooftop Gargoyle|Gravebloom Dryad/)
+    expectAllCardsHidden(vm.game!.players[1].handCards)
+  })
+
+  it('reports the flag without playing on the Adventure map, at game over and in replay', () => {
+    const map = autoBattleState(111)
+    map.mode = 'adventure-hvai'
+    map.game = null
+    map.adventure = withRun(createAdventureRun(57, TEST_RUN_ID))
+    const over = autoBattleState(112)
+    over.game!.phase = 'gameOver'
+    over.game!.winner = 1
+    const replay = autoBattleState(113)
+    replay.replay = { record: createGameRecord(113, 'local-hvai', ['human', 'ai'], 'basic', replay.game!, 0), step: 0, isPlaying: false }
+
+    const mapView = buildViewModel(map, false)
+    expect(mapView.game).toBeNull()
+    expect(mapView.autoBattle).toEqual({ available: true, enabled: true, active: false })
+    expect(Object.isFrozen(mapView.autoBattle)).toBe(true)
+    expect(buildViewModel(over, false).autoBattle).toEqual({ available: true, enabled: true, active: false })
+    const replayView = buildViewModel(replay, false)
+    expect(replayView.autoBattle).toEqual({ available: false, enabled: true, active: false })
+    expect(replayView.game).toMatchObject({ actorControl: 'human', canInput: false })
   })
 })

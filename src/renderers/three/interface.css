@@ -468,6 +468,45 @@
   padding: 6px 10px;
 }
 
+/* Desktop: while Auto battle plays, Take control sits beside the HUD. */
+.three-interface .three-auto-battle-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  gap: 4px 8px;
+  max-width: min(22rem, 40vw);
+  min-height: 100%;
+  margin-left: 8px;
+  padding: 6px 10px;
+  border: 1px solid #ffda7b;
+  border-radius: 12px;
+  background: #0e2029;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.three-interface .three-auto-battle-bar p {
+  flex: 1 1 8rem;
+  margin: 0;
+}
+
+.three-interface .three-auto-battle-bar button {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+}
+
+/* The visible On or Off repeats `aria-checked`, so color is never the only cue. */
+.three-interface .three-auto-battle-switch span {
+  margin-left: 4px;
+  font-weight: 700;
+}
+
+.three-interface .three-auto-battle-switch[aria-checked="true"] {
+  border-color: #ffda7b;
+  background: #3a3112;
+}
+
 .three-interface .three-required-prompt {
   color: #ffdf91;
 }

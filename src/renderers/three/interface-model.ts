@@ -12,8 +12,9 @@ import {
   type AdventureRouteGraphNode,
   type AdventureRouteGraphRow,
 } from '../../app/adventure-route-graph'
-import { AI_LEVEL_OPTIONS } from '../../app/ai-levels'
+import { AI_LEVEL_OPTIONS, aiLevelLabel } from '../../app/ai-levels'
 import { ANIMATION_SPEED_OPTIONS } from '../../app/animation-settings'
+import { AUTO_BATTLE_AI_LEVEL } from '../../app/auto-battle'
 import { BOARD_THEME_OPTIONS } from '../../app/board-theme'
 import { cardAssetSlug, cardCatalogEntry, displayCardName } from '../../app/card-catalog'
 import { CARD_VISUAL_STYLE_OPTIONS } from '../../app/card-visual-styles'
@@ -149,10 +150,11 @@ export function threeSessionKey(view: AppViewModel): string {
 
 // Excludes settings/status and the growing log, but invalidates selections on
 // changes to the actual decision (including a replay step, a same-phase play,
-// or an Adventure route, attempt, pending-result or reward-offer change).
+// an Adventure route, attempt, pending-result or reward-offer change, or an
+// Auto battle flip, even one that leaves `actorControl` as it was).
 export function threeDecisionKey(view: AppViewModel): string {
   const game = view.game
-  return JSON.stringify([threeSessionKey(view), view.replay.step, view.adventure.decisionKey, game && [
+  return JSON.stringify([threeSessionKey(view), view.replay.step, view.adventure.decisionKey, view.autoBattle.enabled, game && [
     game.turn, game.phase, game.actor, game.actorControl, game.canInput, game.pendingLandName, game.pendingLandPlay,
     game.pendingPlainsReuseName, game.legal, game.players, game.revealedEnemyHandForSwamp,
   ]])
@@ -265,6 +267,32 @@ function button(action: string, label: string, disabled = false, attrs = ''): st
   return `<button type="button" data-action="${action}"${disabled ? ' disabled' : ''}${attrs}>${escapeHtml(label)}</button>`
 }
 
+const AUTO_BATTLE_PLAYER = `${aiLevelLabel(AUTO_BATTLE_AI_LEVEL)} AI`
+
+/**
+ * The Auto battle switch, in the Game Menu and on the Adventure map.
+ * `data-auto-battle` holds the state a click sets, so a repeated or stale
+ * click can't flip it back; `aria-checked` and the visible On or Off show the
+ * current state. It has no `id`: `focusKey` finds it by `data-action`.
+ */
+function autoBattleSwitch(view: AppViewModel): string {
+  const enabled = view.autoBattle.enabled
+  return `<button type="button" class="three-auto-battle-switch" data-action="auto-battle" data-auto-battle="${enabled ? 'off' : 'on'}" role="switch" aria-checked="${enabled}">Auto battle <span aria-hidden="true">${enabled ? 'On' : 'Off'}</span></button>`
+}
+
+// While Hard plays, Take control sits in a node that AI moves never replace:
+// both its dock model and its desktop bar are constant.
+const TAKE_CONTROL = button('auto-battle', 'Take control', false, ' data-auto-battle="off"')
+
+const AUTO_BATTLE_DOCK: ThreeDockModel = Object.freeze({
+  prompt: `Auto battle: the ${AUTO_BATTLE_PLAYER} is playing for you.`,
+  actions: TAKE_CONTROL,
+  // The status announcer already speaks the change.
+  quiet: true,
+})
+
+const AUTO_BATTLE_BAR = `<div class="three-auto-battle-bar" role="group" aria-label="Auto battle"><p>The ${AUTO_BATTLE_PLAYER} is playing for you.</p>${TAKE_CONTROL}</div>`
+
 function modal(kind: string, title: string, contents: string, closeAction = 'close', closeLabel = 'Close'): string {
   return `<dialog class="three-dialog" data-modal="${kind}" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" tabindex="-1">
     <header><h2>${escapeHtml(title)}</h2>${button(closeAction, closeLabel, false, ` aria-label="${escapeHtml(closeLabel)}"`)}</header>${contents}</dialog>`
@@ -337,6 +365,7 @@ function renderMenu(view: AppViewModel): string {
   const logControllers = view.recording.metadata?.controllers ?? view.controllers
   return modal('menu', 'Game Menu', `${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
     <div class="three-actions">${button('cards', 'Cards & keyboard controls', false, ' aria-haspopup="dialog"')}
+    ${view.autoBattle.available ? autoBattleSwitch(view) : ''}
     ${view.mode === 'adventure-hvai' && !view.replay.active
     ? renderAdventureGameActions(view)
     : button('back-to-lobby', view.mode === 'tutorial' ? 'Exit Tutorial' : 'Back to Lobby')
@@ -675,7 +704,8 @@ function renderThreeAdventureHub(view: AppViewModel, ui: InterfaceUi): string {
     <nav class="three-actions" aria-label="Adventure actions">${resumable
       ? button('pause-adventure', 'Pause Adventure') + button('abandon-adventure', 'Reset Adventure Run')
       : button('start-new-adventure', 'Start New Adventure') + button('back-to-lobby', 'Back to Lobby')}</nav>
-    <nav class="three-actions" aria-label="Adventure options">${button('lobby-settings', 'Settings')}${button('lobby-recording', 'Recording')}</nav>`
+    <nav class="three-actions" aria-label="Adventure options">${button('lobby-settings', 'Settings')}${button('lobby-recording', 'Recording')}${
+      resumable && view.autoBattle.available ? autoBattleSwitch(view) : ''}</nav>`
   return `<section class="panel three-adventure-hub" data-lobby-page="${page}" aria-label="Adventure map">
     <header><p>Adventure</p><h1 tabindex="-1" data-lobby-heading>Adventure Map${page === 'root' ? '' : page === 'settings' ? ' · Settings' : ' · Recording'}</h1>
       ${page === 'root' ? '' : button('lobby-root', 'Back')}</header>
@@ -783,9 +813,18 @@ export function renderThreeHud(view: AppViewModel, ui: InterfaceUi): string {
     ${game.winnerText ? `<p class="three-winner">${escapeHtml(game.winnerText)}</p>` : ''}
     ${view.tutorial.active ? `<aside class="three-tutorial" aria-label="Tutorial hint">${escapeHtml(view.tutorial.hint ?? TUTORIAL_FALLBACK_HINT)}</aside>` : ''}
     ${view.mode === 'adventure-hvai' ? `<p>${escapeHtml(adventureSummary(view))}</p>` : ''}
-    ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' ? '<p>Waiting for the other player.</p>' : ''}
+    ${!game.canInput && !view.replay.active && game.phase !== 'gameOver' && !view.autoBattle.active ? '<p>Waiting for the other player.</p>' : ''}
     ${targets && !ui.menuOpen && !ui.preview ? `<p class="three-required-prompt">${escapeHtml(targets.title)}</p>` : ''}
     ${ui.menuOpen ? '' : renderReplay(view)}</section>`
+}
+
+/**
+ * The desktop shell's Auto battle bar, beside the HUD while Hard plays the
+ * human's seat. Its markup is constant, so the interface writes it once and
+ * AI moves never replace Take control. Touch shells use the dock instead.
+ */
+export function renderThreeHudBar(view: AppViewModel, ui: InterfaceUi): string {
+  return view.autoBattle.active && isThreeInGame(view) && !isTouchShell(ui) ? AUTO_BATTLE_BAR : ''
 }
 
 export function renderThreeHover(view: AppViewModel, hit: BoardHit | null): string {
@@ -869,6 +908,9 @@ function threeDockModel(view: AppViewModel, ui: InterfaceUi): ThreeDockModel {
           : button('rematch', 'Rematch') + button('back-to-lobby', 'Lobby', false, ' aria-label="Back to Lobby"')),
     }
   }
+  // Hard plays every turn, so no decision below is the viewer's. The model is
+  // constant across moves, so its Take control button is never replaced.
+  if (view.autoBattle.active) return AUTO_BATTLE_DOCK
   const targets = ui.menuOpen || ui.cardsOpen || ui.preview ? null : threeTargets(view, ui)
   if (targets) {
     if (ui.phaseDismissed && !ui.pendingCardId) {
@@ -980,7 +1022,7 @@ export function renderThreeInterface(view: AppViewModel, ui: InterfaceUi, includ
   const response = threeResponse(view, ui)
   const nativeBlocked = ui.menuOpen || !!ui.preview || !!targets && !ui.phaseDismissed
   const previewCard = ui.preview ? threePreviewCard(game, ui.preview) : null
-  return `${includeHud ? renderThreeHud(view, ui) : ''}<section class="three-secondary-controls" aria-label="Additional game controls">
+  return `${includeHud ? renderThreeHud(view, ui) + renderThreeHudBar(view, ui) : ''}<section class="three-secondary-controls" aria-label="Additional game controls">
     ${isTouchShell(ui) ? renderTutorialBanner(view, ui) : ''}
     ${targets && !ui.menuOpen && !ui.cardsOpen && !ui.preview ? renderTargets(view, ui, targets) : ''}
     ${ui.menuOpen ? renderMenu(view) : ''}

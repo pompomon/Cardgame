@@ -79,6 +79,14 @@ See also [Status-message ordering](../../AGENTS.md#status-message-ordering).
 - A refused result leads with its outcome (the board's winner text is not a
   live region); `adventure-controller.test.ts` pins Adventure status copy.
   See [Status announcements](three-interface.md#status-announcements).
+- `setAutoBattle(enabled)` sets, never toggles: a repeat or an unavailable
+  turn-on returns without notifying, and turning off always applies. A result
+  waiting to be saved keeps its warning; only the flag changes. The flag lives
+  in memory only. Rematch, replay, encounters, rewards and the map keep it,
+  with an "Auto battle is on." notice on the next game's start status.
+  `startGame`, `resetToLobby` (Back to Lobby, Pause, Reset), a new or resumed
+  run (`enterAdventureHub`) and any recording import, even a failed one,
+  clear it. A human submission for the auto seat is refused unchanged.
 
 ## Reentrant UI submissions
 
@@ -116,6 +124,12 @@ Detail for
   phase ends and never widened by catalog lookups. `revealedEnemyHandForSwamp`
   serves the local human's Drain Memory pick; the AI plays blind by design
   (`src/game/ai-visibility.ts`).
+- Auto battle changes only who acts: `actorControl`, `canInput` and the Swamp
+  reveal read `effectiveControllers(state)`, so nothing is revealed while Hard
+  plays the human's seat. Redaction, board perspective, labels and
+  `view.controllers` keep the real `state.controllers`. `autoBattle`
+  (`available`, `enabled`, `active`) is frozen and projected with or without
+  a game.
 - `AdventureUiState` is frozen, and tier summaries are cached per run object
   and route key: replace a run, never change its route or map in place.
 

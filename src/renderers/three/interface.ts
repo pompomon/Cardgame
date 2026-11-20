@@ -31,6 +31,7 @@ import {
   renderThreeDock,
   renderThreeHover,
   renderThreeHud,
+  renderThreeHudBar,
   renderThreeInterface,
   renderThreePeek,
   threeDecisionKey,
@@ -57,6 +58,14 @@ export const THREE_STATUS_ANNOUNCER_ID = 'three-status-announcer'
  * inserted.
  */
 export const THREE_ANNOUNCER_SETTLE_MS = 100
+
+/**
+ * How long after Take control the turn's primary action (End Turn, Let It
+ * Through) ignores activation, and held Enter or Space repeats do nothing.
+ * In the rail the primary appears where Take control was, so the second
+ * click of a double click, or a second tap, would land on it.
+ */
+export const THREE_TAKE_CONTROL_GUARD_MS = 700
 
 interface SavedFocus {
   element: HTMLElement
@@ -104,6 +113,7 @@ export class ThreeInterface {
   private submittedDecision: string | null = null
   private markup = ''
   private hudMarkup = ''
+  private barMarkup = ''
   private hoverMarkup = ''
   private dockMarkup = ''
   private dockPromptText = ''
@@ -136,11 +146,20 @@ export class ThreeInterface {
   // Set while an Adventure command runs, so a retry that leaves the status
   // unchanged is announced again.
   private announceRepeat = false
+  // Runs for THREE_TAKE_CONTROL_GUARD_MS after Take control.
+  private takeControlGuard: ReturnType<typeof setTimeout> | null = null
+  // Enter or Space last pressed on an Auto battle control; its repeats stay
+  // inert until a fresh Enter or Space press, however long the OS delays them.
+  private autoBattleKey: string | null = null
   private readonly downloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly content: HTMLElement
   private readonly hoverContent: HTMLElement
   private readonly announcer: HTMLElement
   private readonly hudHost: HTMLElement | null
+  // Persistent children of `hudHost`: the HUD markup is rebuilt into
+  // `hudContent`, while `hudBar` beside it keeps its own nodes.
+  private readonly hudContent: HTMLElement | null
+  private readonly hudBar: HTMLElement | null
   private readonly dockHost: HTMLElement | null
   private readonly dockPrompt: HTMLElement | null
   private readonly dockActions: HTMLElement | null
@@ -189,6 +208,17 @@ export class ThreeInterface {
     } else {
       this.dockPrompt = null
       this.dockActions = null
+    }
+    if (hudHost) {
+      this.hudContent = this.document.createElement('div')
+      this.hudContent.classList.add('three-hud-content')
+      this.hudBar = this.document.createElement('div')
+      this.hudBar.classList.add('three-hud-bar')
+      this.hudBar.hidden = true
+      hudHost.append(this.hudContent, this.hudBar)
+    } else {
+      this.hudContent = null
+      this.hudBar = null
     }
     host.classList.add('three-interface')
     this.content = this.document.createElement('div')
@@ -382,6 +412,7 @@ export class ThreeInterface {
   }
 
   activatePrimaryAction(action: ThreePrimaryAction): void {
+    if (this.takeControlGuard !== null) return
     const view = this.latestForAction()
     if (!view?.game || this.isBlocked() || action.decision !== this.decision) return
     const current = threePrimaryAction(view, this.ui())
@@ -716,6 +747,7 @@ export class ThreeInterface {
     const ui = this.ui()
     const markup = renderThreeInterface(this.view, ui, !this.hudHost)
     const hudMarkup = this.hudHost ? renderThreeHud(this.view, ui) : ''
+    const barMarkup = this.hudBar ? renderThreeHudBar(this.view, ui) : ''
     const dock = isTouchShell(ui) ? renderThreeDock(this.view, ui) : EMPTY_THREE_DOCK
     if (this.dockPrompt) {
       // Politeness changes before the text: a replay's first prompt stays
@@ -728,9 +760,10 @@ export class ThreeInterface {
       }
     }
     const dockChanged = this.dockActions !== null && dock.actions !== this.dockMarkup
-    if (markup === this.markup && hudMarkup === this.hudMarkup && !dockChanged) return
+    if (markup === this.markup && hudMarkup === this.hudMarkup && barMarkup === this.barMarkup && !dockChanged) return
     const focus = this.captureFocus()
     const focusInDock = !!focus && !!this.dockActions?.contains(focus.element)
+    const focusInBar = !!focus && !!this.hudBar?.contains(focus.element)
     if (preserveState) {
       this.content.querySelectorAll<HTMLElement>('[data-scroll-key], [data-modal], textarea[id]').forEach((element) => {
         if (element.dataset.scrollKey === 'log' && !element.closest<HTMLDetailsElement>('details')?.open) return
@@ -747,13 +780,16 @@ export class ThreeInterface {
       if (oldDialog?.open && typeof oldDialog.close === 'function') oldDialog.close()
       this.content.innerHTML = markup
     }
-    if (this.hudHost && hudMarkup !== this.hudMarkup) {
-      this.hudHost.innerHTML = hudMarkup
-      this.hudHost.hidden = !hudMarkup
+    if (this.hudHost && this.hudContent && hudMarkup !== this.hudMarkup) this.hudContent.innerHTML = hudMarkup
+    if (this.hudBar && barMarkup !== this.barMarkup) {
+      this.hudBar.innerHTML = barMarkup
+      this.hudBar.hidden = !barMarkup
     }
+    if (this.hudHost) this.hudHost.hidden = !hudMarkup && !barMarkup
     if (this.dockActions && dockChanged) this.dockActions.innerHTML = dock.actions
     this.markup = markup
     this.hudMarkup = hudMarkup
+    this.barMarkup = barMarkup
     this.dockMarkup = dock.actions
     this.host.scrollLeft = hostScroll[0]
     this.host.scrollTop = hostScroll[1]
@@ -783,8 +819,14 @@ export class ThreeInterface {
     } else if (focus && this.roots.some((root) => root.contains(focus.element))) {
       this.restoreFocus(focus)
     } else if (focus && !focus.element.isConnected) {
-      // A replaced dock action hands focus to the dock's next action.
-      if (!this.restoreFocus(focus) && focusInDock) this.focusDock()
+      // A replaced dock action hands focus to the dock's next action. Take
+      // control once Auto battle is off, and a vanished desktop bar, hand it
+      // to Menu instead: the dock's next control could be End Turn.
+      if (!this.restoreFocus(focus)) {
+        const tookControl = focus.element.dataset.action === 'auto-battle' && !this.view.autoBattle.enabled
+        if (tookControl || focusInBar) this.elements('[data-action="menu"]')[0]?.focus({ preventScroll: true })
+        else if (focusInDock) this.focusDock()
+      }
     }
     this.restoreScroll()
   }
@@ -865,6 +907,17 @@ export class ThreeInterface {
 
   private readonly handleKeydown = (event: KeyboardEvent): void => {
     if (this.disposed) return
+    // A held key sets Auto battle once, as the board's primary button acts
+    // once; after Take control its repeats cannot open Menu, now focused, or
+    // pick the target a pending choice focuses.
+    if (event.key === 'Enter' || event.key === ' ') {
+      const onAutoBattle = event.target instanceof Element && !!event.target.closest('[data-action="auto-battle"]')
+      if (!event.repeat) this.autoBattleKey = onAutoBattle ? event.key : null
+      else if (onAutoBattle || event.key === this.autoBattleKey || this.takeControlGuard !== null) {
+        event.preventDefault()
+        return
+      }
+    }
     if (event.key === 'Escape' && this.touchShellActive() && !this.menuOpen && !this.cardsOpen && !this.preview) {
       // Step back one touch-shell layer: the target list, a selected target, then
       // (once no picker is open) the selected card or discard.
@@ -958,6 +1011,10 @@ export class ThreeInterface {
       return
     }
     const action = element.dataset.action ?? element.id
+    if (action === 'auto-battle') {
+      this.applyAutoBattle(element.dataset.autoBattle)
+      return
+    }
     const view = this.latestForAction()
     if (!view) return
     switch (action) {
@@ -1100,6 +1157,34 @@ export class ThreeInterface {
     }
   }
 
+  /**
+   * Sets Auto battle to the state its control names. Each control holds the
+   * state it sets, so unlike other actions a stale or repeated activation
+   * still applies, at most once. Turning it off arms
+   * THREE_TAKE_CONTROL_GUARD_MS, and focus leaves for Menu.
+   */
+  private applyAutoBattle(target: string | undefined): void {
+    const enabled = target === 'on' ? true : target === 'off' ? false : null
+    if (enabled === null || !this.view) return
+    const latest = this.controller.getViewModel()
+    if (latest.autoBattle.enabled === enabled || enabled && !latest.autoBattle.available) {
+      // Nothing to set: catch a stale control up with the latest view.
+      if (threeDecisionKey(latest) !== this.decision) {
+        this.update(latest, this.presentedActor)
+        this.onChange()
+      }
+      return
+    }
+    this.controller.setAutoBattle(enabled)
+    if (enabled || this.disposed) return
+    if (this.takeControlGuard !== null) clearTimeout(this.takeControlGuard)
+    this.takeControlGuard = setTimeout(this.endTakeControlGuard, THREE_TAKE_CONTROL_GUARD_MS)
+  }
+
+  private readonly endTakeControlGuard = (): void => {
+    this.takeControlGuard = null
+  }
+
   private runAsync(operation: () => Promise<unknown>, errorMessage: string): void {
     const generation = this.fileGeneration
     const fail = (): void => {
@@ -1212,6 +1297,8 @@ export class ThreeInterface {
     if (this.announcerSettle !== null) clearTimeout(this.announcerSettle)
     this.announcerSettle = null
     this.pendingAnnouncement = null
+    if (this.takeControlGuard !== null) clearTimeout(this.takeControlGuard)
+    this.takeControlGuard = null
     const dialog = this.content.querySelector<HTMLDialogElement>('dialog')
     if (dialog?.open && typeof dialog.close === 'function') dialog.close()
     this.content.remove()

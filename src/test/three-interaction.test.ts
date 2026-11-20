@@ -121,6 +121,7 @@ function createView(): AppViewModel {
     p2pConnected: false,
     p2pStarted: false,
     tutorial: { active: false, stepId: null, hint: null },
+    autoBattle: { available: false, enabled: false, active: false },
     adventure: {
       runId: null,
       baseSeed: 0,

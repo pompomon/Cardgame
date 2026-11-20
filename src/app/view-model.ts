@@ -4,6 +4,7 @@ import { activeActor } from './active-actor'
 import { adventureRouteNodes, type AdventureOpponentDeck, type AdventureRunState } from './adventure'
 import { parseAdventureNodeId } from './adventure-map'
 import { adventureRelicCharges, adventureRewardCatalogEntry, type AdventureRewardId } from './adventure-rewards'
+import { canEnableAutoBattle, effectiveControllers } from './auto-battle'
 import {
   displayAdventureOpponentLabel,
   labelGameAction,
@@ -23,6 +24,7 @@ import type {
   AdventureUiState,
   AppState,
   AppViewModel,
+  AutoBattleUiState,
   CounterOption,
   PlayLandOption,
   SwampDiscardOption,
@@ -231,6 +233,15 @@ function winnerTextFor(game: GameState): string {
   return game.winner === 'draw' ? 'Draw game.' : `Winner: Player ${game.winner + 1}`
 }
 
+function projectAutoBattleUiState(state: AppState): AutoBattleUiState {
+  const available = canEnableAutoBattle(state)
+  return Object.freeze({
+    available,
+    enabled: state.autoBattle,
+    active: state.autoBattle && available && state.game !== null && state.game.phase !== 'gameOver',
+  })
+}
+
 export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewModel {
   const replayActive = state.replay !== null
   const replayStep = state.replay?.step ?? 0
@@ -265,6 +276,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
       p2pStarted,
       tutorial: projectTutorialState(state),
       adventure: projectAdventureUiState(state),
+      autoBattle: projectAutoBattleUiState(state),
       game: null,
       recording: {
         canSave: state.recording !== null,
@@ -283,7 +295,10 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
 
   const game = state.game
   const actor = activeActor(game)
-  const actorControl = state.controllers[actor]
+  // The seats as they act: Auto battle plays the human's seat as an AI turn.
+  // Redaction, the log and `controllers` keep the real seats.
+  const actingControllers = effectiveControllers(state)
+  const actorControl = actingControllers[actor]
   const canInput = !replayActive && actorControl === 'human' && canAct(game, actor)
   const legalActions = getLegalActions(game, actor)
 
@@ -294,11 +309,12 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
   //      and the reuse actor is the local human.
   // When true, the picker/labels surface the real enemy hand. The check
   // intentionally uses the raw `GameState` (not the redacted projection)
-  // and is scoped to the actor's decision only.
+  // and is scoped to the actor's decision only. While Auto battle plays the
+  // human's seat, Hard chooses, so nothing is revealed.
   const revealedEnemyHandForSwampCards = revealedEnemyHandForSwamp(
     game,
     actor,
-    state.controllers,
+    actingControllers,
     replayActive,
   )
   const revealEnemyHandForSwamp = revealedEnemyHandForSwampCards !== null
@@ -366,6 +382,7 @@ export function buildViewModel(state: AppState, p2pConnected: boolean): AppViewM
     p2pStarted,
     tutorial: projectTutorialState(state),
     adventure: projectAdventureUiState(state),
+    autoBattle: projectAutoBattleUiState(state),
     game: {
       turn: game.turn,
       phase: game.phase,

@@ -39,6 +39,7 @@ function view(): AppViewModel {
     game: { actor: 1, canInput: true, events: [] },
     replay: { active: false, step: 0 },
     adventure: { decisionKey: 'none' },
+    autoBattle: { available: true, enabled: false, active: false },
     animationSpeed: 'off',
   } as unknown as AppViewModel
 }

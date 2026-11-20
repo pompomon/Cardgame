@@ -1388,3 +1388,206 @@ describe('controller recording and replay', () => {
     })
   })
 })
+
+describe('controller Auto battle', () => {
+  installFakeTimerHooks()
+
+  const ON_IN_GAME = 'Auto battle on: the Hard AI is playing for you. Choose Take control to play yourself.'
+  const ON_NEXT_GAME = 'Auto battle on: the Hard AI will play your next game.'
+  const OFF = 'Auto battle off: you play your own turns.'
+  const REFUSED = 'Auto battle is playing for you. Choose Take control first.'
+
+  interface AutoBattleInternals {
+    state: { game: GameState | null }
+  }
+
+  function liveGame(controller: AppController): GameState {
+    const game = (controller as unknown as AutoBattleInternals).state.game
+    if (!game) {
+      throw new Error('Expected a live game.')
+    }
+    return game
+  }
+
+  function autoMovesFor(controller: AppController, actor: number): number {
+    return parseExported(controller).timeline
+      .filter((step) => step.source === 'ai' && step.action.actor === actor).length
+  }
+
+  beforeEach(() => {
+    installMemoryStorage()
+  })
+
+  it('turns on and off in a Human vs AI game, handing the seat back on Take control', () => {
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+
+    controller.setAutoBattle(true)
+    let view = controller.getViewModel()
+    expect(view.status).toBe(ON_IN_GAME)
+    expect(view.autoBattle).toEqual({ available: true, enabled: true, active: true })
+    expect(view.game).toMatchObject({ actor: 0, actorControl: 'ai', canInput: false })
+    expect(view.controllers).toEqual(['human', 'ai'])
+
+    controller.setAutoBattle(false)
+    view = controller.getViewModel()
+    expect(view.status).toBe(OFF)
+    expect(view.autoBattle).toEqual({ available: true, enabled: false, active: false })
+    expect(view.game).toMatchObject({ actor: 0, actorControl: 'human', canInput: true })
+    vi.advanceTimersByTime(1000)
+    expect(autoMovesFor(controller, 0)).toBe(0)
+  })
+
+  it('ignores a repeated setting without notifying', () => {
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+    const listener = vi.fn()
+    controller.subscribe(listener)
+    listener.mockClear()
+
+    controller.setAutoBattle(false)
+    controller.setAutoBattle(true)
+    controller.setAutoBattle(true)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  const unavailable: ReadonlyArray<readonly [string, (controller: AppController) => void]> = [
+    ['the lobby', () => {}],
+    ['the tutorial', (controller) => controller.startGame('tutorial')],
+    ['Human vs Human', (controller) => controller.startGame('local-hvh')],
+    ['AI vs AI', (controller) => controller.startGame('local-aivai')],
+    ['a peer game', (controller) => controller.startGame('p2p-host')],
+    ['a replay', (controller) => {
+      controller.startGame('local-hvai')
+      controller.startReplay()
+    }],
+  ]
+
+  it.each(unavailable)('stays off in %s without notifying', (_name, arrange) => {
+    const restoreRtc = installFakeRtcPeerConnection()
+    try {
+      const controller = new AppController()
+      arrange(controller)
+      const status = controller.getViewModel().status
+      const listener = vi.fn()
+      controller.subscribe(listener)
+      listener.mockClear()
+
+      controller.setAutoBattle(true)
+
+      expect(listener).not.toHaveBeenCalled()
+      const view = controller.getViewModel()
+      expect(view.autoBattle).toEqual({ available: false, enabled: false, active: false })
+      expect(view.status).toBe(status)
+      controller.backToLobby()
+    } finally {
+      restoreRtc()
+    }
+  })
+
+  it('refuses a human move for the seat Hard is playing and leaves the game unchanged', () => {
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+    const action = firstPlayableAction(controller)
+    expect(action).toBeTruthy()
+    controller.setAutoBattle(true)
+    const before = structuredClone(liveGame(controller))
+
+    controller.submitAction(action!)
+
+    expect(controller.getViewModel().status).toBe(REFUSED)
+    expect(liveGame(controller)).toEqual(before)
+    expect(parseExported(controller).timeline).toHaveLength(0)
+    vi.advanceTimersByTime(350)
+    expect(autoMovesFor(controller, 0)).toBe(1)
+  })
+
+  it('keeps Auto battle through game over and a rematch, with a notice', () => {
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+    const game = liveGame(controller)
+    game.winner = 1
+    game.phase = 'gameOver'
+
+    controller.setAutoBattle(true)
+    expect(controller.getViewModel().status).toBe(ON_NEXT_GAME)
+    expect(controller.getViewModel().autoBattle).toEqual({ available: true, enabled: true, active: false })
+
+    controller.rematch()
+    const view = controller.getViewModel()
+    expect(view.status).toBe('Rematch started. Auto battle is on.')
+    expect(view.autoBattle).toEqual({ available: true, enabled: true, active: true })
+    vi.advanceTimersByTime(350)
+    expect(autoMovesFor(controller, 0)).toBe(1)
+  })
+
+  it('pauses during a replay and resumes, with a notice, on exit', () => {
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+    controller.setAutoBattle(true)
+
+    controller.startReplay()
+    expect(controller.getViewModel().autoBattle).toEqual({ available: false, enabled: true, active: false })
+    vi.advanceTimersByTime(1000)
+    expect(parseExported(controller).timeline).toHaveLength(0)
+
+    controller.exitReplay()
+    expect(controller.getViewModel().status).toBe('Exited replay at final recorded game state. Auto battle is on.')
+    expect(controller.getViewModel().autoBattle).toEqual({ available: true, enabled: true, active: true })
+    vi.advanceTimersByTime(350)
+    expect(autoMovesFor(controller, 0)).toBe(1)
+  })
+
+  const clearing: ReadonlyArray<readonly [string, (controller: AppController) => void]> = [
+    ['starting a game from the lobby', (controller) => controller.startGame('local-hvai')],
+    ['returning to the lobby', (controller) => controller.backToLobby()],
+    ['a failed recording import', (controller) => controller.importRecordingJson('not-json')],
+    ['a recording import', (controller) => {
+      const source = new AppController()
+      source.startGame('local-hvai')
+      controller.importRecordingJson(source.exportRecordingJson() ?? '')
+      controller.exitReplay()
+    }],
+  ]
+
+  it.each(clearing)('turns off after %s', (_name, act) => {
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+    controller.setAutoBattle(true)
+
+    act(controller)
+
+    expect(controller.getViewModel().autoBattle.enabled).toBe(false)
+    vi.advanceTimersByTime(1000)
+    if (controller.getViewModel().game) {
+      expect(controller.getViewModel().game).toMatchObject({ actor: 0, actorControl: 'human', canInput: true })
+      expect(autoMovesFor(controller, 0)).toBe(0)
+    }
+  })
+
+  it('plays a whole fixed-seed game as recorded AI moves that replay to the same end', () => {
+    vi.setSystemTime(1_770_000_000_000)
+    const controller = new AppController()
+    controller.startGame('local-hvai')
+    controller.setAutoBattle(true)
+
+    for (let tick = 0; tick < 500 && controller.getViewModel().game?.phase !== 'gameOver'; tick += 1) {
+      vi.advanceTimersToNextTimer()
+    }
+
+    const view = controller.getViewModel()
+    expect(view.game?.phase).toBe('gameOver')
+    expect(view.autoBattle).toEqual({ available: true, enabled: true, active: false })
+    const record = parseExported(controller)
+    expect(record.metadata).toMatchObject({ mode: 'local-hvai', controllers: ['human', 'ai'], aiLevel: 'basic' })
+    expect(record.timeline.every((step) => step.source === 'ai')).toBe(true)
+    expect(new Set(record.timeline.map((step) => step.action.actor))).toEqual(new Set([0, 1]))
+    let state = record.initialState
+    for (const step of record.timeline) {
+      state = applyAction(state, step.action)
+      expect(state).toEqual(step.state)
+    }
+    expect(state).toEqual(liveGame(controller))
+  })
+})

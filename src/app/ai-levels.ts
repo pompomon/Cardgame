@@ -19,3 +19,8 @@ const AI_LEVEL_LABELS: Record<AiLevel, string> = {
 
 export const AI_LEVEL_OPTIONS: ReadonlyArray<{ value: AiLevel; label: string }> =
   AI_LEVELS.map((value) => ({ value, label: AI_LEVEL_LABELS[value] }))
+
+/** The player-facing name of an AI level, as in the lobby's level picker. */
+export function aiLevelLabel(level: AiLevel): string {
+  return AI_LEVEL_LABELS[level]
+}

@@ -31,6 +31,12 @@ Each item names the evidence that should trigger it.
   or visible stutter on target devices. Desktop measurements in Node are a
   3.54 ms mean and a 7.42 ms p95, and a fresh page's first decision includes
   JIT warm-up.
+- **Status:** met in emulation. Auto battle has Hard play every human-seat
+  action. In the production preview (headless Chrome, SwiftShader, 2 cores),
+  a Hard tick, which also applies and renders the move, had a p95 of 46.5 ms
+  at 4× and 75.8 ms at 6× CPU throttling, against 13 ms and 18.3 ms for a
+  Basic tick; a fresh page's first Hard tick took 344 ms at 6×. Device
+  profiling is pending in [#163](https://github.com/pompomon/Cardgame/issues/163).
 - **Shape:** a Web Worker adapter in `src/app/`. Each request carries the
   decision key; the controller drops stale replies and cancels on mode change,
   replay, or pause. Load the worker with
