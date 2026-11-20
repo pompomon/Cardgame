@@ -144,7 +144,9 @@ Adventure run.
   HUD row, covering nothing; the switch and Take control are at least 44 CSS
   pixels each way. In the short rail at 200% text the dock scrolls to Take
   control, as it does to End Turn.
-- With 4× and 6× CPU throttling, record the p95 time from Hard's turn
-  starting to its first move for the human's seat.
+- With 4× and 6× CPU throttling, time each AI tick's synchronous task for
+  the human's seat and record the p95. A tick includes the move and its
+  render, so it bounds the decision latency that triggers
+  [Off-main-thread decisions](../implementation/hard-ai-search-roadmap.md#off-main-thread-decisions).
 
 Pass: no missed Take control and no ended turn.
