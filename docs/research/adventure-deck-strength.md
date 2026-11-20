@@ -129,8 +129,8 @@ Rows are sorted by the Hard score.
   consecutive win. A loss costs a chance and retries the node, a draw retries
   it for free, and the run fails at zero chances. Second Wind adds a chance,
   and Guardian Sigil and Streak Anchor soften a loss.
-- **Legacy runs.** Unversioned saves keep the linear lineup they were created
-  with: six random non-boss decks, then a random boss.
+- **Legacy runs.** Unversioned saves load as `legacy-linear` maps that keep
+  their stored lineup: six random non-boss decks, then a random boss.
 
 ## Method
 
@@ -373,8 +373,11 @@ The boss columns give the informed clear rate on maps with that boss.
      idempotent and no save format changes.
    - The deck's cards are unchanged, but
      [product decision 8](../agent/state-and-persistence.md#adventure-product-decisions)
-     keeps unversioned saves on their exact stored decks. Limit the change to
-     version 2 runs, or get maintainer approval.
+     keeps unversioned saves on their exact stored decks. Skip `legacy-linear`
+     maps, or get maintainer approval.
+   - The schema version can't mark those runs: `migrateLegacyAdventureRun`
+     gives a converted run version 2 and a `legacy-linear` map, and its next
+     transition saves it that way.
 5. **Scale the AI level by tier only for decks with choices.** Moving from
    Basic to Hard adds 63–67 points for the standard and random decks, but at
    most 2.5 points for a boss. Tune interactive decks with the level and
