@@ -101,7 +101,7 @@ describe('Adventure deck simulation', () => {
   it('counts Island draws but not turn draws as extra draws', () => {
     const policies = { adventure: BASIC.policy, standard: BASIC.policy }
     for (const seed of [1, 2, 3]) {
-      const game = playAdventureSimGame('boss-Island', 'adventure', policies, seed)
+      const game = playAdventureSimGame('mix-Island50', 'adventure', policies, seed)
       expect(game.adventure.lands).toBeGreaterThan(0)
       expect(game.adventure.extraDraws).toBe(game.adventure.lands)
     }

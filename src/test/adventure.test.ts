@@ -34,6 +34,7 @@ import {
   type AdventureRunStatus,
 } from '../app/adventure'
 import {
+  ADVENTURE_BOSS_LAND_COUNTS,
   adventureAttemptSeed,
   generateBranchingAdventureMap,
   isAdventureMap,
@@ -88,7 +89,7 @@ function countsByLand(deck: Array<{ name: string }>): Record<string, number> {
 }
 
 describe('adventure deck generation', () => {
-  it('builds 7-opponent lineup with mono boss on round 7', () => {
+  it('builds 7-opponent lineup with the boss on round 7', () => {
     const lineup = buildAdventureLineup(12345)
     expect(lineup).toHaveLength(7)
     expect(lineup[6].kind).toBe('mono')
@@ -107,9 +108,8 @@ describe('adventure deck generation', () => {
         expect(nonZero).toHaveLength(2)
         expect(nonZero.every(([, value]) => value === 25)).toBe(true)
       } else if (entry.kind === 'mono') {
-        const nonZero = Object.entries(counts).filter(([, value]) => value > 0)
-        expect(nonZero).toHaveLength(1)
-        expect(nonZero[0][1]).toBe(50)
+        const boss = ADVENTURE_BOSS_LAND_COUNTS[entry.lands[0]]
+        expect(counts).toEqual(Object.fromEntries(BASIC_LANDS.map((land) => [land, boss[land] ?? 0])))
       } else {
         expect(entry.deck).toHaveLength(50)
       }

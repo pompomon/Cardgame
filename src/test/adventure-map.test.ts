@@ -11,6 +11,7 @@ import {
   type AdventureRunStateV1,
 } from '../app/adventure'
 import {
+  ADVENTURE_BOSS_LAND_COUNTS,
   ADVENTURE_FORK_PATTERNS,
   ADVENTURE_NODE_ID_PATTERN,
   ADVENTURE_SEED_PURPOSE,
@@ -507,6 +508,18 @@ describe('branching map generation', () => {
     }
   })
 
+  it('builds every boss around its signature creature, the plurality, with support after it', () => {
+    const bosses = buildAdventureOpponentPools(0).boss
+    expect(bosses.map((boss) => boss.lands[0])).toEqual([...BASIC_LANDS])
+    for (const boss of bosses) {
+      const counts = landCounts(boss)
+      const [signature, ...support] = boss.lands
+      expect(boss.id).toBe(`boss-${signature}`)
+      expect(support, boss.id).toEqual(BASIC_LANDS.filter((land) => land !== signature && counts[land] > 0))
+      expect(Math.max(...support.map((land) => counts[land])), boss.id).toBeLessThan(counts[signature])
+    }
+  })
+
   it('builds 50-card decks with the land mix of each opponent kind', () => {
     for (const [seed, map] of tableMaps()) {
       for (const { node } of mapNodes(map)) {
@@ -524,8 +537,9 @@ describe('branching map generation', () => {
             expect(used.map((land) => counts[land])).toEqual([25, 25])
             break
           case 'mono':
-            expect(used).toEqual(opponent.lands)
-            expect(counts[used[0]]).toBe(50)
+            expect(used).toEqual(BASIC_LANDS.filter((land) => opponent.lands.includes(land)))
+            expect(BASIC_LANDS.map((land) => counts[land]))
+              .toEqual(BASIC_LANDS.map((land) => ADVENTURE_BOSS_LAND_COUNTS[opponent.lands[0]][land] ?? 0))
             break
           case 'random':
             expect(opponent.lands).toEqual([...BASIC_LANDS])

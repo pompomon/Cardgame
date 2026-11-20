@@ -126,7 +126,11 @@ identity-bound mid-game save. Leaf modules never touch persistence, the
 controller, storage, the DOM, randomness or the clock, and boundary tests pin
 their imports; `adventure-map.ts` owns pools, map, routes and seeds.
 [Adventure deck strength](../research/adventure-deck-strength.md) measures
-every pool deck against the standard deck.
+every pool deck against the standard deck. Bosses keep the `mono` kind and
+`boss-<Land>` IDs, but each pairs a signature creature with support
+(`ADVENTURE_BOSS_LAND_COUNTS`); change that table only with new measurements
+in that document. Stored maps keep their decks, so a run started before the
+rebuild keeps its fifty-of-one boss.
 
 ### Adventure product decisions
 

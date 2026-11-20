@@ -2,13 +2,17 @@
 
 > [!IMPORTANT]
 > AI-versus-AI measurements at `a1eec3c`, made with
-> `npm run ai:adventure-decks`. They are not human win rates. Rerun the tool
-> after any change to the rules, the AI or the opponent pools.
+> `npm run ai:adventure-decks`, and of the rebuilt boss decks after it. The
+> rules and the AI did not change between them. They are not human win
+> rates. Rerun the tool after any change to the rules, the AI or the opponent
+> pools.
 
 Every Adventure opponent deck played best-of-three series against the
 standard deck (ten of each creature), which the player always uses. The
 results are for ordering tiers, rebalancing opponent decks and setting
-per-tier difficulty; see [Recommendations](#recommendations).
+per-tier difficulty; see [Recommendations](#recommendations). The
+[boss rebuild](#boss-rebuild) replaced the boss decks after the first
+measurements.
 
 ## Deck legend
 
@@ -23,25 +27,29 @@ per-tier difficulty; see [Recommendations](#recommendations).
 A player wins with five different creatures or five of one creature on the
 board, and loses by drawing from an empty deck. Deck IDs, and shorthands such
 as Forest/Island, use the engine's land names. A duo deck holds 25 + 25 of
-two creatures, and a boss deck 50 of one.
+two creatures. A boss deck held 50 of one creature until the
+[boss rebuild](#boss-rebuild), and now pairs its signature creature with
+support.
 
 ## Key findings
 
 - **Island decides strength at Hard.** Signal Sirens cancel the player's
   summons and refill their owner's hand. At Hard, with the player moving
-  first as in Adventure, every duo or boss with them wins at least 62.7% of
-  series against the standard deck, and every one without them at most
-  30.7%.
-- **The Island boss is unbeatable.** It won all 3,400 of its series, in every
-  run and seating, and 6,800 of its 6,820 games. It is the boss of one run in
-  five.
+  first as in Adventure, every duo with them wins at least 62.7% of series
+  against the standard deck, and every duo without them at most 30.7%.
+- **Fifty of one creature made broken bosses.** The old Island boss won all
+  3,400 of its series, in every run and seating, and 6,800 of its 6,820
+  games, so one run in five could not be won. Mimic had nothing to repeat in
+  the old Plains boss, and Reclaim only returned another Gravebloom Dryad in
+  the old Forest boss: the standard deck beat both in at least 87.8% of
+  Advanced and Hard games.
+- **The rebuilt bosses are beatable at every level.** Each pairs its signature
+  creature with support chosen by simulation, and wins 46.4–75.0% of games
+  against the standard deck at the same level; see
+  [Boss rebuild](#boss-rebuild).
 - **Mountain decks punish weaker play.** Banish crushes Basic and Advanced
-  play but fails at Hard. The Mountain boss wins 99.8% of Advanced games but
-  31.1% of Hard games, and Mountain/Plains falls from 88.6% to 8.8%.
-- **Two bosses have no working ability.** Mimic has nothing to repeat in a
-  Plains boss deck, and Reclaim only returns another Gravebloom Dryad. The
-  standard deck beats both bosses in at least 87.8% of Advanced and Hard
-  games.
+  play but fails at Hard. Mountain/Plains wins 88.6% of Advanced games but
+  8.8% of Hard games, and the old Mountain boss fell from 99.8% to 31.1%.
 - **Five duos are nearly free wins at Hard.** Forest/Plains, Forest/Mountain,
   Forest/Swamp, Mountain/Plains and Plains/Swamp win at most 11.4% of Hard
   games.
@@ -50,8 +58,8 @@ two creatures, and a boss deck 50 of one.
   so difficulty jumps at random.
 - **The opponent's AI level matters only for decks with choices.** Against an
   Advanced player, raising the opponent from Basic to Hard lifts the standard
-  deck from 30.0% to 93.1% of games, but moves every boss by at most 2.5
-  points.
+  deck from 30.0% to 93.1% of games, but moved every old boss by at most 2.5
+  points. The rebuilt bosses have choices, and gain 11.2–47.3 points.
 - **Moving first is a handicap at Hard.** The player always moves first. In
   the standard mirror the second player wins 55.2% of Hard games, against
   50.8% at Basic and 51.3% at Advanced.
@@ -65,26 +73,27 @@ two creatures, and a boss deck 50 of one.
 Each cell is the deck's game score against the standard deck at the same AI
 level, with the standard deck moving first as in Adventure. Bands: Very easy
 below 15%, Easy below 40%, Even up to 60%, Hard up to 85% and Extreme above.
-Rows are sorted by the Hard score.
+Rows are sorted by the Hard score. Boss rows are the rebuilt decks;
+[Results](#results) gives the old ones.
 
 | Deck | Basic | Advanced | Hard | Strength or weakness |
 |---|---|---|---|---|
-| `boss-Island` | 99.7% Extreme | 99.9% Extreme | 99.8% Extreme | Draws with every Siren and cancels the player's summons |
 | `dual-Forest-Island` | 86.9% Extreme | 73.9% Hard | 89.8% Extreme | Reclaim returns spent Sirens: the most Intercepts |
 | `dual-Island-Swamp` | 61.5% Hard | 50.5% Even | 71.2% Hard | Drain Memory on top of Intercept |
+| `boss-Island` | 66.3% Hard | 58.1% Even | 70.3% Hard | Sirens with six of each other creature: nearly half its Hard wins are five different |
 | `dual-Island-Plains` | 69.7% Hard | 49.8% Even | 69.6% Hard | Mimic repeats Listen In: the most extra draws |
+| `boss-Swamp` | 73.0% Hard | 60.5% Hard | 60.2% Hard | Mostly Drain Memory, with a few Sirens |
 | `dual-Island-Mountain` | 85.9% Extreme | 79.5% Hard | 57.2% Even | Banish on top of Intercept; the longest Hard games |
 | `standard` | 51.7% Even | 52.2% Even | 56.1% Even | The mirror; moving second helps at Hard |
+| `boss-Plains` | 71.2% Hard | 46.4% Even | 55.3% Even | Mimic repeats Listen In, much like Island/Plains |
+| `boss-Forest` | 75.0% Hard | 63.5% Hard | 54.9% Even | Mostly Reclaim, with a few Sirens |
+| `boss-Mountain` | 62.4% Hard | 73.1% Hard | 54.1% Even | Banish and Drain Memory: strongest at Advanced |
 | `random` | 44.6% Even | 48.8% Even | 53.3% Even | Like the standard deck, with an uneven mix |
 | `dual-Mountain-Swamp` | 46.1% Even | 64.1% Hard | 36.7% Easy | Banish and Drain Memory: the best deck without Island at Hard |
-| `boss-Mountain` | 93.8% Extreme | 99.8% Extreme | 31.1% Easy | Banish every turn; Hard intercepts more Gargoyles |
-| `boss-Swamp` | 55.9% Even | 42.4% Even | 31.1% Easy | Drain Memory every turn |
 | `dual-Plains-Swamp` | 21.8% Easy | 19.8% Easy | 11.4% Very easy | Drain Memory only |
 | `dual-Mountain-Plains` | 58.5% Even | 88.6% Extreme | 8.8% Very easy | Banish, repeated by Mimic, breaks Advanced play |
 | `dual-Forest-Swamp` | 15.6% Easy | 20.2% Easy | 8.1% Very easy | Drain Memory only |
-| `boss-Forest` | 33.2% Easy | 12.2% Very easy | 2.6% Very easy | Reclaim only returns another Dryad |
 | `dual-Forest-Mountain` | 31.0% Easy | 58.3% Even | 2.3% Very easy | Banish only |
-| `boss-Plains` | 33.2% Easy | 12.2% Very easy | 1.6% Very easy | Mimic has nothing to repeat |
 | `dual-Forest-Plains` | 9.7% Very easy | 7.2% Very easy | 1.2% Very easy | No disruption at all |
 
 ## How run opponents are chosen today
@@ -95,7 +104,10 @@ Rows are sorted by the Hard score.
   - Twelve non-boss decks: the standard deck (ten of each creature), ten duos
     (one for every pair of creatures) and a random deck (each card drawn
     uniformly).
-  - Five boss decks, each 50 of one creature.
+  - Five boss decks, each its signature creature, the plurality, with
+    support from `ADVENTURE_BOSS_LAND_COUNTS`; see
+    [Boss rebuild](#boss-rebuild). Until then each was 50 of one creature,
+    and runs started before the rebuild keep those stored decks.
 - **Map.** `generateBranchingAdventureMap` seeds every new run from the clock.
   - It picks one of four fork patterns, each with three non-adjacent two-way
     forks among tiers 1–6.
@@ -166,6 +178,8 @@ Rows are sorted by the Hard score.
   - Stand-in: Advanced plays the standard deck against Basic opponents (500
     series) and Hard opponents (300 series), in the `adventure` seating only.
   - In total: 57,800 series and 133,591 games.
+  - The [boss rebuild](#boss-rebuild) measured the new boss decks the same
+    way, with the same series numbers: 17,000 series and 41,504 games.
 - **Seeds.** Each game's seed derives from its series number and game index,
   the same for every deck and level, so the results reproduce exactly at a
   given revision.
@@ -178,6 +192,10 @@ Rows are sorted by the Hard score.
   - Simulated players have no relics.
 
 ## Results
+
+These results are from `a1eec3c`, before the [boss rebuild](#boss-rebuild),
+so their `boss-*` rows are the old decks of fifty of one creature. The boss
+rebuild gives the new bosses in the same forms.
 
 ### Series score at each level
 
@@ -208,16 +226,16 @@ the Adventure deck move first.
 
 The ranking depends on the level:
 
-- **Basic:** the Island and Mountain bosses lead, then Island/Mountain and
-  Forest/Island.
-- **Advanced:** the Island and Mountain bosses lead, then Mountain/Plains and
-  Island/Mountain.
-- **Hard:** the Island boss leads, then Forest/Island and the other Island
-  duos.
+- **Basic:** the old Island and Mountain bosses lead, then Island/Mountain
+  and Forest/Island.
+- **Advanced:** the old Island and Mountain bosses lead, then
+  Mountain/Plains and Island/Mountain.
+- **Hard:** the old Island boss leads, then Forest/Island and the other
+  Island duos.
 
 Forest/Island is in the top five at every level, and Forest/Plains is last or
-tied for last. The Forest and Plains bosses have identical results at Basic
-and Advanced, because their abilities never changed a result there.
+tied for last. The old Forest and Plains bosses had identical results at
+Basic and Advanced, because their abilities never changed a result there.
 
 ### Per-game score against an Advanced player
 
@@ -252,8 +270,8 @@ The standard deck at Hard beats Advanced in 93.1% of games, close to the
 roadmap item cites.
 
 The opponent's level matters most where the opponent has choices to make.
-Every card in a boss deck is the same creature, so Basic and Hard play it
-almost alike. Forest/Plains, Forest/Swamp and Plains/Swamp gain at most 16
+Every card in an old boss deck was the same creature, so Basic and Hard
+played it almost alike. Forest/Plains, Forest/Swamp and Plains/Swamp gain at most 16
 points from Basic to Hard, and Forest/Plains stays below 9%.
 
 ### Seat order
@@ -270,7 +288,7 @@ pooled over both seatings:
 The player always moves first in Adventure, which costs about five points per
 Hard game. Moving first also costs the standard, random and Island duo decks
 5–22 points of Hard series score (the last column of the series table), while
-some decks without Island gain: the Swamp boss gains 13 points.
+some decks without Island gain: the old Swamp boss gains 13 points.
 
 ### Ability use at Hard
 
@@ -298,25 +316,25 @@ Reclaims and extra draws include the abilities that Mimic repeats.
 | `boss-Plains` | 1.6% | 11.7 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `dual-Forest-Plains` | 1.2% | 11.6 | 0 | 0 | 0 | 1.8 | 0.3 | 0 |
 
-- **Island boss.** Every Signal Siren it summons draws a card (5.3 a game),
-  which pays for Intercept's two-card cost (2.6 a game). It wins in under 15
-  turns, and the standard deck summons only 3.0 creatures a game against it,
-  against 9.6 in the Hard mirror.
+- **Old Island boss.** Every Signal Siren it summoned drew a card (5.3 a
+  game), which paid for Intercept's two-card cost (2.6 a game). It won in
+  under 15 turns, and the standard deck summoned only 3.0 creatures a game
+  against it, against 9.6 in the Hard mirror.
 - **Island duos.** Intercept slows the player's race to five different
   creatures while the second creature adds pressure. Forest/Island recycles
   Sirens with Reclaim for the most Intercepts, and Island/Plains repeats
   Listen In with Mimic for the most extra draws.
-- **Decks without Island.** A duo or boss can win only with five of one
+- **Decks without Island.** A duo or old boss can win only with five of one
   creature, and without Intercept it cannot stop a summon. Only disruption
   keeps it in the game, and Mountain/Swamp, with both Banish and Drain
   Memory, is the best of them at Hard.
 - **Mountain decks.** Below Hard, Banish breaks up the player's five different
-  creatures: 7.0–11.4 times a game for the Mountain boss and Mountain/Plains.
-  At Hard the standard deck intercepts 4.3 Gargoyles a game against the
-  Mountain boss, against 2.4–2.7 at the lower levels, and wins 68.9% of
-  games.
-- **Forest and Plains bosses.** With no working ability, they play as plain
-  racers that move second, and lose the race.
+  creatures: 7.0–11.4 times a game for the old Mountain boss and
+  Mountain/Plains. At Hard the standard deck intercepts 4.3 Gargoyles a game
+  against the old Mountain boss, against 2.4–2.7 at the lower levels, and
+  wins 68.9% of games.
+- **Old Forest and Plains bosses.** With no working ability, they played as
+  plain racers that move second, and lost the race.
 
 ### Run difficulty
 
@@ -345,8 +363,9 @@ A run model estimates how often a stand-in player clears a whole run.
 
 The boss columns give the informed clear rate on maps with that boss.
 
-- **The boss.** The Island boss makes one run in five unwinnable at every
-  level, and the Mountain boss nearly does the same below Hard.
+- **The boss.** The old Island boss made one run in five unwinnable at every
+  level, and the old Mountain boss nearly did the same below Hard. The
+  rebuilt bosses fix this; see [Boss rebuild](#boss-rebuild).
 - **The route.** Where the boss can be beaten, the six non-boss tiers decide
   the run. Picking the easier fork raises an Advanced player's clear rate
   from 26.7% to 36.7% against Basic opponents, and nearly doubles it in all
@@ -359,6 +378,176 @@ The boss columns give the informed clear rate on maps with that boss.
   and 0.3% against Hard ones. A Basic player clears 13.0% against Basic
   opponents.
 
+## Boss rebuild
+
+[Recommendation 1](#recommendations) asked for bosses that a player can
+always beat. Each boss is now its signature creature, the plurality of its
+deck, with support creatures chosen by simulation. One composition serves
+every level. A boss keeps its `boss-<Land>` ID and `mono` kind, and the map
+still names it "Boss: <creature> specialist" after its signature creature,
+so the save format and the interface are unchanged.
+
+| Boss | Deck | Basic | Advanced | Hard | Old Basic | Old Advanced | Old Hard |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `boss-Forest` | 45 Forest, 5 Island | 75.0% | 63.5% | 54.9% | 33.2% | 12.2% | 2.6% |
+| `boss-Island` | 26 Island, 6 of each other land | 66.3% | 58.1% | 70.3% | 99.7% | 99.9% | 99.8% |
+| `boss-Mountain` | 26 Mountain, 20 Swamp, 4 Island | 62.4% | 73.1% | 54.1% | 93.8% | 99.8% | 31.1% |
+| `boss-Plains` | 28 Plains, 22 Island | 71.2% | 46.4% | 55.3% | 33.2% | 12.2% | 1.6% |
+| `boss-Swamp` | 45 Swamp, 5 Island | 73.0% | 60.5% | 60.2% | 55.9% | 42.4% | 31.1% |
+
+Cells are game scores against the standard deck at the same AI level, with
+the standard deck moving first. The old columns are the decks of fifty of one
+creature.
+
+- **Target.** A boss should be among the hardest nodes of a run but never
+  decide it alone: Even or Hard at every level, 40–85% of games, and near
+  60%. The rebuilt bosses win 46.4–75.0%, so a player as strong as the AI
+  wins at least one boss game in four.
+- **One table for every level.** `ADVENTURE_BOSS_LAND_COUNTS` in
+  [`adventure-map.ts`](../../src/app/adventure-map.ts) holds the five
+  compositions. A test keeps the signature creature the plurality and first
+  in the boss's lands, which name the boss on the map.
+
+### Series score, rebuilt bosses
+
+Series scores against the standard deck at the same AI level, as in
+[Series score at each level](#series-score-at-each-level). Adventure plays
+single games with the player moving first, so the game scores above set run
+difficulty.
+
+| Boss | Basic | Advanced | Hard | Hard, deck first |
+|---|---:|---:|---:|---:|
+| `boss-Forest` | 85.6% | 71.2% | 58.7% | 42.3% |
+| `boss-Island` | 74.2% | 61.4% | 78.3% | 71.3% |
+| `boss-Mountain` | 69.0% | 82.4% | 56.7% | 46.3% |
+| `boss-Plains` | 80.8% | 42.8% | 57.3% | 53.0% |
+| `boss-Swamp` | 83.6% | 66.0% | 66.0% | 69.7% |
+
+### Against an Advanced player
+
+Game scores with Advanced playing the standard deck and moving first, as in
+[Per-game score against an Advanced player](#per-game-score-against-an-advanced-player).
+
+| Boss | Basic opponent | Advanced opponent | Hard opponent |
+|---|---:|---:|---:|
+| `boss-Forest` | 62.6% | 63.5% | 75.8% |
+| `boss-Island` | 48.1% | 58.1% | 95.4% |
+| `boss-Mountain` | 44.0% | 73.1% | 89.5% |
+| `boss-Plains` | 43.7% | 46.4% | 88.3% |
+| `boss-Swamp` | 58.8% | 60.5% | 70.0% |
+
+The rebuilt bosses have choices, so the opponent's level now matters for
+them, as it does for the standard deck (30.0%, 52.2% and 93.1%). An Advanced
+player beats a Hard boss in 4.6–30.0% of games.
+
+### Ability use at Hard, rebuilt bosses
+
+| Boss | Game score | Turns | Intercepts | Banishes | Drains | Reclaims | Mimics | Extra draws |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `boss-Island` | 70.3% | 24.8 | 3.7 | 1.5 | 1.4 | 1.9 | 1.1 | 4.4 |
+| `boss-Swamp` | 60.2% | 16.0 | 0.9 | 0 | 4.3 | 0 | 0 | 0.0 |
+| `boss-Plains` | 55.3% | 20.6 | 3.4 | 0 | 0 | 0 | 3.2 | 5.1 |
+| `boss-Forest` | 54.9% | 15.2 | 1.9 | 0 | 0 | 4.3 | 0 | 0.0 |
+| `boss-Mountain` | 54.1% | 27.0 | 0.9 | 5.8 | 3.9 | 0 | 0 | 0.2 |
+
+- **Island boss.** Six of each other creature let it win with five different
+  creatures, which it did in 244 of its 504 Hard wins. The old boss won only
+  with five Sirens.
+- **Forest and Plains bosses.** Their abilities now have targets: the
+  Forest boss reclaims 4.3 times a game, and the Plains boss mimics 3.2
+  times, with 22 Signal Sirens to copy.
+- **Mountain boss.** Twenty Memory Vampires add Drain Memory to Banish, and
+  four Sirens a few Intercepts.
+
+### Run difficulty with the rebuilt bosses
+
+The [run model](#run-difficulty) on the same maps, with the rebuilt bosses:
+
+| Opponents vs player | Clear, informed | Clear, blind | Island boss | Mountain boss | Forest boss | Plains boss | Swamp boss |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Basic vs Basic | 13.9% | 7.1% | 15.0% | 16.1% | 12.2% | 13.5% | 12.8% |
+| Basic vs Advanced | 50.9% | 36.3% | 52.9% | 54.4% | 45.2% | 54.5% | 47.4% |
+| Advanced vs Advanced | 13.3% | 7.0% | 13.9% | 10.4% | 12.8% | 16.0% | 13.4% |
+| Hard vs Advanced | 0.2% | 0.0% | 0.1% | 0.1% | 0.3% | 0.1% | 0.3% |
+| Hard vs Hard | 29.6% | 16.0% | 24.6% | 31.5% | 31.4% | 31.3% | 29.2% |
+
+- **No boss decides a run.** In each mirror, the informed clear rates on
+  maps with each boss are within 6.9 points of each other, where they
+  spread over 19.5–40.2 points before.
+- **Overall clear rates barely moved** in the mirrors: the Island boss became
+  beatable, and the Forest and Plains bosses harder. An Advanced player
+  against Basic opponents clears 50.9% of runs, up from 36.7%.
+- **The route still decides most runs.** Recommendations 2 and 3 address the
+  six non-boss tiers.
+
+### How the bosses were chosen
+
+- **Candidates.** The tool's `mix-<Land><count>-…` deck IDs build any 50-card
+  deck, such as `mix-Forest45-Island5`; see [Reproduce](#reproduce).
+- **Screen.** All in the `adventure` seating:
+  - Round 1: 95 candidates at Basic, Advanced and Basic against Advanced,
+    200 series each, and 18 of them at Hard and Hard against Advanced, 100
+    series each.
+  - Round 2: 50 candidates near the best of round 1, and 17 at Hard.
+- **Confirmation.** 11 finalists on fresh seeds, from series 10,001: 300
+  series at Basic, Advanced and Basic against Advanced, and 200 at Hard and
+  Hard against Advanced. Scores moved by −6.3 to +5.2 points from the
+  screen, 1.9 down on average, so the choice used the confirmation scores.
+  Each boss is a finalist inside the target at all three levels, chosen for
+  scores near 60% and a deck unlike a duo.
+- **Measurement.** The five chosen decks, measured like the other decks in
+  [Method](#method).
+
+What the screen showed, in screen scores:
+
+- **Five Sirens make a boss work.** Forest 45 + Island 5 won 64.7% of
+  Advanced games, and with 5 Gargoyles or 5 Doppelgängers instead of the
+  Sirens, 10.6%. Swamp 45 won 61.6% with 5 Sirens and 44.7% with 5
+  Gargoyles.
+- **Most 35 + 15 specialists failed**, the shape recommendation 1 suggested:
+  - Too strong: Forest 35 + Island 15 and Mountain 35 + Island 15 won 91.2%
+    and 93.4% of Basic games, Mountain 35 + Swamp 15 and Mountain 35 +
+    Plains 15 won 91.3% and 99.3% of Advanced games, and Island 35 + Swamp
+    15 won 91.1% of Hard games.
+  - Too weak: Forest 35 with 15 Mountain, Plains or Swamp, and Plains 35 +
+    Swamp 15, won at most 19.2% of Advanced games.
+  - Swamp 35 + Island 15 passed, but Swamp 45 + Island 5 was nearer 60% at
+    Hard: 65.2% against 72.8%.
+- **Fewer Sirens brought the Island boss down at Hard.** Island 30 + Swamp
+  20, Island 30 + Plains 20 and a five-land deck with 30 Island won
+  79.1–81.7% of Hard games. With 26 Island, the five-land deck won 73.7%.
+- **A few Sirens rescued the Mountain boss at Hard.** Mountain 30 + Swamp 20
+  won 80.5% of Advanced games but 36.8% of Hard games. Trading 4 Gargoyles
+  for Sirens gave 74.5% and 51.2%.
+- **The Plains boss needed Sirens, not Gargoyles.** Plains decks with 8–15
+  Gargoyles won 7.1–13.3% of Hard games, even with 10–12 Sirens. Plains 28
+  + Island 22 won 53.5%.
+
+### Options considered
+
+- **Chosen: a signature creature with support**, one composition for every
+  level, which keeps the map, saves and interface unchanged.
+- **Per-level compositions** could hit the target more tightly, but the map
+  would need the run's AI level when it is built, and a level change during
+  a run would leave the boss tuned for another level.
+- **35 + 15 specialists** mostly failed; see above.
+- **Removing the Island boss** fixes one boss of five.
+- **A lower AI level for the boss** moved the old bosses by at most 2.5
+  points.
+- **Handicaps, such as a smaller opening hand for the boss,** give the
+  Forest and Plains bosses no working ability, and Sirens refill a hand.
+- **26 Island + 24 Plains for the Island boss** scored like the chosen
+  five-land deck, but nearly repeats the Island/Plains duo.
+
+### Caveats
+
+- The Plains boss, 28 + 22, is close to the Island/Plains duo, 25 + 25.
+- The Mountain boss is the weakest at Hard and the strongest at Advanced.
+- A Hard boss beats an Advanced player in 70.0–95.4% of games, as the Hard
+  standard deck does in 93.1%.
+- Runs started before the rebuild keep their stored bosses, including the
+  old Island boss.
+
 ## Recommendations
 
 1. **Fix the boss pool first.**
@@ -368,6 +557,10 @@ The boss columns give the informed clear rate on maps with that boss.
      this tool.
    - Keep the Mountain boss off Basic and Advanced runs, where it wins at
      least 93.8% of games.
+   - **Done:** the [boss rebuild](#boss-rebuild) gives every boss its
+     signature creature with support. Each wins 46.4–75.0% of games against
+     the standard deck at the same level, and the Mountain boss stays on
+     every run.
 2. **Order tiers by measured strength, per level.** Deal decks from the
    [strength summary](#deck-strength-summary) bands for the selected AI level,
    weakest first. The bands must follow the level, because Mountain decks
@@ -390,10 +583,10 @@ The boss columns give the informed clear rate on maps with that boss.
      opponent's deck with `adventureOpponentDeckSeed`; `legacy-linear` maps
      keep the stored order.
 5. **Scale the AI level by tier only for decks with choices.** Moving from
-   Basic to Hard adds 63–67 points for the standard and random decks, but at
-   most 2.5 points for a boss. Tune interactive decks with the level and
-   bosses with their cards, passing settings through `chooseAiAction` options
-   as the roadmap item describes.
+   Basic to Hard adds 63–67 points for the standard and random decks, but
+   moved an old boss by at most 2.5 points. The rebuilt bosses have choices
+   and gain 11.2–47.3 points. Tune interactive decks with the level, passing
+   settings through `chooseAiAction` options as the roadmap item describes.
 6. **Weigh seat order at Hard.** Moving first costs the player about five
    points per Hard game. The engine always starts seat 0, and the player is
    always seat 0, so moving second needs an engine option or a seat change in
@@ -418,6 +611,20 @@ ADVENTURE_SIM_SERIES=500 ADVENTURE_SIM_MATCHUPS=basic:advanced ADVENTURE_SIM_SEA
 ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_MATCHUPS=hard:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=standin-hard.json npm run ai:adventure-decks
 # One report from every result file, with map placement and the run model, without playing.
 ADVENTURE_SIM_MERGE=same-low.json,same-hard.json,standin-basic.json,standin-hard.json ADVENTURE_SIM_MAPS=100000 ADVENTURE_SIM_OUT=report.md npm run ai:adventure-decks
+```
+
+The [boss rebuild](#boss-rebuild) screened candidate decks and confirmed the
+finalists on fresh seeds. A `mix-` deck ID lists lands in the order Forest,
+Island, Mountain, Plains, Swamp, with counts that sum to 50. The rebuilt
+bosses were then measured with the commands above and
+`ADVENTURE_SIM_DECKS=boss-Forest,boss-Island,boss-Mountain,boss-Plains,boss-Swamp`.
+
+```sh
+# Screen candidates in the Adventure seating.
+ADVENTURE_SIM_DECKS=mix-Forest45-Island5,mix-Island5-Swamp45 ADVENTURE_SIM_SERIES=200 ADVENTURE_SIM_MATCHUPS=basic,advanced,basic:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=screen.json npm run ai:adventure-decks
+# Confirm finalists on fresh seeds.
+ADVENTURE_SIM_DECKS=mix-Forest45-Island5 ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_SEED_START=10001 ADVENTURE_SIM_MATCHUPS=basic,advanced,basic:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=confirm.json npm run ai:adventure-decks
+ADVENTURE_SIM_DECKS=mix-Forest45-Island5 ADVENTURE_SIM_SERIES=200 ADVENTURE_SIM_SEED_START=10001 ADVENTURE_SIM_MATCHUPS=hard,hard:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=confirm-hard.json npm run ai:adventure-decks
 ```
 
 `ADVENTURE_SIM_MAPS` adds the map placement and run model sections behind
