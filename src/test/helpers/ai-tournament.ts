@@ -1,7 +1,7 @@
 import { isLegalActionForState } from '../../app/action-validation'
 import { actionClassKey } from '../../game/ai-action-classes'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../../game/engine'
-import type { Card, GameAction, GameState } from '../../game/types'
+import type { Card, GameAction, GameState, LogEvent } from '../../game/types'
 
 // Measurement harness for AI levels: seeded games, mirrored matches, Wilson
 // intervals and per-decision latency. Default-suite tests use it with small
@@ -32,6 +32,8 @@ export interface PlayedGame {
   readonly latencies: [number[], number[]]
   /** Decisions with two or more legal actions, by seat, when recorded. */
   readonly decisions: [DecisionRecord[], DecisionRecord[]]
+  /** The last state, with its log and events dropped. */
+  readonly finalState: GameState
 }
 
 export interface PlayOptions {
@@ -39,6 +41,8 @@ export interface PlayOptions {
   /** Keeps every decision with two or more legal actions. */
   readonly recordDecisions?: boolean
   readonly clock?: () => number
+  /** Receives the events of every step before they are dropped. */
+  readonly onEvents?: (events: readonly LogEvent[]) => void
 }
 
 const MAX_STEPS = 5000
@@ -77,9 +81,10 @@ export function playGame(seed: number, policies: readonly [TournamentPolicy, Tou
     }
     const next = applyAction(state, action)
     deckOut = next.events.some((event) => event.kind === 'deck_empty_loss')
+    options.onEvents?.(next.events)
     state = { ...next, log: [], events: [] }
   }
-  return { winner: state.winner, turns: state.turn, deckOut, latencies, decisions }
+  return { winner: state.winner, turns: state.turn, deckOut, latencies, decisions, finalState: state }
 }
 
 /** A 95% Wilson score interval for `successes` out of `trials`. */

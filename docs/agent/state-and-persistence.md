@@ -125,6 +125,8 @@ Detail for
 identity-bound mid-game save. Leaf modules never touch persistence, the
 controller, storage, the DOM, randomness or the clock, and boundary tests pin
 their imports; `adventure-map.ts` owns pools, map, routes and seeds.
+[Adventure deck strength](../research/adventure-deck-strength.md) measures
+every pool deck against the standard deck.
 
 ### Adventure product decisions
 

@@ -80,8 +80,11 @@ stateful UI test contracts, and browser verification.
   `AI_TOURNAMENT_DIAGNOSTICS=1` adds seed variety in calm and critical
   positions and a blunder audit. `npm run ai:tune` refits the evaluator
   weights and reports the held-out log-loss of the fit and the frozen
-  weights. Run no more tools in parallel than there are CPUs, or latencies
-  inflate. Paste results into the PR.
+  weights. `npm run ai:adventure-decks` plays best-of-three series of every
+  Adventure opponent deck against the standard deck; see
+  [Adventure deck strength](../research/adventure-deck-strength.md). Run no
+  more tools in parallel than there are CPUs, or latencies inflate. Paste
+  results into the PR.
 - **Promoting weights or settings.** Promote a refit only if it beats the
   frozen weights on held-out log-loss and `search-candidate`
   (`AI_CANDIDATE_WEIGHTS` set to the tune report) beats `search` in mirrored
