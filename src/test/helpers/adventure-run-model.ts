@@ -3,7 +3,13 @@ import {
   type AdventureMap,
   type AdventureMapNode,
 } from '../../app/adventure-map'
-import { ADVENTURE_SIM_DECK_IDS, isAdventureSimDeckId, mergeAdventureSimCells, type AdventureSimCell } from './adventure-deck-sim'
+import {
+  ADVENTURE_SIM_DECK_IDS,
+  compareAdventureSimDeckIds,
+  isAdventureSimDeckId,
+  mergeAdventureSimCells,
+  type AdventureSimCell,
+} from './adventure-deck-sim'
 import { formatPercent } from './ai-tournament'
 
 // Whole-run estimates for docs/research/adventure-deck-strength.md: where
@@ -231,7 +237,7 @@ export function* adventureRunModelSteps(
 }
 
 function byPoolOrder<V>(entries: ReadonlyMap<string, V>): [string, V][] {
-  return [...entries].sort(([left], [right]) => ADVENTURE_SIM_DECK_IDS.indexOf(left) - ADVENTURE_SIM_DECK_IDS.indexOf(right))
+  return [...entries].sort(([left], [right]) => compareAdventureSimDeckIds(left, right))
 }
 
 /** A markdown report of map placement and run clear chances. */

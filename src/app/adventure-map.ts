@@ -22,6 +22,11 @@ export const ADVENTURE_DECK_SIZE = 50
 const ADVENTURE_MAX_ID_LENGTH = 128
 const ADVENTURE_MAX_LABEL_LENGTH = 256
 
+/**
+ * Opponent deck kinds. `mono` is the boss kind, a signature creature with
+ * support (see `ADVENTURE_BOSS_LAND_COUNTS`); saves keep the name from when
+ * bosses were fifty of one creature.
+ */
 export type AdventureOpponentKind = 'standard' | 'dual' | 'mono' | 'random'
 export type AdventureRunStatus = 'active' | 'paused' | 'completed' | 'failed'
 /**
@@ -74,7 +79,7 @@ export interface AdventureMap {
   tiers: AdventureMapTier[]
 }
 
-/** Opponent pools before any are picked: twelve non-boss decks and five mono bosses. */
+/** Opponent pools before any are picked: twelve non-boss decks and five bosses. */
 export interface AdventureOpponentPools {
   nonBoss: AdventureOpponentDeck[]
   boss: AdventureOpponentDeck[]
@@ -146,8 +151,25 @@ function createDualDeck(ownerKey: string, first: BasicLand, second: BasicLand, s
   return buildDeckFromCounts(ownerKey, { [first]: 25, [second]: 25 }, seed)
 }
 
-function createMonoDeck(ownerKey: string, land: BasicLand, seed: number): Card[] {
-  return buildDeckFromCounts(ownerKey, { [land]: 50 }, seed)
+/**
+ * Each boss deck: its signature creature, the plurality, and the support that
+ * keeps the boss winnable. Against the standard deck at the same AI level,
+ * every boss wins 46.4–75.0% of games at Basic, Advanced and Hard, where
+ * fifty of one creature ranged from 1.6% to 99.9%. See
+ * `docs/research/adventure-deck-strength.md`.
+ */
+export const ADVENTURE_BOSS_LAND_COUNTS: Readonly<Record<BasicLand, Readonly<Partial<Record<BasicLand, number>>>>> = Object.freeze({
+  Forest: Object.freeze({ Forest: 45, Island: 5 }),
+  Island: Object.freeze({ Forest: 6, Island: 26, Mountain: 6, Plains: 6, Swamp: 6 }),
+  Mountain: Object.freeze({ Island: 4, Mountain: 26, Swamp: 20 }),
+  Plains: Object.freeze({ Island: 22, Plains: 28 }),
+  Swamp: Object.freeze({ Island: 5, Swamp: 45 }),
+})
+
+/** The signature creature first, then its support in `BASIC_LANDS` order. */
+function bossLands(signature: BasicLand): BasicLand[] {
+  const counts = ADVENTURE_BOSS_LAND_COUNTS[signature]
+  return [signature, ...BASIC_LANDS.filter((land) => land !== signature && (counts[land] ?? 0) > 0)]
 }
 
 function createRandomDeck(ownerKey: string, seed: number): Card[] {
@@ -209,10 +231,10 @@ export function buildAdventureOpponentPools(seed: number): AdventureOpponentPool
 
   const boss: AdventureOpponentDeck[] = BASIC_LANDS.map((land, index) => ({
     id: `boss-${land}`,
-    label: `Boss: Mono ${land} Deck`,
+    label: `Boss: ${land} Specialist Deck`,
     kind: 'mono',
-    lands: [land],
-    deck: createMonoDeck(`opp-boss-${index}`, land, seed + 900 + index * 13),
+    lands: bossLands(land),
+    deck: buildDeckFromCounts(`opp-boss-${index}`, ADVENTURE_BOSS_LAND_COUNTS[land], seed + 900 + index * 13),
   }))
 
   return { nonBoss, boss }

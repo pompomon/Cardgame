@@ -1,9 +1,14 @@
 import { buildAdventureOpponentPools } from '../../app/adventure-map'
 import { createAiRng, deriveAiSeed } from '../../game/ai-random'
+import { shuffle } from '../../game/cards'
 import { activeActor, applyAction, createInitialGame, getLegalActions } from '../../game/engine'
-import type { Card, GameAction, GameState } from '../../game/types'
+import { BASIC_LANDS, type Card, type GameAction, type GameState } from '../../game/types'
 
-/** Opponent deck kinds of Adventure mode, plus the regular starter deck. */
+/**
+ * Opponent deck kinds of Adventure mode, plus the regular starter deck.
+ * `mono` is fifty of one creature, as Adventure bosses were before their
+ * rebuild, kept as the most lopsided decks for the AI tests and tools.
+ */
 export type TestDeckKind = 'starter' | 'standard' | 'dual' | 'random' | 'mono'
 
 export const TEST_DECK_KINDS: readonly TestDeckKind[] = ['starter', 'standard', 'dual', 'random', 'mono']
@@ -20,17 +25,34 @@ export function deckVariantOfSeed(seed: number): number {
 }
 
 /**
+ * Fifty of one creature with the card ids and shuffle of the old Adventure
+ * boss decks, so seeded AI games and tuning corpora are unchanged.
+ */
+function monoDeck(seed: number, index: number): Card[] {
+  const land = BASIC_LANDS[index]
+  const cards: Card[] = Array.from({ length: 50 }, (_, card) => ({
+    id: `opp-boss-${index}-${land.toLowerCase()}-${card}`,
+    name: land,
+    type: 'land',
+  }))
+  return shuffle(cards, seed + 900 + index * 13)
+}
+
+/**
  * A deck of `kind` built from `seed`; `undefined` means the engine's seeded
- * starter deck. Adventure decks reuse the Adventure pools. `variant` picks the
- * mono or dual deck; pass `seed` to cycle them evenly over consecutive seeds
- * when the kind is fixed.
+ * starter deck. The other non-mono decks reuse the Adventure pools. `variant`
+ * picks the mono or dual deck; pass `seed` to cycle them evenly over
+ * consecutive seeds when the kind is fixed.
  */
 export function deckOfKind(kind: TestDeckKind, seed: number, variant = deckVariantOfSeed(seed)): Card[] | undefined {
+  const pick = (count: number) => Math.abs(variant) % count
   if (kind === 'starter') {
     return undefined
   }
+  if (kind === 'mono') {
+    return monoDeck(seed, pick(BASIC_LANDS.length))
+  }
   const pools = buildAdventureOpponentPools(seed)
-  const pick = (count: number) => Math.abs(variant) % count
   switch (kind) {
     case 'standard':
       return pools.nonBoss.find((deck) => deck.kind === 'standard')!.deck
@@ -40,8 +62,6 @@ export function deckOfKind(kind: TestDeckKind, seed: number, variant = deckVaria
     }
     case 'random':
       return pools.nonBoss.find((deck) => deck.kind === 'random')!.deck
-    case 'mono':
-      return pools.boss[pick(pools.boss.length)].deck
     default:
       return undefined
   }
