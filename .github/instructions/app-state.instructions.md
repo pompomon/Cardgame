@@ -26,9 +26,10 @@ Details: [state-and-persistence](../../docs/agent/state-and-persistence.md).
 - A mid-game save restores only if its run, node, attempt and seed match.
   Resume needs a run `paused` at stage `encounter`; Pause writes that only
   after the game snapshot write succeeds.
-- `adventure-map.ts`, `adventure-route-graph.ts`, `adventure-rewards.ts` and
-  `adventure-setup.ts` are leaf modules whose boundary tests pin their
-  imports; `adventure.ts` re-exports `adventure-map.ts`, never the reverse.
+- `adventure-map.ts`, `adventure-route-graph.ts`, `adventure-rewards.ts`,
+  `adventure-setup.ts` and `adventure-difficulty.ts` are leaf modules whose
+  boundary tests pin their imports; `adventure.ts` re-exports
+  `adventure-map.ts`, never the reverse.
 - Derive Adventure sub-seeds with `deriveAdventureSeed()`, which folds both
   32-bit halves of the base seed in; `lcg()` and `shuffle()` keep only
   `seed >>> 0`.

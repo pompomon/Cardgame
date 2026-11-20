@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { AI_LEVELS, type AiLevel } from '../game/ai-levels'
 import { createStarterDeck } from '../game/cards'
 import { BASIC_LANDS } from '../game/types'
 import {
@@ -10,8 +11,10 @@ import {
   type AdventureRunState,
   type AdventureRunStateV1,
 } from '../app/adventure'
+import { ADVENTURE_DECK_BANDS } from '../app/adventure-difficulty'
 import {
   ADVENTURE_BOSS_LAND_COUNTS,
+  ADVENTURE_DECK_BAND_ORDER,
   ADVENTURE_FORK_PATTERNS,
   ADVENTURE_NODE_ID_PATTERN,
   ADVENTURE_SEED_PURPOSE,
@@ -31,6 +34,8 @@ import {
   parseAdventureNodeId,
   retryAdventureNode,
   selectAdventureNode,
+  type AdventureDeckBand,
+  type AdventureDeckBands,
   type AdventureMap,
   type AdventureMapNode,
   type AdventureNodeLane,
@@ -58,11 +63,16 @@ const CONTIGUOUS_SEEDS = Array.from({ length: 96 }, (_, index) => 1_000 + index)
 const CLOCK_LIKE_SEEDS = Array.from({ length: 96 }, (_, index) => CLOCK_SEED + index * 997)
 const SEED_TABLE = [...EDGE_SEEDS, ...CONTIGUOUS_SEEDS, ...CLOCK_LIKE_SEEDS]
 
-let seedTableMaps: Array<[number, AdventureMap]> | null = null
+const seedTableMaps = new Map<AiLevel, Array<[number, AdventureMap]>>()
 
-function tableMaps(): Array<[number, AdventureMap]> {
-  seedTableMaps ??= SEED_TABLE.map((seed) => [seed, generateBranchingAdventureMap(seed)])
-  return seedTableMaps
+/** The seed table's maps, ordered for an AI level. */
+function tableMaps(level: AiLevel = 'basic'): Array<[number, AdventureMap]> {
+  let maps = seedTableMaps.get(level)
+  if (maps === undefined) {
+    maps = SEED_TABLE.map((seed) => [seed, generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS[level])])
+    seedTableMaps.set(level, maps)
+  }
+  return maps
 }
 
 type V1FixtureName = 'closedMidRound' | 'pausedMidRound'
@@ -81,6 +91,26 @@ function forkTierIndexes(map: AdventureMap): number[] {
 
 function mapNodes(map: AdventureMap): Array<{ tierIndex: number; node: AdventureMapNode }> {
   return map.tiers.flatMap((tier, tierIndex) => tier.nodes.map((node) => ({ tierIndex, node })))
+}
+
+/** The pool deck ID of a generated node, such as `dual-Forest-Island`. */
+function nodeDeckId(tierIndex: number, node: AdventureMapNode): string {
+  return node.opponent.id.slice(`adventure-opponent-${tierIndex + 1}-`.length)
+}
+
+const EVEN_RANK = ADVENTURE_DECK_BAND_ORDER.indexOf('even')
+const EXTREME_RANK = ADVENTURE_DECK_BAND_ORDER.indexOf('extreme')
+
+/** Band ranks, weakest 0, of each non-boss tier's decks, in lane order. */
+function tierBandRanks(map: AdventureMap, bands: AdventureDeckBands): number[][] {
+  return map.tiers.slice(0, -1).map((tier, tierIndex) =>
+    tier.nodes.map((node) => ADVENTURE_DECK_BAND_ORDER.indexOf(bands[nodeDeckId(tierIndex, node)])))
+}
+
+/** The first `extremeCount` non-boss pool decks are Extreme and the rest `otherBand`. */
+function syntheticBands(extremeCount: number, otherBand: AdventureDeckBand): AdventureDeckBands {
+  return Object.fromEntries(buildAdventureOpponentPools(0).nonBoss.map((opponent, index) =>
+    [opponent.id, index < extremeCount ? 'extreme' : otherBand]))
 }
 
 function collectObjects(value: unknown, into = new Set<object>()): Set<object> {
@@ -224,7 +254,7 @@ function migratedRun(legacy: AdventureRunStateV1): AdventureRunState {
 /** A run saved by Milestone 2, which created linear maps with the first seed stored. */
 function savedLinearRun(seed = CLOCK_SEED): AdventureRunState {
   return {
-    ...createAdventureRun(seed, RUN_ID),
+    ...createAdventureRun(seed, RUN_ID, 'basic'),
     map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
     attemptSeed: seed,
   }
@@ -237,7 +267,7 @@ function started(run: AdventureRunState, nodeId: string): AdventureRunState {
 }
 
 describe('Adventure seed derivation', () => {
-  it('uses fixed numeric purpose tags, including the reward-offer and opponent-deck tags', () => {
+  it('uses fixed numeric purpose tags, including the reward-offer, opponent-deck and fork-lane tags', () => {
     expect(ADVENTURE_SEED_PURPOSE).toEqual({
       forkPattern: 1,
       nonBossPick: 2,
@@ -246,6 +276,7 @@ describe('Adventure seed derivation', () => {
       attempt: 5,
       rewardOffer: 6,
       opponentDeck: 7,
+      forkLanes: 8,
     })
     expect(Object.isFrozen(ADVENTURE_SEED_PURPOSE)).toBe(true)
   })
@@ -405,40 +436,53 @@ describe('Adventure reward seeds', () => {
 
 describe('branching map generation', () => {
   it('returns the same map for the same seed, even with other seeds generated in between', () => {
-    const first = JSON.stringify(generateBranchingAdventureMap(CLOCK_SEED))
+    const first = JSON.stringify(generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic))
     for (const seed of [0, 1, 2 ** 32, CLOCK_SEED + 1]) {
-      generateBranchingAdventureMap(seed)
+      generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS.basic)
     }
-    expect(JSON.stringify(generateBranchingAdventureMap(CLOCK_SEED))).toBe(first)
+    expect(JSON.stringify(generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic))).toBe(first)
   })
 
   it('returns maps that share no objects', () => {
-    const first = collectObjects(generateBranchingAdventureMap(CLOCK_SEED))
-    const second = collectObjects(generateBranchingAdventureMap(CLOCK_SEED))
+    const first = collectObjects(generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic))
+    const second = collectObjects(generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic))
 
     expect([...first].filter((object) => second.has(object))).toEqual([])
   })
 
   it('matches the pinned derivation for a clock seed', () => {
-    const map = generateBranchingAdventureMap(CLOCK_SEED)
+    const map = generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic)
+    const hardMap = generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.hard)
 
     expect(forkTierIndexes(map).map((tierIndex) => tierIndex + 1)).toEqual([2, 4, 6])
     expect(Object.fromEntries(mapNodes(map).map(({ node }) => [node.id, node.opponent.id]))).toEqual({
-      'tier-1-center': 'adventure-opponent-1-dual-Forest-Island',
-      'tier-2-left': 'adventure-opponent-2-dual-Island-Swamp',
+      'tier-1-center': 'adventure-opponent-1-dual-Forest-Plains',
+      'tier-2-left': 'adventure-opponent-2-dual-Forest-Mountain',
       'tier-2-right': 'adventure-opponent-2-dual-Forest-Swamp',
       'tier-3-center': 'adventure-opponent-3-dual-Mountain-Plains',
       'tier-4-left': 'adventure-opponent-4-dual-Mountain-Swamp',
-      'tier-4-right': 'adventure-opponent-4-standard',
-      'tier-5-center': 'adventure-opponent-5-dual-Forest-Plains',
-      'tier-6-left': 'adventure-opponent-6-dual-Island-Plains',
-      'tier-6-right': 'adventure-opponent-6-dual-Forest-Mountain',
+      'tier-4-right': 'adventure-opponent-4-dual-Island-Swamp',
+      'tier-5-center': 'adventure-opponent-5-dual-Island-Plains',
+      'tier-6-left': 'adventure-opponent-6-standard',
+      'tier-6-right': 'adventure-opponent-6-dual-Forest-Island',
+      'tier-7-center': 'adventure-opponent-7-boss-Swamp',
+    })
+    expect(Object.fromEntries(mapNodes(hardMap).map(({ node }) => [node.id, node.opponent.id]))).toEqual({
+      'tier-1-center': 'adventure-opponent-1-dual-Forest-Swamp',
+      'tier-2-left': 'adventure-opponent-2-dual-Forest-Plains',
+      'tier-2-right': 'adventure-opponent-2-dual-Mountain-Plains',
+      'tier-3-center': 'adventure-opponent-3-dual-Forest-Mountain',
+      'tier-4-left': 'adventure-opponent-4-dual-Mountain-Swamp',
+      'tier-4-right': 'adventure-opponent-4-dual-Island-Swamp',
+      'tier-5-center': 'adventure-opponent-5-dual-Island-Plains',
+      'tier-6-left': 'adventure-opponent-6-standard',
+      'tier-6-right': 'adventure-opponent-6-dual-Forest-Island',
       'tier-7-center': 'adventure-opponent-7-boss-Swamp',
     })
     expect(map.tiers[0].nodes[0].opponent.deck.slice(0, 3).map((card) => card.id)).toEqual([
-      'opp-dual-0-forest-23',
-      'opp-dual-0-island-19',
-      'opp-dual-0-island-4',
+      'opp-dual-2-forest-20',
+      'opp-dual-2-forest-13',
+      'opp-dual-2-plains-16',
     ])
     expect({
       'tier-1-center#0': adventureAttemptSeed(CLOCK_SEED, 0, 'center', 0),
@@ -482,7 +526,7 @@ describe('branching map generation', () => {
 
   it('produces different maps for seeds that differ only above bit 32', () => {
     for (const seed of [0, 1, 2 ** 31, 2 ** 32 - 1, CLOCK_SEED]) {
-      const maps = [seed, seed + 2 ** 32, seed + 2 ** 40].map((value) => JSON.stringify(generateBranchingAdventureMap(value)))
+      const maps = [seed, seed + 2 ** 32, seed + 2 ** 40].map((value) => JSON.stringify(generateBranchingAdventureMap(value, ADVENTURE_DECK_BANDS.basic)))
       expect(new Set(maps).size, `seed ${seed}`).toBe(3)
     }
   })
@@ -549,6 +593,86 @@ describe('branching map generation', () => {
         }
       }
     }
+  })
+})
+
+describe('level-ordered map generation', () => {
+  it('deals the decks weakest band first, with Extreme decks only at the latest forks, at every level', () => {
+    for (const level of AI_LEVELS) {
+      let extremeMaps = 0
+      for (const [seed, map] of tableMaps(level)) {
+        const ranks = tierBandRanks(map, ADVENTURE_DECK_BANDS[level])
+        const forks = forkTierIndexes(map)
+        const extremeTiers = ranks.flatMap((tier, tierIndex) => (tier.includes(EXTREME_RANK) ? [tierIndex] : []))
+        extremeMaps += extremeTiers.length > 0 ? 1 : 0
+        expect(extremeTiers, `${level} seed ${seed}`).toEqual(forks.slice(forks.length - extremeTiers.length))
+        for (const tierIndex of extremeTiers) {
+          expect(ranks[tierIndex].filter((rank) => rank === EXTREME_RANK), `${level} seed ${seed}`).toHaveLength(1)
+        }
+        const dealt = ranks.filter((_, tierIndex) => !extremeTiers.includes(tierIndex))
+        for (let index = 1; index < dealt.length; index += 1) {
+          expect(Math.max(...dealt[index - 1]), `${level} seed ${seed}`).toBeLessThanOrEqual(Math.min(...dealt[index]))
+        }
+      }
+      expect(extremeMaps, level).toBeGreaterThan(0)
+    }
+  })
+
+  it('pairs each Extreme deck with the strongest Even or easier deck left, the stronger at the later fork', () => {
+    for (const level of AI_LEVELS) {
+      for (const [seed, map] of tableMaps(level)) {
+        const ranks = tierBandRanks(map, ADVENTURE_DECK_BANDS[level])
+        const partners = ranks.flatMap((tier) => (tier.includes(EXTREME_RANK) ? tier.filter((rank) => rank !== EXTREME_RANK) : []))
+        const others = ranks.filter((tier) => !tier.includes(EXTREME_RANK)).flat().filter((rank) => rank <= EVEN_RANK)
+        expect(partners.every((rank) => rank <= EVEN_RANK), `${level} seed ${seed}`).toBe(true)
+        expect(partners, `${level} seed ${seed}`).toEqual([...partners].sort((left, right) => left - right))
+        if (partners.length > 0) {
+          expect(Math.max(...others), `${level} seed ${seed}`).toBeLessThanOrEqual(partners[0])
+        }
+      }
+    }
+  })
+
+  it('deals the same nine decks, fork tiers and boss at every level', () => {
+    const deckIds = (map: AdventureMap): string[] => mapNodes(map).map(({ tierIndex, node }) => nodeDeckId(tierIndex, node)).sort()
+    tableMaps('basic').forEach(([seed, basicMap], index) => {
+      for (const level of AI_LEVELS) {
+        const map = tableMaps(level)[index][1]
+        expect(deckIds(map), `${level} seed ${seed}`).toEqual(deckIds(basicMap))
+        expect(forkTierIndexes(map), `${level} seed ${seed}`).toEqual(forkTierIndexes(basicMap))
+        expect(map.tiers[ADVENTURE_TIER_COUNT - 1], `${level} seed ${seed}`).toEqual(basicMap.tiers[ADVENTURE_TIER_COUNT - 1])
+      }
+    })
+  })
+
+  it('puts Extreme decks in either lane, by seed', () => {
+    for (const level of AI_LEVELS) {
+      const lanes = new Set(tableMaps(level).flatMap(([, map]) => mapNodes(map)
+        .filter(({ tierIndex, node }) => ADVENTURE_DECK_BANDS[level][nodeDeckId(tierIndex, node)] === 'extreme')
+        .map(({ node }) => node.lane)))
+      expect([...lanes].sort(), level).toEqual(['left', 'right'])
+    }
+  })
+
+  it('takes one Extreme deck per fork, beside the easiest deck left when none is Even or easier', () => {
+    const bands = syntheticBands(6, 'hard')
+    for (const seed of EDGE_SEEDS) {
+      const map = generateBranchingAdventureMap(seed, bands)
+      const forks = forkTierIndexes(map)
+      map.tiers.slice(0, -1).forEach((tier, tierIndex) => {
+        expect(tier.nodes.map((node) => bands[nodeDeckId(tierIndex, node)]).sort(), `seed ${seed} tier ${tierIndex + 1}`)
+          .toEqual(forks.includes(tierIndex) ? ['extreme', 'hard'] : ['hard'])
+      })
+    }
+  })
+
+  it('throws when a pool deck has no band, or the bands leave too few decks', () => {
+    const missing = Object.fromEntries(Object.entries(ADVENTURE_DECK_BANDS.basic).filter(([deckId]) => deckId !== 'random'))
+    const unknown = { ...ADVENTURE_DECK_BANDS.basic, random: 'medium' } as unknown as AdventureDeckBands
+
+    expect(() => generateBranchingAdventureMap(CLOCK_SEED, missing)).toThrow('"random" has no strength band')
+    expect(() => generateBranchingAdventureMap(CLOCK_SEED, unknown)).toThrow('"random" has no strength band')
+    expect(() => generateBranchingAdventureMap(CLOCK_SEED, syntheticBands(10, 'even'))).toThrow('too few')
   })
 })
 
@@ -747,7 +871,7 @@ describe('Adventure route statuses', () => {
 
 describe('Adventure routes', () => {
   it('walks all eight choice combinations in exactly seven encounters to the boss', () => {
-    const maps = [...ADVENTURE_FORK_PATTERNS.map((pattern) => branchingMapWithForks(pattern)), generateBranchingAdventureMap(CLOCK_SEED)]
+    const maps = [...ADVENTURE_FORK_PATTERNS.map((pattern) => branchingMapWithForks(pattern)), generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic)]
     for (const map of maps) {
       const paths = new Set<string>()
       for (let choices = 0; choices < 8; choices += 1) {
@@ -765,7 +889,7 @@ describe('Adventure routes', () => {
   })
 
   it('returns fresh results without changing or sharing the input', () => {
-    const map = generateBranchingAdventureMap(CLOCK_SEED)
+    const map = generateBranchingAdventureMap(CLOCK_SEED, ADVENTURE_DECK_BANDS.basic)
     const atFork = deepFreeze(routeAt(map, 1))
     const atForkJson = JSON.stringify(atFork)
     const selected = selectAdventureNode(atFork, 'tier-2-left')

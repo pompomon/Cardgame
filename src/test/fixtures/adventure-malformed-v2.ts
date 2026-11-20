@@ -16,6 +16,7 @@ import {
   type AdventureEncounterOutcome,
   type AdventureRunState,
 } from '../../app/adventure'
+import { ADVENTURE_DECK_BANDS } from '../../app/adventure-difficulty'
 import { generateBranchingAdventureMap, linearAdventureTiers, type AdventureMapKind } from '../../app/adventure-map'
 import {
   adventureRewardOfferId,
@@ -97,7 +98,7 @@ export function claimed(run: AdventureRunState, rewardId: AdventureRewardId): Ad
 /** A new run whose map holds the seed's lineup as one `center` node per tier. */
 function linearRun(kind: Exclude<AdventureMapKind, 'branching'>): AdventureRunState {
   return {
-    ...createAdventureRun(FIXTURE_SEED, FIXTURE_RUN_ID),
+    ...createAdventureRun(FIXTURE_SEED, FIXTURE_RUN_ID, 'basic'),
     map: { kind, tiers: linearAdventureTiers(buildAdventureLineup(FIXTURE_SEED)) },
   }
 }
@@ -105,14 +106,14 @@ function linearRun(kind: Exclude<AdventureMapKind, 'branching'>): AdventureRunSt
 /** The first seed from `FIXTURE_SEED` whose branching map forks on tier 1. */
 function firstTierForkSeed(): number {
   for (let seed = FIXTURE_SEED; seed < FIXTURE_SEED + 400; seed += 1) {
-    if (generateBranchingAdventureMap(seed).tiers[0].nodes.length === 2) return seed
+    if (generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS.basic).tiers[0].nodes.length === 2) return seed
   }
   throw new Error('Expected a seed whose map forks on tier 1.')
 }
 
 const BASE_BUILDERS: Record<MalformedBaseName, () => AdventureRunState> = {
   // A new run at tier 1, before any node is chosen.
-  map: () => createAdventureRun(FIXTURE_SEED, FIXTURE_RUN_ID),
+  map: () => createAdventureRun(FIXTURE_SEED, FIXTURE_RUN_ID, 'basic'),
   // Tier 1 started with the default setup.
   encounter: () => started(malformedBase('map')),
   // Tier 1 won: the first offer waits.
@@ -133,7 +134,7 @@ const BASE_BUILDERS: Record<MalformedBaseName, () => AdventureRunState> = {
   // Lost on the right node of a tier 1 fork: the node, attempt 1 and its
   // seed are kept for the retry.
   forkRetry: () => {
-    const run = createAdventureRun(firstTierForkSeed(), FIXTURE_RUN_ID)
+    const run = createAdventureRun(firstTierForkSeed(), FIXTURE_RUN_ID, 'basic')
     return finished(started(run, adventureNodeId(0, 'right')), 'loss')
   },
   // Paused on the map after leaving a started encounter: node, seed and

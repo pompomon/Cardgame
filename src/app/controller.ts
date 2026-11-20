@@ -812,7 +812,9 @@ export class AppController implements ControllerApi {
     }
     // Persistence first: the new run replaces any saved run only once the
     // write succeeds, so a refused write keeps the previous state.
-    const run = createAdventureRun(adventureClockSeed(), createAdventureRunId())
+    // The map is ordered for the AI level selected now; changing the level
+    // later in the run keeps this map.
+    const run = createAdventureRun(adventureClockSeed(), createAdventureRunId(), this.state.aiLevel)
     if (!persistAdventureRun(run)) {
       this.state.status = adventureStorageWarning(this.state.status, 'The Adventure did not start.')
       this.notify()

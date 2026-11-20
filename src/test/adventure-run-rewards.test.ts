@@ -25,6 +25,7 @@ import {
   type AdventureNodeLane,
   type AdventureRunState,
 } from '../app/adventure'
+import { ADVENTURE_DECK_BANDS } from '../app/adventure-difficulty'
 import { ADVENTURE_FORK_PATTERNS, generateBranchingAdventureMap } from '../app/adventure-map'
 import {
   ADVENTURE_REWARD_IDS,
@@ -49,7 +50,7 @@ const SEED = 1_770_000_000_000
 const DEFAULT_SETUP: AdventureEncounterSetup = { playerOpeningHandSize: 5, guaranteedCreatures: [] }
 
 function newRun(seed = SEED): AdventureRunState {
-  return createAdventureRun(seed, RUN_ID)
+  return createAdventureRun(seed, RUN_ID, 'basic')
 }
 
 /** Starts the kept node, or else the current tier's first node (left at a fork). */
@@ -138,7 +139,7 @@ function launchedGame(run: AdventureRunState) {
 }
 
 function forkTierIndexes(seed: number): number[] {
-  return generateBranchingAdventureMap(seed).tiers.flatMap((tier, index) => (tier.nodes.length === 2 ? [index] : []))
+  return generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS.basic).tiers.flatMap((tier, index) => (tier.nodes.length === 2 ? [index] : []))
 }
 
 function seedForForkPattern(pattern: readonly number[]): number {

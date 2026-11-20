@@ -49,8 +49,11 @@ Each item names the evidence that should trigger it.
   not learn Adventure terms; a static test enforces this. Selection settings are
   not yet part of `chooseAiAction` options.
 - **Data:** [Adventure deck strength](../research/adventure-deck-strength.md)
-  measures every opponent deck against the standard deck at each level, to
-  order tiers or rebalance decks before scaling the search.
+  measures every opponent deck against the standard deck at each level. New
+  maps already order tiers by those measurements. In its run model, playing
+  tiers 1–3 one level lower on those maps adds at most 6.4 points to a run's
+  clear rate; see
+  [A lower level for early tiers](../research/adventure-deck-strength.md#a-lower-level-for-early-tiers).
 
 ### A hand-blind Hard or Expert level
 

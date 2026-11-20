@@ -31,6 +31,7 @@ import {
   readStoredAdventureRun,
   readStoredAdventureRunRecord,
 } from '../app/adventure-persistence'
+import { ADVENTURE_DECK_BANDS } from '../app/adventure-difficulty'
 import {
   adventureAttemptSeed,
   buildAdventureLineup,
@@ -109,7 +110,7 @@ function v1Run(): AdventureRunStateV1 {
  */
 function linearRun(seed = 123): AdventureRunState {
   return {
-    ...createAdventureRun(seed, RUN_ID),
+    ...createAdventureRun(seed, RUN_ID, 'basic'),
     map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
     attemptSeed: seed,
   }
@@ -117,7 +118,7 @@ function linearRun(seed = 123): AdventureRunState {
 
 /** A new run as the app now creates it. */
 function branchingRun(seed = 123): AdventureRunState {
-  return createAdventureRun(seed, RUN_ID)
+  return createAdventureRun(seed, RUN_ID, 'basic')
 }
 
 function started(run: AdventureRunState, nodeId = run.map.tiers[run.currentTierIndex].nodes[0].id): AdventureRunState {
@@ -410,7 +411,7 @@ describe('adventure run persistence', () => {
 
   it('reads a stored run on a valid branching map without rewriting it', () => {
     const run = branchingRun(42)
-    expect(run.map).toEqual(generateBranchingAdventureMap(42))
+    expect(run.map).toEqual(generateBranchingAdventureMap(42, ADVENTURE_DECK_BANDS.basic))
     expect(isAdventureMap(run.map)).toBe(true)
     const serialized = JSON.stringify(run)
     store.data.set(ADVENTURE_RUN_STORAGE_KEY, serialized)
@@ -1248,7 +1249,7 @@ describe('adventure storage budget', () => {
   /** Every saved state of a won route that claims the first reward of each offer. */
   function wonRoute(seed: number, lane: 'first' | 'last'): AdventureRunState[] {
     const states: AdventureRunState[] = []
-    let run = createAdventureRun(seed, RUN_ID)
+    let run = createAdventureRun(seed, RUN_ID, 'basic')
     while (run.status === 'active') {
       const nodes = run.map.tiers[run.currentTierIndex].nodes
       run = started(run, nodes[lane === 'first' ? 0 : nodes.length - 1].id)
@@ -1289,7 +1290,7 @@ describe('adventure storage budget', () => {
     let longestLog = 0
     for (const seed of [11, 22, 33, 44]) {
       for (const level of AI_LEVELS) {
-        const run = started(createAdventureRun(seed, RUN_ID))
+        const run = started(createAdventureRun(seed, RUN_ID, 'basic'))
         const launch = adventureEncounterLaunch(run)
         let game = createInitialGame(launch.seed, launch.decks, launch.options)
         for (let step = 0; step < 2000 && game.phase !== 'gameOver'; step += 1) {

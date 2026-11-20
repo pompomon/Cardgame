@@ -15,8 +15,8 @@ Untrusted-data validation and Adventure save rules.
   and seed: node-start side effects are idempotent per attempt, and setup is
   planned once per attempt.
 - Leaf modules `adventure-map.ts`, `adventure-route-graph.ts`,
-  `adventure-rewards.ts` and `adventure-setup.ts` never import `adventure.ts`,
-  which re-exports map names.
+  `adventure-rewards.ts`, `adventure-setup.ts` and `adventure-difficulty.ts`
+  never import `adventure.ts`, which re-exports map names.
 - Derive Adventure sub-seeds only with `deriveAdventureSeed`.
 - Engine changes that add draws, land plays or card instances update
   `remainingCounterGrowth`.
@@ -130,7 +130,11 @@ every pool deck against the standard deck. Bosses keep the `mono` kind and
 `boss-<Land>` IDs, but each pairs a signature creature with support
 (`ADVENTURE_BOSS_LAND_COUNTS`); change that table only with new measurements
 in that document. Stored maps keep their decks, so a run started before the
-rebuild keeps its fifty-of-one boss.
+rebuild keeps its fifty-of-one boss. New maps deal their decks weakest first
+by their band at the AI level selected at Start (`ADVENTURE_DECK_BANDS` in
+`adventure-difficulty.ts`), with Extreme decks only at forks; change a band
+only with new measurements too. The run doesn't store the level: a level
+changed during a run keeps the map's order.
 
 ### Adventure product decisions
 

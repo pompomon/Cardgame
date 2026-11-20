@@ -14,6 +14,7 @@ import {
   type AdventureRunState,
   type AdventureRunStateV1,
 } from '../app/adventure'
+import { ADVENTURE_DECK_BANDS } from '../app/adventure-difficulty'
 import {
   ADVENTURE_FORK_PATTERNS,
   adventureAttemptSeed,
@@ -274,7 +275,7 @@ function recordingJson(): string {
 }
 
 function forkTierIndexes(seed: number): number[] {
-  return generateBranchingAdventureMap(seed).tiers.flatMap((tier, index) => (tier.nodes.length === 2 ? [index] : []))
+  return generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS.basic).tiers.flatMap((tier, index) => (tier.nodes.length === 2 ? [index] : []))
 }
 
 /** A clock value whose branching map uses the given fork pattern. */
@@ -581,6 +582,19 @@ describe('Adventure controller persistence and recovery', () => {
     expect(second.runId).not.toBe(first.runId)
     expect(second.baseSeed).toBe(first.baseSeed)
     expect(second.map).toEqual(first.map)
+  })
+
+  it('orders a new run for the selected AI level and keeps its map when the level changes', () => {
+    installTrackedStorage()
+    const controller = new AppController()
+    controller.setAiLevel('hard')
+    controller.startAdventure()
+    const run = currentRun(controller)
+
+    expect(run.map).toEqual(generateBranchingAdventureMap(run.baseSeed, ADVENTURE_DECK_BANDS.hard))
+    expect(run.map).not.toEqual(generateBranchingAdventureMap(run.baseSeed, ADVENTURE_DECK_BANDS.basic))
+    controller.setAiLevel('basic')
+    expect(currentRun(controller).map).toEqual(run.map)
   })
 
   it('starts a run with one run write and clears any leftover mid-game save', () => {
@@ -1508,7 +1522,7 @@ describe('Adventure controller rewards', () => {
   /** A clock value whose first offer, after winning the first node, includes `rewardId`. */
   function clockOfferingFirst(rewardId: AdventureRewardId): number {
     for (let seed = CLOCK; seed < CLOCK + 1_000; seed += 1) {
-      const nodeId = generateBranchingAdventureMap(seed).tiers[0].nodes[0].id
+      const nodeId = generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS.basic).tiers[0].nodes[0].id
       if (generateAdventureRewardOffer(seed, nodeId, { relics: [], rewardHistory: [] }).choices.includes(rewardId)) {
         return seed
       }
