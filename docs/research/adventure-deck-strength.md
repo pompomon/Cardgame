@@ -55,9 +55,10 @@ two creatures, and a boss deck 50 of one.
 - **Moving first is a handicap at Hard.** The player always moves first. In
   the standard mirror the second player wins 55.2% of Hard games, against
   50.8% at Basic and 51.3% at Advanced.
-- **A retry replays the opponent's deck.** The opponent's deck is never
-  reshuffled, so every attempt at a node deals it the same opening hand and
-  draws.
+- **A retry replayed the opponent's deck.** The opponent's deck was never
+  reshuffled, so every attempt at a node dealt it the same opening hand and
+  draws. Each attempt now reshuffles it; see
+  [Recommendations](#recommendations).
 
 ## Deck strength summary
 
@@ -111,14 +112,14 @@ Rows are sorted by the Hard score.
   around a deck at a fork.
 - **Player.** The player always uses the standard deck and always moves first.
   It is reshuffled for every attempt from the attempt seed.
-- **Opponent deck order.** The opponent's deck is never reshuffled.
+- **Opponent deck order.** The opponent's deck is reshuffled for every
+  attempt.
   - `deckPairForAdventureGame` in [`adventure.ts`](../../src/app/adventure.ts)
-    and `adventureEncounterGameSetup` in
-    [`adventure-setup.ts`](../../src/app/adventure-setup.ts) copy the node's
-    stored deck in order, and `createInitialGame` never shuffles decks it is
-    given.
-  - Every attempt at a node therefore deals the opponent the same opening hand
-    and draws.
+    shuffles a copy of the node's stored deck with a seed derived from the
+    attempt seed, so a restarted attempt deals the same order and a retry a
+    new one. `legacy-linear` maps keep the stored order.
+  - At `a1eec3c`, when these measurements were made, every attempt at a node
+    dealt the opponent the same opening hand and draws.
   - A random deck keeps the same cards for the whole run.
 - **AI level.** The opponent plays at the lobby's AI level on every tier,
   including the boss, seeded per attempt in
@@ -331,8 +332,8 @@ A run model estimates how often a stand-in player clears a whole run.
   - The results average the 100,000 maps behind the placement figures in
     [How run opponents are chosen today](#how-run-opponents-are-chosen-today).
 - **Limits.** The model ignores relics and treats retries as independent,
-  although today a retry repeats the opponent's deck order. It ranks run
-  difficulty; it does not predict human results.
+  although at `a1eec3c` a retry repeated the opponent's deck order. It ranks
+  run difficulty; it does not predict human results.
 
 | Opponents vs player | Clear, informed | Clear, blind | Island boss | Mountain boss | Forest boss | Plains boss | Swamp boss |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -385,6 +386,9 @@ The boss columns give the informed clear rate on maps with that boss.
    - The schema version can't mark those runs: `migrateLegacyAdventureRun`
      gives a converted run version 2 and a `legacy-linear` map, and its next
      transition saves it that way.
+   - **Done:** every attempt on a `linear` or `branching` map reshuffles the
+     opponent's deck with `adventureOpponentDeckSeed`; `legacy-linear` maps
+     keep the stored order.
 5. **Scale the AI level by tier only for decks with choices.** Moving from
    Basic to Hard adds 63–67 points for the standard and random decks, but at
    most 2.5 points for a boss. Tune interactive decks with the level and

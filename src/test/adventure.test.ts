@@ -72,6 +72,10 @@ beforeEach(() => {
   installMemoryStorage()
 })
 
+function cardIds(deck: ReadonlyArray<{ id: string }>): string[] {
+  return deck.map((card) => card.id)
+}
+
 function countsByLand(deck: Array<{ name: string }>): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const land of BASIC_LANDS) {
@@ -281,10 +285,27 @@ describe('schema version 2 Adventure runs', () => {
 
       expect(selectedAdventureNode(chosen)?.id).toBe(node.id)
       expect(playerDeck).toEqual(createStarterDeck(0, 777))
-      expect(opponentDeck).toEqual(node.opponent.deck)
+      expect(cardIds(opponentDeck).sort()).toEqual(cardIds(node.opponent.deck).sort())
       expect(opponentDeck).not.toBe(selectedAdventureNode(chosen)?.opponent.deck)
-      expect(opponentDeck[0]).not.toBe(selectedAdventureNode(chosen)?.opponent.deck[0])
+      for (const card of opponentDeck) {
+        expect(selectedAdventureNode(chosen)?.opponent.deck).not.toContain(card)
+      }
     }
+  })
+
+  it("deals the opponent's deck in a new order for each attempt and the same order on a restart", () => {
+    const run = encounterAt(2)
+    const stored = structuredClone(selectedAdventureNode(run)!.opponent.deck)
+    const retried = started(applyAdventureEncounterResult(run, 'loss'), run.selectedNodeId!)
+    const order = (attempt: AdventureRunState) => cardIds(deckPairForAdventureGame(attempt, attempt.attemptSeed!)[1])
+
+    expect(retried.attemptSeed).not.toBe(run.attemptSeed)
+    expect(order(run)).toEqual(order(run))
+    expect(order(run)).not.toEqual(cardIds(stored))
+    expect(order(retried)).not.toEqual(order(run))
+    expect([...order(retried)].sort()).toEqual(cardIds(stored).sort())
+    expect(selectedAdventureNode(run)!.opponent.deck).toEqual(stored)
+    expect(selectedAdventureNode(retried)!.opponent.deck).toEqual(stored)
   })
 
   it('refuses a deck pair when no node is selected instead of substituting an opponent', () => {
@@ -785,6 +806,18 @@ describe('version 1 Adventure migration', () => {
     const begun = started(run)
     expect(begun.selectedNodeId).toBe('tier-3-center')
     expect(deckPairForAdventureGame(begun, 1)[1]).toEqual(legacy.opponentLineup[2].deck)
+  })
+
+  it("keeps the stored opponent order for every attempt on legacy-linear maps", () => {
+    const legacy = v1Run()
+    const begun = started(migrated(legacy))
+    const retried = started(applyAdventureEncounterResult(begun, 'loss'), begun.selectedNodeId!)
+    const stored = legacy.opponentLineup[legacy.currentOpponentIndex].deck
+
+    expect(begun.map.kind).toBe('legacy-linear')
+    expect(retried.attemptSeed).not.toBe(begun.attemptSeed)
+    expect(deckPairForAdventureGame(begun, begun.attemptSeed!)[1]).toEqual(stored)
+    expect(deckPairForAdventureGame(retried, retried.attemptSeed!)[1]).toEqual(stored)
   })
 
   it('accepts any known final opponent on legacy-linear maps only', () => {

@@ -839,20 +839,21 @@ describe('runs saved before rewards', () => {
     expect(values.slice(1).map((value) => isAdventureRunState(value))).toEqual(values.slice(1).map(() => false))
   })
 
-  it('restarts a pre-reward encounter with the same deal the earlier version gave it', () => {
+  it("restarts a pre-reward encounter with the earlier version's player deal and the attempt's opponent order", () => {
     const scenario = readPreRewardFixture().encounterPausedMidGame as Record<string, string>
     const stored = JSON.parse(scenario['cardgame.adventure-game']) as { game: { players: PlayerState[] } }
     const run = started(openAdventureMap(backfilledRun('encounterClosedMidGame')))
     const seed = run.attemptSeed as number
     const game = launchedGame(run)
     const [player, opponent] = stored.game.players
+    const ids = (cards: Array<{ id: string }>) => cards.map((card) => card.id).sort()
 
     expect(game).toEqual(createInitialGame(seed, deckPairForAdventureGame(run, seed)))
-    expect(game.players[1]).toEqual(opponent)
     expect(game.players[0].deck).toEqual(player.deck)
-    expect(game.players[0].hand.map((card) => card.id).sort()).toEqual(
-      [...player.hand, ...player.battlefield.map((entry) => entry.card)].map((card) => card.id).sort(),
-    )
+    expect(ids(game.players[0].hand)).toEqual(ids([...player.hand, ...player.battlefield.map((entry) => entry.card)]))
+    // Earlier versions dealt the stored opponent deck in order; the cards are unchanged.
+    expect(ids([...game.players[1].hand, ...game.players[1].deck])).toEqual(ids([...opponent.hand, ...opponent.deck]))
+    expect(game.players[1].deck).not.toEqual(opponent.deck)
   })
 
   it('offers a reward for each later non-boss win of a run saved after a win', () => {
