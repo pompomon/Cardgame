@@ -8,7 +8,9 @@ import {
   adventureSimCellSteps,
   adventureSimDecks,
   bestOfThree,
+  compareAdventureSimDeckIds,
   emptyAdventureSimTally,
+  isAdventureSimDeckId,
   mergeAdventureSimCells,
   parseAdventureSimCells,
   playAdventureSimGame,
@@ -55,6 +57,21 @@ describe('Adventure deck simulation', () => {
       }
       expect(adventureSimDecks(deckId, 'adventure', 6)[1]).not.toEqual(adventure)
     }
+  })
+
+  it('builds candidate decks from mix ids and rejects malformed ones', () => {
+    expect(isAdventureSimDeckId('mix-Island20-Mountain30')).toBe(true)
+    expect(isAdventureSimDeckId('mix-Swamp50')).toBe(true)
+    for (const deckId of ['mix-Island20-Mountain29', 'mix-Mountain30-Island20', 'mix-Island20-Island30', 'mix-Island0-Mountain50', 'mix-Isle50', 'mix-Island050', 'mix-']) {
+      expect(isAdventureSimDeckId(deckId)).toBe(false)
+    }
+    const [standard, adventure] = adventureSimDecks('mix-Forest35-Island15', 'adventure', 5)
+    expect(landCounts(standard)).toEqual(TEN_OF_EACH)
+    expect(landCounts(adventure)).toEqual({ Forest: 35, Island: 15 })
+    expect(new Set(adventure?.map((card) => card.id)).size).toBe(50)
+    expect(adventureSimDecks('mix-Forest35-Island15', 'adventure', 6)[1]).not.toEqual(adventure)
+    expect([...ADVENTURE_SIM_DECK_IDS, 'mix-Swamp50', 'mix-Island50'].sort(compareAdventureSimDeckIds).slice(-3))
+      .toEqual([ADVENTURE_SIM_DECK_IDS[ADVENTURE_SIM_DECK_IDS.length - 1], 'mix-Island50', 'mix-Swamp50'])
   })
 
   it.each<[AdventureSimOutcome[], AdventureSimOutcome, number]>([

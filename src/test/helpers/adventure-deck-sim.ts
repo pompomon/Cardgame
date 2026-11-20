@@ -1,7 +1,7 @@
-import { buildAdventureOpponentPools, type AdventureOpponentDeck } from '../../app/adventure-map'
+import { buildAdventureOpponentPools } from '../../app/adventure-map'
 import { deriveAiSeed } from '../../game/ai-random'
-import { createStarterDeck } from '../../game/cards'
-import type { GameState, LogEvent } from '../../game/types'
+import { createStarterDeck, shuffle } from '../../game/cards'
+import { BASIC_LANDS, isBasicLand, type BasicLand, type Card, type GameState, type LogEvent } from '../../game/types'
 import {
   formatPercent,
   playGame,
@@ -34,8 +34,45 @@ export const ADVENTURE_SIM_DECK_IDS: readonly string[] = (() => {
   return Object.freeze([...pools.nonBoss, ...pools.boss].map((deck) => deck.id))
 })()
 
+// Candidate decks that are not in the pools, for trying new compositions:
+// `mix-` and then `<Land><count>` parts joined by `-`, in BASIC_LANDS order,
+// with counts from 1 that sum to 50, such as `mix-Island20-Mountain30`.
+const MIX_PREFIX = 'mix-'
+const MIX_PART = /^([A-Z][a-z]+)([1-9]\d?)$/
+
+/** The land counts of a candidate deck id, or `null` if `deckId` is not one. */
+export function adventureSimMixCounts(deckId: string): ReadonlyMap<BasicLand, number> | null {
+  if (!deckId.startsWith(MIX_PREFIX)) {
+    return null
+  }
+  const counts = new Map<BasicLand, number>()
+  let lastIndex = -1
+  let total = 0
+  for (const part of deckId.slice(MIX_PREFIX.length).split('-')) {
+    const match = MIX_PART.exec(part)
+    const land = match?.[1]
+    const index = isBasicLand(land) ? BASIC_LANDS.indexOf(land) : -1
+    if (!match || !isBasicLand(land) || index <= lastIndex) {
+      return null
+    }
+    lastIndex = index
+    total += Number(match[2])
+    counts.set(land, Number(match[2]))
+  }
+  return total === 50 ? counts : null
+}
+
 export function isAdventureSimDeckId(value: unknown): value is string {
-  return typeof value === 'string' && ADVENTURE_SIM_DECK_IDS.includes(value)
+  return typeof value === 'string' && (ADVENTURE_SIM_DECK_IDS.includes(value) || adventureSimMixCounts(value) !== null)
+}
+
+/** Orders deck ids as the pools do, with candidate decks after them by id. */
+export function compareAdventureSimDeckIds(left: string, right: string): number {
+  const rank = (deckId: string): number => {
+    const index = ADVENTURE_SIM_DECK_IDS.indexOf(deckId)
+    return index === -1 ? ADVENTURE_SIM_DECK_IDS.length : index
+  }
+  return rank(left) - rank(right) || (left < right ? -1 : left > right ? 1 : 0)
 }
 
 /** The seat of the Adventure deck. */
@@ -64,14 +101,26 @@ export function adventureSimGameSeed(series: number, game: number): number {
   return deriveAiSeed(series, game, SIM_GAME_WORD)
 }
 
-/** The Adventure deck `deckId` as `buildAdventureOpponentPools(poolSeed)` builds it. */
-export function adventureDeckForSim(deckId: string, poolSeed: number): AdventureOpponentDeck {
+/**
+ * The cards of deck `deckId`: a pool deck as `buildAdventureOpponentPools(poolSeed)`
+ * builds it, or a candidate deck shuffled with `poolSeed`.
+ */
+export function adventureSimDeckCards(deckId: string, poolSeed: number): Card[] {
+  const mix = adventureSimMixCounts(deckId)
+  if (mix) {
+    const cards = [...mix].flatMap(([land, count]) => Array.from({ length: count }, (_, index): Card => ({
+      id: `opp-mix-${land.toLowerCase()}-${index}`,
+      name: land,
+      type: 'land',
+    })))
+    return shuffle(cards, poolSeed)
+  }
   const pools = buildAdventureOpponentPools(poolSeed)
   const deck = [...pools.nonBoss, ...pools.boss].find((entry) => entry.id === deckId)
   if (!deck) {
-    throw new Error(`Unknown Adventure deck "${deckId}". Known: ${ADVENTURE_SIM_DECK_IDS.join(', ')}`)
+    throw new Error(`Unknown Adventure deck "${deckId}". Known: ${ADVENTURE_SIM_DECK_IDS.join(', ')} and mix-<Land><count>-… candidates`)
   }
-  return deck
+  return deck.deck
 }
 
 /**
@@ -80,7 +129,7 @@ export function adventureDeckForSim(deckId: string, poolSeed: number): Adventure
  */
 export function adventureSimDecks(deckId: string, seating: AdventureSimSeating, gameSeed: number): DeckPair {
   const adventureSeat = adventureDeckSeat(seating)
-  const adventure = adventureDeckForSim(deckId, deriveAiSeed(gameSeed, SIM_POOL_WORD)).deck
+  const adventure = adventureSimDeckCards(deckId, deriveAiSeed(gameSeed, SIM_POOL_WORD))
   const standard = createStarterDeck(adventureSeat === 1 ? 0 : 1, gameSeed)
   return adventureSeat === 1 ? [standard, adventure] : [adventure, standard]
 }
@@ -491,7 +540,7 @@ function groupKey(cell: AdventureSimCell): string {
 }
 
 function byPoolOrder(left: AdventureSimCell, right: AdventureSimCell): number {
-  return ADVENTURE_SIM_DECK_IDS.indexOf(left.deckId) - ADVENTURE_SIM_DECK_IDS.indexOf(right.deckId)
+  return compareAdventureSimDeckIds(left.deckId, right.deckId)
 }
 
 /**
@@ -516,7 +565,7 @@ export function formatAdventureSimReport(cells: readonly AdventureSimCell[]): st
     `| Deck | ${groupNames.join(' | ')} |`,
     `|---|${groupNames.map(() => '---').join('|')}|`,
   ]
-  const deckIds = ADVENTURE_SIM_DECK_IDS.filter((deckId) => merged.some((cell) => cell.deckId === deckId))
+  const deckIds = [...new Set(merged.map((cell) => cell.deckId))].sort(compareAdventureSimDeckIds)
   for (const deckId of deckIds) {
     const scores = groupNames.map((name) => {
       const cell = groups.get(name)?.find((entry) => entry.deckId === deckId)

@@ -27,7 +27,9 @@ import { adventureRunModelSteps, adventureRunModelWinRates, formatAdventureRunMo
 //                             specs (default `basic:basic,advanced:advanced,hard:hard`;
 //                             see src/test/helpers/ai-entrants.ts); a spec
 //                             without `:` plays both decks
-//   ADVENTURE_SIM_DECKS       comma-separated deck ids (default all seventeen)
+//   ADVENTURE_SIM_DECKS       comma-separated deck ids (default all seventeen);
+//                             `mix-<Land><count>-…` ids, counts summing to 50
+//                             in BASIC_LANDS order, add candidate decks
 //   ADVENTURE_SIM_SEATINGS    `adventure` (the standard deck moves first, as the
 //                             player does in Adventure) and `swapped`
 //                             (default both)
@@ -75,7 +77,7 @@ async function playCells(): Promise<{ cells: AdventureSimCell[]; header: string 
   })
   const deckIds = envList('ADVENTURE_SIM_DECKS', ADVENTURE_SIM_DECK_IDS.join(',')).map((deckId) => {
     if (!isAdventureSimDeckId(deckId)) {
-      throw new Error(`Unknown deck "${deckId}". Known: ${ADVENTURE_SIM_DECK_IDS.join(', ')}`)
+      throw new Error(`Unknown deck "${deckId}". Known: ${ADVENTURE_SIM_DECK_IDS.join(', ')} and mix-<Land><count>-… candidates`)
     }
     return deckId
   })
