@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAdventureOpponentPools } from '../app/adventure-map'
+import { buildAdventureOpponentPools, generateBranchingAdventureMap } from '../app/adventure-map'
 import type { Card } from '../game/types'
 import { BASIC } from './helpers/ai-baselines'
 import { drain } from './helpers/ai-tournament'
@@ -13,8 +13,17 @@ import {
   parseAdventureSimCells,
   playAdventureSimGame,
   serializeAdventureSimCells,
+  type AdventureSimCell,
   type AdventureSimOutcome,
+  type AdventureSimSeating,
 } from './helpers/adventure-deck-sim'
+import {
+  ADVENTURE_RUN_MODEL_SEED_START,
+  adventureMapNodeDeckId,
+  adventureRunClearChance,
+  adventureRunModel,
+  adventureRunModelWinRates,
+} from './helpers/adventure-run-model'
 
 function landCounts(deck: readonly Card[] | undefined): Record<string, number> {
   const counts: Record<string, number> = {}
@@ -95,5 +104,52 @@ describe('Adventure deck simulation', () => {
     const corrupt = JSON.parse(serializeAdventureSimCells([cell([1])]))
     corrupt.cells[0].games.wins = 0.5
     expect(() => parseAdventureSimCells(JSON.stringify(corrupt))).toThrow('Not an Adventure deck simulation result file.')
+  })
+})
+
+describe('Adventure run model', () => {
+  const map = generateBranchingAdventureMap(ADVENTURE_RUN_MODEL_SEED_START)
+  const tierDecks = map.tiers.map((tier, tierIndex) => tier.nodes.map((node) => adventureMapNodeDeckId(node, tierIndex)))
+  const bossId = tierDecks[tierDecks.length - 1][0]
+  const winRates = (overrides: [string, number][]) => (deckId: string): number =>
+    new Map(overrides).get(deckId) ?? 1
+
+  it('applies the chance rules and retries a lost node', () => {
+    // Six straight wins add two chances, so the boss gets five tries.
+    const bossOnly = winRates([[bossId, 0.5]])
+    expect(adventureRunClearChance(map, bossOnly, 'informed')).toBeCloseTo(1 - 0.5 ** 5, 12)
+    // A loss on the second tier resets a streak of one, so winning there at
+    // once, after one loss or after two leaves five, three or two tries for
+    // the boss; three losses end the run.
+    const secondTierToo = winRates([[bossId, 0.5], ...tierDecks[1].map((deckId): [string, number] => [deckId, 0.5])])
+    expect(adventureRunClearChance(map, secondTierToo, 'blind')).toBeCloseTo(0.5 * (31 / 32) + 0.25 * (7 / 8) + 0.125 * (3 / 4), 12)
+    const fork = tierDecks.find((decks) => decks.length === 2) ?? []
+    const oneUnbeatable = winRates([[fork[1], 0]])
+    expect(adventureRunClearChance(map, oneUnbeatable, 'informed')).toBe(1)
+    expect(adventureRunClearChance(map, oneUnbeatable, 'blind')).toBeCloseTo(0.5, 12)
+  })
+
+  it('takes the player win rate from Adventure-seating losses and places nine decks and a boss per map', () => {
+    const empty = drain(adventureSimCellSteps({ deckId: 'random', adventure: BASIC, standard: BASIC, seating: 'adventure', series: [] }))
+    const cell = (deckId: string, matchup: string, seating: AdventureSimSeating, wins: number, losses: number): AdventureSimCell =>
+      ({ ...empty, deckId, matchup, seating, games: { wins, losses, draws: 5 } })
+    const { rates, skipped } = adventureRunModelWinRates([
+      ...ADVENTURE_SIM_DECK_IDS.map((deckId) => cell(deckId, 'complete', 'adventure', 1, 3)),
+      ...ADVENTURE_SIM_DECK_IDS.map((deckId) => cell(deckId, 'complete', 'swapped', 4, 0)),
+      ...ADVENTURE_SIM_DECK_IDS.slice(1).map((deckId) => cell(deckId, 'partial', 'adventure', 1, 3)),
+    ])
+    expect(skipped).toEqual(['partial'])
+    expect([...rates.keys()]).toEqual(['complete'])
+    expect(new Set(rates.get('complete')?.values())).toEqual(new Set([0.75]))
+
+    const model = adventureRunModel(rates, 20)
+    const placements = [...model.placements.values()]
+    const total = (key: 'maps' | 'single' | 'fork') => placements.reduce((sum, placement) => sum + placement[key], 0)
+    expect([total('maps'), total('single'), total('fork')]).toEqual([180, 60, 120])
+    expect([...model.bosses.values()].reduce((sum, count) => sum + count, 0)).toBe(20)
+    expect([...model.forkTiers.values()].reduce((sum, count) => sum + count, 0)).toBe(20)
+    // Equal win rates make every map and route alike.
+    const [row] = model.rows
+    expect([row.blind, row.informedP10, row.informedP90].map((value) => value - row.informed).every((gap) => Math.abs(gap) < 1e-12)).toBe(true)
   })
 })

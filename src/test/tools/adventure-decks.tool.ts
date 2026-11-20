@@ -13,6 +13,7 @@ import {
   serializeAdventureSimCells,
   type AdventureSimCell,
 } from '../helpers/adventure-deck-sim'
+import { adventureRunModel, adventureRunModelWinRates, formatAdventureRunModelReport } from '../helpers/adventure-run-model'
 
 // Opt-in Adventure deck measurement: `npm run ai:adventure-decks`. It is not
 // part of `npm run test`. Every Adventure opponent deck plays best-of-three
@@ -34,6 +35,10 @@ import {
 //                             deck, so shards can be merged later
 //   ADVENTURE_SIM_MERGE       comma-separated result files: report their sum
 //                             and play nothing
+//   ADVENTURE_SIM_MAPS        maps for the map placement and run model
+//                             sections (default 0: none); the run model uses
+//                             every matchup with all seventeen decks in the
+//                             `adventure` seating
 //   ADVENTURE_SIM_OUT         file for the markdown report
 //
 // On one core of a two-core cloud machine, 500 series of every deck in both
@@ -102,10 +107,15 @@ async function playCells(): Promise<{ cells: AdventureSimCell[]; header: string 
 describe('Adventure deck strength', () => {
   it('plays every deck against the standard deck', async () => {
     const merge = envList('ADVENTURE_SIM_MERGE', '')
+    const maps = envInteger('ADVENTURE_SIM_MAPS', 0, 0, 1_000_000)
     const { cells, header } = merge.length > 0
       ? { cells: merge.flatMap((path) => parseAdventureSimCells(readFileSync(path, 'utf8'))), header: `Merged from ${merge.join(', ')}.` }
       : await playCells()
-    const report = `${header}\n${formatAdventureSimReport(cells)}`
+    let report = `${header}\n${formatAdventureSimReport(cells)}`
+    if (maps > 0) {
+      const { rates, skipped } = adventureRunModelWinRates(cells)
+      report += `\n\n${formatAdventureRunModelReport(adventureRunModel(rates, maps), skipped)}`
+    }
     console.log(report)
     const out = process.env.ADVENTURE_SIM_OUT
     if (out) {

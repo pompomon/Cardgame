@@ -81,7 +81,8 @@ stateful UI test contracts, and browser verification.
   positions and a blunder audit. `npm run ai:tune` refits the evaluator
   weights and reports the held-out log-loss of the fit and the frozen
   weights. `npm run ai:adventure-decks` plays best-of-three series of every
-  Adventure opponent deck against the standard deck; see
+  Adventure opponent deck against the standard deck, and with
+  `ADVENTURE_SIM_MAPS` models map placement and whole-run clear rates; see
   [Adventure deck strength](../research/adventure-deck-strength.md). Run no
   more tools in parallel than there are CPUs, or latencies inflate. Paste
   results into the PR.

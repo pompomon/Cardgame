@@ -103,8 +103,9 @@ Rows are sorted by the Hard score.
   - The boss is a random boss deck.
 - **No difficulty order.** In 100,000 generated maps, each non-boss deck
   appeared on 75% of maps: unavoidable on a single-node tier on 25% and at a
-  fork on 50%. Its mean tier was 3.5. Each boss appeared on 20%. These match
-  the exact shuffle odds (9/12, 3/12, 6/12 and 1/5).
+  fork on 50%, all within half a point. Its mean tier was 3.5. Each boss
+  appeared on 20%. These match the exact shuffle odds (9/12, 3/12, 6/12 and
+  1/5).
 - **Labels.** The map names each roster, such as "Duo: Gravebloom Dryad +
   Signal Siren" or "Boss: Signal Siren specialist", so a player can route
   around a deck at a fork.
@@ -139,8 +140,10 @@ Rows are sorted by the Hard score.
   and 0.1 s at Hard.
   - The tool is
     [`adventure-decks.tool.ts`](../../src/test/tools/adventure-decks.tool.ts),
-    and the simulation helpers are in
-    [`adventure-deck-sim.ts`](../../src/test/helpers/adventure-deck-sim.ts).
+    the simulation helpers are in
+    [`adventure-deck-sim.ts`](../../src/test/helpers/adventure-deck-sim.ts),
+    and the map placement and run model are in
+    [`adventure-run-model.ts`](../../src/test/helpers/adventure-run-model.ts).
   - Like `npm run ai:tournament`, it is an opt-in vitest tool, not a
     `cardgame-cli` command:
     [product decision 10](../agent/state-and-persistence.md#adventure-product-decisions)
@@ -320,35 +323,39 @@ A run model estimates how often a stand-in player clears a whole run.
 
 - **Model.** A Markov chain over tier, chances and win streak plays each node
   until it is won or the chances run out.
-  - It uses the per-game scores above and the chance rules: three to start,
-    one more on every third consecutive win, and a loss costs one and resets
-    the streak.
+  - It uses each matchup's per-game results in the `adventure` seating and
+    the chance rules: three to start, one more on every third consecutive
+    win, and a loss costs one, resets the streak and retries the node.
   - Informed routing takes the fork with the better clear chance. Blind
     routing picks a fork at random.
-  - The results average 20,000 maps from `generateBranchingAdventureMap`.
+  - The results average the 100,000 maps behind the placement figures in
+    [How run opponents are chosen today](#how-run-opponents-are-chosen-today).
 - **Limits.** The model ignores relics and treats retries as independent,
   although today a retry repeats the opponent's deck order. It ranks run
   difficulty; it does not predict human results.
 
-| Opponents vs player | Clear, informed | Clear, blind | Island boss | Mountain boss | Forest or Plains boss | Swamp boss |
-|---|---:|---:|---:|---:|---:|---:|
-| Basic vs Advanced | 36.7% | 26.6% | 0.2% | 5.2% | 61.5% | 54.7% |
-| Advanced vs Advanced | 11.2% | 5.9% | 0.1% | 0.1% | 19.5% | 16.6% |
-| Hard vs Advanced | 0.3% | 0.1% | 0.0% | 0.0% | 0.6% | 0.4% |
-| Hard vs Hard | 30.9% | 17.2% | 0.2% | 37.2% | 40.1–40.4% | 36.7% |
+| Opponents vs player | Clear, informed | Clear, blind | Island boss | Mountain boss | Forest boss | Plains boss | Swamp boss |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Basic vs Basic | 13.0% | 6.7% | 0.2% | 3.7% | 21.7% | 21.7% | 17.6% |
+| Basic vs Advanced | 36.7% | 26.7% | 0.2% | 5.1% | 61.5% | 61.4% | 54.8% |
+| Advanced vs Advanced | 11.2% | 5.9% | 0.1% | 0.1% | 19.6% | 19.5% | 16.6% |
+| Hard vs Advanced | 0.3% | 0.1% | 0.0% | 0.0% | 0.6% | 0.6% | 0.4% |
+| Hard vs Hard | 31.0% | 17.2% | 0.2% | 37.1% | 40.3% | 40.4% | 36.9% |
 
 The boss columns give the informed clear rate on maps with that boss.
 
 - **The boss.** The Island boss makes one run in five unwinnable at every
   level, and the Mountain boss nearly does the same below Hard.
 - **The route.** Where the boss can be beaten, the six non-boss tiers decide
-  the run. Picking the easier fork raises the clear rate from 26.6% to 36.7%
-  against Basic opponents, and nearly doubles it in the Advanced and Hard
-  mirrors.
+  the run. Picking the easier fork raises an Advanced player's clear rate
+  from 26.7% to 36.7% against Basic opponents, and nearly doubles it in all
+  three mirrors.
 - **The map.** Maps differ widely. With informed routing, the easiest tenth of
-  maps clear at least 77.5% of runs against Basic opponents, 29.4% in the
-  Advanced mirror and 64.6% in the Hard mirror.
-- **Hard opponents.** An Advanced stand-in clears 0.3% of runs against Hard
+  maps clear at least 77.6% of runs for an Advanced player against Basic
+  opponents, and at least 34.0%, 29.5% and 65.0% in the Basic, Advanced and
+  Hard mirrors.
+- **Levels.** An Advanced player clears 36.7% of runs against Basic opponents
+  and 0.3% against Hard ones. A Basic player clears 13.0% against Basic
   opponents.
 
 ## Recommendations
@@ -405,11 +412,11 @@ ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_MATCHUPS=hard ADVENTURE_SIM_JSON=same-har
 # An Advanced player against Basic and Hard opponents, Adventure seating only.
 ADVENTURE_SIM_SERIES=500 ADVENTURE_SIM_MATCHUPS=basic:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=standin-basic.json npm run ai:adventure-decks
 ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_MATCHUPS=hard:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=standin-hard.json npm run ai:adventure-decks
-# One report from every result file, without playing.
-ADVENTURE_SIM_MERGE=same-low.json,same-hard.json,standin-basic.json,standin-hard.json ADVENTURE_SIM_OUT=report.md npm run ai:adventure-decks
+# One report from every result file, with map placement and the run model, without playing.
+ADVENTURE_SIM_MERGE=same-low.json,same-hard.json,standin-basic.json,standin-hard.json ADVENTURE_SIM_MAPS=100000 ADVENTURE_SIM_OUT=report.md npm run ai:adventure-decks
 ```
 
-The map placement and run model figures came from a scratch script over
-`generateBranchingAdventureMap`, which is not committed. The placement odds
-follow from the shuffle, and the model is described under
-[Run difficulty](#run-difficulty).
+`ADVENTURE_SIM_MAPS` adds the map placement and run model sections behind
+[How run opponents are chosen today](#how-run-opponents-are-chosen-today) and
+[Run difficulty](#run-difficulty). Map seeds are fixed, so the sections
+reproduce exactly; 100,000 maps took about 45 seconds on one core.
