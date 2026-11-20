@@ -1,10 +1,11 @@
-import { createStarterDeck } from '../game/cards'
+import { createStarterDeck, shuffle } from '../game/cards'
 import { remainingCounterGrowth } from '../game/engine'
 import { isBasicLand, type Card, type GameState, type PlayerState } from '../game/types'
 import {
   ADVENTURE_DECK_SIZE,
   ADVENTURE_NODE_ID_PATTERN,
   ADVENTURE_TIER_COUNT,
+  adventureOpponentDeckSeed,
   cloneAdventureDeck,
   cloneAdventureMap,
   completeAdventureNode,
@@ -259,15 +260,21 @@ export function selectedAdventureNode(run: AdventureRunState): AdventureMapNode 
 
 /**
  * Decks for the selected node's encounter: the player's starter deck for
- * `seed` and a detached copy of the node's stored opponent deck. Throws when
- * no node is selected rather than substituting another opponent.
+ * `seed` and a detached copy of the node's stored opponent deck, shuffled
+ * from `seed` so that every attempt deals the opponent a new order. A
+ * `legacy-linear` map keeps the stored order (product decision 8). Throws
+ * when no node is selected rather than substituting another opponent.
  */
 export function deckPairForAdventureGame(run: AdventureRunState, seed: number): [Card[], Card[]] {
   const node = selectedAdventureNode(run)
   if (!node) {
     throw new Error('An Adventure encounter needs a selected node.')
   }
-  return [createStarterDeck(0, seed), cloneAdventureDeck(node.opponent.deck)]
+  const opponentDeck = cloneAdventureDeck(node.opponent.deck)
+  return [
+    createStarterDeck(0, seed),
+    run.map.kind === 'legacy-linear' ? opponentDeck : shuffle(opponentDeck, adventureOpponentDeckSeed(seed)),
+  ]
 }
 
 /** `createInitialGame` arguments for a new game of the committed attempt. */

@@ -444,6 +444,8 @@ export const ADVENTURE_SEED_PURPOSE = Object.freeze({
   attempt: 5,
   /** Reward offers; see `adventureRewardSeed`. */
   rewardOffer: 6,
+  /** The opponent's deck order in one attempt; see `adventureOpponentDeckSeed`. */
+  opponentDeck: 7,
 } as const)
 
 export type AdventureSeedPurpose = (typeof ADVENTURE_SEED_PURPOSE)[keyof typeof ADVENTURE_SEED_PURPOSE]
@@ -553,6 +555,16 @@ export function adventureRewardSeed(
     adventureLaneNumber(lane),
     rewardOrdinal,
   ])
+}
+
+/**
+ * Seed for the opponent's deck order in one encounter attempt, from the
+ * attempt seed alone, so restarting the attempt deals the same order. The
+ * player's deck is shuffled with the attempt seed itself; the purpose tag
+ * keeps the two orders unrelated.
+ */
+export function adventureOpponentDeckSeed(attemptSeed: number): number {
+  return deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.opponentDeck, attemptSeed)
 }
 
 function generatedMapNode(tierIndex: number, lane: AdventureNodeLane, opponent: AdventureOpponentDeck): AdventureMapNode {

@@ -200,6 +200,11 @@ Approved by the maintainer:
   Launch games only through `adventureEncounterLaunch`.
 - `openingHandSizes` is per player (`[H, 5]`); the engine never sees a reward
   ID.
+- `deckPairForAdventureGame` deals the opponent a copy of the node's stored
+  deck shuffled with `adventureOpponentDeckSeed(attemptSeed)`, so a restart
+  repeats the order and a retry changes it. `legacy-linear` maps keep the
+  stored order (decision 8). An encounter interrupted before this rule
+  restarts in the new order; a mid-game save keeps its own.
 - `deriveAdventureSeed` mixes fixed purpose tags and lane numbers with integer
   operations, never string hashes, labels, `Math.random` or the clock. Base
   seeds are `Date.now()` values above 2^32, but `lcg()` and `shuffle()` keep

@@ -236,7 +236,7 @@ function started(run: AdventureRunState, nodeId: string): AdventureRunState {
 }
 
 describe('Adventure seed derivation', () => {
-  it('uses fixed numeric purpose tags, including the reward-offer tag', () => {
+  it('uses fixed numeric purpose tags, including the reward-offer and opponent-deck tags', () => {
     expect(ADVENTURE_SEED_PURPOSE).toEqual({
       forkPattern: 1,
       nonBossPick: 2,
@@ -244,6 +244,7 @@ describe('Adventure seed derivation', () => {
       deckOrder: 4,
       attempt: 5,
       rewardOffer: 6,
+      opponentDeck: 7,
     })
     expect(Object.isFrozen(ADVENTURE_SEED_PURPOSE)).toBe(true)
   })
