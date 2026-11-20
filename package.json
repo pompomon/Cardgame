@@ -16,7 +16,8 @@
     "generate:anime-card-art": "node scripts/generate-anime-card-art.mjs",
     "generate:board-backgrounds": "node scripts/generate-board-backgrounds.mjs",
     "ai:tournament": "vitest run --config vitest.tools.config.ts ai-tournament",
-    "ai:tune": "vitest run --config vitest.tools.config.ts ai-tune"
+    "ai:tune": "vitest run --config vitest.tools.config.ts ai-tune",
+    "ai:adventure-decks": "vitest run --config vitest.tools.config.ts adventure-decks"
   },
   "devDependencies": {
     "@types/three": "^0.187.0",

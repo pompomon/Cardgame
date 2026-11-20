@@ -48,6 +48,9 @@ Each item names the evidence that should trigger it.
   `src/app/`, passing them through `chooseAiAction` options. `src/game/` must
   not learn Adventure terms; a static test enforces this. Selection settings are
   not yet part of `chooseAiAction` options.
+- **Data:** [Adventure deck strength](../research/adventure-deck-strength.md)
+  measures every opponent deck against the standard deck at each level, to
+  order tiers or rebalance decks before scaling the search.
 
 ### A hand-blind Hard or Expert level
 
