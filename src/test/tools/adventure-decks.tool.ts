@@ -13,7 +13,7 @@ import {
   serializeAdventureSimCells,
   type AdventureSimCell,
 } from '../helpers/adventure-deck-sim'
-import { adventureRunModel, adventureRunModelWinRates, formatAdventureRunModelReport } from '../helpers/adventure-run-model'
+import { adventureRunModelSteps, adventureRunModelWinRates, formatAdventureRunModelReport } from '../helpers/adventure-run-model'
 
 // Opt-in Adventure deck measurement: `npm run ai:adventure-decks`. It is not
 // part of `npm run test`. Every Adventure opponent deck plays best-of-three
@@ -114,7 +114,8 @@ describe('Adventure deck strength', () => {
     let report = `${header}\n${formatAdventureSimReport(cells)}`
     if (maps > 0) {
       const { rates, skipped } = adventureRunModelWinRates(cells)
-      report += `\n\n${formatAdventureRunModelReport(adventureRunModel(rates, maps), skipped)}`
+      const model = await drainYielding(adventureRunModelSteps(rates, maps))
+      report += `\n\n${formatAdventureRunModelReport(model, skipped)}`
     }
     console.log(report)
     const out = process.env.ADVENTURE_SIM_OUT

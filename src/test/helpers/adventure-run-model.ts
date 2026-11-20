@@ -164,10 +164,14 @@ function percentile(sorted: readonly number[], fraction: number): number {
 }
 
 /**
- * Generates `maps` maps from clock-like seeds, tallies where each deck lands,
- * and averages the clear chance of every matchup in `winRates` over them.
+ * Generates `maps` maps from clock-like seeds, one per step, tallies where
+ * each deck lands, and averages the clear chance of every matchup in
+ * `winRates` over them.
  */
-export function adventureRunModel(winRates: ReadonlyMap<string, ReadonlyMap<string, number>>, maps: number): AdventureRunModel {
+export function* adventureRunModelSteps(
+  winRates: ReadonlyMap<string, ReadonlyMap<string, number>>,
+  maps: number,
+): Generator<void, AdventureRunModel> {
   const forkTiers = new Map<string, number>()
   const placements = new Map<string, AdventureDeckPlacement>()
   const bosses = new Map<string, number>()
@@ -210,6 +214,7 @@ export function adventureRunModel(winRates: ReadonlyMap<string, ReadonlyMap<stri
       byBoss.push(informed)
       clear.informedByBoss.set(bossId, byBoss)
     }
+    yield
   }
   const rows = clears.map((clear): AdventureRunModelRow => {
     const sorted = [...clear.informed].sort((left, right) => left - right)

@@ -21,7 +21,7 @@ import {
   ADVENTURE_RUN_MODEL_SEED_START,
   adventureMapNodeDeckId,
   adventureRunClearChance,
-  adventureRunModel,
+  adventureRunModelSteps,
   adventureRunModelWinRates,
 } from './helpers/adventure-run-model'
 
@@ -142,7 +142,7 @@ describe('Adventure run model', () => {
     expect([...rates.keys()]).toEqual(['complete'])
     expect(new Set(rates.get('complete')?.values())).toEqual(new Set([0.75]))
 
-    const model = adventureRunModel(rates, 20)
+    const model = drain(adventureRunModelSteps(rates, 20))
     const placements = [...model.placements.values()]
     const total = (key: 'maps' | 'single' | 'fork') => placements.reduce((sum, placement) => sum + placement[key], 0)
     expect([total('maps'), total('single'), total('fork')]).toEqual([180, 60, 120])
