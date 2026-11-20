@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { describe, it } from 'vitest'
+import { ADVENTURE_TIER_COUNT } from '../../app/adventure-map'
 import { resolveEntrant } from '../helpers/ai-entrants'
 import { drainYielding } from '../helpers/ai-tournament'
 import {
@@ -13,7 +14,14 @@ import {
   serializeAdventureSimCells,
   type AdventureSimCell,
 } from '../helpers/adventure-deck-sim'
-import { adventureRunModelSteps, adventureRunModelWinRates, formatAdventureRunModelReport } from '../helpers/adventure-run-model'
+import {
+  ADVENTURE_RUN_MAP_ORDERS,
+  adventureRunModelPlans,
+  adventureRunModelSteps,
+  adventureRunModelWinRates,
+  formatAdventureRunModelReport,
+  isAdventureRunMapOrder,
+} from '../helpers/adventure-run-model'
 
 // Opt-in Adventure deck measurement: `npm run ai:adventure-decks`. It is not
 // part of `npm run test`. Every Adventure opponent deck plays best-of-three
@@ -40,7 +48,15 @@ import { adventureRunModelSteps, adventureRunModelWinRates, formatAdventureRunMo
 //   ADVENTURE_SIM_MAPS        maps for the map placement and run model
 //                             sections (default 0: none); the run model uses
 //                             every matchup with all seventeen decks in the
-//                             `adventure` seating
+//                             `adventure` seating whose opponents play at an
+//                             AI level, on maps ordered for that level
+//   ADVENTURE_SIM_RAMP_TIERS  comma-separated tier counts (default none); each
+//                             adds a ramped run per matchup, whose first tiers
+//                             play the level below, when that level was
+//                             measured against the same player
+//   ADVENTURE_SIM_MAP_ORDER   `level` (default) orders each map for its AI
+//                             level, as new runs are; `shuffled` deals the
+//                             decks in shuffled order, as before level ordering
 //   ADVENTURE_SIM_OUT         file for the markdown report
 //
 // On one core of a two-core cloud machine, 500 series of every deck in both
@@ -115,9 +131,21 @@ describe('Adventure deck strength', () => {
       : await playCells()
     let report = `${header}\n${formatAdventureSimReport(cells)}`
     if (maps > 0) {
+      const rampTiers = envList('ADVENTURE_SIM_RAMP_TIERS', '').map((entry) => {
+        const tiers = Number(entry)
+        if (!Number.isSafeInteger(tiers) || tiers < 1 || tiers >= ADVENTURE_TIER_COUNT) {
+          throw new Error(`ADVENTURE_SIM_RAMP_TIERS entries must be integers from 1 to ${ADVENTURE_TIER_COUNT - 1}, got "${entry}".`)
+        }
+        return tiers
+      })
+      const order = process.env.ADVENTURE_SIM_MAP_ORDER || 'level'
+      if (!isAdventureRunMapOrder(order)) {
+        throw new Error(`Unknown map order "${order}". Known: ${ADVENTURE_RUN_MAP_ORDERS.join(', ')}`)
+      }
       const { rates, skipped } = adventureRunModelWinRates(cells)
-      const model = await drainYielding(adventureRunModelSteps(rates, maps))
-      report += `\n\n${formatAdventureRunModelReport(model, skipped)}`
+      const plans = adventureRunModelPlans(rates, rampTiers)
+      const model = await drainYielding(adventureRunModelSteps(plans.plans, maps, order))
+      report += `\n\n${formatAdventureRunModelReport(model, [...skipped, ...plans.skipped])}`
     }
     console.log(report)
     const out = process.env.ADVENTURE_SIM_OUT

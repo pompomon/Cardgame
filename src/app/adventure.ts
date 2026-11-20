@@ -1,6 +1,8 @@
+import type { AiLevel } from '../game/ai-levels'
 import { createStarterDeck, shuffle } from '../game/cards'
 import { remainingCounterGrowth } from '../game/engine'
 import { isBasicLand, type Card, type GameState, type PlayerState } from '../game/types'
+import { ADVENTURE_DECK_BANDS } from './adventure-difficulty'
 import {
   ADVENTURE_DECK_SIZE,
   ADVENTURE_NODE_ID_PATTERN,
@@ -203,17 +205,19 @@ function checkedAdventureRun(run: AdventureRunState): AdventureRunState {
 
 /**
  * Creates a schema version 2 run on a seeded `branching` map, open at the
- * `map` stage. No node is selected and no attempt seed exists yet: selecting
- * a node derives the seed for that node and attempt.
+ * `map` stage. The map orders its decks by their strength at `level`, the AI
+ * level the run starts at; the run does not store it. No node is selected
+ * and no attempt seed exists yet: selecting a node derives the seed for that
+ * node and attempt.
  */
-export function createAdventureRun(seed: number, runId: string): AdventureRunState {
+export function createAdventureRun(seed: number, runId: string, level: AiLevel): AdventureRunState {
   return checkedAdventureRun({
     schemaVersion: ADVENTURE_SCHEMA_VERSION,
     runId,
     baseSeed: seed,
     status: 'active',
     stage: 'map',
-    map: generateBranchingAdventureMap(seed),
+    map: generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS[level]),
     currentTierIndex: 0,
     completedNodeIds: [],
     selectedNodeId: null,

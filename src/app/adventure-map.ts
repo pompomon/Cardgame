@@ -86,6 +86,16 @@ export interface AdventureOpponentPools {
 }
 
 /**
+ * Strength bands of non-boss decks against the player's standard deck,
+ * weakest first. A deck's band depends on the AI level; see
+ * `ADVENTURE_DECK_BANDS` in `adventure-difficulty.ts`.
+ */
+export const ADVENTURE_DECK_BAND_ORDER = Object.freeze(['very-easy', 'easy', 'even', 'hard', 'extreme'] as const)
+export type AdventureDeckBand = (typeof ADVENTURE_DECK_BAND_ORDER)[number]
+/** The band of every non-boss pool deck, by pool ID such as `dual-Forest-Island`. */
+export type AdventureDeckBands = Readonly<Record<string, AdventureDeckBand>>
+
+/**
  * The run fields the route rules read. A full `AdventureRunState` fits this
  * shape, so callers can pass a run directly.
  */
@@ -468,6 +478,8 @@ export const ADVENTURE_SEED_PURPOSE = Object.freeze({
   rewardOffer: 6,
   /** The opponent's deck order in one attempt; see `adventureOpponentDeckSeed`. */
   opponentDeck: 7,
+  /** Which lane of each fork holds which deck; see `generateBranchingAdventureMap`. */
+  forkLanes: 8,
 } as const)
 
 export type AdventureSeedPurpose = (typeof ADVENTURE_SEED_PURPOSE)[keyof typeof ADVENTURE_SEED_PURPOSE]
@@ -597,33 +609,83 @@ function generatedMapNode(tierIndex: number, lane: AdventureNodeLane, opponent: 
   }
 }
 
+const EVEN_BAND_RANK = ADVENTURE_DECK_BAND_ORDER.indexOf('even')
+const EXTREME_BAND_RANK = ADVENTURE_DECK_BAND_ORDER.indexOf('extreme')
+
+function deckBandRank(bands: AdventureDeckBands, deckId: string): number {
+  const rank = Object.hasOwn(bands, deckId) ? ADVENTURE_DECK_BAND_ORDER.indexOf(bands[deckId]) : -1
+  if (rank < 0) {
+    throw new Error(`Adventure deck "${deckId}" has no strength band.`)
+  }
+  return rank
+}
+
+interface BandedOpponent {
+  opponent: AdventureOpponentDeck
+  rank: number
+}
+
 /**
- * Generates a branching map from the base seed alone. The seed picks a fork
- * pattern, orders the decks, and shuffles the twelve non-boss opponents to
- * take nine distinct ones. They fill the tiers in ascending order, left
- * before right at forks. The first opponent of the shuffled mono pool is the
- * boss. Every call returns fresh objects, and the result must pass
- * `isAdventureMap`.
+ * Generates a branching map from the base seed and the strength bands of the
+ * AI level the run starts at.
+ *
+ * - The seed picks a fork pattern, orders the decks, and shuffles the twelve
+ *   non-boss opponents to take the first nine, skipping Extreme decks once
+ *   every fork has one.
+ * - Each Extreme deck sits at one of the latest forks, beside the strongest
+ *   remaining deck of an Even or easier band, so a player can always route
+ *   around it. The later fork gets the stronger partner.
+ * - The other decks fill the remaining nodes from tier 1 on, weakest band
+ *   first, in shuffled order within a band.
+ * - The seed then picks the lane of each deck at every fork.
+ * - The first opponent of the shuffled mono pool is the boss.
+ *
+ * Every call returns fresh objects, and the result must pass `isAdventureMap`.
+ * Throws when a pool deck has no band, or the bands leave too few decks.
  */
-export function generateBranchingAdventureMap(baseSeed: number): AdventureMap {
+export function generateBranchingAdventureMap(baseSeed: number, bands: AdventureDeckBands): AdventureMap {
   const patternRandom = lcg(deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.forkPattern, baseSeed))
   const forkPattern = ADVENTURE_FORK_PATTERNS[Math.floor(patternRandom() * ADVENTURE_FORK_PATTERNS.length)]
   const pools = buildAdventureOpponentPools(deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.deckOrder, baseSeed))
   const nonBossCount = ADVENTURE_TIER_COUNT - 1 + forkPattern.length
-  const nonBoss = shuffle(pools.nonBoss, deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.nonBossPick, baseSeed))
-    .slice(0, nonBossCount)
+  const picked: BandedOpponent[] = []
+  let extremeCount = 0
+  for (const opponent of shuffle(pools.nonBoss, deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.nonBossPick, baseSeed))) {
+    const rank = deckBandRank(bands, opponent.id)
+    if (picked.length === nonBossCount || (rank === EXTREME_BAND_RANK && extremeCount === forkPattern.length)) {
+      continue
+    }
+    extremeCount += rank === EXTREME_BAND_RANK ? 1 : 0
+    picked.push({ opponent, rank })
+  }
+  if (picked.length < nonBossCount) {
+    throw new Error('Adventure deck bands leave too few non-boss decks for a map.')
+  }
+  const extremes = picked.filter((entry) => entry.rank === EXTREME_BAND_RANK).map((entry) => entry.opponent)
+  // `sort` is stable, so decks in one band keep their shuffled order.
+  const others = picked.filter((entry) => entry.rank !== EXTREME_BAND_RANK).sort((left, right) => left.rank - right.rank)
+  const extremeForks = forkPattern.slice(forkPattern.length - extremes.length)
+  const partners: AdventureOpponentDeck[] = []
+  for (let index = extremes.length - 1; index >= 0; index -= 1) {
+    // Only synthetic bands can leave no Even or easier deck; take the easiest then.
+    const partnerIndex = Math.max(0, others.findLastIndex((entry) => entry.rank <= EVEN_BAND_RANK))
+    partners[index] = others.splice(partnerIndex, 1)[0].opponent
+  }
   const boss = shuffle(pools.boss, deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.bossPick, baseSeed))[0]
+  const laneRandom = lcg(deriveAdventureSeed(ADVENTURE_SEED_PURPOSE.forkLanes, baseSeed))
 
   const tiers: AdventureMapTier[] = []
-  let pick = 0
+  let nextOther = 0
+  const nextOpponent = (): AdventureOpponentDeck => others[nextOther++].opponent
   for (let tierIndex = 0; tierIndex < ADVENTURE_TIER_COUNT - 1; tierIndex += 1) {
-    const lanes = forkPattern.includes(tierIndex) ? FORK_LANES : CENTER_LANES
-    const nodes: AdventureMapNode[] = []
-    for (const lane of lanes) {
-      nodes.push(generatedMapNode(tierIndex, lane, nonBoss[pick]))
-      pick += 1
+    if (!forkPattern.includes(tierIndex)) {
+      tiers.push({ nodes: [generatedMapNode(tierIndex, 'center', nextOpponent())] })
+      continue
     }
-    tiers.push({ nodes })
+    const extremeIndex = extremeForks.indexOf(tierIndex)
+    const pair = extremeIndex < 0 ? [nextOpponent(), nextOpponent()] : [partners[extremeIndex], extremes[extremeIndex]]
+    const [left, right] = laneRandom() < 0.5 ? pair : [pair[1], pair[0]]
+    tiers.push({ nodes: [generatedMapNode(tierIndex, 'left', left), generatedMapNode(tierIndex, 'right', right)] })
   }
   tiers.push({ nodes: [generatedMapNode(ADVENTURE_TIER_COUNT - 1, 'center', boss)] })
 

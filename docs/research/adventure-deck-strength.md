@@ -2,17 +2,18 @@
 
 > [!IMPORTANT]
 > AI-versus-AI measurements at `a1eec3c`, made with
-> `npm run ai:adventure-decks`, and of the rebuilt boss decks after it. The
-> rules and the AI did not change between them. They are not human win
-> rates. Rerun the tool after any change to the rules, the AI or the opponent
-> pools.
+> `npm run ai:adventure-decks`, then of the rebuilt boss decks and of
+> Advanced opponents against a Hard player. The rules and the AI did not
+> change between them. They are not human win rates. Rerun the tool after any
+> change to the rules, the AI or the opponent pools.
 
 Every Adventure opponent deck played best-of-three series against the
 standard deck (ten of each creature), which the player always uses. The
 results are for ordering tiers, rebalancing opponent decks and setting
 per-tier difficulty; see [Recommendations](#recommendations). The
 [boss rebuild](#boss-rebuild) replaced the boss decks after the first
-measurements.
+measurements, and [level-ordered maps](#level-ordered-maps) now deal a new
+run's decks weakest first for its AI level.
 
 ## Deck legend
 
@@ -53,9 +54,13 @@ support.
 - **Five duos are nearly free wins at Hard.** Forest/Plains, Forest/Mountain,
   Forest/Swamp, Mountain/Plains and Plains/Swamp win at most 11.4% of Hard
   games.
-- **The map ignores strength.** No deck is more likely than another to come
-  early or late, and each non-boss deck is unavoidable on a quarter of maps,
-  so difficulty jumps at random.
+- **The map ignored strength.** No deck was more likely than another to come
+  early or late, and each non-boss deck was unavoidable on a quarter of maps,
+  so difficulty jumped at random. New maps deal the weakest decks first for
+  the run's AI level and put Extreme decks only at forks. In the mirrors,
+  tiers 1–2 now end 0.2–8.8% of informed runs, down from 22.6–33.5%, while
+  blind clear rates move by at most 0.8 points; see
+  [Level-ordered maps](#level-ordered-maps).
 - **The opponent's AI level matters only for decks with choices.** Against an
   Advanced player, raising the opponent from Basic to Hard lifts the standard
   deck from 30.0% to 93.1% of games, but moved every old boss by at most 2.5
@@ -108,17 +113,24 @@ Rows are sorted by the Hard score. Boss rows are the rebuilt decks;
     support from `ADVENTURE_BOSS_LAND_COUNTS`; see
     [Boss rebuild](#boss-rebuild). Until then each was 50 of one creature,
     and runs started before the rebuild keep those stored decks.
-- **Map.** `generateBranchingAdventureMap` seeds every new run from the clock.
+- **Map.** `generateBranchingAdventureMap` seeds every new run from the clock
+  and orders it for the AI level selected when the run starts.
   - It picks one of four fork patterns, each with three non-adjacent two-way
     forks among tiers 1–6.
-  - It shuffles the twelve non-boss decks and deals the first nine to tiers
-    1–6 in order. The other three sit out.
+  - It shuffles the twelve non-boss decks and takes the first nine. The other
+    three sit out.
+  - It deals them to tiers 1–6 weakest first, by their band at that level in
+    `ADVENTURE_DECK_BANDS`
+    ([`adventure-difficulty.ts`](../../src/app/adventure-difficulty.ts)),
+    copied from the [strength summary](#deck-strength-summary). Each Extreme
+    deck sits at one of the latest forks, beside an Even or easier deck.
   - The boss is a random boss deck.
-- **No difficulty order.** In 100,000 generated maps, each non-boss deck
-  appeared on 75% of maps: unavoidable on a single-node tier on 25% and at a
-  fork on 50%, all within half a point. Its mean tier was 3.5. Each boss
-  appeared on 20%. These match the exact shuffle odds (9/12, 3/12, 6/12 and
-  1/5).
+- **Difficulty order.** Each non-boss deck appears on 75% of maps and each
+  boss on 20%, the exact shuffle odds, and the levels share each seed's nine
+  decks, forks and boss. Very easy decks have a mean tier of 1.0–1.8, and no
+  Extreme deck is ever unavoidable. Until
+  [level ordering](#level-ordered-maps), every deck was unavoidable on a
+  single-node tier on 25% of maps, with a mean tier of 3.5.
 - **Labels.** The map names each roster, such as "Duo: Gravebloom Dryad +
   Signal Siren" or "Boss: Signal Siren specialist", so a player can route
   around a deck at a fork.
@@ -136,6 +148,10 @@ Rows are sorted by the Hard score. Boss rows are the rebuilt decks;
 - **AI level.** The opponent plays at the lobby's AI level on every tier,
   including the boss, seeded per attempt in
   [`controller.ts`](../../src/app/controller.ts). Nothing scales by tier.
+  The run doesn't store the level, which the lobby keeps for the session
+  only, starting at Basic. A level changed during a run changes how the
+  opponents play, but the map keeps the order of the level the run started
+  at.
 - **Opening hands.** The opponent always draws five cards. Relics can raise the
   player's opening hand to eight cards (Prepared Pack, Scout's Cache) or
   guarantee a chosen creature in it (charms).
@@ -347,8 +363,8 @@ A run model estimates how often a stand-in player clears a whole run.
     win, and a loss costs one, resets the streak and retries the node.
   - Informed routing takes the fork with the better clear chance. Blind
     routing picks a fork at random.
-  - The results average the 100,000 maps behind the placement figures in
-    [How run opponents are chosen today](#how-run-opponents-are-chosen-today).
+  - The results average 100,000 maps dealt in shuffled order, as maps were
+    before [level ordering](#level-ordered-maps).
 - **Limits.** The model ignores relics and treats retries as independent,
   although at `a1eec3c` a retry repeated the opponent's deck order. It ranks
   run difficulty; it does not predict human results.
@@ -478,7 +494,7 @@ The [run model](#run-difficulty) on the same maps, with the rebuilt bosses:
   beatable, and the Forest and Plains bosses harder. An Advanced player
   against Basic opponents clears 50.9% of runs, up from 36.7%.
 - **The route still decides most runs.** Recommendations 2 and 3 address the
-  six non-boss tiers.
+  six non-boss tiers; see [Level-ordered maps](#level-ordered-maps).
 
 ### How the bosses were chosen
 
@@ -548,6 +564,126 @@ What the screen showed, in screen scores:
 - Runs started before the rebuild keep their stored bosses, including the
   old Island boss.
 
+## Level-ordered maps
+
+[Recommendations 2 and 3](#recommendations) asked for tiers ordered by
+measured strength at the selected AI level, with Extreme decks only at forks.
+New maps now do both. Stored maps keep their decks and order, so runs
+started before keep their shuffled maps, and the save format is unchanged.
+
+- **Bands.** `ADVENTURE_DECK_BANDS` in
+  [`adventure-difficulty.ts`](../../src/app/adventure-difficulty.ts) holds
+  each non-boss deck's band at each level, copied from the
+  [strength summary](#deck-strength-summary). Change a band only with new
+  measurements here.
+- **Same decks at every level.** The seed picks the fork pattern, the nine
+  decks and the boss as before. No level has more than two Extreme decks for
+  the three forks, so every level deals the same decks for a seed, each in
+  its own order.
+- **Order.** `generateBranchingAdventureMap` deals decks from tier 1 on,
+  weakest band first, in shuffled order within a band. Each Extreme deck
+  sits at one of the latest forks, beside the strongest remaining Even or
+  easier deck, so a player can always route around it. A new seed purpose,
+  `forkLanes`, picks which lane of a fork holds which deck.
+- **Level.** The map is ordered for the AI level selected when the run
+  starts; see [How run opponents are chosen today](#how-run-opponents-are-chosen-today).
+
+### Placement
+
+Each cell is a band's mean tier, then how often each of its decks is
+unavoidable, on a single-node tier, over the tool's 100,000 map seeds. Every
+non-boss deck is still on 75% of maps. Before level ordering, every deck's
+mean tier was 3.5, and it was unavoidable on 25% of maps.
+
+| Maps | Very easy | Easy | Even | Hard | Extreme |
+|---|---|---|---|---|---|
+| Basic | 1.0, 19% | 1.7, 26% | 4.1, 18% | 4.8, 65% | 4.9, 0% |
+| Advanced | 1.0, 19% | 1.4, 17% | 3.6, 25% | 4.8, 41% | 5.7, 0% |
+| Hard | 1.8, 26% | 3.3, 21% | 4.6, 18% | 5.1, 48% | 5.7, 0% |
+
+### Run model on ordered maps
+
+The [run model](#run-difficulty) with the rebuilt bosses, on the same map
+seeds dealt in shuffled order and ordered for the opponents' level. The
+Advanced vs Hard row, Advanced opponents against a Hard player, was measured
+for the ramp below.
+
+| Opponents vs player | Informed, shuffled | Informed, ordered | Blind, shuffled | Blind, ordered | Informed p10–p90, shuffled | Informed p10–p90, ordered |
+|---|---:|---:|---:|---:|---|---|
+| Basic vs Basic | 13.9% | 15.1% | 7.1% | 7.9% | 4.5–26.9% | 8.8–22.6% |
+| Basic vs Advanced | 50.9% | 55.2% | 36.3% | 39.1% | 31.5–72.0% | 43.4–67.7% |
+| Advanced vs Advanced | 13.3% | 10.7% | 7.0% | 6.7% | 4.3–25.1% | 5.7–17.4% |
+| Advanced vs Hard | 92.1% | 91.1% | 87.6% | 87.0% | 84.0–98.5% | 82.7–98.1% |
+| Hard vs Advanced | 0.2% | 0.1% | 0.0% | 0.0% | 0.0–0.5% | 0.0–0.2% |
+| Hard vs Hard | 29.6% | 25.6% | 16.0% | 16.8% | 8.5–53.8% | 15.2–38.2% |
+
+Where informed runs end:
+
+| Opponents vs player | Maps | Tier 1 | Tier 2 | Tier 3 | Tier 4 | Tier 5 | Tier 6 | Boss | Clear |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Basic vs Basic | Shuffled | 10.8% | 19.5% | 15.6% | 12.4% | 10.8% | 6.4% | 10.6% | 13.9% |
+| Basic vs Basic | Ordered | 0.3% | 4.3% | 16.7% | 19.0% | 20.0% | 11.7% | 13.0% | 15.1% |
+| Basic vs Advanced | Shuffled | 3.7% | 8.1% | 7.6% | 6.6% | 7.2% | 4.3% | 11.7% | 50.9% |
+| Basic vs Advanced | Ordered | 0.0% | 0.7% | 4.5% | 6.8% | 10.4% | 7.8% | 14.6% | 55.2% |
+| Advanced vs Advanced | Shuffled | 12.6% | 20.9% | 16.7% | 12.7% | 10.6% | 6.3% | 7.0% | 13.3% |
+| Advanced vs Advanced | Ordered | 0.3% | 8.5% | 19.0% | 24.2% | 20.3% | 10.5% | 6.5% | 10.7% |
+| Hard vs Advanced | Shuffled | 38.6% | 34.1% | 15.1% | 7.4% | 3.2% | 1.1% | 0.4% | 0.2% |
+| Hard vs Advanced | Ordered | 9.3% | 21.4% | 27.7% | 28.5% | 10.6% | 2.1% | 0.3% | 0.1% |
+| Hard vs Hard | Shuffled | 7.9% | 14.7% | 11.6% | 9.6% | 10.0% | 5.8% | 10.7% | 29.6% |
+| Hard vs Hard | Ordered | 0.0% | 0.2% | 3.5% | 14.8% | 23.9% | 19.1% | 12.8% | 25.6% |
+
+- **A ramp instead of a lottery.** In the mirrors, tiers 1–2 end 0.2–8.8% of
+  informed runs, down from 22.6–33.5%; most runs now end on tiers 3–6 or at
+  the boss.
+- **Maps are more alike.** In the Hard mirror, the 10th and 90th percentile
+  maps give an informed run a 15.2% and a 38.2% clear chance, against 8.5%
+  and 53.8%. The spread narrows in every mirror.
+- **Difficulty barely moves.** Blind clear rates move by at most 0.8 points
+  in the mirrors. Informed rates fall 2.6 and 4.0 points in the Advanced and
+  Hard mirrors: apart from the Extreme forks, a fork now pairs decks of
+  similar strength, so choosing a fork gains less.
+- **Hard decks are often unavoidable late.** Extreme decks take the latest
+  forks, so Hard-band decks sit on single-node tiers on 41–65% of maps, up
+  from 25%. The clear rates above include this.
+- **Hard opponents still beat an Advanced player.** Ordering moves where
+  those runs end, from tiers 1–2 to tiers 3–4, but 0.1% still clear.
+
+### Orders considered
+
+A screen of generator variants with the run model, not kept in the tool,
+chose the order:
+
+- **Chosen: weakest first, with each Extreme deck at one of the latest
+  forks** beside the strongest Even or easier deck.
+- **Sorting alone** puts the strongest decks last, where a player often
+  can't route around an Extreme deck, against recommendation 3.
+- **Pairing each Extreme deck with the easiest deck** moves the easiest
+  decks late, so 15.6% of runs in the Basic mirror still ended on tiers 1–2.
+- **The three strongest decks as fork alternatives to easy decks** make them
+  optional, with no reward for taking them. That nearly doubled the informed
+  clear rate in the Hard mirror, to 52.1%, which changes run difficulty
+  rather than its order.
+
+### A lower level for early tiers
+
+[Recommendation 5](#recommendations) would scale the AI level by tier. The
+run model can play a run's first tiers one level lower, when the lower level
+was measured against the same player:
+
+| Opponents vs player | Maps | All tiers | Tiers 1–2 one level lower | Tiers 1–3 one level lower |
+|---|---|---:|---:|---:|
+| Advanced vs Advanced | Shuffled | 13.3% | 21.0% | 26.5% |
+| Advanced vs Advanced | Ordered | 10.7% | 13.0% | 17.1% |
+| Hard vs Advanced | Shuffled | 0.2% | 0.7% | 1.4% |
+| Hard vs Advanced | Ordered | 0.1% | 0.1% | 0.1% |
+| Hard vs Hard | Shuffled | 29.6% | 43.5% | 52.5% |
+| Hard vs Hard | Ordered | 25.6% | 25.9% | 28.0% |
+
+Cells are informed clear rates. On shuffled maps, a lower level on tiers 1–3
+would add 13.2 and 22.9 points in the mirrors. Ordered maps already put the
+weakest decks first, so it adds at most 6.4 points there, and nothing for an
+Advanced player against Hard opponents. Basic has no lower level.
+
 ## Recommendations
 
 1. **Fix the boss pool first.**
@@ -565,9 +701,13 @@ What the screen showed, in screen scores:
    [strength summary](#deck-strength-summary) bands for the selected AI level,
    weakest first. The bands must follow the level, because Mountain decks
    change bands between Advanced and Hard.
+   - **Done:** new maps deal decks weakest first for the AI level selected
+     when the run starts; see [Level-ordered maps](#level-ordered-maps).
 3. **Keep extreme decks off single-node tiers.** An Extreme deck for the
    selected level should appear only at a fork beside an easier deck, so that
    no unavoidable node decides a run.
+   - **Done:** each Extreme deck sits at one of the latest forks, beside an
+     Even or easier deck.
 4. **Reshuffle the opponent's deck for each attempt** from the attempt seed
    when the encounter starts.
    - A restarted attempt keeps its seed, and so its order, so attempts stay
@@ -587,18 +727,27 @@ What the screen showed, in screen scores:
    moved an old boss by at most 2.5 points. The rebuilt bosses have choices
    and gain 11.2–47.3 points. Tune interactive decks with the level, passing
    settings through `chooseAiAction` options as the roadmap item describes.
+   - **Deferred:** on ordered maps, playing tiers 1–3 one level lower adds
+     at most 6.4 points to the informed clear rate; see
+     [A lower level for early tiers](#a-lower-level-for-early-tiers). The
+     [roadmap trigger](../implementation/hard-ai-search-roadmap.md#adventure-difficulty),
+     player feedback or a target win rate, has not fired, and a lower level
+     would silently change what the selected level means.
 6. **Weigh seat order at Hard.** Moving first costs the player about five
    points per Hard game. The engine always starts seat 0, and the player is
    always seat 0, so moving second needs an engine option or a seat change in
    the app. Consider it only if tier tuning falls short.
+   - **Not done:** it waits for tier tuning.
 7. **Measure again after every change** with the commands below, and update
    this document.
+   - **Done** for the rebuilt bosses and level-ordered maps.
 
 ## Reproduce
 
 Add `-- --reporter=verbose` to any command to print one progress line per
-deck. On one core, the Hard command takes about 40 minutes and the
-Hard-opponent stand-in about 8. Results do not depend on how a run is split:
+deck. On one core, the Hard command takes about 40 minutes, the
+Hard-opponent stand-in about 8 and the Hard player against Advanced
+opponents about 11. Results do not depend on how a run is split:
 split by deck with `ADVENTURE_SIM_DECKS` or by matchup, run one process per
 CPU, and merge.
 
@@ -609,8 +758,12 @@ ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_MATCHUPS=hard ADVENTURE_SIM_JSON=same-har
 # An Advanced player against Basic and Hard opponents, Adventure seating only.
 ADVENTURE_SIM_SERIES=500 ADVENTURE_SIM_MATCHUPS=basic:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=standin-basic.json npm run ai:adventure-decks
 ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_MATCHUPS=hard:advanced ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=standin-hard.json npm run ai:adventure-decks
-# One report from every result file, with map placement and the run model, without playing.
-ADVENTURE_SIM_MERGE=same-low.json,same-hard.json,standin-basic.json,standin-hard.json ADVENTURE_SIM_MAPS=100000 ADVENTURE_SIM_OUT=report.md npm run ai:adventure-decks
+# A Hard player against Advanced opponents, for the ramp, Adventure seating only.
+ADVENTURE_SIM_SERIES=300 ADVENTURE_SIM_MATCHUPS=advanced:hard ADVENTURE_SIM_SEATINGS=adventure ADVENTURE_SIM_JSON=hard-player.json npm run ai:adventure-decks
+# One report from every result file, with map placement and the run model on level-ordered maps, without playing.
+ADVENTURE_SIM_MERGE=same-low.json,same-hard.json,standin-basic.json,standin-hard.json,hard-player.json ADVENTURE_SIM_MAPS=100000 ADVENTURE_SIM_RAMP_TIERS=2,3 ADVENTURE_SIM_OUT=report.md npm run ai:adventure-decks
+# The same maps dealt in shuffled order, as before level ordering.
+ADVENTURE_SIM_MERGE=same-low.json,same-hard.json,standin-basic.json,standin-hard.json,hard-player.json ADVENTURE_SIM_MAPS=100000 ADVENTURE_SIM_RAMP_TIERS=2,3 ADVENTURE_SIM_MAP_ORDER=shuffled ADVENTURE_SIM_OUT=report-shuffled.md npm run ai:adventure-decks
 ```
 
 The [boss rebuild](#boss-rebuild) screened candidate decks and confirmed the
@@ -628,6 +781,10 @@ ADVENTURE_SIM_DECKS=mix-Forest45-Island5 ADVENTURE_SIM_SERIES=200 ADVENTURE_SIM_
 ```
 
 `ADVENTURE_SIM_MAPS` adds the map placement and run model sections behind
-[How run opponents are chosen today](#how-run-opponents-are-chosen-today) and
-[Run difficulty](#run-difficulty). Map seeds are fixed, so the sections
-reproduce exactly; 100,000 maps took about 45 seconds on one core.
+[How run opponents are chosen today](#how-run-opponents-are-chosen-today),
+[Run difficulty](#run-difficulty) and
+[Level-ordered maps](#level-ordered-maps). `ADVENTURE_SIM_RAMP_TIERS` adds
+the runs whose first tiers play one level lower, and
+`ADVENTURE_SIM_MAP_ORDER=shuffled` deals maps as Run difficulty does. Map
+seeds are fixed, so the sections reproduce exactly. On one core, 100,000
+maps with both ramps took about two and a half minutes for each map order.

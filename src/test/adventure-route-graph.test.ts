@@ -9,6 +9,7 @@ import {
   startAdventureEncounter,
   type AdventureRunState,
 } from '../app/adventure'
+import { ADVENTURE_DECK_BANDS } from '../app/adventure-difficulty'
 import {
   ADVENTURE_FORK_PATTERNS,
   generateBranchingAdventureMap,
@@ -66,7 +67,7 @@ const forkPatternSeeds = new Map<string, number>()
 function seedForForkPattern(pattern: readonly number[]): number {
   const key = pattern.join(',')
   for (let seed = forkPatternSeeds.get(key) ?? 1_770_000_000_000; seed < 1_770_000_001_000; seed += 1) {
-    const forks = generateBranchingAdventureMap(seed).tiers.flatMap((tier, index) => (tier.nodes.length === 2 ? [index] : []))
+    const forks = generateBranchingAdventureMap(seed, ADVENTURE_DECK_BANDS.basic).tiers.flatMap((tier, index) => (tier.nodes.length === 2 ? [index] : []))
     if (forks.join(',') === key) {
       forkPatternSeeds.set(key, seed)
       return seed
@@ -210,7 +211,7 @@ describe('adventureRouteGraph', () => {
 
   it.each(FORK_ROUTES)('lays out a new run with forks at tiers %s', (forks, lineCounts) => {
     const pattern = forks.split(',').map((tier) => Number(tier) - 1)
-    const rows = adventureRouteGraph(projectedTiers(createAdventureRun(seedForForkPattern(pattern), RUN_ID)))
+    const rows = adventureRouteGraph(projectedTiers(createAdventureRun(seedForForkPattern(pattern), RUN_ID, 'basic')))
 
     expect(rows.map((row) => row.nodes.map((node) => node.x)))
       .toEqual(rows.map((_, tierIndex) => (pattern.includes(tierIndex) ? [25, 75] : [50])))
@@ -226,7 +227,7 @@ describe('adventureRouteGraph', () => {
 
   describe('for a seeded run with forks at tiers 2, 4 and 6', () => {
     const seed = seedForForkPattern([1, 3, 5])
-    const atFork = won(createAdventureRun(seed, RUN_ID), 'tier-1-center')
+    const atFork = won(createAdventureRun(seed, RUN_ID, 'basic'), 'tier-1-center')
 
     it('shows the route taken, the next step at an open fork, and the route ahead', () => {
       const rows = adventureRouteGraph(projectedTiers(atFork))

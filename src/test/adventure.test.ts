@@ -33,6 +33,7 @@ import {
   type AdventureRunStateV1,
   type AdventureRunStatus,
 } from '../app/adventure'
+import { ADVENTURE_DECK_BANDS } from '../app/adventure-difficulty'
 import {
   ADVENTURE_BOSS_LAND_COUNTS,
   adventureAttemptSeed,
@@ -117,7 +118,7 @@ describe('adventure deck generation', () => {
   })
 
   it('computes score with expected formula', () => {
-    const run = createAdventureRun(22, RUN_ID)
+    const run = createAdventureRun(22, RUN_ID, 'basic')
     run.remainingChances = 4
     run.scoreEligibleChances = 4
     run.totalCardsPlayed = 17
@@ -126,7 +127,7 @@ describe('adventure deck generation', () => {
   })
 
   it('scores only score-eligible chances', () => {
-    const run = createAdventureRun(22, RUN_ID)
+    const run = createAdventureRun(22, RUN_ID, 'basic')
     run.remainingChances = 9
     run.scoreEligibleChances = 2
     run.totalCardsPlayed = 17
@@ -135,7 +136,7 @@ describe('adventure deck generation', () => {
   })
 
   it('keeps the score within the safe integers, which the high-score reader accepts', () => {
-    const run = createAdventureRun(22, RUN_ID)
+    const run = createAdventureRun(22, RUN_ID, 'basic')
     const limit = Number.MAX_SAFE_INTEGER
     expect(computeAdventureScore({ ...run, scoreEligibleChances: limit, totalCardsPlayed: 0, totalRoundsPlayed: limit })).toBe(limit)
     expect(computeAdventureScore({ ...run, scoreEligibleChances: 0, totalCardsPlayed: limit, totalRoundsPlayed: 0 })).toBe(-limit)
@@ -183,7 +184,7 @@ function wonAndSkipped(run: AdventureRunState): AdventureRunState {
 }
 
 /** Wins the first node of each tier until the encounter on `tierIndex` is open. */
-function encounterAt(tierIndex: number, run = createAdventureRun(500, RUN_ID)): AdventureRunState {
+function encounterAt(tierIndex: number, run = createAdventureRun(500, RUN_ID, 'basic')): AdventureRunState {
   let current = started(run)
   for (let tier = current.currentTierIndex; tier < tierIndex; tier += 1) {
     current = started(wonAndSkipped(current))
@@ -194,7 +195,7 @@ function encounterAt(tierIndex: number, run = createAdventureRun(500, RUN_ID)): 
 /** A linear run as Milestone 2 wrote it, with the first attempt seed stored. */
 function savedLinearRun(seed: number): AdventureRunState {
   return {
-    ...createAdventureRun(seed, RUN_ID),
+    ...createAdventureRun(seed, RUN_ID, 'basic'),
     map: { kind: 'linear', tiers: linearAdventureTiers(buildAdventureLineup(seed)) },
     attemptSeed: seed,
   }
@@ -206,7 +207,7 @@ function forkTiers(run: AdventureRunState): number[] {
 
 describe('schema version 2 Adventure runs', () => {
   it('creates new runs on the seeded branching map, open at the map stage without a seed', () => {
-    const run = createAdventureRun(12345, RUN_ID)
+    const run = createAdventureRun(12345, RUN_ID, 'basic')
 
     expect(run).toEqual({
       schemaVersion: ADVENTURE_SCHEMA_VERSION,
@@ -214,7 +215,7 @@ describe('schema version 2 Adventure runs', () => {
       baseSeed: 12345,
       status: 'active',
       stage: 'map',
-      map: generateBranchingAdventureMap(12345),
+      map: generateBranchingAdventureMap(12345, ADVENTURE_DECK_BANDS.basic),
       currentTierIndex: 0,
       completedNodeIds: [],
       selectedNodeId: null,
@@ -236,8 +237,8 @@ describe('schema version 2 Adventure runs', () => {
   })
 
   it('builds the same map for the same seed whatever the run ID', () => {
-    const run = createAdventureRun(1_760_000_000_000, RUN_ID)
-    const again = createAdventureRun(1_760_000_000_000, createAdventureRunId())
+    const run = createAdventureRun(1_760_000_000_000, RUN_ID, 'basic')
+    const again = createAdventureRun(1_760_000_000_000, createAdventureRunId(), 'basic')
 
     expect(again.map).toEqual(run.map)
     expect(again.map).not.toBe(run.map)
@@ -246,7 +247,7 @@ describe('schema version 2 Adventure runs', () => {
 
   it('puts every new run on three forks that converge on one mono boss', () => {
     for (const seed of [0, 12345, 2 ** 32 + 1, 1_760_000_000_000]) {
-      const run = createAdventureRun(seed, RUN_ID)
+      const run = createAdventureRun(seed, RUN_ID, 'basic')
 
       expect(run.map.kind).toBe('branching')
       expect(run.map.tiers).toHaveLength(ADVENTURE_TIER_COUNT)
@@ -260,8 +261,8 @@ describe('schema version 2 Adventure runs', () => {
   it('accepts branching runs and saved linear runs alike', () => {
     const seed = 1_760_000_000_000
     const runs = [
-      createAdventureRun(seed, RUN_ID),
-      started(createAdventureRun(seed, RUN_ID)),
+      createAdventureRun(seed, RUN_ID, 'basic'),
+      started(createAdventureRun(seed, RUN_ID, 'basic')),
       savedLinearRun(seed),
       started(savedLinearRun(seed)),
     ]
@@ -275,7 +276,7 @@ describe('schema version 2 Adventure runs', () => {
   })
 
   it("launches the selected node's deck pair without sharing decks", () => {
-    const created = createAdventureRun(321, RUN_ID)
+    const created = createAdventureRun(321, RUN_ID, 'basic')
     const fork = forkTiers(created)[0]
     const map = fork === 0 ? created : wonAndSkipped(encounterAt(fork - 1, created))
 
@@ -309,7 +310,7 @@ describe('schema version 2 Adventure runs', () => {
   })
 
   it('refuses a deck pair when no node is selected instead of substituting an opponent', () => {
-    const run = createAdventureRun(321, RUN_ID)
+    const run = createAdventureRun(321, RUN_ID, 'basic')
     const migratedRun = migrated()
 
     expect(selectedAdventureNode(run)).toBeNull()
@@ -348,8 +349,8 @@ describe('Adventure run IDs', () => {
 
   it('creates different run IDs for runs started with a frozen clock and the same seed', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000)
-    const first = createAdventureRun(1_760_000_000_000, createAdventureRunId())
-    const second = createAdventureRun(1_760_000_000_000, createAdventureRunId())
+    const first = createAdventureRun(1_760_000_000_000, createAdventureRunId(), 'basic')
+    const second = createAdventureRun(1_760_000_000_000, createAdventureRunId(), 'basic')
 
     expect(first.runId).not.toBe(second.runId)
     expect(first.map).toEqual(second.map)
@@ -374,7 +375,7 @@ describe('Adventure run IDs', () => {
 
 describe('Adventure run copies', () => {
   it('deep-copies known fields and drops unknown keys', () => {
-    const run = started(createAdventureRun(44, RUN_ID))
+    const run = started(createAdventureRun(44, RUN_ID, 'basic'))
     const tagged = run as unknown as Record<string, unknown>
     tagged.extra = 'top'
     ;(run.map as unknown as Record<string, unknown>).extra = 'map'
@@ -403,7 +404,7 @@ describe('Adventure run copies', () => {
   })
 
   it('normalizes only valid runs into detached copies', () => {
-    const run = createAdventureRun(45, RUN_ID)
+    const run = createAdventureRun(45, RUN_ID, 'basic')
 
     const normalized = normalizeAdventureRun(run)
 
@@ -426,7 +427,7 @@ describe('Adventure run changes', () => {
   it.each(['win', 'loss', 'draw'] as const)('applies a %s to a run whose counters are all at the limit', (outcome) => {
     const limit = Number.MAX_SAFE_INTEGER
     const run: AdventureRunState = {
-      ...started(createAdventureRun(46, RUN_ID)),
+      ...started(createAdventureRun(46, RUN_ID, 'basic')),
       remainingChances: limit,
       scoreEligibleChances: limit,
       winStreak: limit,
@@ -446,7 +447,7 @@ describe('Adventure run changes', () => {
   })
 
   it('starts a chosen node without changing its input', () => {
-    const run = createAdventureRun(46, RUN_ID)
+    const run = createAdventureRun(46, RUN_ID, 'basic')
     const before = JSON.stringify(run)
     const nodes = run.map.tiers[0].nodes
     const node = nodes[nodes.length - 1]
@@ -468,7 +469,7 @@ describe('Adventure run changes', () => {
   })
 
   it('rejects unknown, future, non-string and repeated choices without changing the run', () => {
-    const run = createAdventureRun(46, RUN_ID)
+    const run = createAdventureRun(46, RUN_ID, 'basic')
     const before = JSON.stringify(run)
 
     for (const nodeId of ['tier-9-center', 'tier-7-center', run.map.tiers[1].nodes[0].id, '', null, 7, {}, ['tier-1-left']]) {
@@ -494,7 +495,7 @@ describe('Adventure run changes', () => {
   })
 
   it('keeps the selected node and attempt identity while pausing', () => {
-    const begun = started(createAdventureRun(47, RUN_ID))
+    const begun = started(createAdventureRun(47, RUN_ID, 'basic'))
 
     const paused = pauseAdventureRun(begun)
 
@@ -507,7 +508,7 @@ describe('Adventure run changes', () => {
   })
 
   it('opens the map and resumes encounters only for resumable runs at the right stage', () => {
-    const run = createAdventureRun(47, RUN_ID)
+    const run = createAdventureRun(47, RUN_ID, 'basic')
     const failing = encounterAt(1)
     failing.remainingChances = 1
     const failed = applyAdventureEncounterResult(failing, 'loss')
@@ -522,7 +523,7 @@ describe('Adventure run changes', () => {
   })
 
   it('advances to the next tier after a win and waits at the reward stage', () => {
-    const begun = started(createAdventureRun(48, RUN_ID))
+    const begun = started(createAdventureRun(48, RUN_ID, 'basic'))
     const before = JSON.stringify(begun)
 
     const next = applyAdventureEncounterResult(begun, 'win')
@@ -561,7 +562,7 @@ describe('Adventure run changes', () => {
   })
 
   it('applies the chance bonus to the real and score-eligible streaks separately', () => {
-    const run = started(createAdventureRun(49, RUN_ID))
+    const run = started(createAdventureRun(49, RUN_ID, 'basic'))
     run.winStreak = 2
     run.scoreEligibleWinStreak = 0
 
@@ -604,7 +605,7 @@ describe('Adventure run changes', () => {
   })
 
   it.each(['loss', 'draw'] as const)('locks the committed fork node after a %s and rejects its sibling', (outcome) => {
-    const created = createAdventureRun(500, RUN_ID)
+    const created = createAdventureRun(500, RUN_ID, 'basic')
     const fork = forkTiers(created)[0]
     const [left, right] = created.map.tiers[fork].nodes
     const run = encounterAt(fork, created)
@@ -625,7 +626,7 @@ describe('Adventure run changes', () => {
   })
 
   it('never lowers chance counters below zero', () => {
-    const run = started(createAdventureRun(50, RUN_ID))
+    const run = started(createAdventureRun(50, RUN_ID, 'basic'))
     run.remainingChances = 2
     run.scoreEligibleChances = 0
 
@@ -702,7 +703,7 @@ describe('Adventure run changes', () => {
   })
 
   it('completes every route through the forks at the shared boss', () => {
-    const created = createAdventureRun(500, RUN_ID)
+    const created = createAdventureRun(500, RUN_ID, 'basic')
     const forks = forkTiers(created)
     const boss = created.map.tiers[ADVENTURE_TIER_COUNT - 1].nodes[0]
     const routes = new Set<string>()
@@ -741,7 +742,7 @@ describe('Adventure run changes', () => {
   })
 
   it('only finishes active encounters', () => {
-    const run = createAdventureRun(51, RUN_ID)
+    const run = createAdventureRun(51, RUN_ID, 'basic')
     const paused = pauseAdventureRun(started(run))
 
     expect(() => applyAdventureEncounterResult(run, 'win')).toThrow()

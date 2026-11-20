@@ -36,7 +36,7 @@ function v1FixtureRun(): AdventureRunStateV1 {
 }
 
 function runWithOpponents(opponents: Record<number, Omit<AdventureOpponentDeck, 'deck'>>): AdventureRunState {
-  const run = createAdventureRun(57, TEST_RUN_ID)
+  const run = createAdventureRun(57, TEST_RUN_ID, 'basic')
   for (const [tierIndex, opponent] of Object.entries(opponents)) {
     const node = run.map.tiers[Number(tierIndex)].nodes[0]
     node.opponent = { ...opponent, deck: node.opponent.deck }
@@ -400,7 +400,7 @@ describe('buildViewModel', () => {
 
   it('returns frozen deck-free Adventure snapshots that ignore later run changes', () => {
     const state = createState(61)
-    const run = createAdventureRun(61, TEST_RUN_ID)
+    const run = createAdventureRun(61, TEST_RUN_ID, 'basic')
     state.adventure = withRun(run, 5)
 
     const adventure = buildViewModel(state, false).adventure
@@ -436,7 +436,7 @@ describe('buildViewModel', () => {
 
   it('derives fork statuses before a choice, after a committed choice, and for its retry', () => {
     const state = createState(62)
-    const created = createAdventureRun(62, TEST_RUN_ID)
+    const created = createAdventureRun(62, TEST_RUN_ID, 'basic')
     const fork = created.map.tiers.findIndex((tier) => tier.nodes.length === 2)
     const run = mapAt(fork, created)
     state.adventure = withRun(run)
@@ -468,7 +468,7 @@ describe('buildViewModel', () => {
 
   it('reuses the frozen route for the same run and changes the decision key on every transition', () => {
     const state = createState(63)
-    const run = createAdventureRun(63, TEST_RUN_ID)
+    const run = createAdventureRun(63, TEST_RUN_ID, 'basic')
     state.adventure = withRun(run)
 
     const first = buildViewModel(state, false).adventure
@@ -495,7 +495,7 @@ describe('buildViewModel', () => {
 
   it('projects a pending outcome and the last result without controller references', () => {
     const state = createState(64)
-    const begun = started(createAdventureRun(64, TEST_RUN_ID))
+    const begun = started(createAdventureRun(64, TEST_RUN_ID, 'basic'))
     const node = begun.map.tiers[0].nodes[0]
     const lastResult = {
       outcome: 'loss' as const,
@@ -542,7 +542,7 @@ describe('buildViewModel', () => {
 
   it('projects relics and the pending offer from the reward catalog as frozen snapshots', () => {
     const state = createState(65)
-    const won = applyAdventureEncounterResult(started(mapAt(4, createAdventureRun(65, TEST_RUN_ID))), 'win')
+    const won = applyAdventureEncounterResult(started(mapAt(4, createAdventureRun(65, TEST_RUN_ID, 'basic'))), 'win')
     const [first, second, third, fourth, source] = won.completedNodeIds
     // The Tier 5 reward after Second Wind, Guardian Sigil, Prepared Pack and a skip.
     const run: AdventureRunState = {
