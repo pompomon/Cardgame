@@ -38,6 +38,7 @@ function createState(seed: number): AppState {
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
+    autoBattle: false,
     adventure: createInactiveAdventureState(),
   }
 }

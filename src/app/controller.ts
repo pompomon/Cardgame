@@ -42,6 +42,8 @@ import {
   type StoredAdventureRunRecord,
 } from './adventure-persistence'
 import { describeAdventureRelicChargeUses, displayAdventureOpponentLabel, replayStepStatus } from './game-presentation'
+import { aiLevelLabel } from './ai-levels'
+import { aiLevelForSeat, AUTO_BATTLE_AI_LEVEL, canEnableAutoBattle, isAutoBattleSeat } from './auto-battle'
 import { persistAnimationSpeed, resolveInitialAnimationSpeed } from './animation-settings'
 import { persistBoardTheme, readStoredBoardTheme, type BoardTheme } from './board-theme'
 import {
@@ -74,6 +76,12 @@ const ADVENTURE_RESET_WARNING = 'Adventure run could not be reset (storage unava
 const ADVENTURE_RESET_WARNING_AGAIN = 'Adventure run still could not be reset (storage unavailable).'
 const ADVENTURE_PENDING_NOTICE = 'Save the encounter result first: choose Retry Saving Result.'
 const ADVENTURE_REWARD_PENDING_NOTICE = 'Choose a reward or skip it before starting the next encounter.'
+const AUTO_BATTLE_PLAYER = `the ${aiLevelLabel(AUTO_BATTLE_AI_LEVEL)} AI`
+const AUTO_BATTLE_ON_IN_GAME = `Auto battle on: ${AUTO_BATTLE_PLAYER} is playing for you. Choose Take control to play yourself.`
+const AUTO_BATTLE_ON_NEXT_GAME = `Auto battle on: ${AUTO_BATTLE_PLAYER} will play your next game.`
+const AUTO_BATTLE_OFF = 'Auto battle off: you play your own turns.'
+const AUTO_BATTLE_REFUSED = 'Auto battle is playing for you. Choose Take control first.'
+const AUTO_BATTLE_ON_NOTICE = ' Auto battle is on.'
 
 function adventureChancesText(chances: number): string {
   return `${chances} ${chances === 1 ? 'chance' : 'chances'} left`
@@ -167,6 +175,12 @@ export interface ControllerApi {
   subscribe(listener: (view: AppViewModel) => void): () => void
   getViewModel(): AppViewModel
   setAiLevel(level: AiLevel): void
+  /**
+   * Sets, never toggles, Auto battle: the Hard AI plays the human's seat in
+   * Human vs AI modes. Turning on is ignored where it is unavailable; turning
+   * off always applies.
+   */
+  setAutoBattle(enabled: boolean): void
   setCardVisualStyle(style: CardVisualStyle): void
   setMonochromeCards(enabled: boolean): void
   setAnimationSpeed(speed: AnimationSpeed): void
@@ -232,6 +246,7 @@ export class AppController implements ControllerApi {
       p2pStarted: false,
       pendingP2PStartSeed: null,
       pendingRematchSeed: null,
+      autoBattle: false,
       adventure: createInactiveAdventureState(readStoredAdventureHighScore()),
     }
     this.refreshAdventureFromStorage()
@@ -321,6 +336,11 @@ export class AppController implements ControllerApi {
     return this.state.replay !== null
   }
 
+  // Appended to a success status that keeps Auto battle on, such as a rematch.
+  private autoBattleNotice(): string {
+    return this.state.autoBattle && canEnableAutoBattle(this.state) ? AUTO_BATTLE_ON_NOTICE : ''
+  }
+
   private clearReplay(): void {
     this.stopReplayInterval()
     this.state.replay = null
@@ -328,6 +348,8 @@ export class AppController implements ControllerApi {
 
   // Leaves any replay, AI turn or peer session and shows Adventure mode with
   // no game, which is the map hub. Callers set the Adventure state and status.
+  // Only a new or resumed run enters it, and each starts with Auto battle off;
+  // a finished encounter returns to the map without it and keeps the flag.
   private enterAdventureHub(): void {
     this.stopReplayInterval()
     this.clearAiTimeout()
@@ -338,6 +360,7 @@ export class AppController implements ControllerApi {
     this.state.game = null
     this.state.recording = null
     this.state.controllers = ['human', 'ai']
+    this.state.autoBattle = false
     this.state.offer = ''
     this.state.answer = ''
     this.state.p2pStarted = false
@@ -648,8 +671,7 @@ export class AppController implements ControllerApi {
     }
 
     const actor = activeActor(this.state.game)
-    const control = this.state.controllers[actor]
-    if (control !== 'ai' || !canAct(this.state.game, actor)) {
+    if (aiLevelForSeat(this.state, actor) === null || !canAct(this.state.game, actor)) {
       return
     }
 
@@ -660,7 +682,9 @@ export class AppController implements ControllerApi {
         return
       }
       const actor = activeActor(game)
-      if (this.state.controllers[actor] !== 'ai') {
+      // Re-read: Take control or a game change since arming hands the seat back.
+      const level = aiLevelForSeat(this.state, actor)
+      if (level === null) {
         return
       }
       const action = this.state.mode === 'tutorial'
@@ -676,7 +700,7 @@ export class AppController implements ControllerApi {
             },
           },
         })
-        : chooseAiAction(game, actor, { level: this.state.aiLevel, seed: this.state.seed })
+        : chooseAiAction(game, actor, { level, seed: this.state.seed })
       if (!action) {
         return
       }
@@ -762,6 +786,21 @@ export class AppController implements ControllerApi {
   setAiLevel(level: AiLevel): void {
     this.state.aiLevel = level
     this.notify()
+  }
+
+  setAutoBattle(enabled: boolean): void {
+    if (this.state.autoBattle === enabled || enabled && !canEnableAutoBattle(this.state)) {
+      return
+    }
+    this.state.autoBattle = enabled
+    // A result waiting to be saved keeps its warning; only the flag changes.
+    if (this.state.adventure.pendingCompletion === null) {
+      const game = this.state.game
+      this.state.status = !enabled ? AUTO_BATTLE_OFF
+        : game && game.phase !== 'gameOver' ? AUTO_BATTLE_ON_IN_GAME : AUTO_BATTLE_ON_NEXT_GAME
+    }
+    this.notify()
+    this.scheduleAiIfNeeded()
   }
 
   setCardVisualStyle(style: CardVisualStyle): void {
@@ -877,7 +916,7 @@ export class AppController implements ControllerApi {
     const restart = run.encounterSetup === null ? ''
       : ` Same opening as before${holdsChargedAdventureRelic(run) ? '; no relic charge used' : ''}.`
     const relicsUsed = adventureRelicUseText(usedAdventureRelicCharges(run.relics, candidate.relics))
-    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.${relicsUsed}${restart}`
+    this.state.status = `Tier ${candidate.currentTierIndex + 1} encounter started against ${opponent}.${relicsUsed}${restart}${this.autoBattleNotice()}`
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -1119,6 +1158,8 @@ export class AppController implements ControllerApi {
     this.stopReplayInterval()
     this.clearAiTimeout()
     this.state.replay = null
+    // A game started from the lobby starts manual.
+    this.state.autoBattle = false
     if (!isP2PMode(mode)) {
       this.p2p?.close()
       this.p2p = null
@@ -1183,6 +1224,7 @@ export class AppController implements ControllerApi {
     this.state.game = null
     this.state.replay = null
     this.state.recording = null
+    this.state.autoBattle = false
     this.state.status = statusMessage ?? ''
     this.state.offer = ''
     this.state.answer = ''
@@ -1279,6 +1321,12 @@ export class AppController implements ControllerApi {
       this.notify()
       return
     }
+    // A stale human submission never acts for the seat Hard is playing.
+    if (isAutoBattleSeat(this.state, action.actor)) {
+      this.state.status = AUTO_BATTLE_REFUSED
+      this.notify()
+      return
+    }
     this.applyRecordedAction(action, 'human', true)
   }
 
@@ -1327,7 +1375,7 @@ export class AppController implements ControllerApi {
       this.state.game = createInitialGame(this.state.seed)
       this.initializeRecording(this.state.mode)
     }
-    this.state.status = 'Rematch started.'
+    this.state.status = `Rematch started.${this.autoBattleNotice()}`
     this.notify()
     this.scheduleAiIfNeeded()
   }
@@ -1351,6 +1399,9 @@ export class AppController implements ControllerApi {
     }
     this.stopReplayInterval()
     this.clearAiTimeout()
+    // Even a failed import cancels the pending move without rescheduling it,
+    // so Auto battle hands the seat back rather than leaving it stalled.
+    this.state.autoBattle = false
     const parsed = parseGameRecordJson(json)
     if (!parsed.ok) {
       if (this.state.replay) {
@@ -1530,7 +1581,7 @@ export class AppController implements ControllerApi {
     const finalState = snapshotFromRecord(this.state.replay.record, this.state.replay.record.timeline.length)
     this.clearReplay()
     this.state.game = finalState
-    this.state.status = 'Exited replay at final recorded game state.'
+    this.state.status = `Exited replay at final recorded game state.${this.autoBattleNotice()}`
     this.notify()
     this.scheduleAiIfNeeded()
   }

@@ -97,6 +97,7 @@ function projectedTiers(run: AdventureRunState): readonly AdventureTierSummary[]
     p2pStarted: false,
     pendingP2PStartSeed: null,
     pendingRematchSeed: null,
+    autoBattle: false,
     adventure: { ...createInactiveAdventureState(0, true), run },
   }
   return buildViewModel(state, false).adventure.tiers

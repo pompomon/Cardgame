@@ -48,6 +48,7 @@ function makeView(): AppViewModel {
     animationSpeed: 'normal', boardTheme: 'classic', renderQualityPreference: 'auto',
     p2pConnected: false, p2pStarted: false,
     tutorial: { active: false, stepId: null, hint: null },
+    autoBattle: { available: false, enabled: false, active: false },
     adventure: {
       runId: null, baseSeed: 0, status: 'inactive', stage: null, currentTier: 0, attemptOrdinal: 0,
       remainingChances: 3, winStreak: 0, totalRoundsPlayed: 0, totalCardsPlayed: 0, tiers: [],
@@ -283,7 +284,7 @@ function setup(view = makeView(), separateHud = false, narrow: { enabled: boolea
   document.body.append(board, host)
   const controller = {
     subscribe: vi.fn(() => () => {}), getViewModel: vi.fn(() => current),
-    setAiLevel: vi.fn(), setCardVisualStyle: vi.fn(), setMonochromeCards: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
+    setAiLevel: vi.fn(), setAutoBattle: vi.fn(), setCardVisualStyle: vi.fn(), setMonochromeCards: vi.fn(), setAnimationSpeed: vi.fn(), setBoardTheme: vi.fn(), setRenderQualityPreference: vi.fn(),
     startGame: vi.fn(), startAdventure: vi.fn(), startAdventureNode: vi.fn(), retryAdventureCompletion: vi.fn(),
     chooseAdventureReward: vi.fn(), skipAdventureReward: vi.fn(),
     resumeAdventure: vi.fn(), pauseAdventure: vi.fn(), abandonAdventure: vi.fn(), backToLobby: vi.fn(),

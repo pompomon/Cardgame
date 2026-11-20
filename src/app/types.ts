@@ -193,6 +193,10 @@ export interface AppState {
   // initiated rematch (`p2p-host` or `p2p-join`); while set, local
   // seed/game/recording stay unchanged until matching `rematch-ack` arrives.
   pendingRematchSeed: number | null
+  // Auto battle: the Hard AI plays the human's seat in Human vs AI modes
+  // (see `src/app/auto-battle.ts`). In memory only, never saved; it never
+  // changes `controllers`.
+  autoBattle: boolean
   adventure: AdventureState
 }
 
@@ -301,6 +305,16 @@ export interface GameUiState {
   revealedEnemyHandForSwamp: ReadonlyArray<UiCard> | null
 }
 
+/** Auto battle as the interface shows it; frozen by the view model. */
+export interface AutoBattleUiState {
+  /** The switch is offered: a Human vs AI mode outside replay, no result waiting, a run in progress. */
+  readonly available: boolean
+  /** The flag as set, even while unavailable. */
+  readonly enabled: boolean
+  /** Hard plays the human's seat now: enabled, available and a game in progress. */
+  readonly active: boolean
+}
+
 export interface AppViewModel {
   mode: Mode | null
   status: string
@@ -322,6 +336,7 @@ export interface AppViewModel {
     hint: string | null
   }
   adventure: AdventureUiState
+  autoBattle: AutoBattleUiState
   game: GameUiState | null
   recording: {
     canSave: boolean
