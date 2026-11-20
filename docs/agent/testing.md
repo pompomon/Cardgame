@@ -159,8 +159,9 @@ cases present each setting synchronously from a mocked controller.
   applies its state, once. One with nothing to set dispatches nothing and
   refreshes the interface.
 - **Duplicate activation:** a repeat before or after the re-render, a held
-  Enter or Space, or End Turn within `THREE_TAKE_CONTROL_GUARD_MS` of Take
-  control adds nothing.
+  Enter or Space (its repeats stay inert past the guard, until a fresh
+  press), or End Turn within `THREE_TAKE_CONTROL_GUARD_MS` of Take control
+  adds nothing.
 - **Disposal during notification:** before or after the update, nothing
   throws, renders, moves focus or leaves a timer.
 - **Every shell:** AI moves never rebuild Take control (`builds` unchanged,

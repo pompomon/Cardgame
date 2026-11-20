@@ -146,11 +146,13 @@ sets (`on` or `off`; anything else is ignored):
   before `latestForAction()`, so a stale control still applies its state,
   once. With nothing to set (already set, or on while unavailable), it only
   catches the interface up with the latest view.
-- **Focus.** Take control hands focus to Menu, never the dock's next control
-  (End Turn). For `THREE_TAKE_CONTROL_GUARD_MS` the primary action (End Turn
-  by click, tap or Enter) and repeated Enter or Space are ignored, so a
-  double click or a held key cannot end the turn. A held key on either
-  control sets it once.
+- **Focus.** Take control hands focus to Menu, or into a target choice the
+  seat now owns, never the dock's next control (End Turn). For
+  `THREE_TAKE_CONTROL_GUARD_MS` the primary action (End Turn by click, tap
+  or Enter) and repeated Enter or Space are ignored, so a double click or a
+  held key cannot end the turn. Repeats of an Enter or Space pressed on
+  either control stay inert until a fresh press, however long the OS repeat
+  delay, so a held key sets it once and cannot open Menu or pick a target.
 - **Copy.** The status announcer speaks "Auto battle on: the Hard AI is
   playing for you. Choose Take control to play yourself." (with no game in
   progress, "…will play your next game."), "Auto battle off: you play your

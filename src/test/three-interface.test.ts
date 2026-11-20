@@ -4850,7 +4850,12 @@ describe('Three Auto battle controls', () => {
       const menu = h.document.activeElement
       expect(menu?.dataset.action).toBe('menu')
       for (const key of ['Enter', ' ']) expect(keydown(h, key, true, menu)).toHaveBeenCalledOnce()
+      // The held key stays inert past the guard, however late its repeats.
       vi.advanceTimersByTime(THREE_TAKE_CONTROL_GUARD_MS)
+      expect(keydown(h, 'Enter', true, menu)).toHaveBeenCalledOnce()
+      expect(keydown(h, ' ', true, menu)).not.toHaveBeenCalled()
+      // A fresh press on Menu acts natively, repeats included.
+      expect(keydown(h, 'Enter', false, menu)).not.toHaveBeenCalled()
       expect(keydown(h, 'Enter', true, menu)).not.toHaveBeenCalled()
       h.ui.dispose()
     })

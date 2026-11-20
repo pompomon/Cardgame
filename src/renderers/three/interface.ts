@@ -148,6 +148,9 @@ export class ThreeInterface {
   private announceRepeat = false
   // Runs for THREE_TAKE_CONTROL_GUARD_MS after Take control.
   private takeControlGuard: ReturnType<typeof setTimeout> | null = null
+  // Enter or Space last pressed on an Auto battle control; its repeats stay
+  // inert until a fresh Enter or Space press, however long the OS delays them.
+  private autoBattleKey: string | null = null
   private readonly downloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly content: HTMLElement
   private readonly hoverContent: HTMLElement
@@ -905,11 +908,15 @@ export class ThreeInterface {
   private readonly handleKeydown = (event: KeyboardEvent): void => {
     if (this.disposed) return
     // A held key sets Auto battle once, as the board's primary button acts
-    // once; after Take control its repeats cannot open Menu, now focused.
-    if (event.repeat && (event.key === 'Enter' || event.key === ' ') && (this.takeControlGuard !== null
-      || event.target instanceof Element && event.target.closest('[data-action="auto-battle"]'))) {
-      event.preventDefault()
-      return
+    // once; after Take control its repeats cannot open Menu, now focused, or
+    // pick the target a pending choice focuses.
+    if (event.key === 'Enter' || event.key === ' ') {
+      const onAutoBattle = event.target instanceof Element && !!event.target.closest('[data-action="auto-battle"]')
+      if (!event.repeat) this.autoBattleKey = onAutoBattle ? event.key : null
+      else if (onAutoBattle || event.key === this.autoBattleKey || this.takeControlGuard !== null) {
+        event.preventDefault()
+        return
+      }
     }
     if (event.key === 'Escape' && this.touchShellActive() && !this.menuOpen && !this.cardsOpen && !this.preview) {
       // Step back one touch-shell layer: the target list, a selected target, then

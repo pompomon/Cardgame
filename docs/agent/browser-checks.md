@@ -132,13 +132,18 @@ Adventure run.
   and the next node, whose start status ends " Auto battle is on."
 - Choose Take control mid-game 20 times each by mouse and keyboard at
   1280×800, and by touch in the 829×578 rail: each time the seat returns,
-  focus lands on Menu, and a double click, double tap or held Enter never
-  ends the turn.
+  focus lands on Menu (or in a target choice the seat now owns), and a
+  double click, double tap or held Enter never ends the turn. Hold Enter
+  once with a 2-second delay before its first repeat: Menu stays closed.
+  In headless Chrome on SwiftShader the guard's timer fired only once a
+  held key's repeats stopped, so only a delayed first repeat outlasts
+  `THREE_TAKE_CONTROL_GUARD_MS` there.
 - The opponent's hand stays hidden, Swamp turns included.
 - At 1280×800 and in each [Fold4 posture](#fold4-posture-check), at 100% and
   200% root font size: no horizontal overflow; the desktop bar stays in the
   HUD row, covering nothing; the switch and Take control are at least 44 CSS
-  pixels each way.
+  pixels each way. In the short rail at 200% text the dock scrolls to Take
+  control, as it does to End Turn.
 - With 4× and 6× CPU throttling, record the p95 time from Hard's turn
   starting to its first move for the human's seat.
 
